@@ -53,7 +53,7 @@ test('forge resolution preserves GitHub URL forms and aliases and identifies Bit
 })
 
 test('absent/local origins stay distinct from unsupported, multiple, contradictory and unavailable forge targets', async () => {
-  for (const options of [{ origin: false }, { used: '/tmp/local.git' }]) expect(await fixture(options).forge.repository(repo)).toBeUndefined()
+  for (const options of [{ origin: false }, { used: '/tmp/local.git' }, { used: 'origin.git' }, { used: 'repos/origin.git' }]) expect(await fixture(options).forge.repository(repo)).toBeUndefined()
   for (const options of [{ used: 'https://gitlab.com/o/r.git' }, { used: 'https://bitbucket.org/o/r.git' }, { used: 'https://github.test/other/r.git', written: 'https://github.test/o/r.git' }, { used: 'https://github.test/o/r.git\nhttps://github.test/other/r.git' }, { push: 'https://github.test/other/r.git' }]) {
     const f = fixture(options)
     await expect(f.forge.require(repo)).rejects.toThrow()
@@ -140,8 +140,23 @@ test('an effective GitHub host rewrite retains a canonical saved GitHub link and
   f.setRaw({ url: 'https://github.com/o/r/pull/7' })
   const forge = await f.forge.require(repo)
   const pr = await forge.read('work/one', false, { number: 7, url: 'https://github.com/o/r/pull/7' })
-  expect(pr.identity).toEqual({ provider: 'github', host: 'github.localhost', repository: 'o/r', number: 7, url: 'https://github.com/o/r/pull/7' })
+  expect(pr.identity).toEqual({ provider: 'github', host: 'github.com', repository: 'o/r', number: 7, url: 'https://github.com/o/r/pull/7' })
   expect(f.calls.at(-1)?.argv).toContain('github.localhost/o/r')
+})
+
+test('T1 compatibility: qualified alias records use canonical identity without accepting foreign providers or repositories', async () => {
+  const saved = { provider: 'github' as const, host: 'github.localhost', repository: 'o/r', number: 7, url: 'https://github.com/o/r/pull/7' }
+  for (const used of ['https://github.com/o/r.git', 'https://github.new-alias/o/r.git']) {
+    const f = fixture({ used, written: 'https://github.com/o/r.git' })
+    f.setRaw({ url: 'https://github.com/o/r/pull/7' })
+    const forge = await f.forge.require(repo)
+    expect((await forge.read('7', false, saved)).identity).toEqual({ provider: 'github', host: 'github.com', repository: 'o/r', number: 7, url: 'https://github.com/o/r/pull/7' })
+    for (const foreign of [{ ...saved, provider: 'bitbucket' as const }, { ...saved, repository: 'other/r' }, { ...saved, host: 'bitbucket.org' }, { ...saved, url: 'https://github.other/o/r/pull/7' }]) {
+      await expect(forge.read('7', false, foreign)).rejects.toThrow('saved pull request identity')
+    }
+    f.setRaw({ url: 'https://github.other/o/r/pull/7' })
+    await expect(forge.read('7', false, saved)).rejects.toThrow('another repository')
+  }
 })
 
 test('the PR panel discloses incomplete checks while retaining the provider link', async () => {

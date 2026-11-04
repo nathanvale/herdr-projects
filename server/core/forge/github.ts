@@ -89,7 +89,7 @@ export class GitHubForge implements RepositoryForge {
     if (!raw || !Number.isSafeInteger(raw.number) || raw.number < 1 || typeof raw.url !== 'string' || !['OPEN', 'CLOSED', 'MERGED'].includes(raw.state) || typeof raw.isDraft !== 'boolean' || !commit(raw.headRefOid) || typeof raw.headRefName !== 'string' || !raw.headRefName || typeof raw.baseRefName !== 'string' || !raw.baseRefName || raw.mergeCommit != null && !commit(raw.mergeCommit.oid)) throw Error('Incomplete GitHub pull request identity')
     const url = new URL(raw.url)
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || !this.hosts.includes(url.hostname.toLowerCase()) || url.pathname.toLowerCase() !== `/${this.identity.repository}/pull/${raw.number}`.toLowerCase()) throw new Refusal('GitHub returned a pull request from another repository')
-    const identity = { ...this.identity, number: raw.number, url: raw.url }
+    const identity = { ...this.identity, host: url.hostname.toLowerCase(), number: raw.number, url: raw.url }
     if (saved && !samePr(saved, identity)) throw new Refusal('The saved pull request identity differs from the observed forge repository')
     return { identity, title: raw.title || '', state: raw.state, draft: raw.isDraft === true, head: raw.headRefOid, source: raw.headRefName, base: raw.baseRefName, mergeCommit: raw.mergeCommit?.oid,
       ...(checks ? { checks: checksFor(raw.statusCheckRollup, raw.headRefOid) } : {}) }

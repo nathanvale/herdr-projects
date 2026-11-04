@@ -898,22 +898,34 @@ async function taskForge(context: { tasks: CoreTasks; task: CoreTask; repo: stri
   const candidate = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: worktree }).stdout.toString().trim()
   let pr: Record<string, unknown> = { number: 7, url: 'https://github.test/o/r/pull/7', title: 'Example', state: 'OPEN', isDraft: true, headRefOid: candidate, headRefName: task.branch, baseRefName: task.base, mergeCommit: null, statusCheckRollup: [{ name: 'Check', conclusion: 'SUCCESS' }] }
   let exists = false, lostCreate = false, mergeReply: string | undefined
-  const writes: { args: string[]; body?: string }[] = [], run = tasks.git.run.bind(tasks.git)
-  tasks.git.run = async (location, args, ...rest) => args[0] === 'push' ? '' : run(location, args, ...rest)
-  tasks.git.ghRun = async (_location, args, _timeout, body) => {
-    if (args[0] !== 'pr') throw Error('Unexpected provider request')
-    if (args[1] === 'list') return JSON.stringify(exists ? [{ number: 7, headRefName: task.branch, baseRefName: task.base }] : [])
-    if (args[1] === 'view') return JSON.stringify(pr)
-    writes.push({ args, body })
-    if (args[1] === 'create') { exists = true; if (lostCreate) throw Error('Create reply lost') }
-    if (args[1] === 'ready') pr.isDraft = false
-    if (args[1] === 'merge') {
-      if (mergeReply) throw Error(mergeReply)
-      pr = { ...pr, state: 'MERGED', mergeCommit: { oid: 'cccccccccccccccccccccccccccccccccccccccc' } }
+  const writes: { args: string[]; body?: string }[] = [], requests: string[][] = []
+  const attach = (target: CoreTasks) => {
+    const run = target.git.run.bind(target.git)
+    target.git.run = async (location, args, ...rest) => args[0] === 'push' ? '' : run(location, args, ...rest)
+    target.git.ghRun = async (_location, args, _timeout, body) => {
+      requests.push([...args])
+      if (args[0] !== 'pr') throw Error('Unexpected provider request')
+      if (args[1] === 'list') return JSON.stringify(exists ? [{ number: 7, headRefName: task.branch, baseRefName: task.base }] : [])
+      if (args[1] === 'view') return JSON.stringify(pr)
+      writes.push({ args, body })
+      if (args[1] === 'create') { exists = true; if (lostCreate) throw Error('Create reply lost') }
+      if (args[1] === 'ready') pr.isDraft = false
+      if (args[1] === 'merge') {
+        if (mergeReply) throw Error(mergeReply)
+        pr = { ...pr, state: 'MERGED', mergeCommit: { oid: 'cccccccccccccccccccccccccccccccccccccccc' } }
+      }
+      return ''
     }
-    return ''
   }
-  return { candidate, writes, setPr(fields: Record<string, unknown>) { pr = { ...pr, ...fields } }, loseCreate() { lostCreate = true }, failMerge(message: string) { mergeReply = message } }
+  attach(tasks)
+  return { candidate, writes, requests, attach, setPr(fields: Record<string, unknown>) { pr = { ...pr, ...fields } }, loseCreate() { lostCreate = true }, failMerge(message: string) { mergeReply = message } }
+}
+
+function reopenForgeTask(tasks: CoreTasks, fixture: { attach: (target: CoreTasks) => void }) {
+  const source = (tasks as unknown as { source: CoreSource }).source
+  const store = new CoreStore(source.store.home), reopened = new CoreTasks({ ...source, store } as CoreSource)
+  fixture.attach(reopened)
+  return { store, tasks: reopened }
 }
 
 test('public pr command reconciles one draft, preserves its qualified identity on reopen and keeps chat history', () => withTask(async context => {
@@ -1017,3 +1029,106 @@ test('a saved forge identity changed after approval requires fresh readiness bef
   expect(f.writes.filter(write => write.args[1] === 'merge')).toEqual([])
   expect(readFileSync(join(repo, 'example.txt'), 'utf8')).toBe('before\n')
 }))
+
+test('T1 compatibility: public task records survive transport rewrite removal and change after reopening', async () => {
+  for (const oldAliasRecord of [false, true]) await withTask(async context => {
+    const { tasks, task, grant, repo, git, worktree } = context, f = await taskForge(context)
+    const source = (tasks as unknown as { source: CoreSource }).source
+    git(repo, 'remote', 'set-url', 'origin', 'https://github.com/o/r.git')
+    git(repo, 'config', 'url.https://github.localhost/.insteadOf', 'https://github.com/')
+    f.setPr({ url: 'https://github.com/o/r/pull/7' })
+    const canonical: NonNullable<CoreTask['pr']> = { provider: 'github', host: 'github.com', repository: 'o/r', number: 7, url: 'https://github.com/o/r/pull/7' }
+    expect(JSON.parse((await tasks.cli(grant, ['pr', task.id])).out)).toEqual(canonical)
+    const saved = oldAliasRecord ? { ...canonical, host: 'github.localhost' } : canonical
+    const published = tasks.get(task.id)!
+    published.pr = saved; source.store.set('task', task.id, published)
+    await tasks.cli(grant, ['ready', task.id, '--summary', 'Changed example'])
+    await tasks.answer(tasks.get(task.id)!.mergeQuestion!, 0, task.chat)
+    const reopened = reopenForgeTask(tasks, f)
+    try {
+      expect(reopened.store.get<CoreTask>('task', task.id)?.pr).toEqual(saved)
+      git(repo, 'config', '--unset', 'url.https://github.localhost/.insteadOf')
+      expect(JSON.parse((await reopened.tasks.cli(grant, ['checks', task.id])).out)).toMatchObject({ head: f.candidate, complete: true, green: true, items: [{ name: 'Check', state: 'pass' }] })
+      expect(f.requests.at(-1)).toContain('github.com/o/r')
+      git(repo, 'config', 'url.https://github.new-alias/.insteadOf', 'https://github.com/')
+      expect(JSON.parse((await reopened.tasks.cli(grant, ['checks', task.id])).out)).toMatchObject({ head: f.candidate, complete: true, green: true })
+      expect(f.requests.at(-1)).toContain('github.new-alias/o/r')
+      if (oldAliasRecord) {
+        f.setPr({ state: 'MERGED', mergeCommit: { oid: 'cccccccccccccccccccccccccccccccccccccccc' } })
+        const forge = await reopened.tasks.forge.require({ machine: task.machine, folder: worktree })
+        const observed = await forge.read('7', false, reopened.tasks.get(task.id)!.pr)
+        expect(await reopened.tasks.observedMerge(task.id, observed)).toBe(true)
+        expect(reopened.store.get<CoreTask>('task', task.id)?.externalMerge).toBe(true)
+        expect(f.writes.filter(write => write.args[1] === 'merge')).toEqual([])
+      } else {
+        expect((await reopened.tasks.cli(grant, ['merge', task.id])).out).toContain('is merged')
+        expect(f.writes.find(write => write.args[1] === 'merge')?.args).toEqual(['pr', 'merge', '7', '--squash', '--match-head-commit', f.candidate, '--repo', 'github.new-alias/o/r'])
+      }
+      expect(reopened.store.get<CoreTask>('task', task.id)).toMatchObject({ pr: saved, workflow: 'merged', mergeCommit: 'cccccccccccccccccccccccccccccccccccccccc' })
+      expect(Bun.spawnSync(['git', 'rev-parse', 'refs/heads/' + task.branch], { cwd: worktree }).stdout.toString().trim()).toBe(f.candidate)
+    } finally { reopened.store.close() }
+  })
+})
+
+test('T1 compatibility: bare relative filesystem origins retain public local integration with real history', async () => {
+  for (const origin of ['origin.git', 'repos/origin.git']) await withTask(async ({ tasks, task, grant, repo, git }) => {
+    git(repo, 'remote', 'add', 'origin', origin)
+    await tasks.cli(grant, ['ready', task.id, '--summary', 'Changed example'])
+    await tasks.answer(tasks.get(task.id)!.mergeQuestion!, 0, task.chat)
+    const before = Bun.spawnSync(['git', 'rev-parse', 'main'], { cwd: repo }).stdout.toString().trim()
+    expect((await tasks.cli(grant, ['merge', task.id])).out).toContain('is merged')
+    expect(readFileSync(join(repo, 'example.txt'), 'utf8')).toBe('after\n')
+    const merged = Bun.spawnSync(['git', 'rev-parse', 'main'], { cwd: repo }).stdout.toString().trim()
+    expect(merged).not.toBe(before)
+    expect(Bun.spawnSync(['git', 'rev-parse', 'main^'], { cwd: repo }).stdout.toString().trim()).toBe(before)
+    expect(tasks.get(task.id)).toMatchObject({ workflow: 'merged', mergeCommit: merged })
+  })
+})
+
+test('T1 compatibility: unchanged legacy re-publication preserves reopened readiness and approval snapshots', () => withTask(async context => {
+  const { tasks, task, grant } = context, f = await taskForge(context)
+  const source = (tasks as unknown as { source: CoreSource }).source
+  await tasks.cli(grant, ['pr', task.id])
+  const legacy = { number: 7, url: 'https://github.test/o/r/pull/7' }, published = tasks.get(task.id)!
+  published.pr = legacy; source.store.set('task', task.id, published)
+  await tasks.cli(grant, ['ready', task.id, '--summary', 'Changed example'])
+  const question = tasks.get(task.id)!.mergeQuestion!, reopened = reopenForgeTask(tasks, f)
+  try {
+    expect(JSON.parse((await reopened.tasks.cli(grant, ['pr', task.id])).out)).toEqual(legacy)
+    expect(reopened.store.get<CoreTask>('task', task.id)).toMatchObject({ pr: legacy, readyPr: legacy, readyHead: f.candidate, readyBase: 'main', mergeQuestion: question })
+    expect(reopened.store.get('merge-question', question)).toEqual({ task: task.id, head: f.candidate, base: 'main', pr: legacy })
+    await reopened.tasks.answer(question, 0, task.chat)
+    expect(JSON.parse((await reopened.tasks.cli(grant, ['pr', task.id])).out)).toEqual(legacy)
+    expect(reopened.store.get<CoreTask>('task', task.id)).toMatchObject({ pr: legacy, readyPr: legacy, approvedHead: f.candidate })
+    expect((await reopened.tasks.cli(grant, ['merge', task.id])).out).toContain('is merged')
+    expect(f.writes.filter(write => write.args[1] === 'create')).toHaveLength(1)
+    expect(f.writes.find(write => write.args[1] === 'merge')?.args).toEqual(['pr', 'merge', '7', '--squash', '--match-head-commit', f.candidate, '--repo', 'github.test/o/r'])
+  } finally { reopened.store.close() }
+}))
+
+test('T1 compatibility: legacy re-publication cannot preserve approval for a changed candidate, destination or identity', async () => {
+  for (const change of ['candidate', 'destination', 'provider', 'repository']) await withTask(async context => {
+    const { tasks, task, grant, repo, worktree, git } = context, f = await taskForge(context)
+    const source = (tasks as unknown as { source: CoreSource }).source
+    await tasks.cli(grant, ['pr', task.id])
+    const published = tasks.get(task.id)!
+    published.pr = { number: 7, url: 'https://github.test/o/r/pull/7' }; source.store.set('task', task.id, published)
+    await tasks.cli(grant, ['ready', task.id, '--summary', 'Changed example'])
+    await tasks.cli(grant, ['pr', task.id])
+    await tasks.answer(tasks.get(task.id)!.mergeQuestion!, 0, task.chat)
+    await tasks.cli(grant, ['pr', task.id])
+    const reopened = reopenForgeTask(tasks, f)
+    try {
+      const changed = reopened.tasks.get(task.id)!
+      if (change === 'candidate') {
+        writeFileSync(join(worktree, 'example.txt'), 'later\n'); git(worktree, 'commit', '-am', 'Later candidate')
+      } else if (change === 'destination') changed.base = 'other'
+      else changed.pr = { ...changed.pr!, ...(change === 'provider' ? { provider: 'bitbucket' as const } : { repository: 'foreign/repository' }) }
+      reopened.store.set('task', task.id, changed)
+      await expect(reopened.tasks.cli(grant, ['merge', task.id])).rejects.toThrow('exact commit ready')
+      expect(f.writes.filter(write => write.args[1] === 'merge')).toEqual([])
+      expect(readFileSync(join(repo, 'example.txt'), 'utf8')).toBe('before\n')
+      expect(reopened.store.get<CoreTask>('task', task.id)?.workflow).toBe('ready')
+    } finally { reopened.store.close() }
+  })
+})

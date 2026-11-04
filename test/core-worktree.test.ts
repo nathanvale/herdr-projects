@@ -81,30 +81,35 @@ test('contained file and diff panels use checked Git without executing host call
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-test('public PR panel retains arbitrary GitHub Enterprise hosts and canonical links after SSH rewrites', async () => {
+async function withGitHubPanel(origin: string, canonicalHost: string, run: (context: { root: string; tasks: CoreTasks; source: CoreSource; calls: string[][]; git: (...args: string[]) => Promise<Buffer> }) => Promise<void>) {
   const root = mkdtempSync(join(tmpdir(), 'shep-tree-enterprise-')), store = new CoreStore(join(root, 'home'))
   const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' }
   const calls: string[][] = []
   const task = { id: 'DEMO-1', machine: 'machine', folder: root, branch: 'work/one' } as CoreTask
   try {
     await runChild(['git', 'init', '-b', 'main'], { cwd: root, env })
-    await runChild(['git', 'remote', 'add', 'origin', 'git@ghe.example.com:owner/repo.git'], { cwd: root, env })
+    await runChild(['git', 'remote', 'add', 'origin', origin], { cwd: root, env })
     const source = { store, files: { exec: async (_machine: string, argv: string[], cwd?: string, input?: Uint8Array) => {
       calls.push([...argv])
       if (argv[0] === 'gh') return Buffer.from(JSON.stringify({
         number: 7, title: 'Enterprise candidate', state: 'OPEN', isDraft: false,
-        url: 'https://ghe.example.com/owner/repo/pull/7', headRefOid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        url: `https://${canonicalHost}/owner/repo/pull/7`, headRefOid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         headRefName: 'work/one', baseRefName: 'main', mergeCommit: null,
-        statusCheckRollup: [{ name: 'Build', conclusion: 'SUCCESS', detailsUrl: 'https://ghe.example.com/owner/repo/actions/runs/9' }],
+        statusCheckRollup: [{ name: 'Build', conclusion: 'SUCCESS', detailsUrl: `https://${canonicalHost}/owner/repo/actions/runs/9` }],
       }))
       return runChild(argv, { cwd, input, env })
     } } } as unknown as CoreSource
     const tasks = new CoreTasks(source); Object.assign(source, { tasks }); tasks.get = () => task
+    await run({ root, tasks, source, calls, git: (...args) => runChild(['git', ...args], { cwd: root, env }) })
+  } finally { store.close(); rmSync(root, { recursive: true, force: true }) }
+}
+
+test('public PR panel retains arbitrary GitHub Enterprise hosts and canonical links after SSH rewrites', () => withGitHubPanel('git@ghe.example.com:owner/repo.git', 'ghe.example.com', async ({ root, tasks, source, calls, git }) => {
     expect(await new CoreWorktree(source).ask({ task: 'DEMO-1', what: 'pr' })).toEqual({ pr: {
       number: 7, title: 'Enterprise candidate', state: 'open', url: 'https://ghe.example.com/owner/repo/pull/7',
       checks: [{ name: 'Build', state: 'pass', url: 'https://ghe.example.com/owner/repo/actions/runs/9' }],
     } })
-    await runChild(['git', 'config', 'url.git@ssh-alias:.insteadOf', 'git@ghe.example.com:'], { cwd: root, env })
+    await git('config', 'url.git@ssh-alias:.insteadOf', 'git@ghe.example.com:')
     expect(await new CoreWorktree(source).ask({ task: 'DEMO-1', what: 'pr' })).toEqual({ pr: {
       number: 7, title: 'Enterprise candidate', state: 'open', url: 'https://ghe.example.com/owner/repo/pull/7',
       checks: [{ name: 'Build', state: 'pass', url: 'https://ghe.example.com/owner/repo/actions/runs/9' }],
@@ -117,8 +122,39 @@ test('public PR panel retains arbitrary GitHub Enterprise hosts and canonical li
     ])
     // Read-only legacy compatibility must not turn an unknown origin into task write authority.
     await expect(tasks.forge.require({ machine: 'machine', folder: root })).rejects.toThrow('unsupported forge')
-    await runChild(['git', 'remote', 'set-url', 'origin', 'git@bitbucket.org:owner/repo.git'], { cwd: root, env })
+    await git('remote', 'set-url', 'origin', 'git@bitbucket.org:owner/repo.git')
     expect(await new CoreWorktree(source).ask({ task: 'DEMO-1', what: 'pr' })).toMatchObject({ pr: null, why: expect.stringContaining('Bitbucket Cloud operations are not implemented') })
     expect(calls.filter(argv => argv[0] === 'gh')).toHaveLength(2)
-  } finally { store.close(); rmSync(root, { recursive: true, force: true }) }
-})
+}))
+
+test('T1 compatibility: public PR panels route recognized GitHub origins through effective aliases', () => withGitHubPanel('git@github.com:owner/repo.git', 'github.com', async ({ root, tasks, source, calls, git }) => {
+  await git('config', 'url.git@ssh-alias:.insteadOf', 'git@github.com:')
+  expect(await new CoreWorktree(source).ask({ task: 'DEMO-1', what: 'pr' })).toEqual({ pr: {
+    number: 7, title: 'Enterprise candidate', state: 'open', url: 'https://github.com/owner/repo/pull/7',
+    checks: [{ name: 'Build', state: 'pass', url: 'https://github.com/owner/repo/actions/runs/9' }],
+  } })
+  expect(calls.filter(argv => argv[0] === 'gh')).toEqual([
+    ['gh', 'pr', 'view', 'work/one', '--repo', 'ssh-alias/owner/repo', '--json', 'number,url,title,state,isDraft,headRefOid,headRefName,baseRefName,mergeCommit,statusCheckRollup'],
+  ])
+  // Presentation routing does not confer task authority on an otherwise unsupported host.
+  const forge = await tasks.forge.require({ machine: 'machine', folder: root })
+  expect(forge.identity).toEqual({ provider: 'github', host: 'github.com', repository: 'owner/repo' })
+  await git('config', '--unset', 'url.git@ssh-alias:.insteadOf')
+  await git('remote', 'set-url', 'origin', 'git@ssh-alias:owner/repo.git')
+  await expect(tasks.forge.require({ machine: 'machine', folder: root })).rejects.toThrow('unsupported forge')
+}))
+
+test('T1 compatibility: public PR panels ignore fork pushurl while task operations retain write-target validation', () => withGitHubPanel('git@github.com:owner/repo.git', 'github.com', async ({ root, tasks, source, calls, git }) => {
+  await git('config', 'remote.origin.pushurl', 'git@github.com:myfork/repo.git')
+  calls.length = 0
+  expect(await new CoreWorktree(source).ask({ task: 'DEMO-1', what: 'pr' })).toEqual({ pr: {
+    number: 7, title: 'Enterprise candidate', state: 'open', url: 'https://github.com/owner/repo/pull/7',
+    checks: [{ name: 'Build', state: 'pass', url: 'https://github.com/owner/repo/actions/runs/9' }],
+  } })
+  expect(calls.some(argv => argv[0] === 'git' && argv.includes('--push'))).toBe(false)
+  expect(calls.filter(argv => argv[0] === 'gh')).toEqual([
+    ['gh', 'pr', 'view', 'work/one', '--repo', 'github.com/owner/repo', '--json', 'number,url,title,state,isDraft,headRefOid,headRefName,baseRefName,mergeCommit,statusCheckRollup'],
+  ])
+  await expect(tasks.forge.require({ machine: 'machine', folder: root })).rejects.toThrow('different forge repositories')
+  expect(calls.filter(argv => argv[0] === 'gh')).toHaveLength(1)
+}))
