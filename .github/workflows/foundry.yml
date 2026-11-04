@@ -346,6 +346,24 @@ jobs:
             exit 1
           fi
           grep -F '(fail) cold hook completion refuses a terminal that no longer' /tmp/readiness-pid-sensitivity.log
+      - name: Prove capture cannot strand a closed or archived task
+        shell: bash
+        run: |
+          cp server/core/failed-starts.ts /tmp/readiness-stop-original.ts
+          trap 'cp /tmp/readiness-stop-original.ts server/core/failed-starts.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/failed-starts.ts')
+          source = path.read_text()
+          before = "this.settleStopped(current, terminal)"
+          assert source.count(before) == 2
+          path.write_text(source.replace(before, "false"))
+          PYCODE
+          if bun test test/core-failed-starts.test.ts --test-name-pattern 'cold hook completion preserves' > /tmp/readiness-stop-sensitivity.log 2>&1; then
+            cat /tmp/readiness-stop-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) cold hook completion preserves' /tmp/readiness-stop-sensitivity.log
       - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts test/core-launch-admission.test.ts test/core-client.test.ts test/core-mailbox.test.ts test/core-launcher.test.ts test/core-operator.test.ts test/core-protected-update.test.ts test/core-commands.test.ts test/core-failed-starts.test.ts
       - run: bun x playwright-core install --only-shell chromium
       - run: bun test test/layout-restart.test.ts test/layout-azure-admission.test.ts

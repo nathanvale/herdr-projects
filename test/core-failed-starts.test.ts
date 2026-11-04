@@ -258,3 +258,21 @@ test('cold hook completion refuses a terminal that no longer matches the recorde
   expect(source.store.get('message:space', 'start-failed-one')).toBeUndefined()
   expect(launches).toEqual([])
 })
+
+for (const action of ['closed', 'archived', 'closed-during-read'] as const) test(`cold hook completion preserves ${action} task settlement without a complete capture`, async () => {
+  const f = coldCapture('codex', 'task', false, false); await source.logs.catchUp(f.chat)
+  const finish = () => {
+    const task = source.tasks.get('EX-1')!
+    if (action === 'archived') task.archived = Date.now()
+    else task.workflow = 'closed'
+    source.store.set('task', task.id, task)
+  }
+  if (action === 'closed-during-read') {
+    const exec = source.files.exec.bind(source.files)
+    source.files.exec = async (...args) => { finish(); return exec(...args) }
+  } else finish()
+  await settle()
+  expect(source.agents.get(f.chat)).toMatchObject({ state: 'idle', launch: 'one' })
+  expect(source.store.get(`message:${f.chat}`, 'start-failed-one')).toBeUndefined()
+  expect(launches).toEqual([])
+})

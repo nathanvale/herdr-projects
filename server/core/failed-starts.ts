@@ -47,19 +47,17 @@ export class CoreFailedStarts {
     if (!terminal || terminal.state !== 'finished') return
     const words = terminal.reason === 'killed' ? '' : await this.words(terminal)
     let current = this.current(agent, terminal)
-    if (!current) return
+    if (!current || this.settleStopped(current, terminal)) return
     if (terminal.exit_code === 0 && current.session && current.transcript) {
       // Native hook review can miss SessionStart. SessionEnd may then reveal a
       // completed turn whose timestamps precede that hook's activity watermark.
       await this.source.logs.catchUp(current.chat)
       current = this.current(agent, terminal)
-      if (!current) return
+      if (!current || this.settleStopped(current, terminal)) return
       const turn = this.source.logs.providerTurn(current)
       if (!turn.complete) return // Capture is still unconfirmed, never permission to retry.
       if (!turn.cut) return agents.update(current, { state: 'idle' })
     }
-    // Stopped on purpose, or for a task that needs no agent now: it only must not hold the chat.
-    if (terminal.reason === 'killed' || task && (task.archived || ['merged', 'closed'].includes(task.workflow))) return agents.update(agent, { state: 'idle' })
     try {
       if (current.session && terminal.exit_code !== 0 && LOST.test(words)) await this.fresh(current)
       else await this.fail(current, words.split('\n').filter(line => line.trim()).slice(-3).join(' ').slice(-240) || `It exited with code ${terminal.exit_code ?? terminal.signal ?? 'unknown'}.`)
@@ -67,6 +65,12 @@ export class CoreFailedStarts {
       if (error instanceof Refusal && task && tasks.busy(task.id)) return
       await this.fail(current, (error as Error).message).catch(() => {})
     }
+  }
+  private settleStopped(agent: CoreAgent, terminal: CoreTerminal) {
+    const task = this.source.tasks.forChat(agent.chat)
+    if (terminal.reason !== 'killed' && !(task && (task.archived || ['merged', 'closed'].includes(task.workflow)))) return false
+    this.source.agents.update(agent, { state: 'idle' })
+    return true
   }
   /** A read must not classify a replacement, re-used terminal or shutdown. */
   private current(agent: CoreAgent, terminal: CoreTerminal) {
