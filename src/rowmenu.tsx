@@ -157,7 +157,7 @@ export function Dialog({ title, children, buttons, safe, cancel = 'Cancel', onCa
         e.stopImmediatePropagation()
         cancelling.current()
       } else if (e.key === 'Tab' && box.current) {
-        const bs = [...box.current.querySelectorAll<HTMLElement>('button:not(:disabled)')]
+        const bs = [...box.current.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]')]
         const at = bs.indexOf(document.activeElement as HTMLElement)
         e.preventDefault()
         bs[(at + (e.shiftKey ? bs.length - 1 : 1)) % bs.length]?.focus()

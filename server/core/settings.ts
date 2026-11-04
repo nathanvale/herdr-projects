@@ -240,7 +240,7 @@ export class CoreSettings {
   }
   launch(role: Role, level: string, kind?: AgentKind) {
     const defaults = this.agent(role, level)
-    return !kind || kind === defaults.kind ? defaults : { kind, model: undefined, effort: undefined }
+    return !kind || kind === defaults.kind ? defaults : { kind, model: undefined, effort: undefined, ...(this.get('provider.route', level) === 'Azure Foundry' ? { deployment: this.deployment(role, kind, level) } : {}) }
   }
   instructions(role: Role, level: string) {
     const words = this.get(`${role}.instructions`, level)

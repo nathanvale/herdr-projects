@@ -257,3 +257,18 @@ test('role deployment defaults are separate from Personal models and from the ot
     expect(f.settings.agent('task', space.id)).not.toHaveProperty('deployment')
   } finally { f.close() }
 })
+
+test('a selection changed away and back still rejects an older open selector', () => {
+  const f = fixture()
+  try {
+    f.azure()
+    const pick = { kind: 'claude', deployment: 'claude-sonnet-5-5' }
+    f.agents.saveSelection(space, 'new', f.agents.selectionToken('new'), pick)
+    const old = f.agents.selectionToken('new')
+    f.agents.saveSelection(space, 'new', old, { ...pick, deployment: 'claude-haiku-5-5' })
+    f.agents.saveSelection(space, 'new', f.agents.selectionToken('new'), pick)
+    expect(() => f.agents.saveSelection(space, 'new', old, { ...pick, deployment: 'claude-haiku-5-5' })).toThrow('Selection changed')
+    expect(f.agents.selection('new')?.deployment).toBe('claude-sonnet-5-5')
+    expect(f.calls).toEqual([])
+  } finally { f.close() }
+})

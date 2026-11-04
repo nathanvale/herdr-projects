@@ -174,16 +174,22 @@ describe.skipIf(!browser)('Azure new-start selection', () => {
         const page = await browser!.newPage({ viewport: { width: 390, height: 844 } })
         try {
           await page.goto(`http://127.0.0.1:${server!.port}/?place=${encodeURIComponent(place.id)}${task ? '&task=GTM-17' : ''}`)
-          const box = page.locator('[data-composer]:visible textarea').last()
-          await box.fill('/model'); await box.press('Enter')
+          const openModel = async () => {
+            await page.locator('[data-agent-line]:visible').last().click()
+            await page.locator('[data-agent-controls]:visible').last().getByRole('menuitem', { name: /^Model:/ }).click()
+          }
+          await openModel()
           const sheet = page.getByRole('alertdialog', { name: 'Azure Foundry model' })
+          await sheet.getByLabel('Azure agent', { exact: true }).focus()
+          await page.keyboard.press('Tab')
+          expect(await sheet.getByLabel('Azure deployment', { exact: true }).evaluate(element => element === document.activeElement)).toBe(true)
           await sheet.getByLabel('Azure deployment', { exact: true }).selectOption('claude-haiku-5-5')
           await sheet.getByLabel('Azure effort', { exact: true }).selectOption('low')
           await sheet.getByRole('button', { name: 'Save for new start' }).click()
           await sheet.waitFor({ state: 'detached' })
           expect(requests.at(-1)).toMatchObject({ type: 'select-agent', chat: task ? 'GTM-17/Agent' : place.chat, deployment: 'claude-haiku-5-5', effort: 'low', token: 'selection-version' })
           locked = true
-          await box.fill('/model'); await box.press('Enter')
+          await openModel()
           await sheet.waitFor()
           expect(await sheet.getByRole('button', { name: 'Save for new start' }).isDisabled()).toBe(true)
           expect(await sheet.getByLabel('Azure deployment', { exact: true }).isDisabled()).toBe(true)

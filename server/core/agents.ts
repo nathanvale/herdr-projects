@@ -82,7 +82,7 @@ export class CoreAgents {
 
   selection(chat: string) { return this.store.get<StartSelection>('agent-selection', chat) }
   selectionToken(chat: string) {
-    return createHash('sha256').update(JSON.stringify([this.settings?.revision(), this.get(chat)?.launch, this.selection(chat)])).digest('hex')
+    return createHash('sha256').update(JSON.stringify([this.settings?.revision(), this.store.get<number>('selection-revision', chat), this.get(chat)?.launch, this.selection(chat)])).digest('hex')
   }
   selectionLocked(chat: string) {
     return this.launching.has(chat) || !!this.get(chat) || this.store.all<CoreAgent>('agent-launch').some(agent => agent.chat === chat)
@@ -97,12 +97,14 @@ export class CoreAgents {
     if (space.mode !== 'regular' || this.selectionLocked(chat)) throw Error('This conversation has already started or is contained. Choose a new conversation; existing workers were left untouched.')
     if (token !== this.selectionToken(chat)) throw Error('Selection changed. Reopen the selector before saving.')
     if (!input.deployment.trim()) {
+      this.store.set('selection-revision', chat, (this.store.get<number>('selection-revision', chat) ?? 0) + 1)
       this.store.delete('agent-selection', chat); this.changed(chat)
       return this.settings!.agent(chat === space.id ? 'coordinator' : 'task', space.id)
     }
     const choice = this.settings!.checkedSelection(space.id, input)
     // Pure routing validation: no credential probe, model request, process, or global settings write.
     const provider = providerPlan(choice.kind, key => key === `azure.${choice.kind}Deployment` ? choice.deployment : this.settings!.get(key, space.id))
+    this.store.set('selection-revision', chat, (this.store.get<number>('selection-revision', chat) ?? 0) + 1)
     this.store.set('agent-selection', chat, { ...choice, provider: provider.binding }); this.changed(chat)
     return choice
   }
