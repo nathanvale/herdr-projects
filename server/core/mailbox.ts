@@ -91,7 +91,10 @@ export class Mailbox {
     return { id, chat, session, machine, actions, credential }
   }
 
-  revoke(chat: string) { this.db.query('UPDATE grants SET revoked=1 WHERE chat=?').run(chat) }
+  revoke(chat: string, session?: string) {
+    if (session) this.db.query('UPDATE grants SET revoked=1 WHERE chat=? AND session=?').run(chat, session)
+    else this.db.query('UPDATE grants SET revoked=1 WHERE chat=?').run(chat)
+  }
   permits(id: string, identity: { chat: string; session: string; machine: string }, action: string) {
     const grant = this.get(id)
     return !!grant && grant.chat === identity.chat && grant.session === identity.session && grant.machine === identity.machine && grant.actions.includes(action)

@@ -183,6 +183,7 @@ export class CoreTasks {
     if (!this.source.space(space.id) || this.source.places?.removing(space.id) || space.home) throw new Refusal('Choose a repository space for the task')
     const { id, localId, number } = reserveTaskId(this.source.store, space.machine, space.prefix, this.source.machineName(space.machine), space)
     const branch = `work/${number}-${slugify(input.title).slice(0, 40)}`
+    if (this.source.settings.get('provider.route', space.id) === 'Azure Foundry' && await this.source.route(space.machine)) throw new Refusal('Azure Foundry requires a local execution machine; no worktree was prepared')
     const folder = join(await (input.pilot ? this.source.agents.pilotWorktreeRoot(space.machine) : this.source.agents.worktreeRoot(space.machine)), space.name, branch.replaceAll('/', '-'))
     if (!this.source.space(space.id) || this.source.places?.removing(space.id)) throw new Refusal('This space changed before task creation; retry after it is added again')
     const after = taskDependencies(this.all(), { id, place: space.id, machine: space.machine }, input.after ?? [], machine => this.source.machineName(machine))
@@ -209,9 +210,7 @@ export class CoreTasks {
       task.includesPending = true
       this.save(task) // Number and record survive a failed worktree/agent start; never reuse their branch number.
       try {
-        await this.source.files.exec(space.machine, ['mkdir', '-p', join(folder, '..')])
-        await this.git.addWorktree({ machine: space.machine, folder: space.folder }, folder, branch, task.base!)
-        await this.launchNow(task, undefined, task.model, task.effort)
+        await this.launchNow(task, undefined, task.model, task.effort, undefined, true)
       } catch (error) { task.startError = (error as Error).message; task.workflow = 'todo'; delete task.reservedAt; this.save(task); throw new Refusal(`${task.id} was saved but could not start: ${task.startError}\nDo not add it again. Read task show ${task.id} before deciding its next step.`) }
       this.card(task, task.workflow === 'queued' ? task.capacity ? 'Queued: ' + task.capacity : 'Queued after ' + after.join(', ') : task.workflow === 'todo' ? 'Waiting for your go' : 'Started')
       return task
@@ -359,7 +358,7 @@ export class CoreTasks {
       else throw new Refusal('This reviewer has finished; request a fresh review')
     })
   }
-  private async launchNow(task: CoreTask, message?: string, model = task.model, effort = task.effort, prepared?: PreparedProvider) {
+  private async launchNow(task: CoreTask, message?: string, model = task.model, effort = task.effort, prepared?: PreparedProvider, create = false) {
     const handover = task.providerTakeover?.handover
     if (handover && message !== handover) message = handover + (message ? `\n\n${message}` : '')
     task = this.get(task.id) || (() => { throw new Refusal('No such task') })()
@@ -375,18 +374,45 @@ export class CoreTasks {
     if (task.workflow !== 'todo' || task.pilot) { task.reservedAt = Date.now(); task.reservedChats = [...new Set([...(task.reservedChats ?? []), task.chat])]; this.save(task) }
     task.launchAttempt = randomUUID(); delete task.startError; this.save(task)
     try {
-    const created = await this.git.ensureWorktree({ machine: task.machine, folder: task.repo }, task.folder, task.branch, task.base)
-    if (created) { task.includesPending = true; this.save(task) }
-    if (task.includesPending) { await this.seedIncludes(task); delete task.includesPending; this.save(task) }
-    await this.source.browsers?.close(task.id)
     const pilot = task.pilot ? this.source.pilots.policy.live(task.pilot) : undefined
     if (task.pilot && (!pilot || !['on', 'workers'].includes(pilot.state) || !pilot.tasks.includes(task.id))) throw new Refusal('This task’s contained run has stopped')
     let parent = this.source.agents.get(space.id)
+    const parentLaunch = parent?.launch
     if (pilot && (parent?.pilot?.run !== pilot.id || this.source.agents.terminal(parent)?.state !== 'live')) parent = undefined
-    if (!pilot && (!parent || this.source.agents.terminal(parent)?.state !== 'live')) {
-      const pick = this.source.agents.selection(space.id) ?? this.source.settings.agent('coordinator', space.id)
-      parent = await this.source.agents.launch(space, space.id, pick.kind, '', pick)
+    const needsParent = !pilot && (!parent || this.source.agents.terminal(parent)?.state !== 'live')
+    const pick = needsParent ? this.source.agents.selection(space.id) ?? this.source.settings.agent('coordinator', space.id) : undefined
+    // Preserve ordinary Personal task preparation; Azure admission precedes all
+    // checkout/browser/coordinator effects, including the initial task-add path.
+    const guarded = !!prepared || this.source.settings.get('provider.route', space.id) === 'Azure Foundry' || prior?.provider?.route === 'azure-foundry' || parent?.provider?.route === 'azure-foundry'
+    let coordinator: PreparedProvider | undefined
+    if (guarded) {
+      prepared ??= await this.source.agents.preflight(space, task.chat, task.kind, { deployment: task.deployment, parent: needsParent ? undefined : parent, pilot })
+      if (pick) coordinator = await this.source.agents.preflight(space, space.id, pick.kind, pick)
+      if (coordinator && coordinator.provider.binding.route !== prepared.provider.binding.route) throw new Refusal('Worker and coordinator provider routes differ')
     }
+    const admit = () => {
+      if (!guarded) return
+      if (this.source.agents.get(space.id)?.launch !== parentLaunch) throw new Refusal('Parent identity changed during task admission')
+      if (this.source.quiescing) throw new Refusal('Shepherdr is stopping')
+      this.source.agents.admit(prepared!)
+      if (coordinator) this.source.agents.admit(coordinator)
+    }
+    admit()
+    let created = false
+    if (create) {
+      await this.source.files.exec(space.machine, ['mkdir', '-p', join(task.folder, '..')])
+      admit()
+      await this.git.addWorktree({ machine: task.machine, folder: task.repo }, task.folder, task.branch!, task.base!)
+      created = true
+    } else created = await this.git.ensureWorktree({ machine: task.machine, folder: task.repo }, task.folder, task.branch, task.base)
+    if (created) { task.includesPending = true; this.save(task) }
+    admit()
+    if (task.includesPending) { await this.seedIncludes(task); delete task.includesPending; this.save(task) }
+    admit()
+    await this.source.browsers?.close(task.id)
+    admit()
+    if (pick) parent = await this.source.agents.launch(space, space.id, pick.kind, '', { ...pick, prepared: coordinator })
+    if (guarded && parent && this.source.agents.get(space.id)?.launch !== parent.launch) throw new Refusal('Parent identity changed before worker launch')
     const wait = task.workflow === 'queued' ? `This task is queued after ${task.after?.join(', ')}. Read the brief, then wait for <go>. Do not start implementation yet.`
       : task.workflow === 'todo' ? 'Read the brief, then wait for the human’s go. Do not start implementation yet.'
       : task.workflow === 'ready' ? 'This task is already Ready. Preserve the work and wait for the human. Do not begin implementation or merge.' : ''

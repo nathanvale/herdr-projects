@@ -74,7 +74,25 @@ jobs:
           fi
           grep -F '(fail) Azure coordinator preflight refuses incompatible' /tmp/preflight-sensitivity.log
           grep -F '(fail) Azure task preflight refuses incompatible' /tmp/preflight-sensitivity.log
-      - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts
+      - name: Prove the final revision guard detects a settings race
+        shell: bash
+        run: |
+          cp server/core/agents.ts /tmp/admission-original.ts
+          trap 'cp /tmp/admission-original.ts server/core/agents.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/agents.ts')
+          source = path.read_text()
+          before = "this.admit(preparedProvider); this.checkParent(parentIdentity)\n      if (this.get(chat)?.launch !== launch)"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, "this.checkParent(parentIdentity)\n      if (this.get(chat)?.launch !== launch)"))
+          PYCODE
+          if bun test test/core-launch-admission.test.ts --test-name-pattern 'rechecks stale settings before-submit' > /tmp/admission-sensitivity.log 2>&1; then
+            cat /tmp/admission-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) launch admission rechecks stale settings before-submit' /tmp/admission-sensitivity.log
+      - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts test/core-launch-admission.test.ts test/core-client.test.ts test/core-mailbox.test.ts
       - run: bun x playwright-core install --only-shell chromium
       - run: bun test test/layout-restart.test.ts
       - run: bun run build
