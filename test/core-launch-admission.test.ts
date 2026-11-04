@@ -136,7 +136,7 @@ test('launch admission fences a recovered delayed operation and preserves replac
     }
   }
   try {
-    await expect(f.source.agents.launch(f.space, 'chat', 'codex', 'Wait', { readOnly: true })).rejects.toThrow('authority')
+    await expect(f.source.agents.launch(f.space, 'chat', 'codex', 'Wait', { readOnly: true })).rejects.toThrow(/Launch (authority|identity) changed/)
     await recovery
     expect(f.runs).toEqual([]); expect(second!.runs).toHaveLength(1)
     expect(second!.source.mailbox.active().map(grant => grant.session)).toEqual([second!.source.agents.get('chat')!.launch])
@@ -223,9 +223,10 @@ test('launch admission rejects parent replacement after recording', () => fixtur
   const parent = await f.source.agents.launch(f.space, f.space.id, 'claude', 'Wait')
   f.runs.length = 0
   const set = f.source.store.set.bind(f.source.store)
+  let replaced = false
   f.source.store.set = (kind, key, value) => {
     set(kind, key, value)
-    if (kind === 'agent-launch') queueMicrotask(() => set('agent', parent.chat, { ...parent, launch: 'replacement' }))
+    if (kind === 'agent-launch' && !replaced) { replaced = true; queueMicrotask(() => set('agent', parent.chat, { ...parent, launch: 'replacement' })) }
   }
   await expect(f.source.agents.launch(f.space, 'child', 'codex', 'Wait', { parent, readOnly: true })).rejects.toThrow('Parent identity changed')
   expect(f.runs).toEqual([])

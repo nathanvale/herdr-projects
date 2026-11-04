@@ -303,7 +303,6 @@ export class CoreAgents {
       await privateFile(log, '')
       await privateFile(launchFile, JSON.stringify({ argv, log }))
       record.transcript = log; record.transcriptFormat = 'codex-exec'; record.state = 'working'
-      this.store.set('agent', chat, record)
       argv = [remote?.bun ?? process.execPath, join(root, 'helper/core-review.ts'), launchFile]
     }
     const parent = options.parent && this.terminal(options.parent)
@@ -313,6 +312,7 @@ export class CoreAgents {
       this.admit(preparedProvider); this.checkParent(parentIdentity)
       if (this.get(chat)?.launch !== launch) throw Error('Launch identity changed before submission')
       this.launches.submitting(chat, launch)
+      if (headless) this.store.set('agent', chat, record)
     })()
     submitted = true // A timed-out core request may still have created its holder; never erase its mounted state.
     const terminal = await this.core.call<CoreTerminal>('terminal.run', {

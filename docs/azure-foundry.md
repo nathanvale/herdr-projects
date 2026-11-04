@@ -13,7 +13,7 @@ if the CLI already uses an organizational provider, that remains its default.
 Forcing a personal account would be a separate, compatibility-breaking decision.
 No CLI home, binary, launcher, service, shared configuration or lifecycle hook
 is replaced. Legacy agent records without a provider binding remain resumable
-under Personal. There is no destructive database migration or new dependency; optional selection records and a settings revision use the existing store.
+under Personal. There is no destructive database migration or new dependency. Optional selection, configuration revision and launch-attempt records use the existing store.
 
 Azure uses an explicit deployment per CLI instead of the personal model catalogue.
 The UI retains personal model choices for switching back. Existing effort settings
@@ -187,26 +187,65 @@ worker. Admission freezes the checked provider plan. Shutdown prevents terminal
 submission, and an unconfirmed durable launch blocks blind retry after a lost
 reply or application reload. These guards assume one application owner per home.
 
-### Remaining lifecycle qualification gaps
+### Launch admission and recovery boundaries
 
-The new selectors are restricted to new starts. Do not interpret the protocol
-coverage as complete crash recovery or support for rerouting live conversations.
+Configuration revisions contain settings and selection revisions, separately from
+launch identity. Recording an attempt does not invalidate its own admission.
+`CoreAgents` checks the admitted revision before claiming, recording and submitting,
+and checks the captured parent launch, terminal address and PID across asynchronous
+work. A changed revision refuses and requires fresh validation. Azure task starts
+preflight their worker and required coordinator before preparing the checkout,
+seeding includes or starting either process. Existing Personal task preparation
+and capacity holds remain unchanged.
 
-- New task startup currently prepares its worktree and can start its coordinator
-  before worker provider preflight. Move validation ahead of those side effects
-  before claiming a failed task start has no collateral effects.
-- A crash between durable launch recording and terminal submission can leave an
-  unconfirmed record with no process. Retry refusal prevents duplicates but needs
-  authoritative reconciliation to recover progress safely.
-- Restart admission is held in memory. A crash after stopping the old process but
-  before recording its replacement loses that admitted plan. Durable intent and
-  recovery behavior require separate implementation and fault-injection proof.
-- Parent and child admission are not one atomic operation. Parent identity and
-  route changes during asynchronous work need a dedicated concurrency case.
+`CoreLaunches` persists a per-chat claim and an attempt keyed by launch UUID:
 
-The throwaway lifecycle prototype is retained on the separate
-`prototype/azure-selection-lifecycle` branch. It models these boundaries without
-connecting to core or Azure; it is not shipped with the application.
+| Stored state | Meaning | Permitted next step |
+| --- | --- | --- |
+| `never-submitted` | No sender has crossed the durable dispatch gate | Cancel the exact claim transactionally, then validate a fresh attempt |
+| `submission-uncertain` | Dispatch may have occurred | Reconcile that launch identity; no blind retry or cancellation |
+| `confirmed` | Core returned a terminal or reconciliation matched its launch labels | Keep the existing terminal/conversation binding |
+| `cancelled` | The never-submitted attempt lost dispatch authority | Its delayed continuation must refuse; a new attempt can claim |
+
+The final revision/parent check and transition to uncertainty occur in one SQLite
+transaction. `CoreAgents.launch` immediately calls `CoreSession.call`, which calls
+`CoreClient.call` and writes the RPC synchronously. There is no intervening await
+or application callback, so settings actions in this application cannot interleave.
+The socket write, not recording an agent or allocating a grant, is the external
+submission boundary. A crash after committing uncertainty but before the write
+is deliberately conservative: it remains uncertain.
+
+The internal `recoverUnsubmitted(chat, launch)` operation requires that exact
+persisted claim, a never-submitted attempt and an unchanged conversation identity.
+Cancellation and the sender's final transition serialize on the same SQLite store.
+The old sender must check the claim before recording and dispatch; a late
+continuation cannot start or revoke its replacement's mailbox grant. This is
+application dispatch fencing, not a core cancellation API. Recovery is not wired
+to a button, scheduler or startup routine. Automatic versus user-triggered recovery
+remains an explicit product decision.
+
+Inspected core 0.1.16 exposes `terminal.run`, terminal inventory and live-terminal
+name uniqueness. It exposes no durable launch idempotency key or receipt proving
+an uncertain request can never submit. An empty inventory therefore authorizes
+nothing. Legacy records without a journal also cannot establish non-submission.
+Unknown outcomes keep their original identity until a matching terminal is found.
+
+The supported ownership boundary is one application owner per home. The launcher
+serializes startup/shutdown with its lifecycle lock; its lock is not held for the
+server lifetime. This change does not support bypassing the launcher to run
+multiple application servers, old binaries that ignore claims, or external SQLite
+writers racing configuration updates. An independently opened test source exercises
+claim fencing, not arbitrary multi-server support.
+
+Restart admission before the old process stops remains in memory. A crash after
+stopping that process but before claiming its replacement loses that plan; this
+change does not automatically recover it. Parent/child creation is not atomic:
+if a later check refuses, an already-created valid coordinator or checkout can
+remain. No live rerouting or deployment is included.
+
+The prototype's walkthrough Reset fix stays on the separate
+`prototype/azure-selection-lifecycle` branch. The prototype is a simulation and is
+not shipped with this application.
 
 ## Official contracts and version scope
 

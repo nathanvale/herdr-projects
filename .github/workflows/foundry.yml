@@ -94,7 +94,7 @@ jobs:
           grep -F '(fail) launch admission rechecks stale settings before-submit' /tmp/admission-sensitivity.log
       - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts test/core-launch-admission.test.ts test/core-client.test.ts test/core-mailbox.test.ts
       - run: bun x playwright-core install --only-shell chromium
-      - run: bun test test/layout-restart.test.ts
+      - run: bun test test/layout-restart.test.ts test/layout-azure-admission.test.ts
       - run: bun run build
       - uses: actions/upload-artifact@v4
         with:
@@ -102,4 +102,5 @@ jobs:
           path: |
             dist/
             generated/
+            test-results/azure-admission-settings.png
           retention-days: 3
