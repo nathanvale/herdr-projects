@@ -13,6 +13,7 @@ export class ProtectedUpdate {
     const store = this.source.store
     if (store.all<{ settled?: boolean }>('permission').some(row => !row.settled)) refusal('permission requests are still pending')
     if (store.all<{ state: string }>('pending-send').some(row => row.state !== 'cancelled')) refusal('message delivery is pending or unconfirmed')
+    if (this.source.agents.all().some(agent => agent.state === 'starting') || store.all('resume-start').length) refusal('a native start or resume still needs reconciliation')
     if (store.all<{ state: string }>('launch-attempt').some(row => !['confirmed', 'cancelled'].includes(row.state))) refusal('a launch is still unconfirmed')
     if (store.db.query('SELECT id FROM commands WHERE result IS NULL AND error IS NULL LIMIT 1').get()) refusal('a command is still in progress')
     if (this.source.tasks.all().some(row => !['merged', 'closed'].includes(row.workflow))) refusal('unfinished tasks can schedule more work')
@@ -20,11 +21,12 @@ export class ProtectedUpdate {
     if (store.all<{ state: string }>('pilot-run').some(row => row.state !== 'stopped')) refusal('an Autopilot run is retained')
     if (this.source.spaces().some(row => row.mode === 'autopilot')) refusal('an Autopilot space can wake')
   }
-  private workers(terminals: CoreTerminal[]) {
+  private workers(terminals: CoreTerminal[], recorded = true) {
     if (!Array.isArray(terminals) || terminals.some(row => !row || typeof row.address !== 'string' || typeof row.state !== 'string')) refusal('core returned an invalid inventory')
     if (terminals.some(row => row.state !== 'finished')) refusal('core has live or unconfirmed terminals')
     const installation = inspectHome(this.source.config.home)
     if (typeof installation !== 'object') refusal('installation identity is unconfirmed')
+    if (!recorded) return
     for (const agent of this.source.agents.all()) {
       const terminal = terminals.find(row => row.labels?.['shepherdr.installation'] === installation.id && row.labels?.['shepherdr.launch'] === agent.launch)
       if (!terminal || agent.pid !== undefined && terminal.pid !== agent.pid) refusal('a recorded worker has no confirmed matching exit')
@@ -35,19 +37,19 @@ export class ProtectedUpdate {
     this.stored()
     const client = await CoreClient.open(this.source.config.socket)
     try {
-      const result = await client.call<{ terminals: CoreTerminal[] }>('terminal.list')
+      const result = await client.call<{ terminals: CoreTerminal[] }>('terminal.list', { all: true })
       this.stored(); this.workers(result.terminals)
     } finally { client.close() }
   }
   async prepareStop() {
     if (this.source.quiescing) refusal('the application is already stopping')
     if (!this.source.connected()) refusal('core is disconnected')
-    this.stored(); this.workers([...this.source.core.current.terminals.values()])
+    this.stored(); this.workers([...this.source.core.current.terminals.values()], false)
     // New application starts/sends refuse; existing queued work already refused above.
     this.source.quiescing = true
     const epoch = this.source.core.current.epoch
     try {
-      const result = await this.source.core.call<{ terminals: CoreTerminal[] }>('terminal.list')
+      const result = await this.source.core.call<{ terminals: CoreTerminal[] }>('terminal.list', { all: true })
       if (!this.source.connected() || this.source.core.current.epoch !== epoch) refusal('core connection changed during admission')
       this.stored(); this.workers(result.terminals)
       // Keep admission closed until the operator invokes this app's own shutdown.

@@ -24,10 +24,12 @@ async function setup() {
   const home = mkdtempSync(join(tmpdir(), 'shep-idle-'))
   const config = { home, port: 0, session: 'test', socket: '/unused', binary: 'hc', plugins: false, idleOnly: true }
   const source = new CoreSource(config), boot = randomUUID()
+  source.store.set('space', 'space', { id: 'space', name: 'Test', machine: source.localMachineId(), folder: '/unused', base: 'main', prefix: 'EX', mode: 'regular', added: 1 })
   source.core.current.connected = true
   source.route = async () => undefined
   const calls: string[] = []
-  source.core.call = async <T>(method: string) => {
+  source.core.call = async <T>(method: string, params?: Record<string, unknown>) => {
+    expect(params).toEqual({ all: true })
     calls.push(method)
     if (method !== 'terminal.list') throw Error('Unexpected side effect: ' + method)
     return { terminals: [...source.core.current.terminals.values()] } as T
@@ -53,7 +55,7 @@ for (const state of ['live', 'missing', 'wrong-pid'] as const) test(`protected o
   expect((await f.stop()).code).toBe(1)
   expect(f.rows()).toEqual(before)
   expect(f.source.quiescing).toBe(false)
-  expect(f.stops()).toBe(0); expect(f.calls).toEqual([])
+  expect(f.stops()).toBe(0); expect(f.calls).toEqual(state === 'live' ? [] : ['terminal.list'])
 }))
 
 for (const [kind, value] of [
@@ -62,6 +64,7 @@ for (const [kind, value] of [
   ['pending-send', { id: 'pending', chat: 'chat', text: 'Unknown delivery', state: 'uncertain' }],
   ['launch-attempt', { launch: 'pending', state: 'submission-uncertain' }],
   ['launch-attempt', { launch: 'pending', state: 'never-submitted' }],
+  ['resume-start', { chat: 'chat', launch: 'pending', message: 'Do not resume automatically' }],
 ] as const) test(`protected operator preserves ${kind} ${'state' in value ? value.state : 'approval'}`, () => fixture(async f => {
   f.source.store.set(kind, 'pending', value)
   const before = f.rows()
@@ -87,10 +90,11 @@ test('protected operator closes admission during its fresh observation and reche
   f.source.core.call = async <T>() => { arrived(); await wait; return { terminals: [] } as T }
   const pending = f.stop()
   await ready
-  expect(f.source.quiescing).toBe(true)
-  await expect(f.source.agents.launch({ id: 'space', machine: 'local', name: 'Test', folder: '/unused', mode: 'regular', base: 'main', prefix: 'EX', added: 1 }, 'chat', 'claude', 'Do not start')).rejects.toThrow('stopping')
-  f.source.store.set('permission', 'late', { settled: false })
-  release()
+  try {
+    expect(f.source.quiescing).toBe(true)
+    await expect(f.source.agents.launch(f.source.space('space')!, 'chat', 'claude', 'Do not start')).rejects.toThrow('stopping')
+    f.source.store.set('permission', 'late', { settled: false })
+  } finally { release() }
   expect((await pending).code).toBe(1)
   expect(f.source.quiescing).toBe(false); expect(f.stops()).toBe(0)
   expect(f.source.store.get('permission', 'late')).toEqual({ settled: false })
@@ -150,7 +154,7 @@ test('protected launcher refuses through the executable without signaling the ap
 test('protected startup observes core before accepting an apparently idle home', () => fixture(async f => {
   const open = CoreClient.open
   let closed = false, observed = 0
-  CoreClient.open = async () => ({ call: async () => { observed++; return { terminals: [{ address: 'outside-records', state: 'live' }] } }, close: () => { closed = true } }) as unknown as CoreClient
+  CoreClient.open = async () => ({ call: async (method: string, params: unknown) => { expect(method).toBe('terminal.list'); expect(params).toEqual({ all: true }); observed++; return { terminals: [{ address: 'outside-records', state: 'live' }] } }, close: () => { closed = true } }) as unknown as CoreClient
   try {
     const before = f.rows()
     await expect(runCoreServer(f.config)).rejects.toThrow('core has live or unconfirmed terminals')
@@ -174,4 +178,15 @@ test('protected operator leaves the app running while a public action awaits', (
   } finally { release(); await action }
   expect((await f.stop()).code).toBe(0)
   expect(f.stops()).toBe(1)
+}))
+
+
+test('protected operator refuses a finished native start that could trigger session recovery', () => fixture(async f => {
+  const terminal = f.agent()
+  ;(f.source.core.current.terminals as Map<string, CoreTerminal>).set('t1', terminal)
+  f.source.store.set('agent', 'chat', { ...f.source.agents.get('chat')!, state: 'starting', session: 'retained-session' })
+  const before = f.rows()
+  expect((await f.stop()).code).toBe(1)
+  expect(f.rows()).toEqual(before); expect(f.stops()).toBe(0)
+  expect(f.source.quiescing).toBe(false); expect(f.calls).toEqual([])
 }))

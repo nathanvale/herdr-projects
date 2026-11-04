@@ -355,6 +355,7 @@ observation fails. Pending permissions, delivery, uncertain launches, in-flight
 public actions/commands, unfinished tasks, retained automations and Autopilot also
 refuse conservatively, without cancelling or releasing them.
 
+See the [proposed admission protocol](adr/0001-protected-preview-update-admission.md).
 Use `--idle-only` on both stop and start. Protected startup requires an explicit
 core session/socket and a reachable existing core; it does not start core. It
 checks before `CoreSource.start`, subscriptions, interrupted-permission cleanup or
