@@ -8,6 +8,7 @@ import type { CoreAgent, CoreSpace } from '../server/core/model.ts'
 import type { CoreTask } from '../server/core/tasks.ts'
 import type { Alert } from '../shared/types.ts'
 import type { Grant } from '../server/core/mailbox.ts'
+import { CoreStore } from '../server/core/store.ts'
 
 async function fixture(work: (f: ReturnType<typeof setup>) => Promise<void>) {
   const home = mkdtempSync(join(tmpdir(), 'shep-commands-')), source = new CoreSource({ home, socket: '/unused', binary: 'hc', session: 'test', port: 0 })
@@ -57,6 +58,30 @@ test('settings refuse worker mutation, forged or stale identity, and unknown con
   f.source.store.set('agent', c.agent.chat, { ...c.agent, launch: 'new' })
   await expect(c.cli('set', 'tasks.archiveAfter', '1 day')).rejects.toThrow('current')
   expect(f.source.settings.get('tasks.archiveAfter', 'app')).toBe('7 days')
+}))
+
+test('coordinator connection changes require human settings and preserve persisted revisions', () => fixture(async f => {
+  const coordinator = f.actor('app')
+  const rows = () => f.source.store.db.query('SELECT kind,key,value FROM records ORDER BY kind,key').all()
+  const before = rows()
+  for (const [key, value] of [
+    ['provider.route', 'Azure Foundry'], ['azure.subscription', '11111111-1111-1111-1111-111111111111'],
+    ['azure.claudeResource', 'untrusted'], ['azure.claudeAuth', 'Bearer token'],
+    ['azure.codexEndpoint', 'https://untrusted.openai.azure.com/openai/v1'], ['azure.codexAuth', 'API key'],
+  ]) for (const scope of [[], ['--machine'], ['--space', 'app']]) {
+    await expect(coordinator.cli('set', key!, value!, ...scope)).rejects.toThrow('agents cannot change credential destinations')
+    await expect(coordinator.cli('unset', key!, ...scope)).rejects.toThrow('agents cannot change credential destinations')
+  }
+  const reader = new CoreStore(f.source.config.home)
+  try { expect(reader.db.query('SELECT kind,key,value FROM records ORDER BY kind,key').all()).toEqual(before) }
+  finally { reader.close() }
+  // The actual human entry remains available. Ordinary settings and deployment choices retain their contracts.
+  await f.source.act({ type: 'setting', key: 'azure.claudeResource', value: 'operator-owned' })
+  await coordinator.cli('set', 'azure.claudeDeployment', 'claude-sonnet-5-5')
+  await coordinator.cli('set', 'tasks.archiveAfter', '5 days')
+  expect(f.source.settings.get('azure.claudeResource')).toBe('operator-owned')
+  expect(f.source.settings.get('azure.claudeDeployment')).toBe('claude-sonnet-5-5')
+  expect(f.source.settings.get('tasks.archiveAfter')).toBe('5 days')
 }))
 
 test('heartbeat settings return plain schedule words and plans do not enter settings routing', () => fixture(async f => {

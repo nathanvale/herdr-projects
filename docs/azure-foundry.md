@@ -140,6 +140,12 @@ returned to the UI; failures give a bounded repair path without exposing secrets
 
 ## Credential handling
 
+Provider connections, discovery subscription, resource/endpoint and authentication
+mode are human-owned Settings controls. Authenticated coordinator `set` and
+`unset` commands refuse these keys at every scope before changing state. Existing
+coordinator deployment choices and ordinary Personal settings remain available.
+An agent's instructions are not authority to redirect inherited credentials.
+
 Credential values never enter the provider planner, saved settings, generated
 launch files, command arguments, agent records or terminal environment overrides.
 Core persists caller environment overrides for restart, so sending a credential

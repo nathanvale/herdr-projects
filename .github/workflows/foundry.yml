@@ -128,7 +128,42 @@ jobs:
             exit 1
           fi
           grep -F '(fail) protected operator refuses live worker' /tmp/protected-sensitivity.log
-      - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts test/core-launch-admission.test.ts test/core-client.test.ts test/core-mailbox.test.ts test/core-launcher.test.ts test/core-operator.test.ts test/core-protected-update.test.ts
+      - name: Prove agents cannot redirect connection credentials
+        shell: bash
+        run: |
+          cp server/core/commands.ts /tmp/commands-original.ts
+          trap 'cp /tmp/commands-original.ts server/core/commands.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/commands.ts')
+          source = path.read_text()
+          line = next(line for line in source.splitlines(True) if 'agents cannot change credential destinations' in line)
+          path.write_text(source.replace(line, ''))
+          PYCODE
+          if bun test test/core-commands.test.ts --test-name-pattern 'coordinator connection changes' > /tmp/connection-sensitivity.log 2>&1; then
+            cat /tmp/connection-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) coordinator connection changes' /tmp/connection-sensitivity.log
+      - name: Prove task restart rejects a stale finished parent admission
+        shell: bash
+        run: |
+          cp server/core/tasks.ts /tmp/task-parent-original.ts
+          trap 'cp /tmp/task-parent-original.ts server/core/tasks.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/tasks.ts')
+          source = path.read_text()
+          before = "parent: parent && this.source.agents.terminal(parent)?.state === 'live' ? parent : undefined, pilot: profile"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'parent, pilot: profile'))
+          PYCODE
+          if bun test test/core-launch-admission.test.ts --test-name-pattern 'task restart replaces a finished coordinator' > /tmp/task-parent-sensitivity.log 2>&1; then
+            cat /tmp/task-parent-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) task restart replaces a finished coordinator' /tmp/task-parent-sensitivity.log
+      - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts test/core-launch-admission.test.ts test/core-client.test.ts test/core-mailbox.test.ts test/core-launcher.test.ts test/core-operator.test.ts test/core-protected-update.test.ts test/core-commands.test.ts
       - run: bun x playwright-core install --only-shell chromium
       - run: bun test test/layout-restart.test.ts test/layout-azure-admission.test.ts
       - run: bun run build

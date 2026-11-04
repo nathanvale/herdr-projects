@@ -61,6 +61,34 @@ function barrier() {
   return { wait, ready, release, reached }
 }
 
+for (const route of ['Personal', 'Azure Foundry'] as const) test(`task restart replaces a finished coordinator without stale parent admission (${route})`, () => fixture(async f => {
+  f.source.settings.set('provider.route', route)
+  f.source.machineConnected = () => true
+  const row = task(f)
+  const parent = await f.source.agents.launch(f.space, f.space.id, 'claude', 'Wait')
+  const worker = await f.source.agents.launch(f.space, row.chat, 'claude', 'Wait', { role: 'task', parent })
+  f.source.agents.terminal(parent)!.state = 'finished'
+  const oldTerminal = f.source.agents.terminal(worker)!, kills: string[] = []
+  const call = f.source.core.call.bind(f.source.core)
+  f.source.core.call = async <T>(method: string, params: Record<string, unknown> = {}, timeout?: number) => {
+    if (method !== 'terminal.kill') return call<T>(method, params, timeout)
+    kills.push(String(params.terminal)); oldTerminal.state = 'finished'; return {} as T
+  }
+  await f.source.act({ type: 'restart', chat: row.chat, kind: 'claude' })
+  const reader = new CoreStore(f.source.config.home)
+  try {
+    const newParent = reader.get<import('../server/core/model.ts').CoreAgent>('agent', f.space.id)!
+    const newWorker = reader.get<import('../server/core/model.ts').CoreAgent>('agent', row.chat)!
+    expect(newParent.launch).not.toBe(parent.launch); expect(newWorker.launch).not.toBe(worker.launch)
+    expect(reader.get<CoreTask>('task', row.id)).toMatchObject({ desc: row.desc, after: ['EX-0'], mergePolicy: 'ask', workflow: 'todo' })
+    expect(reader.get<CoreTask>('task', row.id)?.startError).toBeUndefined()
+    expect(newWorker.provider?.route).toBe(route === 'Personal' ? 'personal' : 'azure-foundry')
+    expect(f.runs).toHaveLength(4)
+    expect(f.runs[3]!.parent).toBe(newParent.terminal)
+    expect(kills).toEqual([oldTerminal.address])
+  } finally { reader.close() }
+}))
+
 for (const change of ['settings', 'selection'] as const) test(`launch admission refuses ${change} changed after admission`, () => fixture(async f => {
   const prepared = await f.source.agents.preflight(f.space, 'chat', 'claude')
   f.source.agents.admit(prepared)
