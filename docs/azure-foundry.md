@@ -62,7 +62,43 @@ Microsoft's Codex guide currently says Entra ID is unsupported. This UI therefor
 does not present a token, Azure CLI or command-helper mode for Codex. Generic
 OpenAI custom-provider features are not evidence of supported Azure authentication.
 
-## Credentials and conversations
+## Deployment discovery
+
+In **Settings → Agents**, set the Claude resource or Codex endpoint, then use
+**Refresh deployments** beside that CLI's deployment picker. **Enter manually**
+remains available without Azure CLI or management-plane permissions. Refreshing
+does not select a model, start an agent, send an inference request or modify the
+host's Azure login. Selecting a deployment applies to new conversations; the
+existing conversation fingerprint still refuses changing a retained chat's route.
+
+Discovery uses the local execution host's `az` on PATH and its existing login.
+An optional **Discovery subscription ID** pins a subscription UUID. Blank uses
+`az account show`; the resolved ID is passed explicitly to subsequent reads and
+shown with the inventory timestamp. This subscription controls discovery only,
+not the inference credential. Azure public cloud is required. Remote discovery
+is refused, and Everywhere requires exactly one execution machine.
+
+The read-only commands are `az account show`, `az cognitiveservices account list`
+and `az cognitiveservices account deployment list`. The resource must match the
+configured endpoint/resource uniquely in that subscription. The login needs read
+access to the subscription's Cognitive Services resource inventory and that
+resource's deployments. Resource-only permissions may be insufficient for the
+subscription inventory lookup; manual entry needs neither permission.
+
+The picker shows deployment IDs separately from model names and versions. It
+offers only `Succeeded` deployments with the corresponding format and advertised
+capability: OpenAI plus `responses` for Codex, Anthropic plus `chatCompletion` for
+Claude. Missing capability metadata is excluded; manual entry remains possible.
+Inventory does not prove CLI/tool compatibility, inference access or effort support.
+No fallback or automatic selection occurs when a deployment disappears.
+
+Results stay in memory at the requested settings scope and disappear on restart,
+failed refresh, or changes to the resource, endpoint or discovery subscription.
+Late responses cannot restore choices for an old configuration. Refresh explicitly
+after external login or deployment changes. Raw Azure CLI diagnostics are not
+returned to the UI; failures give a bounded repair path without exposing secrets.
+
+## Credential handling
 
 Credential values never enter the provider planner, saved settings, generated
 launch files, command arguments, agent records or terminal environment overrides.
@@ -104,6 +140,9 @@ Consulted on 4 November 2026:
 - [herdr-core 0.1.16 terminal launch](https://github.com/herdrdev/herdr-core/blob/v0.1.16/crates/herdr-core/src/api/run.rs)
   and [terminal records](https://github.com/herdrdev/herdr-core/blob/v0.1.16/crates/herdr-core/src/terminals.rs):
   caller overrides are saved as `restart_env`; the inherited environment is not.
+- [Azure CLI deployment inventory](https://learn.microsoft.com/en-us/cli/azure/cognitiveservices/account/deployment?view=azure-cli-latest)
+  and [deployment response schema](https://learn.microsoft.com/en-us/rest/api/aiservices/accountmanagement/deployments/list?view=rest-aiservices-accountmanagement-2024-10-01):
+  read-only listing, model identity, provisioning state and capability metadata.
 
 This draft targets Shepherdr v2.1.1, herdr-core 0.1.16, Claude Code 2.1.318 and
 Codex 0.166.0. These are inspected versions, not a claimed minimum or native
@@ -119,14 +158,22 @@ pass-through, legacy and same-provider resume, all advertised authentication
 choices, credential-reference-only launches, hooks, refusal before side effects,
 endpoint validation and scope inheritance/reset. Run in CI alongside the core
 settings/agents regressions. Repository policy permits only `bun run typecheck`
-locally. Manual UI proof uses a settings-only fixture with no core connection.
-These checks do not establish that native CLIs authenticate or execute on Azure.
+locally. `test/core-azure-deployments.test.ts` crosses CoreSettings and CoreFiles
+with a fake core protocol, checking filtering, explicit selection, subscription
+pinning, errors, scope and stale responses. CI deliberately disables capability
+filtering to establish that the regression fails, then restores and runs the suite.
+Protocol tests do not establish Azure authentication or native rendering.
 
 Before deployment, authorize isolated native acceptance for each desired CLI/auth
 combination. Verify provider/account/deployment/effort, real hook events, first turn,
 resume, token expiry behavior and stop/restart. Keep existing delivery running.
-No agents, model requests or live installation changes are required to review this
-patch; they have not been used to qualify this draft.
+An explicitly authorized isolated Mini canary on 4 November 2026 completed a
+Codex 0.166.0 Azure `gpt-6.1-sol` High first turn and resume in the same native
+session, with SessionStart, UserPromptSubmit and Stop hook evidence. Both disposable
+terminals were stopped. The native UI displayed both replies and the Azure Foundry
+label. The stock application's process/boot identity and core inventory remained
+unchanged across that canary. No Claude Azure runtime, token expiry, remote execution
+or additional cloud is qualified by this proof. No live installation was replaced.
 
 For an unused candidate, reset Provider to Personal (and any machine/space
 overrides), then stop only that candidate. The CLI homes and shared configuration

@@ -5,6 +5,7 @@ import type { SettingRow } from '../../shared/types.ts'
 
 export const PROVIDER_ROWS: SettingRow[] = [
   { group: 'Connection', key: 'provider.route', label: 'Provider', value: 'Personal', options: ['Personal', 'Azure Foundry'] },
+  { group: 'Azure Foundry', key: 'azure.subscription', label: 'Discovery subscription ID', value: '', text: true, hint: 'Optional. Blank uses the execution host Azure CLI subscription. Discovery does not change sign-in or inference credentials.' },
   { group: 'Azure Foundry', key: 'azure.claudeResource', label: 'Claude Azure resource', value: '', text: true },
   { group: 'Azure Foundry', key: 'azure.claudeDeployment', label: 'Claude deployment', value: '', text: true },
   { group: 'Azure Foundry', key: 'azure.claudeAuth', label: 'Claude authentication', value: 'Entra ID', options: ['Entra ID', 'API key', 'Bearer token'], warn: 'Entra ID uses the native Azure SDK credential chain. API key and bearer token use the execution host environment. Never enter credentials in settings.' },
@@ -42,6 +43,7 @@ function codexEndpoint(value: string): string {
 export function providerSetting(key: string, value: string): string {
   const clean = value.trim()
   if (!clean) return clean
+  if (key === 'azure.subscription' && !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(clean)) throw Error('Use an Azure subscription UUID, or leave blank for the host Azure CLI subscription')
   if (key === 'azure.codexEndpoint') return codexEndpoint(clean)
   if (key === 'azure.claudeResource' && !RESOURCE.test(clean)) throw Error('Set the Claude Azure resource name, not a URL')
   if (['azure.claudeDeployment', 'azure.codexDeployment'].includes(key) && !DEPLOYMENT.test(clean)) throw Error('Set an explicit Azure deployment name for this CLI in Agents settings')

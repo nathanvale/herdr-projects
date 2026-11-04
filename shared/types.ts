@@ -755,6 +755,8 @@ export interface SettingRow {
   value: string
   /** free text instead of a pick list */
   text?: boolean
+  /** Optional host inventory for a text value; manual entry remains available. */
+  discovery?: { refreshKey: string; busy: boolean; options: { value: string; label: string }[] }
   /** private instruction text, saved explicitly without a repository file */
   multiline?: boolean
   /** a trigger's time rule or event rules (Autopilot's heartbeat): shown in words, never as written */

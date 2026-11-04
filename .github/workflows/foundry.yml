@@ -37,7 +37,25 @@ jobs:
           grep -F '(fail) Personal claude launches' /tmp/provider-sensitivity.log
           grep -F '(fail) Personal codex launches' /tmp/provider-sensitivity.log
       # Protocol fakes only: no native coding agents, credentials, or model requests.
-      - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts
+      - name: Prove discovery rejects incompatible inventory
+        shell: bash
+        run: |
+          cp server/core/azure-deployments.ts /tmp/discovery-original.ts
+          trap 'cp /tmp/discovery-original.ts server/core/azure-deployments.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/azure-deployments.ts')
+          source = path.read_text()
+          before = "(capability === 'true' || capability === true)"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'true'))
+          PYCODE
+          if bun test test/core-azure-deployments.test.ts --test-name-pattern 'deployment discovery offers' > /tmp/discovery-sensitivity.log 2>&1; then
+            cat /tmp/discovery-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) deployment discovery offers' /tmp/discovery-sensitivity.log
+      - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts
       - run: bun run build
       - uses: actions/upload-artifact@v4
         with:

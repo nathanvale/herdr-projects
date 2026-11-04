@@ -1,4 +1,5 @@
 import { PROVIDER_ROWS, providerSetting } from './providers.ts'
+import { discoverDeployments } from './azure-deployments.ts'
 import type { SettingRow, SettingSection, RestartCli } from '../../shared/types.ts'
 import { SPEEDS, TABLE, nearest, parseCodex, type CliModels } from '../../shared/models.ts'
 import type { CoreStore } from './store.ts'
@@ -71,6 +72,7 @@ export class CoreSettings {
   private tried = new Map<string, number>()
   private unchecked = new Set<string>()
   private saving = false
+  private deployments = new Map<string, { busy: boolean; options: NonNullable<SettingRow['discovery']>['options']; hint?: string; warn?: string }>()
   constructor(private store: CoreStore, private files: CoreFiles, private spaces: () => CoreSpace[], private machineName: (id: string) => string, private changed: () => void) {}
   private chain(level = 'all'): string[] {
     if (level === 'all') return ['all']
@@ -106,6 +108,34 @@ export class CoreSettings {
     return pick ? names[pick] : key === 'task.fallback' ? 'off' : names[own]
   }
   get(key: string, level = 'all') { return this.pick(key, level).value }
+  /** Explicit refresh only; snapshots and application startup never query Azure. */
+  async refreshDeployments(kind: AgentKind, level = 'all') {
+    this.chain(level)
+    const machines = this.machinesAt(level)
+    if (machines.length !== 1) throw Error('Choose one machine or space before discovering Azure deployments')
+    const field = kind === 'claude' ? 'azure.claudeResource' : 'azure.codexEndpoint'
+    const endpoint = providerSetting(field, this.get(field, level))
+    if (!endpoint) throw Error('Set the Azure resource or endpoint before refreshing deployments')
+    const subscription = providerSetting('azure.subscription', this.get('azure.subscription', level))
+    const key = `${level}:${kind}`
+    if (this.deployments.get(key)?.busy) return
+    const state: NonNullable<ReturnType<typeof this.deployments.get>> = { busy: true, options: [] }
+    this.deployments.set(key, state); this.changed()
+    try {
+      const resource = kind === 'claude' ? endpoint : new URL(endpoint).hostname.split('.')[0]
+      const result = await discoverDeployments(this.files, machines[0], kind, resource, subscription)
+      state.options = result.options
+      state.hint = `${result.options.length} matching deployments. Subscription ${result.subscription}. Checked ${new Date().toISOString()}. Inventory is not a model-request or tool-use test.`
+    } catch (error) {
+      state.warn = error instanceof Error ? error.message : 'Azure discovery failed. Enter the deployment manually or refresh again.'
+    } finally { state.busy = false; this.changed() }
+  }
+  private deploymentRow(row: SettingRow, level: string): SettingRow {
+    const kind = row.key === 'azure.claudeDeployment' ? 'claude' : row.key === 'azure.codexDeployment' ? 'codex' : undefined
+    if (!kind) return row
+    const state = this.deployments.get(`${level}:${kind}`)
+    return { ...row, discovery: { refreshKey: `azure.${kind}Refresh`, busy: state?.busy ?? false, options: state?.options ?? [] }, hint: state?.hint ?? 'Refresh using the host Azure CLI login, or enter a deployment manually. Changes apply to new conversations; existing conversations keep their binding.', warn: state?.warn }
+  }
   set(key: string, value: string | null, level = 'all') {
     const row = rows.find(item => item.key === key)
     if (!row) throw new Error(`No setting ${key}`)
@@ -148,6 +178,8 @@ export class CoreSettings {
       }
       this.store.set('settings', `${level}\0${key}`, value)
     } else this.store.delete('settings', `${level}\0${key}`)
+    // A response already in flight retains its old object, so it cannot repopulate this map.
+    if (['azure.subscription', 'azure.claudeResource', 'azure.codexEndpoint'].includes(key)) this.deployments.clear()
     if (!this.saving) this.changed()
   }
   pilot(level: string) { return corePilotConfig(this, level) }
@@ -258,7 +290,7 @@ export class CoreSettings {
     return levels.flatMap(level => CATALOG.filter(section => (!section.global || level === 'all') && (level === 'all' || section.name !== 'Time zone') && (section.name !== 'Machine' || level === 'all' || level.startsWith('m:'))).map(section => ({ ...section, level, machine: this.machine(level), rows: [...section.rows.map(row => {
       if (row.key === 'alerts') return { ...row, value: devices.length ? devices.join(', ') : 'No device yet', ...(pushWarnings.length ? { warn: `${pushWarnings.length} device${pushWarnings.length === 1 ? '' : 's'} could not receive the last alert.\n${pushWarnings.slice(0, 3).join('\n')}` } : {}) }
       const picked = this.pick(row.key, level), inherited = this.chain(level).slice(1).map(at => this.pick(row.key, at)).find(value => value.level !== 'default') ?? { value: this.fallback(row.key, level), level: 'default' }
-      let dynamic = { ...row }
+      let dynamic = this.deploymentRow(row, level)
       if (row.key === 'provider.route') dynamic.warn = 'Personal preserves existing CLI configuration and sign-in; it does not force a personal account. Azure applies to new local launches and uses the deployment fields below. Selecting it does not verify authentication or runtime identity.'
       if (CHOSEN.has(row.key)) { const warn = this.cliWarning(row.key, level); if (warn) dynamic.warn = warn }
       let value = picked.value

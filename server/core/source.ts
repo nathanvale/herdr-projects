@@ -535,6 +535,9 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
       case 'artifact-send': case 'artifact-note': case 'artifact-say': case 'artifact-delete': return this.artifacts.act(action)
       case 'secret': case 'secret-saved': return this.secrets.act(action)
       case 'setting':
+        if (action.key === 'azure.claudeRefresh' || action.key === 'azure.codexRefresh') {
+          await this.settings.refreshDeployments(action.key === 'azure.claudeRefresh' ? 'claude' : 'codex', action.place || 'all'); return { ok: true }
+        }
         if (action.key === 'space.base') {
           if (!action.place || !action.value) throw new Error('Choose a repository space and branch.')
           await this.places.setBase(action.place, action.value); return { ok: true }
