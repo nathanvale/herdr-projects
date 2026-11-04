@@ -162,7 +162,7 @@ describe.skipIf(!browser)('Azure new-start selection', () => {
         on: { kind: 'claude', model: 'claude-sonnet-5-5', effort: 'high' }, onWords: 'Claude Code', working: false,
         want: { kind: 'claude', deployment: 'claude-sonnet-5-5', effort: 'high' },
         azure: { token: 'selection-version', level: place.id, locked, reason: locked ? 'Azure model selection is for new starts only.' : undefined },
-        clis: [{ kind: 'claude', name: 'Claude Code', models: [{ id: 'claude-sonnet-5-5', label: 'Sonnet 5.5', efforts: ['low', 'high'] }, { id: 'claude-haiku-5-5', label: 'Haiku 5.5', efforts: ['low'] }], azure: { deployment: 'claude-sonnet-5-5', busy: false, refreshKey: 'azure.claudeRefresh',
+        clis: [{ kind: 'claude', name: 'Claude Code', models: [{ id: 'claude-sonnet-5-5', label: 'Sonnet 5.5', efforts: ['low', 'high'] }, { id: 'claude-haiku-5-5', label: 'Haiku 5.5', efforts: ['low'] }], azure: { deployment: 'claude-haiku-5-5', busy: false, refreshKey: 'azure.claudeRefresh',
           options: inventory ? [{ value: 'claude-sonnet-5-5', label: 'Sonnet deployment', efforts: ['low', 'high'] }, { value: 'claude-haiku-5-5', label: 'Haiku deployment', efforts: ['low'] }] : [] } }]
       } }
       if (action.type === 'select-agent') return { ok: true }

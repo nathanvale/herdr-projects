@@ -413,7 +413,7 @@ for (const finished of [false, true]) test(`task restart validates required coor
   f.source.core.call = async <T>(method: string, params?: Record<string, unknown>, timeout?: number) => {
     calls.push(method); return call<T>(method, params, timeout)
   }
-  await expect(f.source.act({ type: 'restart', chat: row.chat, kind: 'claude' })).rejects.toThrow('endpoint')
+  await expect(f.source.act({ type: 'restart', chat: row.chat, kind: 'claude' })).rejects.toThrow('https://RESOURCE.openai.azure.com/openai/v1')
   expect(calls).not.toContain('terminal.kill')
   expect(f.source.agents.get(row.chat)).toEqual(worker)
   expect(f.source.agents.terminal(worker)?.state).toBe('live')
