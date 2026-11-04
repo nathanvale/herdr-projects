@@ -344,10 +344,15 @@ launcher start/stop, not agent activity. There is no supported core handover rec
 that proves an application restart preserves all in-flight permission responses.
 Do not repeat a live preview update on the strength of the earlier process check.
 
-The pending decision is whether protected updates refuse while any worker is live
-or unconfirmed, require a stronger permission/delivery handover protocol, or allow
-explicitly approved cancellation and notification. No policy has been selected,
-no new global default is implied, and no protection flag is implemented yet.
+Nathan selected the protected-update policy: refuse while any worker is live or
+unconfirmed and leave the current application running. No global start/stop default
+changes are implied. The protected path is not implemented yet. It needs an
+application-owned admission barrier, a current core observation, checks of persisted
+launch/delivery/permission state and a second check before startup effects. A
+standalone process/database snapshot cannot supply those guarantees. Existing
+binaries without that protocol must refuse protected updates rather than fall back
+to ordinary stop/start. Recovery policy and changes inside existing conversations
+remain separate decisions.
 
 ## Final native acceptance plan, not executed
 
@@ -360,7 +365,11 @@ candidate commit and CI artifact hashes, CLI/core versions, isolated app home an
 core session, disposable repository, deployment IDs, authentication methods and
 requested effort. Include protected application boot/PID and worker/session
 identities, a settings snapshot hash, existing pending permission/delivery counts,
-and a finite prompt/agent budget. Keep credential values outside the manifest.
+and a finite prompt/agent budget. The proposed Azure-only budget is four disposable
+agents (one task and one coordinator per CLI) and eight tiny turns (first reply and
+same-binding resume for each). No tool execution or implementation work is part of
+those briefs. This budget is a proposal, not launch authorization. Keep credential
+values outside the manifest.
 Resolve the protected-update policy before changing another running preview.
 
 For each desired CLI, qualify these cases through the actual task and coordinator
