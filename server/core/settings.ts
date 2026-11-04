@@ -1,4 +1,4 @@
-import { PROVIDER_ROWS } from './providers.ts'
+import { PROVIDER_ROWS, providerSetting } from './providers.ts'
 import type { SettingRow, SettingSection, RestartCli } from '../../shared/types.ts'
 import { SPEEDS, TABLE, nearest, parseCodex, type CliModels } from '../../shared/models.ts'
 import type { CoreStore } from './store.ts'
@@ -116,6 +116,7 @@ export class CoreSettings {
     if (key === 'time.zone' && level !== 'all') throw new Error('Time zone applies Everywhere')
     if (value !== null) {
       if (typeof value !== 'string' || value.length > (row.multiline ? 32_000 : key === 'autopilot.hosts' ? 32768 : key === 'autopilot.secrets' ? 16384 : 512)) throw new Error('Setting is too long')
+      if (key.startsWith('azure.')) value = providerSetting(key, value)
       if (key === 'time.zone') value = value.trim()
       if (key === 'time.zone' && !validZone(value)) throw new Error('Choose a valid time zone, such as Europe/Stockholm')
       if (key === 'heartbeat.when') value = timeRule(value)
@@ -258,7 +259,7 @@ export class CoreSettings {
       if (row.key === 'alerts') return { ...row, value: devices.length ? devices.join(', ') : 'No device yet', ...(pushWarnings.length ? { warn: `${pushWarnings.length} device${pushWarnings.length === 1 ? '' : 's'} could not receive the last alert.\n${pushWarnings.slice(0, 3).join('\n')}` } : {}) }
       const picked = this.pick(row.key, level), inherited = this.chain(level).slice(1).map(at => this.pick(row.key, at)).find(value => value.level !== 'default') ?? { value: this.fallback(row.key, level), level: 'default' }
       let dynamic = { ...row }
-      if (row.key === 'provider.route') dynamic.warn = 'Applies to all new launches in this scope. Azure uses the explicit deployment fields below, not the personal model catalogue. Authentication and runtime identity are not verified by selecting a provider.'
+      if (row.key === 'provider.route') dynamic.warn = 'Personal preserves existing CLI configuration and sign-in; it does not force a personal account. Azure applies to new local launches and uses the deployment fields below. Selecting it does not verify authentication or runtime identity.'
       if (CHOSEN.has(row.key)) { const warn = this.cliWarning(row.key, level); if (warn) dynamic.warn = warn }
       let value = picked.value
       if (/\.(model|effort)$/.test(row.key)) {

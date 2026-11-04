@@ -86,14 +86,20 @@ export class CoreAgents {
     previous = this.get(chat)
     if (previous && this.terminal(previous)?.state === 'live') throw new Error('This agent is already running')
     if (previous && !previous.terminal) throw new Error('The previous start is still unconfirmed. Reconnect core and check its state before retrying.')
-    const provider = providerPlan(kind, key => this.settings?.get(key, space.id) ?? '', process.env)
-    if (previous && (previous.provider?.fingerprint ?? 'personal') !== provider.binding.fingerprint) throw Error('Provider or Azure deployment changed. Start a separate conversation; this session cannot be rerouted.')
+    const provider = providerPlan(kind, key => this.settings?.get(key, space.id) ?? '')
+    if (previous && (previous.provider?.fingerprint ?? 'personal') !== provider.binding.fingerprint) throw Error('Provider, Azure deployment or authentication method changed. Start a separate conversation; this session cannot be rerouted.')
     if (options.parent && (options.parent.provider?.route ?? 'personal') !== provider.binding.route) throw Error('Child agents cannot switch between Personal and Azure Foundry')
     if (provider.binding.route === 'azure-foundry' && options.pilot) throw Error('Azure Foundry is not yet supported in Autopilot')
     if (provider.model) options = { ...options, model: provider.model, speed: undefined }
-    if (previous) this.store.set('agent-launch', previous.launch, previous)
     const on = await this.route(space.machine)
     if (on && provider.binding.route === 'azure-foundry') throw Error('Azure Foundry requires a local execution machine; remote credential delivery is not configured')
+    if (provider.credential) {
+      // Only an exit status crosses core. terminal.run env overrides are persisted by core.
+      try {
+        await this.files.exec(space.machine, [process.execPath, '-e', 'process.exit(process.env[process.argv[1]]?.trim() ? 0 : 1)', provider.credential], undefined, undefined, 5)
+      } catch { throw Error(`Azure authentication requires ${provider.credential} in the local core process environment. Configure it through your credential owner; no agent was started.`) }
+    }
+    if (previous) this.store.set('agent-launch', previous.launch, previous)
     const remote = on ? await this.remotes.prepare(space.machine) : undefined
     const launch = randomUUID()
     const role = options.role ?? 'coordinator'
@@ -120,7 +126,7 @@ export class CoreAgents {
     const command = options.pilot ? '/run/shepherdr/bun /run/shepherdr/core-pilot-hook.ts' : `${quote(remote?.bun ?? process.execPath)} ${quote(join(root, 'helper/core-hook.ts'))}`
     const settings = join(directory, `${grant.id}.settings.json`)
     const hooks = Object.fromEntries(EVENTS.map(event => [event, [{ hooks: [{ type: 'command', command, timeout: event === 'PermissionRequest' ? 3600 : 5 }] }]]))
-    await privateFile(settings, JSON.stringify({ env: provider.claudeEnv, ...(role === 'reviewer' || options.readOnly ? { hooks } : { hooks, permissions: { allow: ownRules(join(root, 'bin/shepherdr')) } }) }))
+    await privateFile(settings, JSON.stringify({ ...(Object.keys(provider.claudeEnv).length ? { env: provider.claudeEnv } : {}), ...(role === 'reviewer' || options.readOnly ? { hooks } : { hooks, permissions: { allow: ownRules(join(root, 'bin/shepherdr')) } }) }))
     const instructions = join(directory, `${grant.id}.instructions.md`)
     const privateWords = this.settings?.instructions(role === 'task' ? 'task' : role === 'reviewer' ? 'reviewer' : 'coordinator', space.id) || ''
     const skill = (name: string) => readFileSync(join(import.meta.dir, `../../skill/${name}/SKILL.md`), 'utf8')

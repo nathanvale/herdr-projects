@@ -17,5 +17,24 @@ jobs:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run typecheck
+      - name: Prove the default-preservation regression detects a provider override
+        shell: bash
+        run: |
+          cp server/core/providers.ts /tmp/providers-original.ts
+          trap 'cp /tmp/providers-original.ts server/core/providers.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/providers.ts')
+          source = path.read_text()
+          before = "fingerprint: 'personal' }, env: {}"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, "fingerprint: 'personal' }, env: { OPENAI_BASE_URL: 'https://invalid.example' }"))
+          PYCODE
+          if bun test test/core-providers.test.ts --test-name-pattern 'Personal .* launches' > /tmp/provider-sensitivity.log 2>&1; then
+            cat /tmp/provider-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) Personal claude launches' /tmp/provider-sensitivity.log
+          grep -F '(fail) Personal codex launches' /tmp/provider-sensitivity.log
       # Protocol fakes only: no native coding agents, credentials, or model requests.
       - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts
