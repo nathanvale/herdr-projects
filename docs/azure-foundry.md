@@ -399,23 +399,57 @@ semantics, so omitting the flag is not protected. This code is not installed in
 the running preview; its older operator cannot perform protected stop. Recovery policy and changes inside existing conversations
 remain separate decisions.
 
-## Final native acceptance plan, not executed
+## Native acceptance status and next-run plan
 
-The prior canaries qualify their earlier candidate only. The final model-selector
-candidate needs bounded native acceptance after explicit authorization. Do not use
-live delivery chats or tasks for this proof.
+The isolated acceptance of candidate `6db97a4` proved first reply and same-session
+resume for both coordinators, but stopped before task-worker acceptance. Six turns
+ran across two coordinators: first, resume with one authenticated `task add`, and
+an automatic failed-task news turn each. No task worker started. Both resumes
+replied, but their routing envelopes prevented delivery acknowledgement. All proof
+workers exited; protected stop correctly refused the two retained pending sends.
+That instance remains running. Do not clear its records or bypass protected stop.
+
+The repair records the hash of the complete native prompt and its unique launch
+identity in the existing pending-send record, in the final submission transaction.
+Transcript acknowledgement runs before routing-envelope filtering. An exact
+current-launch observation can settle a sending or uncertain receipt without
+retrying. A later failed core response cannot resurrect that acknowledged send.
+Legacy records without receipts remain subject to the existing refusal rules;
+this change does not migrate or guess away the retained proof's pending sends.
+Transcript transformations beyond the readers' whitespace trimming fail closed.
+Automatic versus user-triggered non-submission recovery is still undecided.
+
+A new candidate needs separate bounded authorization and a new isolated home/core.
+The previously consumed acceptance allowance does not authorize another run. Do
+not use live delivery chats, retained proof chats or tasks for this proof.
 
 Before authorization, prepare a private evidence manifest containing the exact
 candidate commit and CI artifact hashes, CLI/core versions, isolated app home and
 core session, disposable repository, deployment IDs, authentication methods and
 requested effort. Include protected application boot/PID and worker/session
 identities, a settings snapshot hash, existing pending permission/delivery counts,
-and a finite prompt/agent budget. The proposed Azure-only budget is four disposable
-agents (one task and one coordinator per CLI) and eight tiny turns (first reply and
-same-binding resume for each). No tool execution or implementation work is part of
-those briefs. This budget is a proposal, not launch authorization. Keep credential
+and a finite prompt/agent budget. Proposed budget: four disposable conversations
+(one task and one coordinator per CLI), eight intentional first/resume turns,
+two coordinator `task add` calls within those turns, and at most four additional
+application-news turns, twelve total. The extra allowance is a hard ceiling, not
+an instruction to generate news. Count every observed native turn, including
+`<news>`, restart notices and unexpected activity. Core `notes = false` does not
+disable Shepherdr task news. No other tool execution or implementation work is
+part of the briefs. This is a proposal, not launch authorization. Keep credential
 values outside the manifest.
-Resolve the protected-update policy before changing another running preview.
+
+Prepare valid routes before task creation; do not deliberately break deployment
+settings to save an unstarted task. Supported task creation starts a waiting
+worker, even for a “for later” task. Save the task role's
+deployment and effort in Settings before the authenticated creation command;
+verify the resulting task's captured choice for first-start proof. Keep browser
+save-only task selection covered by CI until a supported native unstarted-task
+path is qualified. Do not seed the database or borrow a coordinator credential.
+Before each intentional turn, inventory pending news and delivery and reserve the
+remaining budget. Stop only proof workers if unexpected tool use, an unknown
+outcome or the turn ceiling occurs. Do not silently increase the allowance.
+The protected-update policy is settled: refuse while workers or delivery remain
+live or unconfirmed, leaving the current app running.
 
 For each desired CLI, qualify these cases through the actual task and coordinator
 controls, using separate disposable conversations:

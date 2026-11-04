@@ -2,6 +2,13 @@ import type { ProviderBinding } from './providers.ts'
 import type { AgentRuntime, Mode } from '../../shared/types.ts'
 
 export type AgentKind = 'claude' | 'codex'
+/** Durable delivery state. A submission receipt acknowledges observation, never authorizes a retry. */
+export interface PendingSend {
+  id: string; chat: string; text: string; launch?: string
+  state: 'queued' | 'sending' | 'uncertain' | 'cancelled'
+  quiet?: boolean; work?: boolean; human?: boolean
+  submission?: { launch: string; promptHash: string }
+}
 export interface CoreSpace {
   id: string
   name: string

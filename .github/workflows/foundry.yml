@@ -289,6 +289,26 @@ jobs:
             exit 1
           fi
           grep -F '(fail) task selection reset restores' /tmp/task-selection-sensitivity.log
+      - run: bun test test/core-launch-admission.test.ts --test-name-pattern 'launch delivery'
+      - name: Prove native delivery regression detects the premature restart filter
+        shell: bash
+        run: |
+          cp server/core/logs.ts /tmp/delivery-original.ts
+          trap 'cp /tmp/delivery-original.ts server/core/logs.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/logs.ts')
+          source = path.read_text()
+          before = "    if (event.kind !== 'user' && event.kind !== 'agent') return"
+          assert source.count(before) == 1
+          source = source.replace(before, before + "\n    if (event.kind === 'user' && event.text.startsWith('<restart>')) return")
+          path.write_text(source)
+          PYCODE
+          if bun test test/core-launch-admission.test.ts --test-name-pattern 'launch delivery acknowledges exact native prompt' > /tmp/delivery-sensitivity.log 2>&1; then
+            cat /tmp/delivery-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) launch delivery acknowledges exact native prompt' /tmp/delivery-sensitivity.log
       - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts test/core-launch-admission.test.ts test/core-client.test.ts test/core-mailbox.test.ts test/core-launcher.test.ts test/core-operator.test.ts test/core-protected-update.test.ts test/core-commands.test.ts
       - run: bun x playwright-core install --only-shell chromium
       - run: bun test test/layout-restart.test.ts test/layout-azure-admission.test.ts

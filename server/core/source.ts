@@ -19,7 +19,7 @@ import { Mailbox, type Grant, type MailRequest } from './mailbox.ts'
 import { prepareHome } from './home.ts'
 import type { CoreConfig } from './config.ts'
 import { coreEnvironment } from './config.ts'
-import type { AgentKind, CoreAgent, CoreSpace } from './model.ts'
+import type { AgentKind, CoreAgent, CoreSpace, PendingSend } from './model.ts'
 import { CoreTasks, type CoreTask } from './tasks.ts'
 import { CoreCommands } from './commands.ts'
 import { CoreTaskNews } from './news.ts'
@@ -61,7 +61,6 @@ interface Machine { id: string; name: string; state: string; host?: string; vers
 interface Permission { id: string; chat: string; grant: string; question: Question; expires: number; settled?: boolean; allow?: boolean; at?: number; native?: NativeAsk; grants?: unknown[]; reply?: PermissionAnswer; tool?: string; hash?: string; turn?: string; sub?: string }
 /** the most of an agent's last words a card with no question carries: its card shows a few lines */
 const NEED_TEXT = 1000
-interface PendingSend { id: string; chat: string; text: string; launch?: string; state: 'queued' | 'sending' | 'uncertain' | 'cancelled'; quiet?: boolean; work?: boolean; human?: boolean }
 
 /** Product state is Shepherdr's; terminals, machine commands, files and agent children are core's. */
 export class CoreSource extends Emitter<SourceEvents> implements Source {
@@ -663,7 +662,7 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
     let progressed = false
     try {
       const pending = this.store.all<PendingSend>('pending-send').filter(item => item.chat === chat && item.state === 'queued')
-      for (const item of pending) {
+      for (let item of pending) {
         if (this.quiescing) return
         if (item.id.startsWith('provider-retry-') && !this.store.get('pending-send', item.id)) continue
         const task = this.tasks.forChat(chat)
@@ -678,18 +677,23 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
         item.state = 'sending'; this.store.set('pending-send', item.id, item)
         try {
           if (!item.id.startsWith('provider-retry-')) this.providerRetries.clear(chat)
-          if (task) await this.tasks.deliver(task.id, chat, item.text, !!item.launch && !item.work, item.human)
+          if (task) await this.tasks.deliver(task.id, chat, item.text, !!item.launch && !item.work, item.human, item.id)
           else if (agent && this.agents.terminal(agent)?.state === 'live') await this.agents.send(chat, item.text)
           else {
             if (space.mode === 'autopilot' || agent?.pilot) throw new Error('This contained coordinator has stopped; change mode or explicitly restart its contained run before sending')
             const pick = this.agents.selection(chat) ?? this.settings.agent('coordinator', space.id)
-            await this.agents.launch(space, chat, agent?.kind ?? pick.kind, item.text, agent ? { model: agent.model, effort: agent.effort, speed: agent.speed, resume: true } : { ...pick, resume: true })
+            await this.agents.launch(space, chat, agent?.kind ?? pick.kind, item.text, { ...(agent ? { model: agent.model, effort: agent.effort, speed: agent.speed } : pick), resume: true, delivery: item.id })
           }
           progressed = true
           const message = this.store.get<Message>(`message:${chat}`, item.id)
           if (message) { this.store.set(`message:${chat}`, item.id, { ...message, waiting: false, waitsFor: undefined }); this.emit('chat', chat) }
         } catch (error) {
-          if (error instanceof CoreError && ['blocked', 'status_mismatch', 'busy'].includes(error.kind)) {
+          // The native log may acknowledge while the core response is in flight.
+          // Preserve the persisted receipt, and never resurrect an acknowledged send.
+          const saved = this.store.get<PendingSend>('pending-send', item.id)
+          if (!saved) { progressed = true; continue }
+          item = saved
+          if (!item.submission && error instanceof CoreError && ['blocked', 'status_mismatch', 'busy'].includes(error.kind)) {
             item.state = 'queued'; this.store.set('pending-send', item.id, item); this.emit('chat', chat); return
           }
           item.state = 'uncertain'; this.store.set('pending-send', item.id, item)

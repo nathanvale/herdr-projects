@@ -1,12 +1,14 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CoreSession } from '../server/core/session.ts'
 import { CoreSource } from '../server/core/source.ts'
 import { CoreStore } from '../server/core/store.ts'
 import type { LaunchAttempt } from '../server/core/launches.ts'
-import type { CoreSpace } from '../server/core/model.ts'
+import { CoreLogs } from '../server/core/logs.ts'
+import { runChild } from './child.ts'
+import type { CoreAgent, PendingSend, CoreSpace } from '../server/core/model.ts'
 import type { CoreTerminal } from '../server/core/protocol.ts'
 import type { CoreTask } from '../server/core/tasks.ts'
 
@@ -479,3 +481,152 @@ test('task selector supplies known model effort metadata without discovery', () 
   ]) } })
   expect(f.runs).toEqual([]); expect(f.effects).toEqual([])
 }))
+
+
+// Production send entry -> launch -> persisted receipt -> real native reader.
+// Only the existing core/worktree adapters are fake; no coding CLI is executed.
+async function deliveryStart(f: ReturnType<typeof setup>, kind: 'claude' | 'codex', role: 'coordinator' | 'task', resume: boolean) {
+  const row = role === 'task' ? task(f) : undefined
+  if (row) {
+    row.kind = kind; row.deployment = kind === 'claude' ? 'claude-sonnet-5-5' : 'gpt-6.1-sol'; row.workflow = 'working'
+    f.source.store.set('task', row.id, row)
+    await f.source.agents.launch(f.space, f.space.id, kind, 'Wait')
+  } else f.source.settings.set('coordinator.agent', kind === 'claude' ? 'Claude Code' : 'Codex')
+  const chat = row?.chat ?? f.space.id
+  if (resume) {
+    const agent = await f.source.agents.launch(f.space, chat, kind, 'Earlier turn', { role })
+    f.source.agents.update(agent, { session: 'retained-native-session', state: 'idle' })
+    f.source.agents.terminal(agent)!.state = 'finished'
+  }
+  return { chat, row }
+}
+async function sendDelivery(f: ReturnType<typeof setup>, chat: string) {
+  await f.source.act({ type: 'send', chat, text: 'Continue with the same choice', cid: 'delivery-proof' })
+  // Task send releases its existing action lock before the queued flush can run.
+  for (let n = 0; n < 200; n++) {
+    const item = f.source.store.get<PendingSend>('pending-send', 'delivery-proof')
+    if (item?.state === 'uncertain' || item?.submission && f.source.agents.get(chat)?.terminal) return
+    await Bun.sleep(5)
+  }
+  throw Error('The production send did not reach submission')
+}
+function deliveryLog(f: ReturnType<typeof setup>, chat: string) {
+  const agent = f.source.agents.get(chat)!, path = join(f.source.config.home, 'delivery-native.jsonl')
+  writeFileSync(path, '')
+  f.source.agents.update(agent, { transcript: path })
+  f.source.agents.bun = async () => process.execPath
+  f.source.files.exec = (_machine, argv, cwd, input) => runChild(argv, { cwd, input })
+  const faults: string[] = []
+  const logs = new CoreLogs(f.source.agents, f.source.files, f.source.store, () => {}, (_chat, error) => faults.push(error))
+  let sequence = 0
+  const observe = async (text: string) => {
+    const id = `native-${++sequence}`, timestamp = new Date().toISOString()
+    appendFileSync(path, JSON.stringify(agent.kind === 'claude'
+      ? { uuid: id, timestamp, type: 'user', message: { role: 'user', content: text } }
+      : { timestamp, type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } }) + '\n')
+    await logs.poll()
+    expect(faults).toEqual([])
+  }
+  return { logs, observe }
+}
+for (const kind of ['claude', 'codex'] as const) for (const role of ['coordinator', 'task'] as const) for (const resume of [false, true]) {
+  test(`launch delivery acknowledges exact native prompt (${kind}, ${role}, ${resume ? 'resume' : 'fresh'})`, () => fixture(async f => {
+    const { chat, row } = await deliveryStart(f, kind, role, resume)
+    await sendDelivery(f, chat)
+    const agent = f.source.agents.get(chat)!, argv = f.runs.at(-1)!.argv as string[], wire = argv.at(-1)!
+    const reader = new CoreStore(f.source.config.home), log = deliveryLog(f, chat)
+    try {
+      expect(argv[0]).toBe(kind)
+      expect(agent.session).toBe(resume ? 'retained-native-session' : undefined)
+      expect(wire).toContain(agent.launch)
+      expect(reader.get<PendingSend>('pending-send', 'delivery-proof')).toMatchObject({ state: 'sending', submission: { launch: agent.launch } })
+      // Same human suffix, a changed envelope, or an old launch is not this dispatch.
+      await log.observe('Continue with the same choice')
+      await log.observe(wire.replace(agent.launch, 'old-launch'))
+      await log.observe(wire + ' altered')
+      expect(reader.get<PendingSend>('pending-send', 'delivery-proof')?.state).toBe('sending')
+      await log.observe(wire)
+      expect(reader.get('pending-send', 'delivery-proof')).toBeUndefined()
+      expect(reader.get(`message:${chat}`, 'delivery-proof')).toMatchObject({ text: 'Continue with the same choice', waiting: false, source: expect.any(String) })
+      expect(log.logs.messages(chat).filter(message => message.text === wire)).toEqual([])
+      if (row) expect(reader.get<CoreTask>('task', row.id)).toMatchObject({ after: ['EX-0'], desc: 'Keep this brief and wait', mergePolicy: 'ask' })
+      const count = f.runs.length
+      await log.observe(wire); f.source.retryPending(); await Bun.sleep(0)
+      expect(f.runs).toHaveLength(count)
+    } finally { log.logs.stop(); reader.close() }
+  }))
+}
+for (const kind of ['claude', 'codex'] as const) for (const role of ['coordinator', 'task'] as const) {
+  test(`launch delivery reconciles lost reply after reopening (${kind}, ${role})`, async () => {
+    const home = mkdtempSync(join(tmpdir(), 'shep-delivery-reopen-'))
+    let f = setup(home)
+    try {
+      const { chat } = await deliveryStart(f, kind, role, true), count = f.runs.length
+      const call = f.source.core.call.bind(f.source.core)
+      f.source.core.call = async <T>(method: string, params: Record<string, unknown> = {}, timeout?: number) => {
+        const result = await call<T>(method, params, timeout)
+        if (method === 'terminal.run') throw Error('Lost reply after native submission')
+        return result
+      }
+      await sendDelivery(f, chat)
+      expect(f.runs).toHaveLength(count + 1)
+      const wire = (f.runs.at(-1)!.argv as string[]).at(-1)!, launch = f.source.agents.get(chat)!.launch
+      expect(f.source.store.get<PendingSend>('pending-send', 'delivery-proof')).toMatchObject({ state: 'uncertain', submission: { launch } })
+      f.close(); f = setup(home)
+      const log = deliveryLog(f, chat), reader = new CoreStore(home)
+      try {
+        f.source.retryPending(); await Bun.sleep(0)
+        await log.observe('Continue with the same choice')
+        expect(reader.get<PendingSend>('pending-send', 'delivery-proof')?.state).toBe('uncertain')
+        await log.observe(wire)
+        expect(reader.get('pending-send', 'delivery-proof')).toBeUndefined()
+        expect(reader.get(`message:${chat}`, 'delivery-proof')).toMatchObject({ waiting: false, source: expect.any(String) })
+        expect(reader.get<CoreAgent>('agent', chat)?.launch).toBe(launch)
+        expect(f.runs).toEqual([])
+      } finally { log.logs.stop(); reader.close() }
+    } finally { f.close(); rmSync(home, { recursive: true, force: true }) }
+  })
+}
+
+for (const kind of ['claude', 'codex'] as const) test(`launch delivery is not resurrected by a late lost reply (${kind})`, () => fixture(async f => {
+  f.source.settings.set('provider.route', 'Personal')
+  const { chat } = await deliveryStart(f, kind, 'coordinator', true)
+  const call = f.source.core.call.bind(f.source.core)
+  f.source.core.call = async <T>(method: string, params: Record<string, unknown> = {}, timeout?: number) => {
+    const result = await call<T>(method, params, timeout)
+    if (method === 'terminal.run') {
+      const log = deliveryLog(f, chat)
+      try { await log.observe((params.argv as string[]).at(-1)!) } finally { log.logs.stop() }
+      throw Error('Reply lost after the native log acknowledged')
+    }
+    return result
+  }
+  await f.source.act({ type: 'send', chat, text: 'Continue with the same choice', cid: 'delivery-proof' })
+  const reader = new CoreStore(f.source.config.home)
+  try {
+    expect(reader.get('pending-send', 'delivery-proof')).toBeUndefined()
+    expect(reader.get(`message:${chat}`, 'delivery-proof')).toMatchObject({ waiting: false, source: expect.any(String) })
+    expect(f.source.agents.get(chat)?.provider?.route).toBe('personal')
+    expect(f.runs).toHaveLength(2)
+  } finally { reader.close() }
+}))
+
+for (const reason of ['queued', 'cancelled', 'replacement-launch', 'legacy-without-receipt'] as const) {
+  test(`launch delivery does not acknowledge ${reason}`, () => fixture(async f => {
+    const { chat } = await deliveryStart(f, 'claude', 'coordinator', true)
+    await sendDelivery(f, chat)
+    const wire = (f.runs.at(-1)!.argv as string[]).at(-1)!
+    const pending = f.source.store.get<PendingSend>('pending-send', 'delivery-proof')!
+    if (reason === 'queued' || reason === 'cancelled') pending.state = reason
+    if (reason === 'legacy-without-receipt') { pending.state = 'uncertain'; delete pending.submission }
+    if (reason === 'replacement-launch') f.source.agents.update(f.source.agents.get(chat)!, { launch: 'replacement' })
+    f.source.store.set('pending-send', pending.id, pending)
+    const log = deliveryLog(f, chat), reader = new CoreStore(f.source.config.home)
+    try {
+      await log.observe(wire)
+      await log.observe('Continue with the same choice')
+      expect(reader.get('pending-send', pending.id)).toEqual(pending)
+      expect(reader.get<{ source?: string }>(`message:${chat}`, pending.id)?.source).toBeUndefined()
+    } finally { log.logs.stop(); reader.close() }
+  }))
+}

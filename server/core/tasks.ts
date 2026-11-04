@@ -338,7 +338,7 @@ export class CoreTasks {
 
   /** An open merge card stays until a tap or a fresh ready report. A yes given on it stays too, unless the human says more in the app. */
   private mergeAsked(task: CoreTask, human: boolean) { return !!task.mergeQuestion && (task.approvedHead ? !human : !!this.source.store.get('merge-question', task.mergeQuestion)) }
-  async deliver(id: string, chat: string, message: string, internal = false, human = false) {
+  async deliver(id: string, chat: string, message: string, internal = false, human = false, delivery?: string) {
     return this.change(id, async () => {
       const task = this.get(id)
       if (!task) throw new Refusal('This task was removed; nothing was sent')
@@ -354,7 +354,7 @@ export class CoreTasks {
         delete task.capacity; this.save(task); await this.label(task)
       }
       if (agent && this.source.agents.terminal(agent)?.state === 'live') await this.source.agents.send(chat, message)
-      else if (chat === task.chat) { await this.launchNow(task, message); if (this.get(task.id)?.capacity) throw new CoreError('busy', 'This task is queued until its machine has room') }
+      else if (chat === task.chat) { await this.launchNow(task, message, task.model, task.effort, undefined, false, undefined, delivery); if (this.get(task.id)?.capacity) throw new CoreError('busy', 'This task is queued until its machine has room') }
       else throw new Refusal('This reviewer has finished; request a fresh review')
     })
   }
@@ -368,7 +368,7 @@ export class CoreTasks {
     if (prepared.provider.binding.route !== worker.provider.binding.route) throw new Refusal('Worker and coordinator provider routes differ')
     return { pick, prepared }
   }
-  private async launchNow(task: CoreTask, message?: string, model = task.model, effort = task.effort, prepared?: PreparedProvider, create = false, coordinator?: Awaited<ReturnType<CoreTasks['prepareCoordinator']>>) {
+  private async launchNow(task: CoreTask, message?: string, model = task.model, effort = task.effort, prepared?: PreparedProvider, create = false, coordinator?: Awaited<ReturnType<CoreTasks['prepareCoordinator']>>, delivery?: string) {
     const handover = task.providerTakeover?.handover
     if (handover && message !== handover) message = handover + (message ? `\n\n${message}` : '')
     task = this.get(task.id) || (() => { throw new Refusal('No such task') })()
@@ -435,7 +435,7 @@ export class CoreTasks {
     const role = readFileSync(join(import.meta.dir, '../../skill/shepherdr-agent/SKILL.md'), 'utf8')
     const instructions = `${role}\n\nYou are ${task.id} in standalone Shepherdr on core. Use the launch-provisioned authenticated shepherdr command. ${pilot ? 'Your Git metadata is read-only: use shepherdr checkpoint MESSAGE to commit, and shepherdr review TASK for a fresh managed reviewer. Use the product broker for managed agents and messages; no core socket or outside helper is available.' : 'Use hc for child agents, messages and waits.'} Do not use legacy helpers, SSH workers, a web URL or screen scraping. Your branch is ${task.branch}; stay in this worktree.\n`
     const prompt = `${task.desc}\n\n${wait}\n\nSettings:\n- Agent: ${task.kind}${task.model ? `, model ${task.model}` : ''}${task.effort ? `, effort ${task.effort}` : ''}\n- Review: ${task.review.on ? 'on' : 'off'}\n- Reviewer: ${task.review.kind}${task.reviewerModel ? `, model ${task.reviewerModel}` : ''}${task.reviewerEffort ? `, effort ${task.reviewerEffort}` : ''}\n- Must fix: ${task.review.mustFix}\n- Review rounds: ${task.review.rounds}\n- Merge: ${mergeWords(task.mergePolicy)}\n${Object.keys(task.overrides ?? {}).length ? `Set by the coordinator for this task: ${Object.entries(task.overrides!).map(([key, value]) => `${key}=${value}`).join(', ')}\n` : ''}${message ? `\n<go>${message}</go>` : ''}`
-    const launched = await this.source.agents.launch(space, task.chat, task.kind, prompt, { prepared, deployment: task.deployment, role: 'task', parent, folder: task.folder, task: task.id, instructions, model, effort, speed: task.speed, resume: !pilot && !prior?.pilot, message: message ?? '', pilot: pilot ? { run: pilot.id, hosts: pilot.config.hosts, deadline: pilot.config.runtime ? pilot.started + pilot.config.runtime : undefined, repo: task.repo } : undefined })
+    const launched = await this.source.agents.launch(space, task.chat, task.kind, prompt, { prepared, delivery, deployment: task.deployment, role: 'task', parent, folder: task.folder, task: task.id, instructions, model, effort, speed: task.speed, resume: !pilot && !prior?.pilot, message: message ?? '', pilot: pilot ? { run: pilot.id, hosts: pilot.config.hosts, deadline: pilot.config.runtime ? pilot.started + pilot.config.runtime : undefined, repo: task.repo } : undefined })
     if (pilot) this.source.pilots.policy.bind(pilot.id, { chat: launched.chat, launch: launched.launch, role: 'task', task: task.id })
     await this.label(task)
     const takeover = task.providerTakeover

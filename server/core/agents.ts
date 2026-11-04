@@ -9,7 +9,7 @@ import type { CoreConfig } from './config.ts'
 import type { CoreSession } from './session.ts'
 import type { CoreStore } from './store.ts'
 import type { Mailbox } from './mailbox.ts'
-import type { AgentHook, AgentKind, CoreAgent, CoreSpace } from './model.ts'
+import type { AgentHook, AgentKind, CoreAgent, CoreSpace, PendingSend } from './model.ts'
 import type { CoreTerminal } from './protocol.ts'
 import type { Installation } from './home.ts'
 import { CoreFiles } from './files.ts'
@@ -170,7 +170,7 @@ export class CoreAgents {
   }
 
   async launch(space: CoreSpace, chat: string, kind: AgentKind, prompt: string, options: {
-    deployment?: string; prepared?: PreparedProvider
+    deployment?: string; prepared?: PreparedProvider; delivery?: string
     role?: CoreAgent['role']; parent?: CoreAgent; model?: string; effort?: string; speed?: string; resume?: boolean; folder?: string; task?: string; instructions?: string; readOnly?: boolean
     /** what a fresh start must still say if this resume finds no session; the prompt, when none is given */
     message?: string
@@ -293,8 +293,9 @@ export class CoreAgents {
     // A native CLI can defer SessionStart until its first turn. An explicit, harmless restart turn
     // gives hooks a real readiness signal; no quiet-screen heuristic is used.
     const turn = prompt || '<restart>Shepherdr restarted this coordinator. Read your role and wait for the human. Do not use tools or start work. Reply only <no-reply>Waiting for the human</no-reply>.</restart>'
-    const routing = record.session ? `<restart>This is a new Shepherdr launch. Your current owning authenticated command is ${record.command}. It replaces every helper path in earlier conversation history. Preserve the current SHEPHERDR_CORE_CREDENTIAL environment reference without reading or printing it; never borrow an earlier launch credential. Continue the existing task only.</restart>\n\n` : ''
-    argv.push('--', routing + turn)
+    const routing = record.session || options.delivery ? `<restart>This is Shepherdr launch ${launch}. Your current owning authenticated command is ${record.command}. It replaces every helper path in earlier conversation history. Preserve the current SHEPHERDR_CORE_CREDENTIAL environment reference without reading or printing it; never borrow an earlier launch credential. Follow the current prompt within existing authorization.</restart>\n\n` : ''
+    const nativePrompt = routing + turn
+    argv.push('--', nativePrompt)
     if (options.pilot && prepared) {
       const file = join(directory, `${grant.id}.pilot-launch.json`)
       await privateFile(file, JSON.stringify({ ...prepared, credential, args: argv.slice(1), hosts: options.pilot.hosts, deadline: options.pilot.deadline } satisfies PilotLaunch))
@@ -314,6 +315,12 @@ export class CoreAgents {
     this.store.db.transaction(() => {
       this.admit(preparedProvider, launch); this.checkParent(parentIdentity, true)
       if (this.get(chat)?.launch !== launch) throw Error('Launch identity changed before submission')
+      if (options.delivery) {
+        const delivery = this.store.get<PendingSend>('pending-send', options.delivery)
+        if (!delivery || delivery.chat !== chat || delivery.state !== 'sending' || delivery.submission) throw Error('Delivery ownership changed before submission')
+        delivery.submission = { launch, promptHash: createHash('sha256').update(nativePrompt.trim()).digest('hex') }
+        this.store.set('pending-send', delivery.id, delivery)
+      }
       this.launches.submitting(chat, launch)
       if (headless) this.store.set('agent', chat, record)
     })()

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { ClaudeReader } from '../common/readers/claude.ts'
 import { CodexReader } from '../common/readers/codex.ts'
 import type { LogEvent, Reader } from '../common/readers/types.ts'
@@ -5,7 +6,7 @@ import type { Message } from '../../shared/types.ts'
 import type { CoreAgents } from './agents.ts'
 import type { CoreStore } from './store.ts'
 import type { CoreFiles } from './files.ts'
-import type { AgentHook, CoreAgent } from './model.ts'
+import type { AgentHook, CoreAgent, PendingSend } from './model.ts'
 import { CoreNativeFile } from './native-file.ts'
 import { CoreReviewReader } from './review-reader.ts'
 import { chatMessages } from './chat.ts'
@@ -200,11 +201,25 @@ export class CoreLogs {
       if (!agent.permission) { agent.state = event.kind === 'turn-start' ? 'working' : 'idle'; this.store.set('agent', agent.chat, agent) }
     }
     if (event.kind !== 'user' && event.kind !== 'agent') return
+    if (event.kind === 'user') {
+      // Match the exact launch-bound wire prompt before hiding routing envelopes.
+      // A native observation resolves an uncertain reply without resubmission.
+      const hash = createHash('sha256').update(event.text).digest('hex')
+      const delivery = this.store.all<PendingSend>('pending-send').find(item => item.chat === agent.chat &&
+        ['sending', 'uncertain'].includes(item.state) && item.submission?.launch === agent.launch && item.submission.promptHash === hash)
+      if (delivery) {
+        const kind = `message:${agent.chat}`
+        this.store.delete('pending-send', delivery.id); this.store.delete(kind, `delivery-${delivery.id}`)
+        const optimistic = this.store.get<SavedMessage>(kind, delivery.id)
+        if (optimistic) this.store.set(kind, delivery.id, { ...optimistic, source: event.id, waiting: false, waitsFor: undefined })
+        return
+      }
+    }
     if (event.kind === 'user' && /^\s*<restart>/.test(event.text)) return
     if (event.kind === 'agent' && /^\s*<no-reply>[\s\S]*<\/no-reply>\s*$/.test(event.text)) return
     const kind = `message:${agent.chat}`
     if (event.kind === 'user') {
-      const delivery = this.store.all<{ id: string; chat: string; launch?: string; text: string; state: string }>('pending-send').find(item => item.chat === agent.chat && (!item.launch || item.launch === agent.launch) && item.state === 'sending' && item.text === event.text)
+      const delivery = this.store.all<PendingSend>('pending-send').find(item => !item.submission && item.chat === agent.chat && (!item.launch || item.launch === agent.launch) && item.state === 'sending' && item.text === event.text)
       if (delivery) {
         this.store.delete('pending-send', delivery.id); this.store.delete(kind, `delivery-${delivery.id}`)
         const optimistic = this.store.get<SavedMessage>(kind, delivery.id)
@@ -212,7 +227,7 @@ export class CoreLogs {
       }
       const previous = this.store.all<SavedMessage>(kind).filter(message => message.who === 'you')
       if (previous.some(message => message.source === event.id)) return
-      const optimistic = previous.find(message => !message.source && message.text === event.text && Math.abs((message.at ?? 0) - event.at) < 120_000)
+      const optimistic = previous.find(message => !message.source && !this.store.get('pending-send', message.id) && message.text === event.text && Math.abs((message.at ?? 0) - event.at) < 120_000)
       if (optimistic) {
         this.store.set(kind, optimistic.id, { ...optimistic, source: event.id, waiting: false, waitsFor: undefined })
         this.store.delete('pending-send', optimistic.id)
