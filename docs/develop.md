@@ -1,13 +1,30 @@
 # Develop
 
-Read [AGENTS.md](../AGENTS.md). On the shared agent VM, run only `bun run typecheck`.
-Do not run local test suites, browser suites or full build checks. Inspect UI changes
-by hand in the shared browser. GitHub runs the suites and production build.
+Follow [AGENTS.md](../AGENTS.md) for local verification and approval boundaries.
+Follow [coding standards](../CODING_STANDARDS.md) when writing or reviewing code.
 
-The rewrite branch's [Core rewrite workflow](../.github/workflows/core-rewrite.yml)
-checks this integration branch without deploying main. The Check workflow remains
-the full check on every pull request to main and after each merge. Neither installs
-services, changes private sharing, migrates state or publishes a release.
+## CI and merge checks
+
+The [Check workflow](../.github/workflows/check.yml) owns the full checks and their
+triggers, including docs-only pull requests. The
+[Core rewrite workflow](../.github/workflows/core-rewrite.yml) checks the integration
+branch without deploying main. Neither installs services, changes private sharing,
+migrates state or publishes a release.
+
+Wait for the pull request's required checks before merging. `shepherdr checks <id>`
+shows them; `shepherdr merge <id>` proceeds once green. A red main reaches the
+coordinator for a fix forward. Inspect a failed run with `gh run view <run> --log-failed`.
+
+Each pull-request push runs checks again and costs Actions minutes. For rare cases
+without a pull request, request a branch check with
+`gh workflow run check.yml --ref <branch>` and watch it with `gh run watch`.
+Use an environment-required wrapper for GitHub CLI commands where applicable.
+
+If tests have already been started locally outside the verification policy, keep
+them at the lowest priority and isolated from live `~/.shepherdr`. This containment
+requirement does not authorize local test execution.
+
+## Isolated development
 
 Use [isolated preview startup](core/start.md), with a separate home, port and core
 session. Never use live `~/.shepherdr` for development. The optional fictional demo
@@ -29,10 +46,6 @@ bin/shepherdr      standalone lifecycle/human control or authenticated agent mai
 bin/agent-browser  pinned shared-browser wrapper
 skill/             agent and coordinator guides
 ```
-
-Write meaningful unit, integration and layout regressions for GitHub. New UI cases
-belong in their topic's `layout-*.test.ts` file. Core protocol fakes test boundaries;
-they do not replace real native-agent or device acceptance.
 
 Task IDs and workflow records live in the selected application's private SQLite
 store. Prefix/next-number changes are per repository space and only move forward.
