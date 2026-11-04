@@ -1,42 +1,41 @@
 # Working on Shepherdr
 
-How to run, build and lay out the code: [docs/develop.md](docs/develop.md).
+- Code changes or review: read [CODING_STANDARDS.md](CODING_STANDARDS.md).
+- Development or previews: read [docs/develop.md](docs/develop.md).
+- Verification: run only `bun run typecheck` locally, including before
+  merge. Reserve this machine's capacity for the application and agents.
+  Leave test suites, browser tests and production builds to CI.
+  Inspect UI changes manually in the shared browser.
+- Plugin work: read [docs/plugins.md](docs/plugins.md).
+  User-requested personal plugins belong in
+  `~/.shepherdr/plugins/<name>/`, outside this repository.
+- Deployment or state migration: read
+  [docs/core/cutover.md](docs/core/cutover.md).
+- Specialized workflows: follow [docs/agents/README.md](docs/agents/README.md).
 
-## Tests
+## README and releases
 
-- No tests on this machine: it keeps the CPU for herdr, the server and the agents. While you work and before you
-  merge, run only `bun run typecheck` (seconds). Don't run `bun run test`, `bun test`, `bun run test changed`,
-  `bun run check` or any browser test here.
-- Check what you changed on the screen by hand in your shared browser, for the proof.
-- GitHub runs the whole check (types, every test with the browser tests, the build) on every pull request to main,
-  docs-only ones too, and again after each merge: the Check workflow (`.github/workflows/check.yml`), which skips a
-  push to main that changes only docs. Each push to a pull request runs it again and costs Actions minutes.
-- Merging waits for the pull request's check in this repo: `shepherdr checks <id>` shows it, and `shepherdr merge <id>`
-  goes once it is green. A red main reaches the coordinator, who has it fixed forward. A failure's log is
-  `gh run view <run> --log-failed`.
-- A branch with no pull request can still be checked by hand, `gh workflow run check.yml --ref <branch>` then
-  `gh run watch`: it costs Actions minutes, so only for rare cases.
-- Still write tests with your change: GitHub runs them. A new browser test goes in the `layout-*.test.ts` file of its
-  topic (setup in `test/layout.ts`); split a file that grows past about 20 s.
-- If someone runs tests here by hand anyway, they run at the lowest priority and never touch `~/.shepherdr`.
+- Changes to README design, layout, structure, hero or length require
+  explicit user approval. Otherwise, correct false facts in place,
+  preserving the voice. Put detailed documentation in `docs/`.
+- "The previous README" means its version on main immediately before
+  the change, never a release tag.
+- Version bumps, tags, GitHub releases and publishing require explicit
+  user approval. Use patch bumps unless minor or major is requested.
 
-## Plugins
+## Agent skills
 
-- `definePlugin` (`src/kernel.ts`, `server/plugin-api.ts`) and the slots of `Registry` (`src/kernel.ts`) are a public
-  contract: the human's own plugins in `~/.shepherdr/plugins` rely on them ([docs/plugins.md](docs/plugins.md), Your
-  own plugins). Change them with care, keep old names working where you can, update that page's list, and say so in
-  your done summary.
-- A plugin the human asks you to make for them goes in `~/.shepherdr/plugins/<name>/`, never in the repo.
+### Issue tracker
 
-## README
+Use GitHub Issues for new engineering-skill issues and specs.
+Read [tracker routing](docs/agents/issue-tracker.md).
 
-- `README.md` is the project's landing page, and its design is the human's. Never change its design, layout, structure,
-  hero or length, in a release or any other task, without the human's explicit yes.
-- Only fix facts that became false, in place, in the same voice. Detailed docs go in `docs/`, not the README.
-- "The previous README" means the one on main just before (`git log main -- README.md`), never a tag's.
+### Triage labels
 
-## Releases
+Use the five default roles.
+Read [label mappings](docs/agents/triage-labels.md) before triage.
 
-- Never cut a new release (version bump, tag, GitHub release, publish) without asking the human first and getting a
-  yes.
-- Version bumps are patch only (2.0.0 → 2.0.1) unless the human explicitly asks for a minor or major one.
+### Domain docs
+
+Use the existing single-context glossary and ADRs.
+Read [domain guidance](docs/agents/domain.md) before exploration.
