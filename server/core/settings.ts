@@ -132,7 +132,7 @@ export class CoreSettings {
   }
   private deploymentRow(row: SettingRow, level: string): SettingRow {
     const kind = row.key === 'azure.claudeDeployment' ? 'claude' : row.key === 'azure.codexDeployment' ? 'codex' : undefined
-    if (!kind) return row
+    if (!kind) return { ...row }
     const state = this.deployments.get(`${level}:${kind}`)
     return { ...row, discovery: { refreshKey: `azure.${kind}Refresh`, busy: state?.busy ?? false, options: state?.options ?? [] }, hint: state?.hint ?? 'Refresh using the host Azure CLI login, or enter a deployment manually. Changes apply to new conversations; existing conversations keep their binding.', warn: state?.warn }
   }
