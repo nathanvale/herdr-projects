@@ -11,7 +11,7 @@ name: Check
 on:
   # no paths-ignore here: a docs-only pull request must report a check too, or it could never merge
   pull_request:
-    branches: [main]
+    branches: [main, foundry-base]
   push:
     branches: [main]
     paths-ignore:
