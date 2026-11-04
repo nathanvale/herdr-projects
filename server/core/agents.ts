@@ -69,6 +69,10 @@ export class CoreAgents {
     return agent.command ?? (agent.machine === this.store.get<{ id: string }>('meta', 'local')?.id ? join(import.meta.dir, '../../bin/shepherdr') : join(dirname(dirname(agent.hook)), 'bin/shepherdr'))
   }
   get(chat: string) { return this.store.get<CoreAgent>('agent', chat) }
+  starting(chat: string) { return this.launching.has(chat) }
+  private executionEnded(agent: CoreAgent) {
+    return this.launches.ended(agent, this.terminal(agent)?.state)
+  }
   all() { return this.store.all<CoreAgent>('agent') }
   terminal(agent: CoreAgent) {
     if (agent.terminal) {
@@ -140,6 +144,7 @@ export class CoreAgents {
   async preflight(space: CoreSpace, chat: string, kind: AgentKind, options: {
     deployment?: string; parent?: CoreAgent; pilot?: unknown
   } = {}): Promise<PreparedProvider> {
+    this.launches.assertUnheld(chat)
     const previous = this.get(chat), token = this.selectionToken(chat), revision = this.configurationRevision(chat, space.id), parent = this.parentIdentity(options.parent)
     this.checkParent(parent)
     const selected = previous ? undefined : this.selection(chat)
@@ -163,6 +168,7 @@ export class CoreAgents {
   }
 
   admit(prepared: PreparedProvider, expectedLaunch = prepared.previous) {
+    this.launches.assertUnheld(prepared.chat)
     if (this.stopping()) throw Error('Shepherdr is stopping')
     if (prepared.revision !== this.configurationRevision(prepared.chat, prepared.level)) throw Error('Selection changed before launch; fresh validation is required')
     if (this.get(prepared.chat)?.launch !== expectedLaunch) throw Error('Launch identity changed after admission; fresh validation is required')
@@ -176,18 +182,24 @@ export class CoreAgents {
     message?: string
     pilot?: { run: string; hosts: string[]; deadline?: number; repo: string }
   } = {}): Promise<CoreAgent> {
+    this.launches.assertUnheld(chat)
     if (this.launching.has(chat)) throw new Error('This agent is already starting')
     this.launching.add(chat)
     let prepared: PilotPrepared | undefined, previous: CoreAgent | undefined, submitted = false, attempt: string | undefined, cleanup: (() => Promise<void>) | undefined
     try {
     previous = this.get(chat)
+    const rebootResume = previous && this.executionEnded(previous) ? previous : undefined
+    if (rebootResume) {
+      if (kind !== rebootResume.kind || options.model !== undefined && options.model !== rebootResume.model || options.effort !== undefined && options.effort !== rebootResume.effort || options.speed !== undefined && options.speed !== rebootResume.speed) throw Error('The first recovered continuation must keep its recorded native agent, model, effort and speed')
+      options = { ...options, model: rebootResume.model, effort: rebootResume.effort, speed: rebootResume.speed, resume: true }
+    }
     const selection = previous ? undefined : this.selection(chat)
     if (selection) {
       if (kind !== selection.kind) throw Error('Agent choice changed before launch; reopen the selector')
       options = { ...options, deployment: selection.deployment, effort: selection.effort }
     }
     if (previous && this.terminal(previous)?.state === 'live') throw new Error('This agent is already running')
-    if (previous && !previous.terminal) throw new Error('The previous start is still unconfirmed. Reconnect core and check its state before retrying.')
+    if (previous && !previous.terminal && !this.executionEnded(previous)) throw new Error('The previous start is still unconfirmed. Reconnect core and check its state before retrying.')
     const preparedProvider = options.prepared ?? await this.preflight(space, chat, kind, options)
     if (preparedProvider.chat !== chat || preparedProvider.kind !== kind || preparedProvider.previous !== previous?.launch) throw Error('Launch identity changed after preflight; no replacement was started')
     this.admit(preparedProvider)
@@ -197,7 +209,7 @@ export class CoreAgents {
     const { provider, on } = preparedProvider
     if (selection?.provider && selection.provider.fingerprint !== provider.binding.fingerprint) throw Error('The saved Azure connection changed. Reopen the selector and save a new choice or use defaults.')
     if (options.parent && (options.parent.provider?.route ?? 'personal') !== provider.binding.route) throw Error('Child agents cannot switch between Personal and Azure Foundry')
-    if (provider.model) options = { ...options, model: provider.model, speed: undefined }
+    if (provider.model) options = { ...options, model: provider.model, speed: rebootResume?.speed }
     if (previous) this.store.set('agent-launch', previous.launch, previous)
     const remote = on ? await this.remotes.prepare(space.machine) : undefined
     const launch = randomUUID()
@@ -377,6 +389,7 @@ export class CoreAgents {
   }
 
   async send(chat: string, text: string) {
+    this.launches.assertUnheld(chat)
     const record = this.get(chat)
     if (!record) throw new Error('No agent has started in this chat')
     const terminal = this.terminal(record)

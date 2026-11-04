@@ -1,4 +1,5 @@
 import type { CoreSource } from './source.ts'
+import { CoreLaunches } from './launches.ts'
 import type { CoreAgent, CoreSpace } from './model.ts'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -156,6 +157,7 @@ export class CorePilotLifecycle {
   }
   private async finish(agent: CoreAgent) {
     const terminal = this.source.agents.terminal(agent)
+    if (new CoreLaunches(this.source.store).ended(agent, terminal?.state)) return
     if (!terminal || !this.source.machineConnected(agent.machine)) throw Error('Process cleanup is not confirmed; reconnect core')
     if (agent.pid !== undefined && terminal.pid !== agent.pid) throw Error('Coordinator process identity changed')
     const identity = { address: terminal.address, pid: terminal.pid, created: terminal.created_ms }

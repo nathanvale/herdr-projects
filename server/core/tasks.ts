@@ -1,5 +1,6 @@
 import type { PreparedProvider } from './agents.ts'
 import { age } from '../common/age.ts'
+import { CoreLaunches } from './launches.ts'
 import { findCoreSpace } from './space-names.ts'
 import { CoreError, Refusal } from './client.ts'
 import { createHash, randomUUID } from 'node:crypto'
@@ -98,13 +99,14 @@ const REVIEW_RELAY = 2 * 60000 // A finished reviewer's report reaches the agent
 
 /** Workflow is explicit persisted metadata, mirrored to core labels. It is never inferred from process exit. */
 export class CoreTasks {
+  private readonly launches: CoreLaunches
   readonly git: CoreGit
   readonly forge: CoreForge
   private ticking = false
   private merging = new Set<string>()
   private changing = new Set<string>()
   private drains = new Set<() => void>()
-  constructor(private readonly source: CoreSource) { this.git = new CoreGit(source.files, (repo, additional) => new CorePilotRepositories(source.store).context(repo, additional), machine => source.agents.browserRuntime(machine)); this.forge = new CoreForge(this.git) }
+  constructor(private readonly source: CoreSource) { this.launches = new CoreLaunches(source.store); this.git = new CoreGit(source.files, (repo, additional) => new CorePilotRepositories(source.store).context(repo, additional), machine => source.agents.browserRuntime(machine)); this.forge = new CoreForge(this.git) }
   /** Internal product transaction gate; callbacks never come from network input. */
   async change<T>(id: string, perform: () => Promise<T>): Promise<T> {
     if (this.source.quiescing) throw new Refusal('Shepherdr is stopping; retry after it restarts')
@@ -276,6 +278,7 @@ export class CoreTasks {
   }
   private async finishForRestart(agent: import('./model.ts').CoreAgent) {
     const terminal = this.source.agents.terminal(agent)
+    if (this.launches.ended(agent, terminal?.state)) return
     if (!this.source.machineConnected(agent.machine) || !terminal) throw new Refusal('Reconnect before restarting; the old task process is unconfirmed')
     if (agent.pid !== undefined && agent.pid !== terminal.pid) throw new Refusal('Task process identity changed; restart was refused')
     const identity = { address: terminal.address, pid: terminal.pid, created: terminal.created_ms }
@@ -343,6 +346,7 @@ export class CoreTasks {
   private mergeAsked(task: CoreTask, human: boolean) { return !!task.mergeQuestion && (task.approvedHead ? !human : !!this.source.store.get('merge-question', task.mergeQuestion)) }
   async deliver(id: string, chat: string, message: string, internal = false, human = false, delivery?: string) {
     return this.change(id, async () => {
+      this.launches.assertUnheld(chat)
       const task = this.get(id)
       if (!task) throw new Refusal('This task was removed; nothing was sent')
       if (['merged', 'closed'].includes(task.workflow)) throw new Refusal('This task is Done; ask its coordinator for follow-up work')
@@ -372,6 +376,8 @@ export class CoreTasks {
     return { pick, prepared }
   }
   private async launchNow(task: CoreTask, message?: string, model = task.model, effort = task.effort, prepared?: PreparedProvider, create = false, coordinator?: Awaited<ReturnType<CoreTasks['prepareCoordinator']>>, delivery?: string) {
+    this.launches.assertUnheld(task.chat)
+    this.launches.assertUnheld(task.place)
     const handover = task.providerTakeover?.handover
     if (handover && message !== handover) message = handover + (message ? `\n\n${message}` : '')
     task = this.get(task.id) || (() => { throw new Refusal('No such task') })()
@@ -379,7 +385,7 @@ export class CoreTasks {
     if (!space || this.source.places?.removing(space.id)) throw new Refusal('Task space is missing or being removed')
     if (['merged', 'closed'].includes(task.workflow)) throw new Refusal('This task is Done; ask its coordinator for follow-up work')
     const prior = this.source.agents.get(task.chat)
-    if (prior && !this.source.agents.terminal(prior)) throw new Refusal('Previous task start is unconfirmed; reconnect before reopening its checkout')
+    if (prior && !this.source.agents.terminal(prior) && !this.launches.ended(prior)) throw new Refusal('Previous task start is unconfirmed; reconnect before reopening its checkout')
     if (prior && this.source.agents.terminal(prior)?.state === 'live') throw new Refusal('This task agent is already running')
     const capacity = (task.workflow !== 'todo' || task.pilot) && this.source.health?.room(task.machine, task.id)
     if (capacity) { if (task.workflow !== 'todo') task.workflow = 'queued'; task.capacity = capacity; if (task.providerTakeover?.state === 'starting') task.providerTakeover.state = 'queued'; this.save(task); if (!create) return }
@@ -935,6 +941,9 @@ export class CoreTasks {
     try {
       this.autoArchive()
       for (const task of this.all()) {
+        const retained = this.source.agents.get(task.chat), coordinator = this.source.agents.get(task.place)
+        if (this.launches.held(task.chat) || this.launches.held(task.place) ||
+          retained && this.launches.ended(retained, this.source.agents.terminal(retained)?.state) || coordinator && this.launches.ended(coordinator, this.source.agents.terminal(coordinator)?.state)) continue
         if (this.changing.has(task.id) || this.merging.has(task.id)) continue
         if (task.cleanupPending && ['merged', 'closed'].includes(task.workflow)) { await this.cleanupFinished(task); continue }
         if (task.reviewChat && !task.reviewTurn) {

@@ -15,11 +15,12 @@ if [ -n "$SHEPHERDR_CORE_CREDENTIAL" ] || [ "$SHEPHERDR_BACKEND" = core ]; then
   exec bun "$here/helper/core-cli.ts" "$@"
 fi
 case "$1:$2" in
+  recover-launch:*) exec bun "$here/helper/core-operator.ts" "$@" ;;
   secret:set|secret:rm|secret:remove) exec bun "$here/helper/core-operator.ts" "$@" ;;
 esac
 case "$1" in
   help|--help|"")
-    printf '%s\n' 'shepherdr start | stop | status [--home PATH]' 'Protected updates: start | stop --idle-only (explicit core required for start)' 'shepherdr secret set NAME [--machine | --space NAME] < file' 'shepherdr secret rm NAME [--machine | --space NAME]' 'Agent commands use the owning launch-provisioned helper and core mailbox.'
+    printf '%s\n' 'shepherdr start | stop | status [--home PATH]' 'Protected updates: start | stop --idle-only (explicit core required for start)' 'shepherdr recover-launch status|arm|settle CHAT LAUNCH [--home PATH]' 'shepherdr recover-launch resume CHAT LAUNCH --cancel-queued [--home PATH]' 'Recovery does not authorize or perform a host reboot or start an agent.' 'shepherdr secret set NAME [--machine | --space NAME] < file' 'shepherdr secret rm NAME [--machine | --space NAME]' 'Agent commands use the owning launch-provisioned helper and core mailbox.'
     exit 0 ;;
 esac
 printf '%s\n' 'This standalone command has no legacy HTTP routing. Use the owning authenticated agent helper, or open the app. Use hc for core terminals and agents.' >&2

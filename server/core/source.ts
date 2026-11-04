@@ -56,6 +56,7 @@ import { NATIVE_UNREADABLE, nativeAnswer, nativeCards, nativeClosed, nativeReply
 import type { CorePluginUpdates } from './plugin-updates.ts'
 import type { ActivityAsk, WorktreeAsk } from '../../shared/types.ts'
 import { guarded } from './guarded.ts'
+import { CoreLaunchRecovery, type HostBootReader } from './launch-recovery.ts'
 
 interface Machine { id: string; name: string; state: string; host?: string; version?: string; session?: string | null }
 interface Permission { id: string; chat: string; grant: string; question: Question; expires: number; settled?: boolean; allow?: boolean; at?: number; native?: NativeAsk; grants?: unknown[]; reply?: PermissionAnswer; tool?: string; hash?: string; turn?: string; sub?: string }
@@ -86,6 +87,7 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
   readonly files: CoreFiles
   readonly mailbox: Mailbox
   readonly agents: CoreAgents
+  readonly launchRecovery: CoreLaunchRecovery
   readonly logs: CoreLogs
   readonly voices: CoreVoice
   readonly heartbeats: CoreHeartbeats
@@ -127,7 +129,7 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
   private discoveringHomes = new Set<string>()
   private born = Date.now()
 
-  constructor(readonly config: CoreConfig) {
+  constructor(readonly config: CoreConfig, hostBoot?: HostBootReader) {
     super()
     const installation = prepareHome(config.home)
     this.store = new CoreStore(config.home)
@@ -138,6 +140,7 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
     this.mailbox = new Mailbox(config.home, this.core, machine => this.route(machine), (grant, request, id) => this.mail(grant, request, id))
     const changed = (chat: string) => { this.reconcilePermissions(chat); this.questions?.reconcile(chat); this.screens?.reconcile(chat); this.secrets?.reconcile(chat); this.emit('chat', chat); this.emit('snapshot'); this.flushLater(chat); void this.tasks?.tick().catch(error => this.faults.set('queue', error.message)) }
     this.agents = new CoreAgents(config, installation, this.core, this.store, this.mailbox, machine => this.route(machine), changed, machine => this.machines.find(item => item.id === machine) ?? {})
+    this.launchRecovery = new CoreLaunchRecovery(this, hostBoot)
     this.logs = new CoreLogs(this.agents, this.files, this.store, changed, (chat, message) => { this.faults.set(chat, message) }, (chat, message) => this.fresh(chat, message), agent => this.pilots.usage.observe(agent), (agent, event) => this.nativeEnded(agent, logEnd(event)))
     this.settings = new CoreSettings(this.store, this.files, () => this.spaces(), id => this.store.get<string>('name', `m:${id}`) || (id === this.local.id ? this.local.name : this.machineName(id) || id), () => { this.emit('snapshot'); this.plannedChanged() })
     this.agents.settings = this.settings
@@ -657,7 +660,7 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
   }
   private flushLater(chat: string) { void guarded('Message delivery', () => this.flush(chat)) }
   private async flush(chat: string) {
-    if (this.quiescing || this.sending.has(chat) || !this.connected()) return
+    if (this.quiescing || this.launchRecovery.held(chat) || this.sending.has(chat) || !this.connected()) return
     this.sending.add(chat)
     let progressed = false
     try {

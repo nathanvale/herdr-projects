@@ -3,7 +3,7 @@ import type { CoreStore } from './store.ts'
 
 export interface LaunchAttempt {
   launch: string; chat: string; at: number
-  state: 'never-submitted' | 'submission-uncertain' | 'confirmed' | 'cancelled'
+  state: 'never-submitted' | 'submission-uncertain' | 'confirmed' | 'cancelled' | 'execution-ended-after-host-reboot'
   previous?: CoreAgent
 }
 
@@ -12,7 +12,14 @@ export interface LaunchAttempt {
 export class CoreLaunches {
   constructor(private readonly store: CoreStore) {}
   get(launch: string) { return this.store.get<LaunchAttempt>('launch-attempt', launch) }
+  held(chat: string) { return !!this.store.get('launch-recovery-hold', chat) }
+  assertUnheld(chat: string) { if (this.held(chat)) throw Error('This conversation is held for explicit host-reboot recovery') }
+  ended(agent: CoreAgent, terminalState?: string) {
+    return terminalState !== 'live' && this.get(agent.launch)?.state === 'execution-ended-after-host-reboot' &&
+      this.store.get<{ phase: string }>('launch-recovery', agent.launch)?.phase === 'resumed' && this.store.get<CoreAgent>('agent', agent.chat)?.launch === agent.launch
+  }
   claim(chat: string, launch: string, previous?: CoreAgent) {
+    this.assertUnheld(chat)
     const active = this.store.get<string>('launch-claim', chat)
     if (active && ['never-submitted', 'submission-uncertain'].includes(this.get(active)?.state ?? 'submission-uncertain')) throw Error('A previous start still owns this conversation; reconcile or recover its exact launch before retrying')
     const attempt: LaunchAttempt = { launch, chat, previous, at: Date.now(), state: 'never-submitted' }
@@ -20,6 +27,7 @@ export class CoreLaunches {
     this.store.set('launch-claim', chat, launch)
   }
   owned(chat: string, launch: string) {
+    this.assertUnheld(chat)
     const attempt = this.get(launch)
     if (attempt?.chat !== chat || attempt.state !== 'never-submitted' || this.store.get<string>('launch-claim', chat) !== launch) throw Error('Launch authority changed or submission already began; recovery requires proven non-submission')
     return attempt

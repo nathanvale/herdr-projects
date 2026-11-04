@@ -35,6 +35,9 @@ export async function startOperator(source: CoreSource, boot: string, stop?: () 
             try { socket.end(JSON.stringify({ out: `idle-stop:${boot}`, code: 0 })) } finally { stop() }
           })
           return
+        } else if (input.args[0] === 'recover-launch') {
+          if (input.stdin !== undefined) throw Error('Recovery does not accept stdin or caller-supplied host evidence')
+          result = { out: await source.launchRecovery.operator(input.args, request.signal, expires), code: 0 }
         } else result = { out: await source.secrets.operator(input.args, input.stdin as string | undefined), code: 0 }
       } catch (error) { result = { out: (error as Error).message + '\n', code: 1 } }
       socket.end(JSON.stringify(result))

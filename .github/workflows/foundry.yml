@@ -364,6 +364,60 @@ jobs:
             exit 1
           fi
           grep -F '(fail) cold hook completion preserves' /tmp/readiness-stop-sensitivity.log
+      - name: Prove recovery refuses settlement in the same host boot
+        shell: bash
+        run: |
+          cp server/core/launch-recovery.ts /tmp/recovery-boot-original.ts
+          trap 'cp /tmp/recovery-boot-original.ts server/core/launch-recovery.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/launch-recovery.ts')
+          source = path.read_text()
+          before = "if (row.boot === boot.boot) throw Error('The execution host has not rebooted; no recovery state changed')"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, ''))
+          PYCODE
+          if bun test test/core-operator.test.ts --test-name-pattern 'boot recovery arm and same-boot refusal' > /tmp/recovery-boot-sensitivity.log 2>&1; then
+            cat /tmp/recovery-boot-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery arm and same-boot refusal' /tmp/recovery-boot-sensitivity.log
+      - name: Prove recovery rejects a different execution host
+        shell: bash
+        run: |
+          cp server/core/launch-recovery.ts /tmp/recovery-host-original.ts
+          trap 'cp /tmp/recovery-host-original.ts server/core/launch-recovery.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/launch-recovery.ts')
+          source = path.read_text()
+          before = 'row.host !== boot.host || '
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, ''))
+          PYCODE
+          if bun test test/core-operator.test.ts --test-name-pattern 'boot recovery refuses replaced host' > /tmp/recovery-host-sensitivity.log 2>&1; then
+            cat /tmp/recovery-host-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery refuses replaced host' /tmp/recovery-host-sensitivity.log
+      - name: Prove final admission respects an armed recovery hold
+        shell: bash
+        run: |
+          cp server/core/agents.ts /tmp/recovery-hold-original.ts
+          trap 'cp /tmp/recovery-hold-original.ts server/core/agents.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/agents.ts')
+          source = path.read_text()
+          before = 'admit(prepared: PreparedProvider, expectedLaunch = prepared.previous) {\n    this.launches.assertUnheld(prepared.chat)'
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'admit(prepared: PreparedProvider, expectedLaunch = prepared.previous) {'))
+          PYCODE
+          if bun test test/core-operator.test.ts --test-name-pattern 'boot recovery final admission fences' > /tmp/recovery-hold-sensitivity.log 2>&1; then
+            cat /tmp/recovery-hold-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery final admission fences' /tmp/recovery-hold-sensitivity.log
       - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts test/core-launch-admission.test.ts test/core-client.test.ts test/core-mailbox.test.ts test/core-launcher.test.ts test/core-operator.test.ts test/core-protected-update.test.ts test/core-commands.test.ts test/core-failed-starts.test.ts
       - run: bun x playwright-core install --only-shell chromium
       - run: bun test test/layout-restart.test.ts test/layout-azure-admission.test.ts
