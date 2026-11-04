@@ -364,6 +364,8 @@ jobs:
             exit 1
           fi
           grep -F '(fail) cold hook completion preserves' /tmp/readiness-stop-sensitivity.log
+      - name: Establish passing recovery cases before removing guards
+        run: bun test test/core-operator.test.ts test/core-failed-starts.test.ts --test-name-pattern 'boot recovery'
       - name: Prove recovery refuses settlement in the same host boot
         shell: bash
         run: |

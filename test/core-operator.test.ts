@@ -49,11 +49,16 @@ async function recoverySetup(home: string, boot: BootProbe, role: 'coordinator' 
   let fail = false
   source.route = async () => undefined
   source.core.current.connected = true
-  source.files.exec = async () => Buffer.from('') // Credential-presence boundary only, no provider/model request.
   source.tasks.git.ensureWorktree = async () => false // Actual checkout preservation is owned by core-tasks.
   source.tasks.seedIncludes = async () => {}
   source.browsers.close = async () => {}
   source.core.call = async <T>(method: string, params: Record<string, unknown> = {}) => {
+    // CoreAgents owns its own CoreFiles. Fake credential presence at their shared
+    // core transport, using Core's exec result contract; no command or model runs.
+    if (method === 'machine.exec') {
+      expect((params.argv as string[]).at(-1)).toBe('AZURE_OPENAI_API_KEY')
+      return { code: 0, stdout: '', stderr: '', timed_out: false, truncated: false } as T
+    }
     calls.push({ method, params })
     if (method === 'terminal.run') {
       if (fail) throw new CoreError('spawn_failed', 'cannot start codex: Device not configured (os error 6)')
