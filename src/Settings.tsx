@@ -577,11 +577,12 @@ function AppearancePick({ phone }: { phone: boolean }) {
 /** a row's control, by what its value is: on or off a switch, two or three short words segments, a number a stepper,
  *  free words a box, a list a menu; one with no other choice, or only shown,
  *  its words */
-function Control({ row, phone, set, edit }: { row: SettingRow; phone: boolean; set: (value: string) => void; edit: () => void }) {
+function Control({ row, phone, set, edit, refresh }: { row: SettingRow; phone: boolean; set: (value: string) => void; edit: () => void; refresh: (key: string) => void }) {
   const options = row.options ?? []
   const action = row.key in registry.settingActions
   const only = !row.num && !row.text && !action && options.length <= 1 && (options[0] ?? row.value) === row.value
   if (row.fixed || !row.key || only) return <span className="text-right text-pretty text-fg2 [overflow-wrap:anywhere]">{shown(row.value)}</span>
+  if (row.discovery) return <DeploymentValue row={row} set={set} edit={edit} refresh={refresh} />
   if (row.num) return <NumberValue label={row.label} value={row.value} num={row.num} onEdit={edit} onSave={set} />
   if (row.text) return <TextValue label={row.label} value={row.value} onEdit={edit} onSave={set} />
   // an action (alerts: turn them on for this device) is a button, its row's value the words under its label
@@ -589,6 +590,21 @@ function Control({ row, phone, set, edit }: { row: SettingRow; phone: boolean; s
   if (options.length === 2 && options.includes('on') && options.includes('off')) return <Switch label={row.label} on={row.value === 'on'} onChange={(on) => set(on ? 'on' : 'off')} />
   if (SEGMENTS.has(row.key)) return <Segments label={row.label} value={row.value} options={options} onPick={set} fill={phone} />
   return <Pick label={row.label} plain={phone} value={row.value} options={options} onPick={set} />
+}
+
+function DeploymentValue({ row, set, edit, refresh }: { row: SettingRow; set: (value: string) => void; edit: () => void; refresh: (key: string) => void }) {
+  const [manual, setManual] = useState(false)
+  const discovery = row.discovery!
+  return <div className="flex min-w-0 flex-col items-end gap-2">
+    {manual ? <TextValue label={row.label} value={row.value} onEdit={edit} onSave={set} /> : <select aria-label={row.label} value={row.value} disabled={discovery.busy} onChange={event => set(event.target.value)} className="max-w-full rounded-full border border-line bg-bg p-2 text-fg">
+      {!row.value ? <option value="" disabled>Choose deployment</option> : !discovery.options.some(item => item.value === row.value) ? <option value={row.value}>{row.value} (saved deployment)</option> : null}
+      {discovery.options.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+    </select>}
+    <div className="flex flex-wrap justify-end gap-2">
+      <Ghost disabled={discovery.busy} onClick={() => refresh(discovery.refreshKey)}>{discovery.busy ? 'Refreshing…' : 'Refresh deployments'}</Ghost>
+      <Ghost onClick={() => setManual(!manual)}>{manual ? 'Use discovered list' : 'Enter manually'}</Ghost>
+    </div>
+  </div>
 }
 
 /** a value set here that is what the row would follow anyway unsets it: it follows again */
@@ -646,6 +662,7 @@ function PageBody({ page, phone, set, refused, clear, hint }: { page: Page; phon
         </Small>
       ) : null}
       {row.warn ? <Small className="text-pretty whitespace-pre-line text-need-fg!">{row.warn}</Small> : null}
+      {row.discovery && refused(row.discovery.refreshKey) ? <Small role="status" className="text-pretty text-need-fg!">{refused(row.discovery.refreshKey)}</Small> : null}
       {refused(row.key) ? (
         <Small role="status" className={clsx('text-pretty', !registry.settingActions[row.key] && 'text-need-fg!')}>
           {refused(row.key)}
@@ -696,13 +713,13 @@ function PageBody({ page, phone, set, refused, clear, hint }: { page: Page; phon
                 </div>
               ) : (
                 // on a phone, a row's segments fill a line of their own under its label
-                <div key={row.key || row.label} className={clsx(rowLook(phone), row.inherits && 'border-l-2 border-accent pl-3', phone && SEGMENTS.has(row.key) && 'flex-col items-stretch! gap-2.5 pb-3!')}>
+                <div key={row.key || row.label} className={clsx(rowLook(phone), row.inherits && 'border-l-2 border-accent pl-3', (row.discovery || phone && SEGMENTS.has(row.key)) && 'flex-col items-stretch! gap-2.5 pb-3!')}>
                   <dt className="flex min-w-0 flex-1 flex-col">
                     {row.label}
                     {under(row)}
                   </dt>
-                  <dd className={clsx('flex min-w-0 shrink-0 flex-col', phone && SEGMENTS.has(row.key) ? 'items-stretch' : 'max-w-[65%] items-end')}>
-                    <Control row={row} phone={phone} set={(x) => set(row.key, follows(row, x))} edit={() => clear(row.key)} />
+                  <dd className={clsx('flex min-w-0 shrink-0 flex-col', row.discovery || phone && SEGMENTS.has(row.key) ? 'items-stretch' : 'max-w-[65%] items-end')}>
+                    <Control row={row} phone={phone} set={(x) => set(row.key, follows(row, x))} edit={() => clear(row.key)} refresh={(key) => set(key, 'refresh')} />
                   </dd>
                 </div>
               ),

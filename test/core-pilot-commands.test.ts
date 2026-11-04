@@ -9,6 +9,7 @@ import type { CoreAgent } from '../server/core/model.ts'
 function fixture() {
   const home = mkdtempSync(join(tmpdir(), 'shep-pilot-commands-'))
   const source = new CoreSource({ home, socket: '/nonexistent/isolated-core', session: 'isolated', binary: 'hc', port: 0 })
+  source.route = async () => undefined // Fake local core transport, including restart preflight.
   source.tasks.seedIncludes = async () => {} // Native include copying has a dedicated real-Git fixture.
   source.tasks.git.ensureWorktree = async () => false // This fixture fakes checkout/core I/O; real Git recreation is covered in core-tasks.
   const run = source.pilots.policy.begin('space', 'machine', { harness: { kind: 'claude' }, reviewer: { kind: 'codex' }, hosts: ['api.anthropic.com'], secrets: ['APPROVED_KEY'], approvals: ['merge'], parallel: 1 })
@@ -167,6 +168,7 @@ test('human task restart waits for its old PID and replaces a stopped contained 
 test('task restart refuses a disconnected or changed process without launching a replacement', async () => {
   const f = fixture()
   try {
+    f.source.store.set('space', 'space', { id: 'space', name: 'project', machine: 'machine', folder: '/repo', base: 'main', prefix: 'EX', mode: 'regular', added: 1 })
     const worker: CoreAgent = { ...f.agent, chat: f.task.chat, role: 'task', pid: 42 }
     f.source.store.set('agent', worker.chat, worker)
     f.source.machineConnected = () => false

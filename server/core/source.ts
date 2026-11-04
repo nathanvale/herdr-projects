@@ -19,7 +19,7 @@ import { Mailbox, type Grant, type MailRequest } from './mailbox.ts'
 import { prepareHome } from './home.ts'
 import type { CoreConfig } from './config.ts'
 import { coreEnvironment } from './config.ts'
-import type { AgentKind, CoreAgent, CoreSpace } from './model.ts'
+import type { AgentKind, CoreAgent, CoreSpace, PendingSend } from './model.ts'
 import { CoreTasks, type CoreTask } from './tasks.ts'
 import { CoreCommands } from './commands.ts'
 import { CoreTaskNews } from './news.ts'
@@ -61,12 +61,25 @@ interface Machine { id: string; name: string; state: string; host?: string; vers
 interface Permission { id: string; chat: string; grant: string; question: Question; expires: number; settled?: boolean; allow?: boolean; at?: number; native?: NativeAsk; grants?: unknown[]; reply?: PermissionAnswer; tool?: string; hash?: string; turn?: string; sub?: string }
 /** the most of an agent's last words a card with no question carries: its card shows a few lines */
 const NEED_TEXT = 1000
-interface PendingSend { id: string; chat: string; text: string; launch?: string; state: 'queued' | 'sending' | 'uncertain' | 'cancelled'; quiet?: boolean; work?: boolean; human?: boolean }
 
 /** Product state is Shepherdr's; terminals, machine commands, files and agent children are core's. */
 export class CoreSource extends Emitter<SourceEvents> implements Source {
   readonly kind = 'live' as const
-  quiescing = false
+  private shutdownRequested = false
+  private updateHold?: symbol
+  get quiescing() { return this.shutdownRequested || !!this.updateHold }
+  set quiescing(value: boolean) { this.shutdownRequested = value }
+  /** Temporary update admission cannot reopen an independent ordinary shutdown. */
+  holdForUpdate() {
+    if (this.quiescing) throw Error('Shepherdr is already stopping')
+    const hold = this.updateHold = Symbol()
+    return {
+      current: () => this.updateHold === hold && !this.shutdownRequested,
+      release: () => { if (this.updateHold === hold) this.updateHold = undefined },
+    }
+  }
+  private activeOperations = 0
+  updateBusy() { return this.activeOperations > 0 || this.sending.size > 0 }
   private human = 'You'
   readonly core: CoreSession
   readonly store: CoreStore
@@ -128,6 +141,7 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
     this.logs = new CoreLogs(this.agents, this.files, this.store, changed, (chat, message) => { this.faults.set(chat, message) }, (chat, message) => this.fresh(chat, message), agent => this.pilots.usage.observe(agent), (agent, event) => this.nativeEnded(agent, logEnd(event)))
     this.settings = new CoreSettings(this.store, this.files, () => this.spaces(), id => this.store.get<string>('name', `m:${id}`) || (id === this.local.id ? this.local.name : this.machineName(id) || id), () => { this.emit('snapshot'); this.plannedChanged() })
     this.agents.settings = this.settings
+    this.agents.stopping = () => this.quiescing
     this.agents.observed = (agent, event) => {
       if (event.event === 'PreToolUse' && event.use) this.ends.called(agent.launch, event.use, { tool: event.tool, hash: event.input, sub: event.agent })
       this.nativeEnded(agent, hookEnd(event))
@@ -337,7 +351,7 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
     // a hook may report a model with its context size: claude-opus-5-5[1m]
     const label = (model?: string) => (model ? this.settings.findModel(kind, model, agent.space ?? '')?.label : undefined)
     const modelLabel = label(agent.model), runtimeLabel = label(runtime?.model?.replace(/\[.*\]$/, ''))
-    return { kind, model: agent.model, ...(modelLabel ? { modelLabel } : {}), effort: agent.effort, speed: agent.speed, runtime: runtime && runtimeLabel ? { ...runtime, modelLabel: runtimeLabel } : runtime }
+    return { kind, ...(agent.provider?.route === 'azure-foundry' ? { providerLabel: 'Azure Foundry' } : {}), model: agent.model, ...(modelLabel ? { modelLabel } : {}), effort: agent.effort, speed: agent.speed, runtime: runtime && runtimeLabel ? { ...runtime, modelLabel: runtimeLabel } : runtime }
   }
   /** Settings changed: an open chat with no agent yet says what they will use now */
   private plannedChanged() {
@@ -347,10 +361,15 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
   private plannedWords(key: string): NonNullable<Chat['agent']> {
     const task = this.tasks.forChat(key), level = task?.place ?? key, own = task?.chat === key ? task : undefined
     const want = this.settings.agent(own ? 'task' : task ? 'reviewer' : this.space(key)?.mode === 'autopilot' ? 'autopilot' : 'coordinator', level)
-    const { kind, model, effort } = own ?? (task ? { kind: task.review.kind, model: task.reviewerModel, effort: task.reviewerEffort } : want)
+    const pick = this.agents.selection(key) ?? own ?? (task ? { kind: task.review.kind, model: task.reviewerModel, effort: task.reviewerEffort } : want)
+    const { kind, effort } = pick
+    const azure = this.settings.get('provider.route', level) === 'Azure Foundry'
+    const model = azure ? ('deployment' in pick && pick.deployment || this.settings.deployment(own ? 'task' : task ? 'reviewer' : 'coordinator', kind, level)) : ('model' in pick ? pick.model : undefined)
     const modelLabel = model ? this.settings.findModel(kind, model, level)?.label : undefined
     const words = { model, ...(modelLabel ? { modelLabel } : {}), effort }
-    return kind === want.kind && model === want.model && effort === want.effort ? { kind, planned: words } : { kind, ...words }
+    if (!azure) return kind === want.kind && model === want.model && effort === want.effort ? { kind, planned: words } : { kind, ...words }
+    return { kind, providerLabel: 'Azure Foundry', planned: { ...words, origin: this.agents.selection(key) ? 'saved selection' : own ? 'task brief' : 'Settings' } }
+
   }
   /** What keeps a message out of this chat's agent now; {} is a machine out of reach. A working agent keeps nothing out: it takes it at once. */
   private hold(chat: string): { waitsFor?: Message['waitsFor'] } | undefined {
@@ -459,11 +478,16 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
 
   async act(action: Action): Promise<unknown> {
     if (this.quiescing) throw new Error('Shepherdr is stopping; retry after it reconnects')
+    this.activeOperations++
+    try { return await this.actNow(action) } finally { this.activeOperations-- }
+  }
+  private async actNow(action: Action): Promise<unknown> {
+    if (this.quiescing) throw new Error('Shepherdr is stopping; retry after it reconnects')
     const plugin = action.type.startsWith('artifact-') ? 'artifacts' : action.type === 'react' ? 'reactions' : action.type === 'browser-notes' ? 'browser' : ['keys', 'text'].includes(action.type) ? 'terminal' : action.type === 'call' ? 'voice' : action.type === 'autopilot-run' ? 'autopilot' : action.type === 'limits-check' ? 'limits' : undefined
     if (plugin) this.requirePlugin(plugin)
     const handler = this.hooks.get(action.type)
     if (handler) return handler(action)
-    if ('chat' in action && this.tasks.forChat(action.chat) && ['pin', 'archive', 'pause', 'stop', 'restart-info', 'restart', 'close', 'delete'].includes(action.type)) return this.tasks.act(action)
+    if ('chat' in action && this.tasks.forChat(action.chat) && ['pin', 'archive', 'pause', 'stop', 'restart-info', 'select-agent', 'restart', 'close', 'delete'].includes(action.type)) return this.tasks.act(action)
     switch (action.type) {
       case 'plugin': return this.plugins.act(action)
       case 'limits-check': return this.limits.refresh(60_000)
@@ -535,6 +559,9 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
       case 'artifact-send': case 'artifact-note': case 'artifact-say': case 'artifact-delete': return this.artifacts.act(action)
       case 'secret': case 'secret-saved': return this.secrets.act(action)
       case 'setting':
+        if (action.key === 'azure.claudeRefresh' || action.key === 'azure.codexRefresh') {
+          await this.settings.refreshDeployments(action.key === 'azure.claudeRefresh' ? 'claude' : 'codex', action.place || 'all'); return { ok: true }
+        }
         if (action.key === 'space.base') {
           if (!action.place || !action.value) throw new Error('Choose a repository space and branch.')
           await this.places.setBase(action.place, action.value); return { ok: true }
@@ -573,10 +600,20 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
         })()
         await this.flush(action.chat); return {}
       }
+      case 'select-agent': {
+        const space = this.space(action.chat)
+        if (!space || space.removed || this.places.removing(space.id)) throw Error('No such coordinator')
+        if (this.pilots.lifecycle.busy(space.id) || this.pilots.completion.busy(space.id)) throw Error('The coordinator is changing; try again shortly')
+        this.agents.saveSelection(space, action.chat, action.token, action)
+        return { ok: true }
+      }
       case 'restart-info': {
-        const agent = this.agents.get(action.chat)
-        return { ok: true, info: { role: 'coordinator', space: this.space(action.chat)?.name, on: { kind: agent?.kind ?? this.agentKind(), model: agent?.model, effort: agent?.effort, speed: agent?.speed }, onKnown: !!agent,
-          onWords: agent?.kind ?? this.agentKind(), want: this.settings.agent(this.space(action.chat)?.mode === 'autopilot' ? 'autopilot' : 'coordinator', action.chat), clis: this.settings.clis(action.chat), working: agent?.state === 'working' } }
+        const agent = this.agents.get(action.chat), space = this.space(action.chat)
+        if (!space) throw Error('No such coordinator')
+        const azure = this.agents.selectionInfo(space, action.chat)
+        return { ok: true, info: { azure, role: 'coordinator', space: space.name, on: { kind: agent?.kind ?? this.agentKind(), model: agent?.model, effort: agent?.effort, speed: agent?.speed }, onKnown: !!agent,
+          onWords: agent?.kind ?? this.agentKind(), want: this.agents.selection(action.chat) ?? this.settings.agent(space.mode === 'autopilot' ? 'autopilot' : 'coordinator', action.chat),
+          clis: azure ? this.settings.selectionClis('coordinator', space.id) : this.settings.clis(action.chat), working: agent?.state === 'working' } }
       }
       case 'restart': {
         if (this.space(action.chat)?.mode === 'autopilot') {
@@ -625,7 +662,7 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
     let progressed = false
     try {
       const pending = this.store.all<PendingSend>('pending-send').filter(item => item.chat === chat && item.state === 'queued')
-      for (const item of pending) {
+      for (let item of pending) {
         if (this.quiescing) return
         if (item.id.startsWith('provider-retry-') && !this.store.get('pending-send', item.id)) continue
         const task = this.tasks.forChat(chat)
@@ -640,18 +677,23 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
         item.state = 'sending'; this.store.set('pending-send', item.id, item)
         try {
           if (!item.id.startsWith('provider-retry-')) this.providerRetries.clear(chat)
-          if (task) await this.tasks.deliver(task.id, chat, item.text, !!item.launch && !item.work, item.human)
+          if (task) await this.tasks.deliver(task.id, chat, item.text, !!item.launch && !item.work, item.human, item.id)
           else if (agent && this.agents.terminal(agent)?.state === 'live') await this.agents.send(chat, item.text)
           else {
             if (space.mode === 'autopilot' || agent?.pilot) throw new Error('This contained coordinator has stopped; change mode or explicitly restart its contained run before sending')
-            const pick = this.settings.agent('coordinator', space.id)
-            await this.agents.launch(space, chat, agent?.kind ?? pick.kind, item.text, agent ? { model: agent.model, effort: agent.effort, speed: agent.speed, resume: true } : { ...pick, resume: true })
+            const pick = this.agents.selection(chat) ?? this.settings.agent('coordinator', space.id)
+            await this.agents.launch(space, chat, agent?.kind ?? pick.kind, item.text, { ...(agent ? { model: agent.model, effort: agent.effort, speed: agent.speed } : pick), resume: true, delivery: item.id })
           }
           progressed = true
           const message = this.store.get<Message>(`message:${chat}`, item.id)
           if (message) { this.store.set(`message:${chat}`, item.id, { ...message, waiting: false, waitsFor: undefined }); this.emit('chat', chat) }
         } catch (error) {
-          if (error instanceof CoreError && ['blocked', 'status_mismatch', 'busy'].includes(error.kind)) {
+          // The native log may acknowledge while the core response is in flight.
+          // Preserve the persisted receipt, and never resurrect an acknowledged send.
+          const saved = this.store.get<PendingSend>('pending-send', item.id)
+          if (!saved) { progressed = true; continue }
+          item = saved
+          if (!item.submission && error instanceof CoreError && ['blocked', 'status_mismatch', 'busy'].includes(error.kind)) {
             item.state = 'queued'; this.store.set('pending-send', item.id, item); this.emit('chat', chat); return
           }
           item.state = 'uncertain'; this.store.set('pending-send', item.id, item)
@@ -669,6 +711,11 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
   }
 
   private async mail(grant: Grant, request: MailRequest, requestId: string): Promise<unknown> {
+    if (this.quiescing) throw new Error('Shepherdr is stopping; retry after it reconnects')
+    this.activeOperations++
+    try { return await this.mailNow(grant, request, requestId) } finally { this.activeOperations-- }
+  }
+  private async mailNow(grant: Grant, request: MailRequest, requestId: string): Promise<unknown> {
     if (this.quiescing) throw new Error('Shepherdr is stopping; retry after it reconnects')
     const agent = this.agents.get(grant.chat)
     const terminal = agent && this.agents.terminal(agent)

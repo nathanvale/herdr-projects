@@ -3,7 +3,7 @@ import { createServer, type Socket } from 'node:net'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CoreClient, type CoreError } from '../server/core/client.ts'
+import { CoreClient, CoreNotSubmitted, type CoreError } from '../server/core/client.ts'
 import { coreVersionAccepted } from '../server/core/protocol.ts'
 import { CoreSession } from '../server/core/session.ts'
 
@@ -192,4 +192,28 @@ test('remote connect preserves its verified core homes when a tool shell changes
   await fixture(async client => {
     await expect(client.call('server.status')).resolves.toEqual({})
   }, () => ({}), { environment: { XDG_RUNTIME_DIR: '/private/core-runtime', XDG_STATE_HOME: '/private/core-state', XDG_CONFIG_HOME: null }, inherited: { XDG_RUNTIME_DIR: '/other/runtime', XDG_STATE_HOME: undefined, XDG_CONFIG_HOME: '/other/config' } })
+})
+
+test('local transport refusals prove no submission without classifying remote replies', async () => {
+  let runs = 0
+  await fixture(async client => {
+    const full = Array.from({ length: 256 }, () => client.call('terminal.get').catch(error => error))
+    await expect(client.call('terminal.run')).rejects.toBeInstanceOf(CoreNotSubmitted)
+    client.close()
+    await Promise.all(full)
+    await expect(client.call('terminal.run')).rejects.toBeInstanceOf(CoreNotSubmitted)
+  }, call => { if (call.method === 'terminal.run') runs++; return NO_REPLY })
+  expect(runs).toBe(0)
+  await fixture(async client => {
+    const cyclic: Record<string, unknown> = {}; cyclic.self = cyclic
+    await expect(client.call('terminal.run', cyclic)).rejects.toBeInstanceOf(CoreNotSubmitted)
+    const error = await client.call('terminal.run').catch(error => error)
+    expect(error).toMatchObject({ kind: 'busy' })
+    expect(error).not.toBeInstanceOf(CoreNotSubmitted)
+  }, (call, socket) => {
+    if (call.method === 'terminal.run') runs++
+    socket.write(frame(0, JSON.stringify({ jsonrpc: '2.0', id: call.id, error: { message: 'remote refusal', data: { kind: 'busy' } } })))
+    return NO_REPLY
+  })
+  expect(runs).toBe(1)
 })

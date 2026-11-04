@@ -43,12 +43,21 @@ export class CoreFailedStarts {
   private async settle(agent: CoreAgent) {
     const { agents, tasks } = this.source, task = tasks.forChat(agent.chat)
     if (task && tasks.busy(task.id)) return // the next poll looks again
-    const terminal = agents.terminal(agent)!
+    const terminal = agents.terminal(agent)
+    if (!terminal || terminal.state !== 'finished') return
     const words = terminal.reason === 'killed' ? '' : await this.words(terminal)
-    const current = agents.get(agent.chat)
-    if (current?.launch !== agent.launch || current.state !== 'starting') return
-    // Stopped on purpose, or for a task that needs no agent now: it only must not hold the chat.
-    if (terminal.reason === 'killed' || task && (task.archived || ['merged', 'closed'].includes(task.workflow))) return agents.update(agent, { state: 'idle' })
+    let current = this.current(agent, terminal)
+    if (!current || this.settleStopped(current, terminal)) return
+    if (terminal.exit_code === 0 && current.session && current.transcript) {
+      // Native hook review can miss SessionStart. SessionEnd may then reveal a
+      // completed turn whose timestamps precede that hook's activity watermark.
+      await this.source.logs.catchUp(current.chat)
+      current = this.current(agent, terminal)
+      if (!current || this.settleStopped(current, terminal)) return
+      const turn = this.source.logs.providerTurn(current)
+      if (!turn.complete) return // Capture is still unconfirmed, never permission to retry.
+      if (!turn.cut) return agents.update(current, { state: 'idle' })
+    }
     try {
       if (current.session && terminal.exit_code !== 0 && LOST.test(words)) await this.fresh(current)
       else await this.fail(current, words.split('\n').filter(line => line.trim()).slice(-3).join(' ').slice(-240) || `It exited with code ${terminal.exit_code ?? terminal.signal ?? 'unknown'}.`)
@@ -56,6 +65,20 @@ export class CoreFailedStarts {
       if (error instanceof Refusal && task && tasks.busy(task.id)) return
       await this.fail(current, (error as Error).message).catch(() => {})
     }
+  }
+  private settleStopped(agent: CoreAgent, terminal: CoreTerminal) {
+    const task = this.source.tasks.forChat(agent.chat)
+    if (terminal.reason !== 'killed' && !(task && (task.archived || ['merged', 'closed'].includes(task.workflow)))) return false
+    this.source.agents.update(agent, { state: 'idle' })
+    return true
+  }
+  /** A read must not classify a replacement, re-used terminal or shutdown. */
+  private current(agent: CoreAgent, terminal: CoreTerminal) {
+    const current = this.source.agents.get(agent.chat), observed = current && this.source.agents.terminal(current)
+    if (this.source.quiescing || !this.source.connected() || !this.source.machineConnected(agent.machine) ||
+      current?.launch !== agent.launch || current.grant !== agent.grant || current.state !== 'starting' ||
+      observed?.state !== 'finished' || current.pid !== undefined && current.pid !== observed.pid || observed.address !== terminal.address || observed.pid !== terminal.pid || observed.created_ms !== terminal.created_ms) return
+    return current
   }
   private async words(terminal: CoreTerminal) {
     try { return screenText((await this.source.core.call<{ text: string }>('terminal.read', { terminal: terminal.address })).text) } catch { return '' }

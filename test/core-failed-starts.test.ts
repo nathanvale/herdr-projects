@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { CoreStore } from '../server/core/store.ts'
+import { runChild } from './child.ts'
 import { CoreSource } from '../server/core/source.ts'
 import type { ResumeStart } from '../server/core/failed-starts.ts'
 import type { CoreAgent, CoreSpace } from '../server/core/model.ts'
@@ -157,5 +159,120 @@ test('a start its hooks report in time, one still running or Autopilot is left a
   terminal = { ...terminal, state: 'live' }
   await settle()
   expect(lines()).toEqual([])
+  expect(launches).toEqual([])
+})
+
+
+function coldCapture(kind: 'claude' | 'codex', role: 'coordinator' | 'task' = 'coordinator', historical = false, complete = true) {
+  const chat = role === 'task' ? 'EX-1/Agent' : 'space', started = Date.now() - 5000
+  const hook = join(home, 'cold-hook.jsonl'), transcript = join(home, 'cold-native.jsonl')
+  source.store.delete('agent', 'space')
+  const record = { ...agent, chat, kind, role, session: undefined, started, hook }
+  source.store.set('agent', chat, record)
+  if (role === 'task') source.store.set('task', 'EX-1', { id: 'EX-1', chat, place: 'space', machine: 'machine', workflow: 'working', review: {}, desc: 'Preserve this brief', after: ['EX-0'], mergePolicy: 'ask' })
+  const at = historical ? started - 3000 : started + 1000, stamp = (offset: number) => new Date(at + offset).toISOString()
+  const rows = kind === 'codex' ? [
+    { timestamp: stamp(0), type: 'session_meta', payload: { id: 'native-session' } },
+    { timestamp: stamp(0), type: 'event_msg', payload: { type: 'task_started', turn_id: 'first' } },
+    { timestamp: stamp(1), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Reply once' }] } },
+    { timestamp: stamp(2), type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'FIRST_OK' }] } },
+    ...(complete ? [{ timestamp: stamp(3), type: 'event_msg', payload: { type: 'task_complete', turn_id: 'first' } }] : []),
+  ] : [
+    { uuid: 'user', sessionId: 'native-session', timestamp: stamp(1), type: 'user', message: { role: 'user', content: 'Reply once' } },
+    { uuid: 'reply', sessionId: 'native-session', timestamp: stamp(2), type: 'assistant', message: { id: 'reply', role: 'assistant', stop_reason: complete ? 'end_turn' : null, content: [{ type: 'text', text: 'FIRST_OK' }] } },
+  ]
+  writeFileSync(transcript, rows.map(row => JSON.stringify(row)).join('\n') + '\n')
+  writeFileSync(hook, JSON.stringify({ id: 'end', event: 'SessionEnd', at: started + 4000, session: 'native-session', transcript }) + '\n')
+  terminal = { ...terminal, exit_code: 0 }; screen = 'To continue, resume native-session'
+  source.agents.bun = async () => process.execPath
+  source.files.exec = (_machine, argv, cwd, input) => runChild(argv, { cwd, input })
+  return { chat, record, transcript }
+}
+for (const kind of ['claude', 'codex'] as const) for (const role of ['coordinator', 'task'] as const) test(`cold hook completion reconciles a successful ${kind} ${role} without a false failure`, async () => {
+  const f = coldCapture(kind, role)
+  // Only the late SessionEnd reports the session. It must not declare readiness.
+  await source.logs.catchUp(f.chat)
+  expect(source.agents.get(f.chat)?.state).toBe('starting')
+  await settle()
+  const reader = new CoreStore(home)
+  try {
+    expect(reader.get<CoreAgent>('agent', f.chat)).toMatchObject({ launch: 'one', session: 'native-session', state: 'idle' })
+    expect(reader.get(`message:${f.chat}`, 'start-failed-one')).toBeUndefined()
+    expect(source.logs.messages(f.chat).filter(message => message.who === 'agent').map(message => message.text)).toEqual(['FIRST_OK'])
+    if (role === 'task') expect(reader.get('task', 'EX-1')).toMatchObject({ workflow: 'working', desc: 'Preserve this brief', after: ['EX-0'], mergePolicy: 'ask' })
+    expect(launches).toEqual([])
+  } finally { reader.close() }
+})
+for (const reason of ['historical', 'incomplete'] as const) test(`cold hook completion keeps ${reason} capture unconfirmed`, async () => {
+  const f = coldCapture('codex', 'coordinator', reason === 'historical', reason !== 'incomplete')
+  await source.logs.catchUp(f.chat); await settle()
+  expect(source.agents.get(f.chat)).toMatchObject({ launch: 'one', state: 'starting' })
+  expect(source.store.get('message:space', 'start-failed-one')).toBeUndefined()
+  expect(launches).toEqual([])
+})
+test('cold hook completion does not hide a nonzero failed start', async () => {
+  const f = coldCapture('codex'); terminal.exit_code = 1; screen = 'Error: invalid API key'
+  await source.logs.catchUp(f.chat); await settle()
+  expect(lines()).toContain('Codex couldn’t start. Error: invalid API key')
+  expect(launches).toEqual([])
+})
+for (const change of ['replacement', 'shutdown', 'terminal-reuse'] as const) test(`cold hook completion refuses ${change} during capture`, async () => {
+  const f = coldCapture('codex'); await source.logs.catchUp(f.chat)
+  const exec = source.files.exec.bind(source.files)
+  let release!: () => void, reached!: () => void
+  const ready = new Promise<void>(resolve => { reached = resolve }), wait = new Promise<void>(resolve => { release = resolve })
+  source.files.exec = async (...args) => { reached(); await wait; return exec(...args) }
+  const settling = settle(); await ready
+  if (change === 'replacement') source.store.set('agent', f.chat, { ...source.agents.get(f.chat)!, launch: 'replacement', grant: 'new', hook: '/unused', transcript: undefined, session: 'replacement-session', started: Date.now() })
+  if (change === 'shutdown') source.quiescing = true
+  if (change === 'terminal-reuse') terminal = { ...terminal, pid: 200, created_ms: 2 }
+  release(); await settling
+  expect(source.agents.get(f.chat)?.state).toBe('starting')
+  expect(source.store.get('message:space', 'start-failed-one')).toBeUndefined()
+  expect(launches).toEqual([])
+})
+
+test('cold hook completion keeps an unreadable capture unconfirmed', async () => {
+  const f = coldCapture('codex'); unlinkSync(f.transcript)
+  await source.logs.catchUp(f.chat); await settle()
+  expect(source.agents.get(f.chat)).toMatchObject({ launch: 'one', state: 'starting' })
+  expect(source.store.get('message:space', 'start-failed-one')).toBeUndefined()
+  expect(launches).toEqual([])
+})
+test('cold hook completion does not hide a captured native error on clean exit', async () => {
+  const f = coldCapture('codex'); screen = 'Error: native failure'
+  const text = readFileSync(f.transcript, 'utf8')
+  expect(text).toContain('"type":"task_complete","turn_id":"first"')
+  writeFileSync(f.transcript, text.replace('"type":"task_complete","turn_id":"first"', '"type":"task_complete","turn_id":"first","error":{"message":"Error: native failure"}'))
+  await source.logs.catchUp(f.chat); await settle()
+  expect(lines()).toContain('Codex couldn’t start. Error: native failure')
+  expect(launches).toEqual([])
+})
+
+test('cold hook completion refuses a terminal that no longer matches the recorded PID', async () => {
+  const f = coldCapture('codex'); await source.logs.catchUp(f.chat)
+  source.store.set('agent', f.chat, { ...source.agents.get(f.chat)!, pid: 100 })
+  terminal = { ...terminal, pid: 200 }
+  await settle()
+  expect(source.agents.get(f.chat)).toMatchObject({ launch: 'one', pid: 100, state: 'starting' })
+  expect(source.store.get('message:space', 'start-failed-one')).toBeUndefined()
+  expect(launches).toEqual([])
+})
+
+for (const action of ['closed', 'archived', 'closed-during-read'] as const) test(`cold hook completion preserves ${action} task settlement without a complete capture`, async () => {
+  const f = coldCapture('codex', 'task', false, false); await source.logs.catchUp(f.chat)
+  const finish = () => {
+    const task = source.tasks.get('EX-1')!
+    if (action === 'archived') task.archived = Date.now()
+    else task.workflow = 'closed'
+    source.store.set('task', task.id, task)
+  }
+  if (action === 'closed-during-read') {
+    const exec = source.files.exec.bind(source.files)
+    source.files.exec = async (...args) => { finish(); return exec(...args) }
+  } else finish()
+  await settle()
+  expect(source.agents.get(f.chat)).toMatchObject({ state: 'idle', launch: 'one' })
+  expect(source.store.get(`message:${f.chat}`, 'start-failed-one')).toBeUndefined()
   expect(launches).toEqual([])
 })

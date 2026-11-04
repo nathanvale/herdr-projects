@@ -11,7 +11,7 @@ name: Check
 on:
   # no paths-ignore here: a docs-only pull request must report a check too, or it could never merge
   pull_request:
-    branches: [main]
+    branches: [main, foundry-base]
   push:
     branches: [main]
     paths-ignore:
@@ -52,9 +52,31 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun run build
+      # Restore once. Independently restored moving caches can assign a file to
+      # no shard (or several) when another shard/run publishes newer timings.
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.TIMINGS }}
+          key: test-timings-${{ github.run_id }}
+          restore-keys: test-timings-
+      - name: Freeze the timing input for every shard
+        run: |
+          if [ -f "$TIMINGS" ]; then
+            tar -cf "$RUNNER_TEMP/test-timings.tar" "$TIMINGS"
+          else
+            tar -cf "$RUNNER_TEMP/test-timings.tar" --files-from /dev/null
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-timings-input
+          path: ${{ runner.temp }}/test-timings.tar
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
 
   test:
     name: test (${{ matrix.shard }}/3)
+    needs: types
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -76,6 +98,10 @@ jobs:
       # Real Autopilot namespace enforcement tests use fake agents and no provider credentials.
       - run: sudo apt-get update -qq && sudo apt-get install -y bubblewrap
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      # Tests supply private SSH profiles and a fake transport. Do not inherit a
+      # hosted runner's ProxyCommand; production must continue refusing it.
+      - name: Isolate system SSH configuration for transport fixtures
+        run: sudo install -m 644 /dev/null /etc/ssh/ssh_config
       # Chromium's headless shell for playwright-core, at the version it wants (the runner has the libraries it needs),
       # and WebKit, Safari's engine, for an iPhone's tests (layout-iphone.test.ts), with the libraries it needs
       - id: playwright
@@ -91,12 +117,15 @@ jobs:
         with:
           path: node_modules/.cache/shepherdr-test/dist-*
           key: screen-maps-${{ hashFiles('index.html', 'vite.config.ts', 'tsconfig.json', 'package.json', 'bun.lock', 'plugins.json', 'src/**', 'plugins/**', 'shared/**', 'public/**') }}
-      # the newest times any shard saved: each carries every file's time forward, with its own files' fresh ones
-      - uses: actions/cache/restore@v4
+      # Failed-shard retries also reuse this run's frozen input.
+      - uses: actions/download-artifact@v4
         with:
-          path: ${{ env.TIMINGS }}
-          key: test-timings-${{ github.run_id }}
-          restore-keys: test-timings-
+          name: test-timings-input
+          path: ${{ runner.temp }}
+      - name: Use the shared timing input
+        run: |
+          sha256sum "$RUNNER_TEMP/test-timings.tar"
+          tar -xf "$RUNNER_TEMP/test-timings.tar"
       # Which lines of the screen each of this shard's browser tests runs, for the test runs on the agents' machine: a
       # change to the screen there runs only the browser tests that reach it (test/screen-map.ts puts the shards' maps
       # of main's newest green run together)

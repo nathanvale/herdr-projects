@@ -121,6 +121,10 @@ export class CorePilotLifecycle {
     if (!this.source.machineConnected(space.machine)) throw Error('Wait for this machine to reconnect')
     const pick = this.source.settings.checkedAgent(place, harness)
     return this.transition(place, async () => {
+      const prepared = await this.source.agents.preflight(space, place, pick.kind, old ? {} : { deployment: this.source.settings.deployment('coordinator', pick.kind, place) })
+      this.source.agents.admit(prepared)
+      if (this.source.quiescing) throw Error('Shepherdr is stopping')
+      if (this.source.agents.get(place)?.launch !== old?.launch || this.source.space(place)?.mode !== 'regular') throw Error('Coordinator changed during preflight')
       if (old) {
         this.source.mailbox.revoke(old.chat)
         this.source.denyPermissions(old, 'Coordinator restarted; ask again in the new session')
@@ -128,7 +132,7 @@ export class CorePilotLifecycle {
       }
       if (this.source.quiescing) throw Error('Shepherdr is stopping')
       if (this.source.agents.get(place)?.launch !== old?.launch || this.source.space(place)?.mode === 'autopilot') throw Error('A newer coordinator replaced this restart')
-      await this.source.agents.launch(space, place, pick.kind, '', { ...pick, speed: harness.speed, resume: true })
+      await this.source.agents.launch(space, place, pick.kind, '', { ...pick, speed: harness.speed, resume: true, prepared })
       if (save) this.source.settings.saveAgent('coordinator', place, pick)
     }).finally(() => this.source.retry(place))
   }

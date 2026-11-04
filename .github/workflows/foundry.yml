@@ -1,0 +1,378 @@
+name: Foundry profiles
+on:
+  push:
+    branches: [feat/azure-foundry-profiles]
+  pull_request:
+    branches: [foundry-base]
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run typecheck
+      - name: Prove the default-preservation regression detects a provider override
+        shell: bash
+        run: |
+          cp server/core/providers.ts /tmp/providers-original.ts
+          trap 'cp /tmp/providers-original.ts server/core/providers.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/providers.ts')
+          source = path.read_text()
+          before = "fingerprint: 'personal' }, env: {}"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, "fingerprint: 'personal' }, env: { OPENAI_BASE_URL: 'https://invalid.example' }"))
+          PYCODE
+          if bun test test/core-providers.test.ts --test-name-pattern 'Personal .* launches' > /tmp/provider-sensitivity.log 2>&1; then
+            cat /tmp/provider-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) Personal claude launches' /tmp/provider-sensitivity.log
+          grep -F '(fail) Personal codex launches' /tmp/provider-sensitivity.log
+      # Protocol fakes only: no native coding agents, credentials, or model requests.
+      - name: Prove discovery rejects incompatible inventory
+        shell: bash
+        run: |
+          cp server/core/azure-deployments.ts /tmp/discovery-original.ts
+          trap 'cp /tmp/discovery-original.ts server/core/azure-deployments.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/azure-deployments.ts')
+          source = path.read_text()
+          before = "(capability === 'true' || capability === true)"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'true'))
+          PYCODE
+          if bun test test/core-azure-deployments.test.ts --test-name-pattern 'deployment discovery offers' > /tmp/discovery-sensitivity.log 2>&1; then
+            cat /tmp/discovery-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) deployment discovery offers' /tmp/discovery-sensitivity.log
+      - name: Prove preflight refusal precedes interruption
+        shell: bash
+        run: |
+          cp server/core/agents.ts /tmp/agents-original.ts
+          trap 'cp /tmp/agents-original.ts server/core/agents.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/agents.ts')
+          source = path.read_text()
+          before = "if (previous && (previous.provider?.fingerprint ?? 'personal') !== provider.binding.fingerprint)"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'if (false)'))
+          PYCODE
+          if bun test test/core-coordinator-restart.test.ts --test-name-pattern 'preflight refuses incompatible' > /tmp/preflight-sensitivity.log 2>&1; then
+            cat /tmp/preflight-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) Azure coordinator preflight refuses incompatible' /tmp/preflight-sensitivity.log
+          grep -F '(fail) Azure task preflight refuses incompatible' /tmp/preflight-sensitivity.log
+      - name: Prove Codex resume retains its recorded deployment
+        shell: bash
+        run: |
+          cp server/core/agents.ts /tmp/resume-original.ts
+          trap 'cp /tmp/resume-original.ts server/core/agents.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/agents.ts')
+          source = path.read_text()
+          before = " ?? (previous?.provider?.route === 'azure-foundry' ? previous.model : undefined)"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, ''))
+          PYCODE
+          if bun test test/core-providers.test.ts --test-name-pattern 'Azure Codex resume retains' > /tmp/resume-sensitivity.log 2>&1; then
+            cat /tmp/resume-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) Azure Codex resume retains' /tmp/resume-sensitivity.log
+      - name: Prove the final revision guard detects a settings race
+        shell: bash
+        run: |
+          cp server/core/agents.ts /tmp/admission-original.ts
+          trap 'cp /tmp/admission-original.ts server/core/agents.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/agents.ts')
+          source = path.read_text()
+          before = "this.admit(preparedProvider, launch); this.checkParent(parentIdentity, true)\n      if (this.get(chat)?.launch !== launch)"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, "this.checkParent(parentIdentity, true)\n      if (this.get(chat)?.launch !== launch)"))
+          PYCODE
+          if bun test test/core-launch-admission.test.ts --test-name-pattern 'rechecks stale settings before-submit' > /tmp/admission-sensitivity.log 2>&1; then
+            cat /tmp/admission-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) launch admission rechecks stale settings before-submit' /tmp/admission-sensitivity.log
+      - name: Prove unrelated settings cannot cancel an admitted replacement
+        shell: bash
+        run: |
+          cp server/core/agents.ts /tmp/scoped-revision-original.ts
+          trap 'cp /tmp/scoped-revision-original.ts server/core/agents.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/agents.ts')
+          source = path.read_text()
+          before = 'this.settings?.launchRevision(level)'
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'this.settings?.revision()'))
+          PYCODE
+          if bun test test/core-launch-admission.test.ts --test-name-pattern 'task restart survives unrelated settings' > /tmp/scoped-revision-sensitivity.log 2>&1; then
+            cat /tmp/scoped-revision-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) task restart survives unrelated settings' /tmp/scoped-revision-sensitivity.log
+      - name: Prove local non-submission cannot strand a conversation
+        shell: bash
+        run: |
+          cp server/core/agents.ts /tmp/feedback-0-original.ts
+          trap 'cp /tmp/feedback-0-original.ts server/core/agents.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/agents.ts')
+          source = path.read_text()
+          before = 'if (error instanceof CoreNotSubmitted)'
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'if (false)'))
+          PYCODE
+          if bun test test/core-launch-admission.test.ts --test-name-pattern 'local non-submission releases' > /tmp/feedback-0-sensitivity.log 2>&1; then
+            cat /tmp/feedback-0-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) local non-submission releases' /tmp/feedback-0-sensitivity.log
+      - name: Prove required coordinator validation precedes worker interruption
+        shell: bash
+        run: |
+          cp server/core/tasks.ts /tmp/feedback-1-original.ts
+          trap 'cp /tmp/feedback-1-original.ts server/core/tasks.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/tasks.ts')
+          source = path.read_text()
+          before = "const coordinator = !profile && (!parent || this.source.agents.terminal(parent)?.state !== 'live')"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'const coordinator = false'))
+          PYCODE
+          if bun test test/core-launch-admission.test.ts --test-name-pattern 'task restart validates required coordinator' > /tmp/feedback-1-sensitivity.log 2>&1; then
+            cat /tmp/feedback-1-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) task restart validates required coordinator' /tmp/feedback-1-sensitivity.log
+      - name: Prove late parent liveness is rechecked
+        shell: bash
+        run: |
+          cp server/core/tasks.ts /tmp/feedback-2-original.ts
+          trap 'cp /tmp/feedback-2-original.ts server/core/tasks.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/tasks.ts')
+          source = path.read_text()
+          before = "if (!pilot && (!parent || this.source.agents.terminal(parent)?.state !== 'live')) {"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'if (needsParent) {'))
+          PYCODE
+          if bun test test/core-launch-admission.test.ts --test-name-pattern 'task start replaces a coordinator that finishes during' > /tmp/feedback-2-sensitivity.log 2>&1; then
+            cat /tmp/feedback-2-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) task start replaces a coordinator that finishes during' /tmp/feedback-2-sensitivity.log
+      - name: Prove protected stop refuses live workers
+        shell: bash
+        run: |
+          cp server/core/protected-update.ts /tmp/protected-original.ts
+          trap 'cp /tmp/protected-original.ts server/core/protected-update.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/protected-update.ts')
+          source = path.read_text()
+          before = "    if (terminals.some(row => row.state !== 'finished')) refusal('core has live or unconfirmed terminals')"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, ''))
+          PYCODE
+          if bun test test/core-protected-update.test.ts --test-name-pattern 'protected operator refuses live worker' > /tmp/protected-sensitivity.log 2>&1; then
+            cat /tmp/protected-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) protected operator refuses live worker' /tmp/protected-sensitivity.log
+      - name: Prove expired operator requests cannot stop the app later
+        shell: bash
+        run: |
+          cp server/core/operator.ts /tmp/operator-lifetime-original.ts
+          trap 'cp /tmp/operator-lifetime-original.ts server/core/operator.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/operator.ts')
+          source = path.read_text()
+          before = 'prepareStop(request.signal, expires, () => {'
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'prepareStop(new AbortController().signal, Infinity, () => {'))
+          PYCODE
+          if bun test test/core-protected-update.test.ts --test-name-pattern 'protected operator deadline revokes' > /tmp/operator-lifetime-sensitivity.log 2>&1; then
+            cat /tmp/operator-lifetime-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) protected operator deadline revokes' /tmp/operator-lifetime-sensitivity.log
+      - name: Prove protected admission preserves an independent shutdown
+        shell: bash
+        run: |
+          cp server/core/source.ts /tmp/source-shutdown-original.ts
+          trap 'cp /tmp/source-shutdown-original.ts server/core/source.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/source.ts')
+          source = path.read_text()
+          before = 'current: () => this.updateHold === hold && !this.shutdownRequested'
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'current: () => this.updateHold === hold'))
+          PYCODE
+          if bun test test/core-protected-update.test.ts --test-name-pattern 'protected operator cannot reopen' > /tmp/operator-shutdown-sensitivity.log 2>&1; then
+            cat /tmp/operator-shutdown-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) protected operator cannot reopen' /tmp/operator-shutdown-sensitivity.log
+      - name: Prove agents cannot redirect connection credentials
+        shell: bash
+        run: |
+          cp server/core/commands.ts /tmp/commands-original.ts
+          trap 'cp /tmp/commands-original.ts server/core/commands.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/commands.ts')
+          source = path.read_text()
+          line = next(line for line in source.splitlines(True) if 'agents cannot change credential destinations' in line)
+          path.write_text(source.replace(line, ''))
+          PYCODE
+          if bun test test/core-commands.test.ts --test-name-pattern 'coordinator connection changes' > /tmp/connection-sensitivity.log 2>&1; then
+            cat /tmp/connection-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) coordinator connection changes' /tmp/connection-sensitivity.log
+      - name: Prove task restart rebinds only its owned coordinator replacement
+        shell: bash
+        run: |
+          cp server/core/tasks.ts /tmp/task-parent-original.ts
+          trap 'cp /tmp/task-parent-original.ts server/core/tasks.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/tasks.ts')
+          source = path.read_text()
+          before = "      if (prepared) prepared = { ...prepared, parent: undefined }"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, ''))
+          PYCODE
+          if bun test test/core-launch-admission.test.ts --test-name-pattern 'task restart replaces a finished coordinator' > /tmp/task-parent-sensitivity.log 2>&1; then
+            cat /tmp/task-parent-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) task restart replaces a finished coordinator' /tmp/task-parent-sensitivity.log
+      - name: Prove task selection reset preserves brief requirements
+        shell: bash
+        run: |
+          cp server/core/tasks.ts /tmp/task-selection-original.ts
+          trap 'cp /tmp/task-selection-original.ts server/core/tasks.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/tasks.ts')
+          source = path.read_text()
+          before = "if (!action.deployment.trim()) {"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'if (false) {'))
+          PYCODE
+          if bun test test/core-launch-admission.test.ts --test-name-pattern 'task selection reset restores' > /tmp/task-selection-sensitivity.log 2>&1; then
+            cat /tmp/task-selection-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) task selection reset restores' /tmp/task-selection-sensitivity.log
+      - run: bun test test/core-launch-admission.test.ts --test-name-pattern 'launch delivery'
+      - name: Prove native delivery regression detects the premature restart filter
+        shell: bash
+        run: |
+          cp server/core/logs.ts /tmp/delivery-original.ts
+          trap 'cp /tmp/delivery-original.ts server/core/logs.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/logs.ts')
+          source = path.read_text()
+          before = "    if (event.kind !== 'user' && event.kind !== 'agent') return"
+          assert source.count(before) == 1
+          source = source.replace(before, before + "\n    if (event.kind === 'user' && event.text.startsWith('<restart>')) return")
+          path.write_text(source)
+          PYCODE
+          if bun test test/core-launch-admission.test.ts --test-name-pattern 'launch delivery acknowledges exact native prompt' > /tmp/delivery-sensitivity.log 2>&1; then
+            cat /tmp/delivery-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) launch delivery acknowledges exact native prompt' /tmp/delivery-sensitivity.log
+      - run: bun test test/core-failed-starts.test.ts --test-name-pattern 'cold hook completion'
+      - name: Prove cold hook regression detects premature startup failure
+        shell: bash
+        run: |
+          cp server/core/failed-starts.ts /tmp/cold-hook-original.ts
+          trap 'cp /tmp/cold-hook-original.ts server/core/failed-starts.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/failed-starts.ts')
+          source = path.read_text()
+          before = "if (terminal.exit_code === 0 && current.session && current.transcript)"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, "if (false && terminal.exit_code === 0 && current.session && current.transcript)"))
+          PYCODE
+          if bun test test/core-failed-starts.test.ts --test-name-pattern 'cold hook completion reconciles a successful' > /tmp/cold-hook-sensitivity.log 2>&1; then
+            cat /tmp/cold-hook-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) cold hook completion reconciles a successful' /tmp/cold-hook-sensitivity.log
+      - name: Prove readiness reconciliation rejects a changed worker PID
+        shell: bash
+        run: |
+          cp server/core/failed-starts.ts /tmp/readiness-pid-original.ts
+          trap 'cp /tmp/readiness-pid-original.ts server/core/failed-starts.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/failed-starts.ts')
+          source = path.read_text()
+          before = "current.pid !== undefined && current.pid !== observed.pid || "
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, ""))
+          PYCODE
+          if bun test test/core-failed-starts.test.ts --test-name-pattern 'cold hook completion refuses a terminal that no longer' > /tmp/readiness-pid-sensitivity.log 2>&1; then
+            cat /tmp/readiness-pid-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) cold hook completion refuses a terminal that no longer' /tmp/readiness-pid-sensitivity.log
+      - name: Prove capture cannot strand a closed or archived task
+        shell: bash
+        run: |
+          cp server/core/failed-starts.ts /tmp/readiness-stop-original.ts
+          trap 'cp /tmp/readiness-stop-original.ts server/core/failed-starts.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/failed-starts.ts')
+          source = path.read_text()
+          before = "this.settleStopped(current, terminal)"
+          assert source.count(before) == 2
+          path.write_text(source.replace(before, "false"))
+          PYCODE
+          if bun test test/core-failed-starts.test.ts --test-name-pattern 'cold hook completion preserves' > /tmp/readiness-stop-sensitivity.log 2>&1; then
+            cat /tmp/readiness-stop-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) cold hook completion preserves' /tmp/readiness-stop-sensitivity.log
+      - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts test/core-launch-admission.test.ts test/core-client.test.ts test/core-mailbox.test.ts test/core-launcher.test.ts test/core-operator.test.ts test/core-protected-update.test.ts test/core-commands.test.ts test/core-failed-starts.test.ts
+      - run: bun x playwright-core install --only-shell chromium
+      - run: bun test test/layout-restart.test.ts test/layout-azure-admission.test.ts
+      - run: bun run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: foundry-preview-assets
+          path: |
+            dist/
+            generated/
+            test-results/azure-admission-settings.png
+          retention-days: 3

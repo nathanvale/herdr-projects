@@ -66,6 +66,8 @@ export class CoreCommands {
     if (agent.role !== 'coordinator') throw new Refusal('Only a regular coordinator changes settings when the human asks')
     if (one(parsed, 'section') || !words[0] || command === 'unset' && words.length !== 1 || command === 'set' && words.length < 2) throw new Refusal('Use set KEY VALUE or unset KEY [--machine | --space NAME]')
     const [key, ...values] = words
+    // Connection destinations and credential mode belong to the human, never a model's tool call.
+    if (['provider.route', 'azure.subscription', 'azure.claudeResource', 'azure.claudeAuth', 'azure.codexEndpoint', 'azure.codexAuth'].includes(key!)) throw new Refusal('Change provider connections and authentication in Settings, Agents; agents cannot change credential destinations')
     if (key === 'space.base') {
       if (command !== 'set' || !one(parsed, 'space') || parsed.flags.size || values.length !== 1) throw new Refusal('Use set space.base BRANCH --space NAME')
       return result(await this.source.places.cli(agent, ['space', 'set', 'base', values[0]!, '--space', one(parsed, 'space')!]))

@@ -169,3 +169,41 @@ for (const kind of ['claude', 'codex'] as const) test(`${kind} coordinator launc
     }
   } finally { store.close(); rmSync(home, { recursive: true, force: true }) }
 })
+
+test('a lost terminal start reply remains unconfirmed across reload and cannot duplicate a worker', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'shep-unknown-start-')), store = new CoreStore(home)
+  let starts = 0
+  const core = { current: { terminals: new Map() }, call: async () => { starts++; throw Error('Reply lost after submission') } } as unknown as CoreSession
+  const mailbox = { issue: () => ({ id: 'unknown-grant', credential: {} }), revoke: () => {} } as unknown as Mailbox
+  const config = { home, port: 0, session: 'test', socket: '/unused', binary: 'hc' }
+  const installation = { format: 'shepherdr-core' as const, schema: 1 as const, id: 'installation' }
+  const space = { id: 'space', name: 'Example', machine: 'machine', folder: '/unused', base: 'main', prefix: 'EX', mode: 'regular' as const, added: 1 }
+  try {
+    const first = new CoreAgents(config, installation, core, store, mailbox, async () => undefined, () => {})
+    await expect(first.launch(space, 'chat', 'claude', 'Wait')).rejects.toThrow('Reply lost')
+    const pending = first.get('chat')!
+    expect(pending).toMatchObject({ state: 'starting' }); expect(pending.terminal).toBeUndefined()
+    const reader = new CoreStore(home)
+    try {
+      const reloaded = new CoreAgents(config, installation, core, reader, mailbox, async () => undefined, () => {})
+      await expect(reloaded.launch(space, 'chat', 'claude', 'Wait')).rejects.toThrow('unconfirmed')
+      expect(reloaded.get('chat')?.launch).toBe(pending.launch)
+      expect(starts).toBe(1)
+      expect(reloaded.selectionLocked('chat')).toBe(true)
+    } finally { reader.close() }
+  } finally { store.close(); rmSync(home, { recursive: true, force: true }) }
+})
+
+test('shutdown during preflight prevents a new native process and grant', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'shep-quiescing-')), store = new CoreStore(home)
+  let stopping = false, starts = 0, grants = 0
+  const core = { current: { terminals: new Map() }, call: async () => { starts++; return { address: 't1' } } } as unknown as CoreSession
+  const mailbox = { issue: () => { grants++; return { id: 'grant', credential: {} } }, revoke: () => {} } as unknown as Mailbox
+  try {
+    const agents = new CoreAgents({ home, port: 0, session: 'test', socket: '/unused', binary: 'hc' }, { format: 'shepherdr-core', schema: 1, id: 'installation' }, core, store, mailbox,
+      async () => { stopping = true; return undefined }, () => {})
+    agents.stopping = () => stopping
+    await expect(agents.launch({ id: 'space', name: 'Example', machine: 'machine', folder: '/unused', base: 'main', prefix: 'EX', mode: 'regular', added: 1 }, 'chat', 'claude', 'Wait')).rejects.toThrow('stopping')
+    expect(starts).toBe(0); expect(grants).toBe(0); expect(agents.get('chat')).toBeUndefined()
+  } finally { store.close(); rmSync(home, { recursive: true, force: true }) }
+})

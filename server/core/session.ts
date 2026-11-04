@@ -1,4 +1,4 @@
-import { CoreClient, CoreError } from './client.ts'
+import { CoreClient, CoreError, CoreNotSubmitted } from './client.ts'
 import type { CoreNotification, CoreSnapshot, CoreTerminal } from './protocol.ts'
 
 export interface CoreView {
@@ -39,7 +39,7 @@ export class CoreSession {
     this.view = { ...this.view, connected: false }; this.publish()
   }
   async call<T = unknown>(method: string, params: Record<string, unknown> = {}, timeout?: number): Promise<T> {
-    if (!this.view.connected || !this.client) throw new CoreError('unavailable', 'Core is reconnecting; try again when connected')
+    if (!this.view.connected || !this.client) throw new CoreNotSubmitted('unavailable', 'Core is reconnecting; try again when connected')
     return this.client.call<T>(method, params, timeout)
   }
   async attach(...args: Parameters<CoreClient['attach']>) {

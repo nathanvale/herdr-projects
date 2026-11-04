@@ -1,3 +1,5 @@
+import { PROVIDER_ROWS, providerSetting } from './providers.ts'
+import { discoverDeployments } from './azure-deployments.ts'
 import type { SettingRow, SettingSection, RestartCli } from '../../shared/types.ts'
 import { SPEEDS, TABLE, nearest, parseCodex, type CliModels } from '../../shared/models.ts'
 import type { CoreStore } from './store.ts'
@@ -51,7 +53,7 @@ const CATALOG: SettingSection[] = [
     { key: 'brief.merge', label: 'Merge', value: 'on its own', options: ['on its own', 'after GitHub checks', 'ask me first'] },
     ...roleRows('reviewer', 'Reviewer'),
   ] },
-  { name: 'Agents', about: "What each kind of agent starts with. Default is the agent's own model or effort. Backup takes a task over when its agent can't go on. Chat choices need a chat log reader; other installed CLIs cannot show replies here. Headless review is separate.", rows: [...roleRows('task', 'Tasks'), ...roleRows('coordinator', 'Coordinators'),
+  { name: 'Agents', about: "What each kind of agent starts with. Default is the agent's own model or effort. Backup takes a task over when its agent can't go on. Chat choices need a chat log reader; other installed CLIs cannot show replies here. Headless review is separate.", rows: [...PROVIDER_ROWS, ...roleRows('task', 'Tasks'), ...roleRows('coordinator', 'Coordinators'),
     { group: 'Backup', key: 'task.fallback', label: 'Agent', value: 'Codex', options: ['off', ...Object.values(names)] },
     { group: 'Backup', key: 'backup.model', label: 'Model', value: 'default', text: true },
     { group: 'Backup', key: 'backup.effort', label: 'Effort', value: 'default', options: ['default', ...TABLE.codex.efforts] },
@@ -59,7 +61,8 @@ const CATALOG: SettingSection[] = [
 ]
 const SECTION_ORDER = ['Private instructions', 'How tasks work', 'Agents', 'Tasks', 'Autopilot', 'Browser', 'Notify', 'Machine', 'Time zone', 'Alerts and voice']
 CATALOG.sort((a, b) => SECTION_ORDER.indexOf(a.name) - SECTION_ORDER.indexOf(b.name))
-const rows = CATALOG.flatMap(section => section.rows)
+const rows: SettingRow[] = [...CATALOG.flatMap(section => section.rows), ...(['task', 'coordinator'] as const).flatMap(role =>
+  (['claude', 'codex'] as const).map(kind => ({ key: `${role}.azure.${kind}Deployment`, label: 'Azure deployment', value: '', text: true } satisfies SettingRow)))]
 /** Settings whose default is a CLI the machine can really use, not a fixed name. */
 const CHOSEN = new Set(['reviewer.agent', 'task.fallback'])
 const CHECK_MS = 15 * 60_000, RETRY_MS = 60_000
@@ -70,6 +73,7 @@ export class CoreSettings {
   private tried = new Map<string, number>()
   private unchecked = new Set<string>()
   private saving = false
+  private deployments = new Map<string, { busy: boolean; options: NonNullable<SettingRow['discovery']>['options']; models?: Record<string, string>; hint?: string; warn?: string }>()
   constructor(private store: CoreStore, private files: CoreFiles, private spaces: () => CoreSpace[], private machineName: (id: string) => string, private changed: () => void) {}
   private chain(level = 'all'): string[] {
     if (level === 'all') return ['all']
@@ -104,7 +108,40 @@ export class CoreSettings {
     const pick = order.find(kind => machines.some(machine => this.cliAt(kind, [machine]) === 'ready')) ?? (machines.some(machine => !this.store.get('machine-check', machine)) ? other : undefined)
     return pick ? names[pick] : key === 'task.fallback' ? 'off' : names[own]
   }
+  revision() { return this.store.get<number>('meta', 'settings-revision') ?? 0 }
+  /** Admission follows the target's inheritance chain, not unrelated UI preferences. */
+  launchRevision(level: string) {
+    return this.chain(level).map(scope => [scope, this.store.get<number>('launch-settings-revision', scope) ?? 0])
+  }
   get(key: string, level = 'all') { return this.pick(key, level).value }
+  /** Explicit refresh only; snapshots and application startup never query Azure. */
+  async refreshDeployments(kind: AgentKind, level = 'all') {
+    this.chain(level)
+    const machines = this.machinesAt(level)
+    if (machines.length !== 1) throw Error('Choose one machine or space before discovering Azure deployments')
+    const field = kind === 'claude' ? 'azure.claudeResource' : 'azure.codexEndpoint'
+    const endpoint = providerSetting(field, this.get(field, level))
+    if (!endpoint) throw Error('Set the Azure resource or endpoint before refreshing deployments')
+    const subscription = providerSetting('azure.subscription', this.get('azure.subscription', level))
+    const key = `${level}:${kind}`
+    if (this.deployments.get(key)?.busy) return
+    const state: NonNullable<ReturnType<typeof this.deployments.get>> = { busy: true, options: [] }
+    this.deployments.set(key, state); this.changed()
+    try {
+      const resource = kind === 'claude' ? endpoint : new URL(endpoint).hostname.split('.')[0]
+      const result = await discoverDeployments(this.files, machines[0], kind, resource, subscription)
+      state.options = result.options; state.models = result.models
+      state.hint = `${result.options.length} matching deployments. Subscription ${result.subscription}. Checked ${new Date().toISOString()}. Inventory is not a model-request or tool-use test.`
+    } catch (error) {
+      state.warn = error instanceof Error ? error.message : 'Azure discovery failed. Enter the deployment manually or refresh again.'
+    } finally { state.busy = false; this.changed() }
+  }
+  private deploymentRow(row: SettingRow, level: string): SettingRow {
+    const kind = row.key === 'azure.claudeDeployment' ? 'claude' : row.key === 'azure.codexDeployment' ? 'codex' : undefined
+    if (!kind) return { ...row }
+    const state = this.deployments.get(`${level}:${kind}`)
+    return { ...row, discovery: { refreshKey: `azure.${kind}Refresh`, busy: state?.busy ?? false, options: state?.options ?? [] }, hint: state?.hint ?? 'Refresh using the host Azure CLI login, or enter a deployment manually. Changes apply to new conversations; existing conversations keep their binding.', warn: state?.warn }
+  }
   set(key: string, value: string | null, level = 'all') {
     const row = rows.find(item => item.key === key)
     if (!row) throw new Error(`No setting ${key}`)
@@ -115,6 +152,8 @@ export class CoreSettings {
     if (key === 'time.zone' && level !== 'all') throw new Error('Time zone applies Everywhere')
     if (value !== null) {
       if (typeof value !== 'string' || value.length > (row.multiline ? 32_000 : key === 'autopilot.hosts' ? 32768 : key === 'autopilot.secrets' ? 16384 : 512)) throw new Error('Setting is too long')
+      if (key.startsWith('azure.')) value = providerSetting(key, value)
+      if (key.includes('.azure.')) value = providerSetting(key.slice(key.indexOf('azure.')), value)
       if (key === 'time.zone') value = value.trim()
       if (key === 'time.zone' && !validZone(value)) throw new Error('Choose a valid time zone, such as Europe/Stockholm')
       if (key === 'heartbeat.when') value = timeRule(value)
@@ -146,10 +185,16 @@ export class CoreSettings {
       }
       this.store.set('settings', `${level}\0${key}`, value)
     } else this.store.delete('settings', `${level}\0${key}`)
+    this.store.set('meta', 'settings-revision', this.revision() + 1)
+    if (key === 'provider.route' || key.startsWith('azure.') || /^(task|coordinator|reviewer|backup|autopilot)\./.test(key)) {
+      this.store.set('launch-settings-revision', level, (this.store.get<number>('launch-settings-revision', level) ?? 0) + 1)
+    }
+    // A response already in flight retains its old object, so it cannot repopulate this map.
+    if (['azure.subscription', 'azure.claudeResource', 'azure.codexEndpoint'].includes(key)) this.deployments.clear()
     if (!this.saving) this.changed()
   }
   pilot(level: string) { return corePilotConfig(this, level) }
-  agent(role: Role | 'autopilot', level: string): { kind: AgentKind; model?: string; effort?: string } {
+  agent(role: Role | 'autopilot', level: string): { kind: AgentKind; model?: string; effort?: string; deployment?: string } {
     if (role === 'autopilot') {
       const base = this.agent('coordinator', level), kind = kindOf(this.get('autopilot.agent', level)) ?? base.kind
       const raw = this.get('autopilot.model', level), model = raw === 'inherit' ? base.model : raw === 'default' ? undefined : this.findModel(kind, raw, level)?.id ?? raw
@@ -168,7 +213,34 @@ export class CoreSettings {
     const raw = this.get(`${role}.model`, level), catalog = this.catalog(kind, level)
     const model = raw === 'default' || !raw ? undefined : this.findModel(kind, raw, level)?.id ?? (!catalog.models.length ? raw : undefined)
     const effort = nearest(catalog.models.find(item => item.id === model)?.efforts ?? catalog.efforts, this.get(`${role}.effort`, level))
-    return { kind, model, effort }
+    return { kind, model, effort, ...(this.get('provider.route', level) === 'Azure Foundry' ? { deployment: this.deployment(role, kind, level) } : {}) }
+  }
+  deployment(role: Role, kind: AgentKind, level: string) {
+    return this.get(`${role}.azure.${kind}Deployment`, level) || this.get(`azure.${kind}Deployment`, level)
+  }
+  deploymentEfforts(kind: AgentKind, deployment: string, level: string) {
+    return this.findModel(kind, this.deployments.get(`${level}:${kind}`)?.models?.[deployment] ?? deployment, level)?.efforts ?? []
+  }
+  checkedSelection(level: string, input: { kind: string; deployment: string; effort?: string }) {
+    const kind = kindOf(input.kind)
+    if (!kind) throw Error('Choose Claude Code or Codex')
+    if (this.get('provider.route', level) !== 'Azure Foundry') throw Error('Azure settings changed; reopen the selector')
+    const deployment = providerSetting(`azure.${kind}Deployment`, input.deployment)
+    if (!deployment) throw Error('Choose an explicit Azure deployment')
+    const effort = input.effort === 'default' || !input.effort ? undefined : input.effort
+    if (effort && !this.deploymentEfforts(kind, deployment, level).includes(effort)) throw Error('Effort is not verified for this deployment. Choose Default or a known model deployment.')
+    return { kind, deployment, effort }
+  }
+  selectionClis(role: 'task' | 'coordinator', level: string): RestartCli[] {
+    return this.clis(level).map(cli => {
+      const kind = cli.kind as AgentKind, state = this.deployments.get(`${level}:${kind}`)
+      const deployment = this.deployment(role, kind, level)
+      const choices = [...state?.options ?? []]
+      if (deployment && !choices.some(option => option.value === deployment)) choices.push({ value: deployment, label: `${deployment} (saved deployment)` })
+      const catalog = this.catalog(kind, level)
+      return { kind, name: cli.name, models: [...catalog.models, ...catalog.others ?? []], azure: { deployment, busy: state?.busy ?? false, warn: state?.warn,
+        options: choices.map(option => ({ ...option, efforts: this.deploymentEfforts(kind, option.value, level) })), refreshKey: `azure.${kind}Refresh` } }
+    })
   }
   findModel(kind: AgentKind, value: string, level: string) {
     const catalog = this.catalog(kind, level), raw = value.toLowerCase()
@@ -176,7 +248,7 @@ export class CoreSettings {
   }
   launch(role: Role, level: string, kind?: AgentKind) {
     const defaults = this.agent(role, level)
-    return !kind || kind === defaults.kind ? defaults : { kind, model: undefined, effort: undefined }
+    return !kind || kind === defaults.kind ? defaults : { kind, model: undefined, effort: undefined, ...(this.get('provider.route', level) === 'Azure Foundry' ? { deployment: this.deployment(role, kind, level) } : {}) }
   }
   instructions(role: Role, level: string) {
     const words = this.get(`${role}.instructions`, level)
@@ -256,7 +328,8 @@ export class CoreSettings {
     return levels.flatMap(level => CATALOG.filter(section => (!section.global || level === 'all') && (level === 'all' || section.name !== 'Time zone') && (section.name !== 'Machine' || level === 'all' || level.startsWith('m:'))).map(section => ({ ...section, level, machine: this.machine(level), rows: [...section.rows.map(row => {
       if (row.key === 'alerts') return { ...row, value: devices.length ? devices.join(', ') : 'No device yet', ...(pushWarnings.length ? { warn: `${pushWarnings.length} device${pushWarnings.length === 1 ? '' : 's'} could not receive the last alert.\n${pushWarnings.slice(0, 3).join('\n')}` } : {}) }
       const picked = this.pick(row.key, level), inherited = this.chain(level).slice(1).map(at => this.pick(row.key, at)).find(value => value.level !== 'default') ?? { value: this.fallback(row.key, level), level: 'default' }
-      let dynamic = { ...row }
+      let dynamic = this.deploymentRow(row, level)
+      if (row.key === 'provider.route') dynamic.warn = 'Personal preserves existing CLI configuration and sign-in; it does not force a personal account. Azure applies to new local launches and uses the deployment fields below. Selecting it does not verify authentication or runtime identity.'
       if (CHOSEN.has(row.key)) { const warn = this.cliWarning(row.key, level); if (warn) dynamic.warn = warn }
       let value = picked.value
       if (/\.(model|effort)$/.test(row.key)) {
@@ -267,6 +340,18 @@ export class CoreSettings {
           if (picked.value !== 'inherit' && picked.value !== 'default' && picked.value && !config.model) dynamic.warn = 'This model is unavailable for the selected agent. New starts use its default; choose a model or reset this value.'
         }
         else dynamic = { ...dynamic, options: [...(role === 'autopilot' ? ['inherit'] : []), 'default', ...(catalog.models.find(model => model.id === config.model)?.efforts ?? catalog.efforts)] }
+      }
+      if (row.key.endsWith('.model') && this.get('provider.route', level) === 'Azure Foundry') {
+        const role = row.key.split('.')[0] as Role | 'autopilot', kind = this.agent(role, level).kind
+        if (role === 'task' || role === 'coordinator') {
+          const key = `${role}.azure.${kind}Deployment`, own = this.pick(key, level), state = this.deployments.get(`${level}:${kind}`)
+          return { group: row.group, key, label: 'Azure deployment', value: this.deployment(role, kind, level), text: true,
+            discovery: { refreshKey: `azure.${kind}Refresh`, busy: state?.busy ?? false, options: state?.options ?? [] },
+            hint: 'Applies to new starts only. Reset to inherit the configured CLI deployment. Personal model settings are retained.',
+            ...(own.level === level ? { inherits: { value: '', from: 'CLI deployment or parent scope' } } : { from: own.level === 'default' ? 'CLI deployment' : own.level }) }
+        }
+        value = this.get(`azure.${kind}Deployment`, level) || 'Configure Azure deployment above'
+        dynamic = { ...dynamic, fixed: true, warn: 'Azure uses the explicit deployment for this CLI. Personal model settings are retained for switching back.' }
       }
       if (row.key === 'heartbeat.when') dynamic.trigger = { words: timeWords(value, this.get('time.zone')), next: nextWords(value, this.get('time.zone')), presets: [{ label: '15 min', value: timeRule('FREQ=MINUTELY;INTERVAL=15') }, { label: '30 min', value: timeRule('FREQ=MINUTELY;INTERVAL=30') }, { label: '1 hour', value: timeRule('FREQ=HOURLY') }, { label: 'Workdays', value: timeRule('FREQ=MINUTELY;INTERVAL=30;BYHOUR=8,9,10,11,12,13,14,15,16,17;BYDAY=MO,TU,WE,TH,FR') }] }
       if (row.key === 'heartbeat.on') dynamic.trigger = { words: eventWords(eventRules(value)), next: [], presets: [{ label: 'All news', value: 'all news' }, { label: 'None: it waits', value: 'none' }] }
