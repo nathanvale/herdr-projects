@@ -21,7 +21,7 @@ export class CoreLaunches {
   }
   owned(chat: string, launch: string) {
     const attempt = this.get(launch)
-    if (attempt?.chat !== chat || attempt.state !== 'never-submitted' || this.store.get<string>('launch-claim', chat) !== launch) throw Error('Launch authority changed or submission already began; no process was submitted by this attempt')
+    if (attempt?.chat !== chat || attempt.state !== 'never-submitted' || this.store.get<string>('launch-claim', chat) !== launch) throw Error('Launch authority changed or submission already began; recovery requires proven non-submission')
     return attempt
   }
   submitting(chat: string, launch: string) {
