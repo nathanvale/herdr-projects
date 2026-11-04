@@ -1,3 +1,4 @@
+import { providerPlan } from './providers.ts'
 import { homedir } from 'node:os'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -85,8 +86,14 @@ export class CoreAgents {
     previous = this.get(chat)
     if (previous && this.terminal(previous)?.state === 'live') throw new Error('This agent is already running')
     if (previous && !previous.terminal) throw new Error('The previous start is still unconfirmed. Reconnect core and check its state before retrying.')
+    const provider = providerPlan(kind, key => this.settings?.get(key, space.id) ?? '', process.env)
+    if (previous && (previous.provider?.fingerprint ?? 'personal') !== provider.binding.fingerprint) throw Error('Provider or Azure deployment changed. Start a separate conversation; this session cannot be rerouted.')
+    if (options.parent && (options.parent.provider?.route ?? 'personal') !== provider.binding.route) throw Error('Child agents cannot switch between Personal and Azure Foundry')
+    if (provider.binding.route === 'azure-foundry' && options.pilot) throw Error('Azure Foundry is not yet supported in Autopilot')
+    if (provider.model) options = { ...options, model: provider.model, speed: undefined }
     if (previous) this.store.set('agent-launch', previous.launch, previous)
     const on = await this.route(space.machine)
+    if (on && provider.binding.route === 'azure-foundry') throw Error('Azure Foundry requires a local execution machine; remote credential delivery is not configured')
     const remote = on ? await this.remotes.prepare(space.machine) : undefined
     const launch = randomUUID()
     const role = options.role ?? 'coordinator'
@@ -113,7 +120,7 @@ export class CoreAgents {
     const command = options.pilot ? '/run/shepherdr/bun /run/shepherdr/core-pilot-hook.ts' : `${quote(remote?.bun ?? process.execPath)} ${quote(join(root, 'helper/core-hook.ts'))}`
     const settings = join(directory, `${grant.id}.settings.json`)
     const hooks = Object.fromEntries(EVENTS.map(event => [event, [{ hooks: [{ type: 'command', command, timeout: event === 'PermissionRequest' ? 3600 : 5 }] }]]))
-    await privateFile(settings, JSON.stringify(role === 'reviewer' || options.readOnly ? { hooks } : { hooks, permissions: { allow: ownRules(join(root, 'bin/shepherdr')) } }))
+    await privateFile(settings, JSON.stringify({ env: provider.claudeEnv, ...(role === 'reviewer' || options.readOnly ? { hooks } : { hooks, permissions: { allow: ownRules(join(root, 'bin/shepherdr')) } }) }))
     const instructions = join(directory, `${grant.id}.instructions.md`)
     const privateWords = this.settings?.instructions(role === 'task' ? 'task' : role === 'reviewer' ? 'reviewer' : 'coordinator', space.id) || ''
     const skill = (name: string) => readFileSync(join(import.meta.dir, `../../skill/${name}/SKILL.md`), 'utf8')
@@ -130,7 +137,7 @@ export class CoreAgents {
     if (prepared) cleanup = async () => { await this.files.exec(space.machine, [remote?.bun ?? process.execPath, join(root, 'helper/core-pilot-launch.ts'), 'discard'], undefined, Buffer.from(JSON.stringify({ prepared, parent: directory }))) }
     if (prepared && options.pilot) new CorePilotRepositories(this.store).remember(space.machine, options.pilot.repo, [options.folder ?? space.folder], [prepared.paths.state])
     const record: CoreAgent = {
-      chat, space: space.id, machine: space.machine, role, kind, launch, grant: grant.id, hook, browser: options.pilot ? undefined : { namespace: shellEnv.AGENT_BROWSER_NAMESPACE, session: browserSession, profile: shellEnv.AGENT_BROWSER_PROFILE }, command: options.pilot ? '/run/shepherdr/bin/shepherdr' : join(root, 'bin/shepherdr'), started: Date.now(), state: 'starting',
+      chat, space: space.id, machine: space.machine, role, kind, provider: provider.binding, launch, grant: grant.id, hook, browser: options.pilot ? undefined : { namespace: shellEnv.AGENT_BROWSER_NAMESPACE, session: browserSession, profile: shellEnv.AGENT_BROWSER_PROFILE }, command: options.pilot ? '/run/shepherdr/bin/shepherdr' : join(root, 'bin/shepherdr'), started: Date.now(), state: 'starting',
       session: !options.pilot && options.resume && previous?.kind === kind ? previous.session : undefined, model: options.model, effort: options.effort, speed: options.speed,
       pilot: options.pilot && prepared ? { run: options.pilot.run, home: prepared.sandbox.home, captures: prepared.paths.captures, pending: true } : undefined,
     }
@@ -167,6 +174,7 @@ export class CoreAgents {
       if (options.speed) argv.push('-c', `service_tier=${toml(options.speed === 'fast' ? 'fast' : 'default')}`)
       if (record.session) argv.push('resume', record.session)
     }
+    if (kind === 'codex') argv.push(...provider.codexArgs)
     // A native CLI can defer SessionStart until its first turn. An explicit, harmless restart turn
     // gives hooks a real readiness signal; no quiet-screen heuristic is used.
     const turn = prompt || '<restart>Shepherdr restarted this coordinator. Read your role and wait for the human. Do not use tools or start work. Reply only <no-reply>Waiting for the human</no-reply>.</restart>'
@@ -198,7 +206,7 @@ export class CoreAgents {
         'shepherdr.chat': chat, 'shepherdr.task': options.task ?? '', 'shepherdr.state': 'working', 'shepherdr.launch': launch,
       },
       env: { SHEPHERDR_CHAT: '', SHEPHERDR_SECRET_FILE: '', SHEPHERDR_URL: '',
-        ...shellEnv, SHEPHERDR_CORE_HOOK_FILE: hook },
+        ...shellEnv, ...provider.env, SHEPHERDR_CORE_HOOK_FILE: hook },
     }, 45_000)
     const current = this.get(chat)
     if (!current || current.launch !== launch || current.grant !== grant.id) throw new Error('Agent launch was replaced before core confirmed it')

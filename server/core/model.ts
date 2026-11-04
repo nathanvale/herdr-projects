@@ -1,3 +1,4 @@
+import type { ProviderBinding } from './providers.ts'
 import type { AgentRuntime, Mode } from '../../shared/types.ts'
 
 export type AgentKind = 'claude' | 'codex'
@@ -14,6 +15,7 @@ export interface CoreSpace {
   removed?: number
 }
 export interface CoreAgent {
+  provider?: ProviderBinding
   chat: string
   space: string
   machine: string

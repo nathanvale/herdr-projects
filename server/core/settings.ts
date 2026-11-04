@@ -1,3 +1,4 @@
+import { PROVIDER_ROWS } from './providers.ts'
 import type { SettingRow, SettingSection, RestartCli } from '../../shared/types.ts'
 import { SPEEDS, TABLE, nearest, parseCodex, type CliModels } from '../../shared/models.ts'
 import type { CoreStore } from './store.ts'
@@ -51,7 +52,7 @@ const CATALOG: SettingSection[] = [
     { key: 'brief.merge', label: 'Merge', value: 'on its own', options: ['on its own', 'after GitHub checks', 'ask me first'] },
     ...roleRows('reviewer', 'Reviewer'),
   ] },
-  { name: 'Agents', about: "What each kind of agent starts with. Default is the agent's own model or effort. Backup takes a task over when its agent can't go on. Chat choices need a chat log reader; other installed CLIs cannot show replies here. Headless review is separate.", rows: [...roleRows('task', 'Tasks'), ...roleRows('coordinator', 'Coordinators'),
+  { name: 'Agents', about: "What each kind of agent starts with. Default is the agent's own model or effort. Backup takes a task over when its agent can't go on. Chat choices need a chat log reader; other installed CLIs cannot show replies here. Headless review is separate.", rows: [...PROVIDER_ROWS, ...roleRows('task', 'Tasks'), ...roleRows('coordinator', 'Coordinators'),
     { group: 'Backup', key: 'task.fallback', label: 'Agent', value: 'Codex', options: ['off', ...Object.values(names)] },
     { group: 'Backup', key: 'backup.model', label: 'Model', value: 'default', text: true },
     { group: 'Backup', key: 'backup.effort', label: 'Effort', value: 'default', options: ['default', ...TABLE.codex.efforts] },
@@ -257,6 +258,7 @@ export class CoreSettings {
       if (row.key === 'alerts') return { ...row, value: devices.length ? devices.join(', ') : 'No device yet', ...(pushWarnings.length ? { warn: `${pushWarnings.length} device${pushWarnings.length === 1 ? '' : 's'} could not receive the last alert.\n${pushWarnings.slice(0, 3).join('\n')}` } : {}) }
       const picked = this.pick(row.key, level), inherited = this.chain(level).slice(1).map(at => this.pick(row.key, at)).find(value => value.level !== 'default') ?? { value: this.fallback(row.key, level), level: 'default' }
       let dynamic = { ...row }
+      if (row.key === 'provider.route') dynamic.warn = 'Applies to all new launches in this scope. Azure uses the explicit deployment fields below, not the personal model catalogue. Authentication and runtime identity are not verified by selecting a provider.'
       if (CHOSEN.has(row.key)) { const warn = this.cliWarning(row.key, level); if (warn) dynamic.warn = warn }
       let value = picked.value
       if (/\.(model|effort)$/.test(row.key)) {
@@ -267,6 +269,11 @@ export class CoreSettings {
           if (picked.value !== 'inherit' && picked.value !== 'default' && picked.value && !config.model) dynamic.warn = 'This model is unavailable for the selected agent. New starts use its default; choose a model or reset this value.'
         }
         else dynamic = { ...dynamic, options: [...(role === 'autopilot' ? ['inherit'] : []), 'default', ...(catalog.models.find(model => model.id === config.model)?.efforts ?? catalog.efforts)] }
+      }
+      if (row.key.endsWith('.model') && this.get('provider.route', level) === 'Azure Foundry') {
+        const role = row.key.split('.')[0] as Role | 'autopilot', kind = this.agent(role, level).kind
+        value = this.get(kind === 'claude' ? 'azure.claudeDeployment' : 'azure.codexDeployment', level) || 'Configure Azure deployment above'
+        dynamic = { ...dynamic, fixed: true, warn: 'Azure uses the explicit deployment for this CLI. Personal model settings are retained for switching back.' }
       }
       if (row.key === 'heartbeat.when') dynamic.trigger = { words: timeWords(value, this.get('time.zone')), next: nextWords(value, this.get('time.zone')), presets: [{ label: '15 min', value: timeRule('FREQ=MINUTELY;INTERVAL=15') }, { label: '30 min', value: timeRule('FREQ=MINUTELY;INTERVAL=30') }, { label: '1 hour', value: timeRule('FREQ=HOURLY') }, { label: 'Workdays', value: timeRule('FREQ=MINUTELY;INTERVAL=30;BYHOUR=8,9,10,11,12,13,14,15,16,17;BYDAY=MO,TU,WE,TH,FR') }] }
       if (row.key === 'heartbeat.on') dynamic.trigger = { words: eventWords(eventRules(value)), next: [], presets: [{ label: 'All news', value: 'all news' }, { label: 'None: it waits', value: 'none' }] }

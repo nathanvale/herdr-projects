@@ -1,0 +1,21 @@
+name: Foundry profiles
+on:
+  push:
+    branches: [feat/azure-foundry-profiles]
+  pull_request:
+    branches: [foundry-base]
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run typecheck
+      # Protocol fakes only: no native coding agents, credentials, or model requests.
+      - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts
