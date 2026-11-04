@@ -74,6 +74,24 @@ jobs:
           fi
           grep -F '(fail) Azure coordinator preflight refuses incompatible' /tmp/preflight-sensitivity.log
           grep -F '(fail) Azure task preflight refuses incompatible' /tmp/preflight-sensitivity.log
+      - name: Prove Codex resume retains its recorded deployment
+        shell: bash
+        run: |
+          cp server/core/agents.ts /tmp/resume-original.ts
+          trap 'cp /tmp/resume-original.ts server/core/agents.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/agents.ts')
+          source = path.read_text()
+          before = " ?? (previous?.provider?.route === 'azure-foundry' ? previous.model : undefined)"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, ''))
+          PYCODE
+          if bun test test/core-providers.test.ts --test-name-pattern 'Azure Codex resume retains' > /tmp/resume-sensitivity.log 2>&1; then
+            cat /tmp/resume-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) Azure Codex resume retains' /tmp/resume-sensitivity.log
       - name: Prove the final revision guard detects a settings race
         shell: bash
         run: |

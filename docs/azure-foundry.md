@@ -322,3 +322,69 @@ resume Azure-bound conversations with stock Shepherdr: stock lacks the binding
 check and would use its native defaults. Keep that state with the candidate until
 its conversations are retired or an explicit migration is approved. Removing the
 candidate does not require stopping the old setup or deleting credential stores.
+
+## Protected preview updates: unresolved runtime contract
+
+A model-selector update restarts the application, even when it keeps core and its
+workers running. `CoreSource.start()` calls `closeInterrupted()`: outstanding
+permission cards are closed, native refusals can be delivered, and a restart
+notice is queued to the existing worker through `saveAndDeliver`. Starting core
+observation and delivery can then send that notice and existing queued messages.
+Unchanged PIDs and native session IDs therefore do not establish an unaffected
+worker or absence of model requests.
+
+The 4 November isolated update to `9a99da6` preserved all 66 native worker process
+identities, both core inventories, settings and agent/session bindings. It also
+closed two stale permission cards and queued an automatic notice. Delivery was
+unconfirmed. The implementation is not qualified for effect-free preview updates.
+
+A preflight database count alone is insufficient: a worker can ask for permission
+or queue delivery after inspection. The existing lifecycle lock serializes
+launcher start/stop, not agent activity. There is no supported core handover receipt
+that proves an application restart preserves all in-flight permission responses.
+Do not repeat a live preview update on the strength of the earlier process check.
+
+The pending decision is whether protected updates refuse while any worker is live
+or unconfirmed, require a stronger permission/delivery handover protocol, or allow
+explicitly approved cancellation and notification. No policy has been selected,
+no new global default is implied, and no protection flag is implemented yet.
+
+## Final native acceptance plan, not executed
+
+The prior canaries qualify their earlier candidate only. The final model-selector
+candidate needs bounded native acceptance after explicit authorization. Do not use
+live delivery chats or tasks for this proof.
+
+Before authorization, prepare a private evidence manifest containing the exact
+candidate commit and CI artifact hashes, CLI/core versions, isolated app home and
+core session, disposable repository, deployment IDs, authentication methods and
+requested effort. Include protected application boot/PID and worker/session
+identities, a settings snapshot hash, existing pending permission/delivery counts,
+and a finite prompt/agent budget. Keep credential values outside the manifest.
+Resolve the protected-update policy before changing another running preview.
+
+For each desired CLI, qualify these cases through the actual task and coordinator
+controls, using separate disposable conversations:
+
+| Case | Required observation |
+| --- | --- |
+| Save a new-start deployment/effort | Reload preserves the choice; zero terminal or model requests; task holds unchanged |
+| Launch the approved task/coordinator choice | Native provider, requested deployment, observed model/effort and hook identity match the admitted manifest |
+| Change defaults while the disposable conversation exists | That conversation stays on its recorded binding; no process restart or extra turn occurs from the settings edit |
+| Explicitly resume with the same binding | New launch identity, same native session, recorded deployment and lifecycle hooks; one approved resume turn |
+| Request a changed endpoint/auth/deployment for that retained conversation | Refuse before interruption, grant replacement or native submission |
+| Stop the disposable proof | Exact proof terminal exit confirmed; protected workers and conversations retained |
+
+Start with the already approved authentication contracts, Claude Entra ID and Codex
+API key, only if Nathan authorizes those exact routes for this candidate. API-key
+and supplied-token Claude execution and token-expiry qualification remain separate
+unproved combinations. Inventory refresh alone is not inference or tool support.
+Personal native sign-in/defaults also require an explicitly approved disposable
+route if native compatibility is to be claimed beyond protocol regression proof.
+
+Compare before/after identities and persisted records. Report permission changes,
+new queued messages, unexpected native/model activity and unconfirmed outcomes,
+even when all worker PIDs match. A lost reply must reconcile the same launch; it
+must not spend the remaining budget on blind retries. Keep raw receipts private.
+Do not call native acceptance complete from the prototype, protocol fakes, green
+CI, a saved deployment label or an earlier candidate's canary.

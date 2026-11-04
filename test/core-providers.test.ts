@@ -200,6 +200,38 @@ test('route and authentication changes refuse relaunch while new defaults preser
   } finally { f.close() }
 })
 
+test('Azure Codex resume retains its binding and deployment after defaults change', async () => {
+  const f = fixture()
+  try {
+    f.azure()
+    const original = await f.agents.launch(space, 'chat', 'codex', 'First turn')
+    f.store.set('agent', 'chat', { ...original, session: 'native-codex-azure-session' })
+    f.settings.set('azure.codexEndpoint', 'https://other.openai.azure.com/openai/v1')
+    f.calls.length = 0
+    await expect(f.agents.launch(space, 'chat', 'codex', 'Resume', { resume: true })).rejects.toThrow('cannot be rerouted')
+    expect(f.calls).toEqual([])
+    expect(f.agents.get('chat')?.launch).toBe(original.launch)
+    f.settings.set('azure.codexEndpoint', 'https://example.openai.azure.com/openai/v1')
+    f.settings.set('azure.codexDeployment', 'another-deployment')
+    await expect(f.agents.launch(space, 'chat', 'codex', 'Resume', { resume: true, deployment: 'another-deployment' })).rejects.toThrow('cannot be rerouted')
+    expect(f.calls).toEqual([])
+    const resumed = await f.agents.launch(space, 'chat', 'codex', 'Resume', { resume: true })
+    const submissions = f.calls.filter(call => call.method === 'terminal.run')
+    expect(submissions).toHaveLength(1)
+    const argv = submissions[0]!.input.argv
+    expect(resumed.launch).not.toBe(original.launch)
+    expect(resumed.provider).toEqual(original.provider)
+    expect(resumed.model).toBe('example-codex')
+    expect(resumed.session).toBe('native-codex-azure-session')
+    expect(argv).toContain('resume')
+    expect(argv).toContain('native-codex-azure-session')
+    expect(argv[argv.indexOf('--model') + 1]).toBe('example-codex')
+    expect(argv).not.toContain('another-deployment')
+    expect(argv.some(word => word.startsWith('hooks.SessionStart='))).toBe(true)
+    expect(argv.some(word => word.includes('env_key="AZURE_OPENAI_API_KEY"'))).toBe(true)
+  } finally { f.close() }
+})
+
 test('Azure remote and Autopilot starts refuse before credentials, grants or terminal creation', async () => {
   const f = fixture(true), local = fixture()
   try {
