@@ -369,9 +369,9 @@ export class CoreTasks {
     if (prior && !this.source.agents.terminal(prior)) throw new Refusal('Previous task start is unconfirmed; reconnect before reopening its checkout')
     if (prior && this.source.agents.terminal(prior)?.state === 'live') throw new Refusal('This task agent is already running')
     const capacity = (task.workflow !== 'todo' || task.pilot) && this.source.health?.room(task.machine, task.id)
-    if (capacity) { if (task.workflow !== 'todo') task.workflow = 'queued'; task.capacity = capacity; if (task.providerTakeover?.state === 'starting') task.providerTakeover.state = 'queued'; this.save(task); return }
-    if (task.capacity) { if (!(task.after ?? []).some(id => !['merged', 'closed'].includes(this.get(id)?.workflow || ''))) task.workflow = 'working'; delete task.capacity }
-    if (task.workflow !== 'todo' || task.pilot) { task.reservedAt = Date.now(); task.reservedChats = [...new Set([...(task.reservedChats ?? []), task.chat])]; this.save(task) }
+    if (capacity) { if (task.workflow !== 'todo') task.workflow = 'queued'; task.capacity = capacity; if (task.providerTakeover?.state === 'starting') task.providerTakeover.state = 'queued'; this.save(task); if (!create) return }
+    if (!capacity && task.capacity) { if (!(task.after ?? []).some(id => !['merged', 'closed'].includes(this.get(id)?.workflow || ''))) task.workflow = 'working'; delete task.capacity }
+    if (!capacity && (task.workflow !== 'todo' || task.pilot)) { task.reservedAt = Date.now(); task.reservedChats = [...new Set([...(task.reservedChats ?? []), task.chat])]; this.save(task) }
     task.launchAttempt = randomUUID(); delete task.startError; this.save(task)
     try {
     const pilot = task.pilot ? this.source.pilots.policy.live(task.pilot) : undefined
@@ -406,6 +406,7 @@ export class CoreTasks {
       created = true
     } else created = await this.git.ensureWorktree({ machine: task.machine, folder: task.repo }, task.folder, task.branch, task.base)
     if (created) { task.includesPending = true; this.save(task) }
+    if (capacity) return // Initial creation still prepares its checkout while queued.
     admit()
     if (task.includesPending) { await this.seedIncludes(task); delete task.includesPending; this.save(task) }
     admit()

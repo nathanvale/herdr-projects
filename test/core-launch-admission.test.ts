@@ -136,12 +136,12 @@ test('launch admission fences a recovered delayed operation and preserves replac
     }
   }
   try {
-    await expect(f.source.agents.launch(f.space, 'chat', 'codex', 'Wait', { readOnly: true })).rejects.toThrow('Launch identity changed')
+    await expect(f.source.agents.launch(f.space, 'chat', 'codex', 'Wait', { readOnly: true })).rejects.toThrow('authority')
     await recovery
     expect(f.runs).toEqual([]); expect(second!.runs).toHaveLength(1)
     expect(second!.source.mailbox.active().map(grant => grant.session)).toEqual([second!.source.agents.get('chat')!.launch])
     expect(second!.source.store.get<LaunchAttempt>('launch-attempt', launch!)?.state).toBe('cancelled')
-  } finally { second?.close() }
+  } finally { await recovery?.catch(() => {}); second?.close() }
 }))
 
 for (const point of ['claimed', 'recorded', 'uncertain', 'submitted'] as const) test(`launch admission crash recovery at ${point} reopens durable state`, async () => {
