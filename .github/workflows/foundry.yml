@@ -110,7 +110,25 @@ jobs:
             exit 1
           fi
           grep -F '(fail) launch admission rechecks stale settings before-submit' /tmp/admission-sensitivity.log
-      - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts test/core-launch-admission.test.ts test/core-client.test.ts test/core-mailbox.test.ts
+      - name: Prove protected stop refuses live workers
+        shell: bash
+        run: |
+          cp server/core/protected-update.ts /tmp/protected-original.ts
+          trap 'cp /tmp/protected-original.ts server/core/protected-update.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/protected-update.ts')
+          source = path.read_text()
+          before = "    if (terminals.some(row => row.state !== 'finished')) refusal('core has live or unconfirmed terminals')"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, ''))
+          PYCODE
+          if bun test test/core-protected-update.test.ts --test-name-pattern 'protected operator refuses live worker' > /tmp/protected-sensitivity.log 2>&1; then
+            cat /tmp/protected-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) protected operator refuses live worker' /tmp/protected-sensitivity.log
+      - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts test/core-launch-admission.test.ts test/core-client.test.ts test/core-mailbox.test.ts test/core-launcher.test.ts test/core-operator.test.ts test/core-protected-update.test.ts
       - run: bun x playwright-core install --only-shell chromium
       - run: bun test test/layout-restart.test.ts test/layout-azure-admission.test.ts
       - run: bun run build

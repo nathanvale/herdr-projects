@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, openSync, closeSync, readFileSync, rmSync, statS
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { operatorRequest } from './operator.ts'
 import { CoreClient } from './client.ts'
 import { coreConfig, coreEnvironment, type CoreConfig } from './config.ts'
 import { inspectHome, prepareHome } from './home.ts'
@@ -130,6 +131,7 @@ export async function coreMachines(config: CoreConfig) {
 }
 
 async function start(config: CoreConfig, foreground: boolean) {
+  if (config.idleOnly && !config.chosenCore) throw Error('Protected startup requires an explicit --core-session or --core-socket')
   // Before prepareHome: a refused start leaves no marker for the next start to pass on.
   const refused = await coreProblem(config, () => coreMachines(config))
   if (refused) throw new Error(refused)
@@ -141,11 +143,12 @@ async function start(config: CoreConfig, foreground: boolean) {
     if (record && alive(record.pid)) throw new Error('The recorded process is alive but its identity cannot be verified. No process was stopped; inspect it before restarting.')
     const problem = buildProblem(config)
     if (problem) throw new Error(problem)
-    await ensureCore(config)
+    if (!config.idleOnly) await ensureCore(config)
     if (config.chosenCore) saveCore(config)
     const boot = randomUUID()
     const args = ['--home', config.home, '--port', String(config.port), '--core-bin', config.binary, '--core-session', config.session, '--core-socket', config.socket]
     if (config.plugins === false) args.push('--no-plugin-updates')
+    if (config.idleOnly) args.push('--idle-only')
     if (foreground) {
       // Server starts before releasing the lifecycle lock; no second start can race its bind.
       const { runCoreServer } = await import('./main.ts')
@@ -180,7 +183,11 @@ async function stop(config: CoreConfig) {
       if (record && alive(record.pid)) throw new Error('The recorded process cannot be verified; it has not been signaled')
       console.log('Shepherdr is stopped.'); return
     }
-    process.kill(record.pid, 'SIGTERM')
+    if (config.idleOnly) {
+      if (!record.operator) throw Error('This application has no protected-stop protocol; it was left running')
+      const reply = await operatorRequest(config.home, record.operator, ['stop-if-idle', record.boot])
+      if (reply.code !== 0 || reply.out !== `idle-stop:${record.boot}`) throw Error(reply.out || 'Protected stop was not acknowledged; inspect status before retrying')
+    } else process.kill(record.pid, 'SIGTERM')
     for (let attempt = 0; attempt < 100; attempt++) {
       if (!alive(record.pid)) { console.log('Shepherdr stopped. Core and agents keep running.'); return }
       await Bun.sleep(100)

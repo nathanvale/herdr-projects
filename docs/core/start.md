@@ -55,6 +55,14 @@ shepherdr status --home /tmp/shepherdr-preview
 shepherdr stop --home /tmp/shepherdr-preview
 ```
 
+For a protected preview update, use the candidate's launcher with `--idle-only`
+on **both** stop and start, retaining the same home and explicit core flags. Stop
+uses the running app's private operator protocol and refuses live/unconfirmed
+workers, pending permissions/delivery and work that could resume. Older apps that
+lack the protocol refuse without a signal. Startup rechecks before permission
+cleanup or delivery and requires an already reachable core. Ordinary start/stop
+keeps its existing behavior. See [protected update limits](../azure-foundry.md#protected-preview-updates-unresolved-runtime-contract).
+
 A new home's first start stops, listing them, if its core already has machines and neither `--core-session` nor
 `--core-socket` named that core: a separate home alone, or separate XDG folders alone, can still reach the same running
 core. A separate `--core-session` has no machines. See [Other machines](../machines.md).

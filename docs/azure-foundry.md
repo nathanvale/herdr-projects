@@ -346,12 +346,26 @@ Do not repeat a live preview update on the strength of the earlier process check
 
 Nathan selected the protected-update policy: refuse while any worker is live or
 unconfirmed and leave the current application running. No global start/stop default
-changes are implied. The protected path is not implemented yet. It needs an
-application-owned admission barrier, a current core observation, checks of persisted
-launch/delivery/permission state and a second check before startup effects. A
-standalone process/database snapshot cannot supply those guarantees. Existing
-binaries without that protocol must refuse protected updates rather than fall back
-to ordinary stop/start. Recovery policy and changes inside existing conversations
+changes are implied. The opt-in `--idle-only` path uses the running application's private operator
+socket, checks its exact boot identity, closes admission, obtains current core
+inventory, then checks persisted state again. The application owns the resulting
+shutdown; the launcher never falls back to signaling an older app that lacks the
+protocol. Refusal leaves the app running and restores admission if its fresh
+observation fails. Pending permissions, delivery, uncertain launches, in-flight
+public actions/commands, unfinished tasks, retained automations and Autopilot also
+refuse conservatively, without cancelling or releasing them.
+
+Use `--idle-only` on both stop and start. Protected startup requires an explicit
+core session/socket and a reachable existing core; it does not start core. It
+checks before `CoreSource.start`, subscriptions, interrupted-permission cleanup or
+delivery. Missing terminal history does not prove a worker exited. Every retained
+worker needs a matching installation/launch terminal with a confirmed exit and
+matching PID. All non-finished terminals in the selected core refuse, including
+unlabelled terminals. The protocol assumes one application owner per home and no
+independent core writers starting processes concurrently; core supplies no global
+lease over those writers. Ordinary start/stop remains available with its existing
+semantics, so omitting the flag is not protected. This code is not installed in
+the running preview; its older operator cannot perform protected stop. Recovery policy and changes inside existing conversations
 remain separate decisions.
 
 ## Final native acceptance plan, not executed

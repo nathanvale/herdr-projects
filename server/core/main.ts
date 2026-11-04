@@ -1,6 +1,7 @@
 import { existsSync, renameSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { ProtectedUpdate } from './protected-update.ts'
 import { CoreSource } from './source.ts'
 import { CorePluginUpdates } from './plugin-updates.ts'
 import { coreConfig, type CoreConfig } from './config.ts'
@@ -12,8 +13,11 @@ export async function runCoreServer(config: CoreConfig, boot: string = randomUUI
   process.env.SHEPHERDR_HOME = config.home
   process.env.SHEPHERDR_PORT = String(config.port)
   const source = new CoreSource(config)
-  const cleanup: (() => void)[] = [() => source.stop()]
+  let starting = false
+  const cleanup: (() => void)[] = [() => { if (starting) source.stop() }]
   try {
+  if (config.idleOnly) await new ProtectedUpdate(source).beforeStart()
+  starting = true
   await source.start()
   const { default: base, catalog, user } = await import('../../generated/server-plugins.ts')
   await source.plugins.start(catalog, [...base.map(plugin => [plugin.name, async () => plugin] as [string, () => Promise<typeof plugin>]), ...user.map(([name, load]) => [name, async () => (await load()).default] as [string, () => Promise<import('../plugin-api.ts').ServerPlugin>])])
@@ -27,7 +31,7 @@ export async function runCoreServer(config: CoreConfig, boot: string = randomUUI
     assets: source.pluginUpdates?.assets,
     health: () => ({ product: 'shepherdr-core', boot, pid: process.pid, core: source.connected() }) })
   cleanup.push(() => server.stop(true))
-  const operator = await startOperator(source, boot)
+  const operator = await startOperator(source, boot, () => process.kill(process.pid, 'SIGTERM'))
   cleanup.push(() => operator.close())
   const record: RunRecord = { pid: process.pid, boot, home: config.home, port: server.port!, root: join(import.meta.dir, '../..'), operator: operator.path }
   const temporary = join(config.home, `run.${boot}.tmp`)

@@ -67,6 +67,8 @@ interface PendingSend { id: string; chat: string; text: string; launch?: string;
 export class CoreSource extends Emitter<SourceEvents> implements Source {
   readonly kind = 'live' as const
   quiescing = false
+  private activeOperations = 0
+  updateBusy() { return this.activeOperations > 0 || this.sending.size > 0 }
   private human = 'You'
   readonly core: CoreSession
   readonly store: CoreStore
@@ -465,6 +467,11 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
 
   async act(action: Action): Promise<unknown> {
     if (this.quiescing) throw new Error('Shepherdr is stopping; retry after it reconnects')
+    this.activeOperations++
+    try { return await this.actNow(action) } finally { this.activeOperations-- }
+  }
+  private async actNow(action: Action): Promise<unknown> {
+    if (this.quiescing) throw new Error('Shepherdr is stopping; retry after it reconnects')
     const plugin = action.type.startsWith('artifact-') ? 'artifacts' : action.type === 'react' ? 'reactions' : action.type === 'browser-notes' ? 'browser' : ['keys', 'text'].includes(action.type) ? 'terminal' : action.type === 'call' ? 'voice' : action.type === 'autopilot-run' ? 'autopilot' : action.type === 'limits-check' ? 'limits' : undefined
     if (plugin) this.requirePlugin(plugin)
     const handler = this.hooks.get(action.type)
@@ -688,6 +695,11 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
   }
 
   private async mail(grant: Grant, request: MailRequest, requestId: string): Promise<unknown> {
+    if (this.quiescing) throw new Error('Shepherdr is stopping; retry after it reconnects')
+    this.activeOperations++
+    try { return await this.mailNow(grant, request, requestId) } finally { this.activeOperations-- }
+  }
+  private async mailNow(grant: Grant, request: MailRequest, requestId: string): Promise<unknown> {
     if (this.quiescing) throw new Error('Shepherdr is stopping; retry after it reconnects')
     const agent = this.agents.get(grant.chat)
     const terminal = agent && this.agents.terminal(agent)
