@@ -66,7 +66,20 @@ durable notices, clears provider retry intent and releases the dispatch hold.
 It does not replay uncertain messages or start a process. Automatic task queue
 starts remain blocked for this ended execution. A later ordinary human send or
 restart may continue the same native session; the first continuation keeps its
-recorded agent/model/effort/speed and provider. No ordinary default changes.
+recorded agent/model/effort/speed and provider. Restart validates and pins that
+selection during preflight, before browser, checkout or task-binding changes,
+and validates again at dispatch. The new record retains recovery provenance.
+If native resume cannot find that session, failed-start handling reports a hold
+with the same binding; it cannot clear the session and silently dispatch a
+fresh conversation. Ordinary missing-session fallback remains unchanged for
+conversations without that provenance. No ordinary default changes.
+
+Recovery alone uses a newline-framed private operator request. Its caller keeps
+the write side open until the response; peer FIN/close while host observation
+awaits aborts authority. EOF-framed recovery requests refuse before observation.
+Secret and protected-stop clients retain their existing EOF protocol. Each
+connection admits at most one bounded request. Request expiry and disconnect
+are rechecked after host observation and immediately before durable mutation.
 
 ## Consequences and Limits
 
@@ -100,6 +113,10 @@ double and injected internal OS adapter. An independent reader verifies persiste
 outcomes. Cases cover same-boot refusal, reload, changed host/launch/session/
 provider, active senders, final dispatch fencing, interrupted grant revocation,
 late confirmation, explicit queue disposition and no automatic native launch.
+Real socket cases close a framed peer during a blocked host observation and
+independently verify unchanged SQLite state. Public Restart cases preserve
+bindings on selection refusal; native missing-session cases permit no second
+dispatch from a recovered continuation.
 Subprocess and HTTP cases check human routing and absence of a recovery action.
 CI owns tests, sensitivity controls and builds; only typecheck runs locally.
 

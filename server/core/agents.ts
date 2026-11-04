@@ -30,6 +30,7 @@ export interface StartSelection { kind: AgentKind; deployment: string; effort?: 
 export interface PreparedProvider {
   chat: string; level: string; kind: AgentKind; previous?: string; token: string; revision: string; provider: ProviderPlan; on?: string
   parent?: { chat: string; launch: string; terminal?: string; pid?: number | null }
+  recovered?: Pick<CoreAgent, 'model' | 'effort' | 'speed'>
 }
 
 /** Agent processes belong to core; stopping Shepherdr only stops its observation timer. */
@@ -72,6 +73,11 @@ export class CoreAgents {
   starting(chat: string) { return this.launching.has(chat) }
   private executionEnded(agent: CoreAgent) {
     return this.launches.ended(agent, this.terminal(agent)?.state)
+  }
+  private recoveredSelection(previous: CoreAgent | undefined, kind: AgentKind, options: { model?: string; effort?: string; speed?: string }) {
+    if (!previous || !this.executionEnded(previous)) return undefined
+    if (kind !== previous.kind || options.model !== undefined && options.model !== previous.model || options.effort !== undefined && options.effort !== previous.effort || options.speed !== undefined && options.speed !== previous.speed) throw Error('The first recovered continuation must keep its recorded native agent, model, effort and speed')
+    return { model: previous.model, effort: previous.effort, speed: previous.speed }
   }
   all() { return this.store.all<CoreAgent>('agent') }
   terminal(agent: CoreAgent) {
@@ -142,10 +148,11 @@ export class CoreAgents {
   }
   /** Read-only checks run while the old worker is still alive. No grant, hook file or process is created. */
   async preflight(space: CoreSpace, chat: string, kind: AgentKind, options: {
-    deployment?: string; parent?: CoreAgent; pilot?: unknown
+    deployment?: string; parent?: CoreAgent; pilot?: unknown; model?: string; effort?: string; speed?: string
   } = {}): Promise<PreparedProvider> {
     this.launches.assertUnheld(chat)
     const previous = this.get(chat), token = this.selectionToken(chat), revision = this.configurationRevision(chat, space.id), parent = this.parentIdentity(options.parent)
+    const recovered = this.recoveredSelection(previous, kind, options)
     this.checkParent(parent)
     const selected = previous ? undefined : this.selection(chat)
     if (selected && selected.kind !== kind) throw Error('Agent choice changed before launch; reopen the selector')
@@ -164,11 +171,12 @@ export class CoreAgents {
     }
     this.checkParent(parent)
     if (token !== this.selectionToken(chat) || previous?.launch !== this.get(chat)?.launch) throw Error('Selection changed while checking. Reopen the selector and try again; the existing worker was left untouched.')
-    return { chat, level: space.id, kind, previous: previous?.launch, token, revision, provider, on, parent }
+    return { chat, level: space.id, kind, previous: previous?.launch, token, revision, provider, on, parent, recovered }
   }
 
   admit(prepared: PreparedProvider, expectedLaunch = prepared.previous) {
     this.launches.assertUnheld(prepared.chat)
+    if (prepared.recovered) this.recoveredSelection(this.get(prepared.chat), prepared.kind, prepared.recovered)
     if (this.stopping()) throw Error('Shepherdr is stopping')
     if (prepared.revision !== this.configurationRevision(prepared.chat, prepared.level)) throw Error('Selection changed before launch; fresh validation is required')
     if (this.get(prepared.chat)?.launch !== expectedLaunch) throw Error('Launch identity changed after admission; fresh validation is required')
@@ -188,10 +196,10 @@ export class CoreAgents {
     let prepared: PilotPrepared | undefined, previous: CoreAgent | undefined, submitted = false, attempt: string | undefined, cleanup: (() => Promise<void>) | undefined
     try {
     previous = this.get(chat)
-    const rebootResume = previous && this.executionEnded(previous) ? previous : undefined
+    const recovered = this.recoveredSelection(previous, kind, options)
+    const rebootResume = recovered ? previous : undefined
     if (rebootResume) {
-      if (kind !== rebootResume.kind || options.model !== undefined && options.model !== rebootResume.model || options.effort !== undefined && options.effort !== rebootResume.effort || options.speed !== undefined && options.speed !== rebootResume.speed) throw Error('The first recovered continuation must keep its recorded native agent, model, effort and speed')
-      options = { ...options, model: rebootResume.model, effort: rebootResume.effort, speed: rebootResume.speed, resume: true }
+      options = { ...options, ...recovered, resume: true }
     }
     const selection = previous ? undefined : this.selection(chat)
     if (selection) {
@@ -262,6 +270,7 @@ export class CoreAgents {
     const record: CoreAgent = {
       chat, space: space.id, machine: space.machine, role, kind, provider: provider.binding, launch, grant: grant.id, hook, browser: options.pilot ? undefined : { namespace: shellEnv.AGENT_BROWSER_NAMESPACE, session: browserSession, profile: shellEnv.AGENT_BROWSER_PROFILE }, command: options.pilot ? '/run/shepherdr/bin/shepherdr' : join(root, 'bin/shepherdr'), started: Date.now(), state: 'starting',
       session: !options.pilot && options.resume && previous?.kind === kind ? previous.session : undefined, model: options.model, effort: options.effort, speed: options.speed,
+      recoveredFrom: rebootResume?.launch ?? (options.resume ? previous?.recoveredFrom : undefined),
       pilot: options.pilot && prepared ? { run: options.pilot.run, home: prepared.sandbox.home, captures: prepared.paths.captures, pending: true } : undefined,
     }
     this.store.db.transaction(() => {

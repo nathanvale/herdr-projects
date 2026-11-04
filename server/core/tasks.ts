@@ -238,7 +238,7 @@ export class CoreTasks {
       if (caller.pilot) this.source.pilots.policy.actor(caller.pilot.run, this.source.pilots.actor(caller))
       if (!this.source.space(task.place) || this.source.places?.removing(task.place)) throw new Refusal('Task space is missing or being removed')
       const prior = this.source.agents.get(task.chat)
-      if (prior && !this.source.agents.terminal(prior)) throw new Refusal('Previous task start is unconfirmed; reconnect before starting it again')
+      if (prior && !this.source.agents.terminal(prior) && !this.launches.ended(prior)) throw new Refusal('Previous task start is unconfirmed; reconnect before starting it again')
       task.after = taskDependencies(this.all(), task, task.after ?? [], machine => this.source.machineName(machine))
       task.workflow = task.after.some(id => !['merged', 'closed'].includes(this.get(id)?.workflow || '')) ? 'queued' : 'working'
       delete task.startError; delete task.readyHead; delete task.approvedHead; delete task.mergeQuestion
@@ -400,7 +400,7 @@ export class CoreTasks {
     if (pilot && (parent?.pilot?.run !== pilot.id || this.source.agents.terminal(parent)?.state !== 'live')) parent = undefined
     const needsParent = !pilot && (!parent || this.source.agents.terminal(parent)?.state !== 'live')
     // Validate both routes before checkout, browser or coordinator effects.
-    prepared ??= await this.source.agents.preflight(space, task.chat, task.kind, { deployment: task.deployment, parent: needsParent ? undefined : parent, pilot })
+    prepared ??= await this.source.agents.preflight(space, task.chat, task.kind, { model, effort, speed: task.speed, deployment: task.deployment, parent: needsParent ? undefined : parent, pilot })
     if (needsParent) coordinator ??= await this.prepareCoordinator(space, parent, prepared)
     const admit = () => {
       if (this.source.agents.get(space.id)?.launch !== parentLaunch) throw new Refusal('Parent identity changed during task admission')
@@ -741,7 +741,8 @@ export class CoreTasks {
         const space = this.source.space(task.place)
         if (!space) throw new Refusal('Task space is missing')
         const parent = this.source.agents.get(task.place)
-        const prepared = await this.source.agents.preflight(space, task.chat, choice.kind, { deployment: task.deployment, parent: parent && this.source.agents.terminal(parent)?.state === 'live' ? parent : undefined, pilot: profile })
+        const prepared = await this.source.agents.preflight(space, task.chat, choice.kind, { ...choice, speed, deployment: task.deployment, parent: parent && this.source.agents.terminal(parent)?.state === 'live' ? parent : undefined, pilot: profile })
+        const selected = { ...choice, speed, ...prepared.recovered }
         const coordinator = !profile && (!parent || this.source.agents.terminal(parent)?.state !== 'live')
           ? await this.prepareCoordinator(space, parent, prepared) : undefined
         if (this.source.agents.get(space.id)?.launch !== parent?.launch) throw new Refusal('Parent identity changed during task admission')
@@ -751,10 +752,10 @@ export class CoreTasks {
         if (agent) await this.finishForRestart(agent)
         await this.profile(task, profile)
         await this.source.browsers?.close(task.id)
-        task.kind = choice.kind; task.model = choice.model; task.effort = choice.effort; task.speed = speed
+        task.kind = selected.kind; task.model = selected.model; task.effort = selected.effort; task.speed = selected.speed
         delete task.startError; this.save(task)
         await this.launchNow(task, task.workflow === 'working' ? 'Continue your agreed task. Preserve existing work.' : undefined, task.model, task.effort, prepared, false, coordinator)
-        if (action.save && !this.get(task.id)?.capacity) this.source.settings.saveAgent('task', task.place, choice)
+        if (action.save && !this.get(task.id)?.capacity) this.source.settings.saveAgent('task', task.place, selected)
         return { ok: true }
       case 'close': return this.closeNow(task, !!action.force)
       case 'delete': return this.removeNow(task, !!action.force)

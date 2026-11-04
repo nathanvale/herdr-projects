@@ -84,6 +84,7 @@ export class CoreFailedStarts {
     try { return screenText((await this.source.core.call<{ text: string }>('terminal.read', { terminal: terminal.address })).text) } catch { return '' }
   }
   private async fresh(agent: CoreAgent) {
+    if (agent.recoveredFrom) return this.fail(agent, 'The recovered native session could not be found. Its identity and work were kept; no fresh session was started. Inspect the retained conversation before deciding how to continue.')
     const { agents, tasks } = this.source, task = tasks.forChat(agent.chat)
     const message = this.source.store.get<ResumeStart>('resume-start', agent.launch)?.message ?? ''
     let started = true

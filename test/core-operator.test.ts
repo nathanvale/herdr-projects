@@ -3,6 +3,8 @@ import { mkdtempSync, chmodSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { createConnection } from 'node:net'
+import { once } from 'node:events'
 import { CoreSource } from '../server/core/source.ts'
 import { operatorRequest, startOperator } from '../server/core/operator.ts'
 import { CoreStore } from '../server/core/store.ts'
@@ -85,7 +87,7 @@ async function recoverySetup(home: string, boot: BootProbe, role: 'coordinator' 
   const operator = await startOperator(source, randomUUID())
   writeFileSync(join(home, 'run.json'), JSON.stringify({ pid: process.pid, boot: randomUUID(), home, port: 0, root: '/unused', operator: operator.path }))
   let closed = false
-  return { source, home, boot, chat, launch, agent, space, calls,
+  return { source, home, boot, chat, launch, agent, space, calls, operatorPath: operator.path,
     request: (operation: string, extra: string[] = []) => operatorRequest(home, operator.path, ['recover-launch', operation, chat, launch, ...extra]),
     read: <T>(kind: string, key: string) => { const reader = new CoreStore(home); try { return reader.get<T>(kind, key) } finally { reader.close() } },
     rows: () => { const reader = new CoreStore(home); try { return reader.db.query('SELECT kind,key,value FROM records ORDER BY kind,key').all() } finally { reader.close() } },
@@ -237,15 +239,85 @@ test('boot recovery refuses unsupported proof, remote execution and expired oper
   if (process.platform !== 'darwin') await expect(readHostBoot()).rejects.toThrow('unsupported')
 }))
 
-test('boot recovery delayed host observation cannot regain aborted operator authority', () => recoveryFixture(async f => {
-  const controller = new AbortController()
-  let arrived!: () => void, release!: () => void
+test('boot recovery real operator peer loss during host observation cannot commit', () => recoveryFixture(async f => {
+  let arrived!: () => void, release!: () => void, aborted!: (reason: unknown) => void, finished!: () => void
   const reached = new Promise<void>(resolve => { arrived = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+  const lost = new Promise<unknown>(resolve => { aborted = resolve }), complete = new Promise<void>(resolve => { finished = resolve })
+  const operate = f.source.launchRecovery.operator.bind(f.source.launchRecovery)
+  f.source.launchRecovery.operator = async (args, signal, expires) => {
+    signal.addEventListener('abort', () => aborted(signal.reason), { once: true })
+    try { return await operate(args, signal, expires) } finally { finished() }
+  }
   f.boot.before = async () => { arrived(); await gate }
-  const before = f.rows(), pending = f.source.launchRecovery.operator(['recover-launch', 'arm', f.chat, f.launch], controller.signal, performance.now() + 1000)
-  await reached; controller.abort(); release()
-  await expect(pending).rejects.toThrow('expired')
+  const before = f.rows(), peer = createConnection(f.operatorPath)
+  try {
+    await once(peer, 'connect')
+    peer.write(JSON.stringify({ args: ['recover-launch', 'arm', f.chat, f.launch] }) + '\n')
+    await reached
+    const closed = once(peer, 'close'); peer.destroy(); await closed
+    // Observe the server's real peer-loss signal, not a caller-created AbortController
+    // or its five-second expiry. The boot reader remains blocked until that signal.
+    expect(String(await lost)).toContain('Recovery operator peer disconnected')
+  } finally { peer.destroy(); release(); await complete }
   expect(f.rows()).toEqual(before); expect(f.calls).toEqual([])
+}))
+
+test('boot recovery rejects legacy EOF requests before reading host evidence', () => recoveryFixture(async f => {
+  let observed = false
+  f.boot.before = async () => { observed = true }
+  const before = f.rows(), peer = createConnection(f.operatorPath), chunks: Buffer[] = []
+  peer.on('data', bytes => chunks.push(Buffer.from(bytes)))
+  const ended = once(peer, 'end')
+  await once(peer, 'connect')
+  peer.end(JSON.stringify({ args: ['recover-launch', 'arm', f.chat, f.launch] }))
+  await ended
+  const result = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  expect(result).toMatchObject({ code: 1, out: expect.stringContaining('newline-framed request') })
+  expect(observed).toBe(false); expect(f.rows()).toEqual(before)
+}))
+
+for (const selection of [{ kind: 'claude' }, { model: 'different-deployment' }, { effort: 'low' }, { speed: 'normal' }] as const) test(`boot recovery public task Restart refuses changed ${Object.keys(selection)[0]} before effects`, () => recoveryFixture(async f => {
+  await f.request('arm'); f.boot.value = { ...f.boot.value, boot: nextBoot }
+  await f.request('settle'); await f.request('resume', ['--cancel-queued'])
+  f.source.store.set('models', `${f.space.machine}:codex`, { models: [], efforts: ['low', 'high'] })
+  const effects: string[] = []
+  f.source.tasks.git.ensureWorktree = async () => { effects.push('checkout'); return false }
+  f.source.browsers.close = async () => { effects.push('browser') }
+  const before = f.rows()
+  await expect(f.source.act({ type: 'restart', chat: f.chat, kind: 'codex', ...selection })).rejects.toThrow('first recovered continuation')
+  expect(f.rows()).toEqual(before); expect(effects).toEqual([]); expect(f.calls).toEqual([])
+}, 'task'))
+
+test('boot recovery normal coordinator task start recognizes settled execution without a terminal', () => recoveryFixture(async f => {
+  await f.request('arm'); f.boot.value = { ...f.boot.value, boot: nextBoot }
+  await f.request('settle'); await f.request('resume', ['--cancel-queued'])
+  const coordinator = await f.source.agents.launch(f.space, f.space.id, 'codex', 'Wait for the human', { model: 'gpt-6.1-sol', effort: 'high' })
+  const grant = f.source.mailbox.active().find(row => row.session === coordinator.launch)!
+  f.calls.length = 0
+  const result = await f.source.tasks.cli(grant, ['task', 'start', 'EX-1', 'Fresh explicit instruction'])
+  expect(result.code).toBe(0)
+  const runs = f.calls.filter(call => call.method === 'terminal.run')
+  expect(runs).toHaveLength(1); expect(runs[0]!.params.cwd).toBe('/retained-worktree')
+  expect(runs[0]!.params.argv).toContain('33333333-3333-4333-8333-333333333333')
+  expect(f.read('agent', f.chat)).toMatchObject({ recoveredFrom: f.launch, session: f.agent.session, model: 'gpt-6.1-sol', effort: 'high', speed: 'fast', provider: f.agent.provider })
+  expect(f.read('pending-send', 'submitted')).toMatchObject({ state: 'uncertain' })
+}, 'task'))
+
+test('boot recovery public continuation with a missing native session refuses a fresh fallback', () => recoveryFixture(async f => {
+  await f.request('arm'); f.boot.value = { ...f.boot.value, boot: nextBoot }
+  await f.request('settle'); await f.request('resume', ['--cancel-queued'])
+  await f.source.act({ type: 'restart', chat: f.chat, kind: 'codex', model: 'gpt-6.1-sol', effort: 'high', speed: 'fast' })
+  const current = f.source.agents.get(f.chat)!, terminal = f.source.agents.terminal(current)!
+  expect(f.read('agent', f.chat)).toMatchObject({ recoveredFrom: f.launch })
+  terminal.state = 'finished'; terminal.reason = 'exited'; terminal.exit_code = 1
+  const call = f.source.core.call.bind(f.source.core)
+  f.source.core.call = async <T>(method: string, params: Record<string, unknown> = {}) => method === 'terminal.read'
+    ? { text: 'ERROR: No saved session found with ID 33333333-3333-4333-8333-333333333333' } as T : call<T>(method, params)
+  await f.source.failedStarts.tick(); await f.source.failedStarts.tick(); await f.source.failedStarts.tick()
+  expect(f.calls.filter(call => call.method === 'terminal.run')).toHaveLength(1)
+  expect(f.read('agent', f.chat)).toMatchObject({ launch: current.launch, recoveredFrom: f.launch, session: f.agent.session, model: 'gpt-6.1-sol', effort: 'high', speed: 'fast', provider: f.agent.provider, state: 'idle' })
+  expect(f.read('pending-send', `session-gone-${current.launch}`)).toBeUndefined()
+  expect(f.source.store.all<{ text?: string }>(`message:${f.chat}`).some(row => row.text?.includes('no fresh session was started'))).toBe(true)
 }))
 
 test('boot recovery human executable routes to private operator and exposes no HTTP or agent action', () => recoveryFixture(async f => {

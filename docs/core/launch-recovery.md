@@ -55,13 +55,21 @@ intent. It leaves submitted messages uncertain and starts no process. Old task
 queue work does not restart automatically. Use a fresh ordinary human send or
 Restart action to continue the retained native conversation. The first recovered
 continuation preserves its recorded CLI, deployment, effort and speed; it cannot
-be used to switch that binding. Independently verify the resulting native
+be used to switch that binding. A changed Restart selection refuses during
+preflight, before changing the task or browser. If the native session cannot
+be found, recovery retains its identity and reports the failure rather than
+automatically starting a new conversation. Independently verify the resulting native
 session and actual model/provider before reporting recovery as complete.
 
 On a lost reply, ask `status` for the same chat and launch. Exact repeated arm,
 settle and resume operations reconcile without duplicating effects. A refused
 operation does not release the hold. Do not clear records or infer safety from
 missing terminals.
+
+The supplied human CLI sends recovery as one newline-framed private request,
+keeping its write side open until the response. Disconnecting during host
+observation revokes an unadmitted operation. Older EOF-framed recovery requests
+refuse; existing secret and protected-stop protocols remain unchanged.
 
 Older versions do not understand recovery state. Do not downgrade while armed
 or settled/held, and do not restore the pre-arm backup as a process-cleanup

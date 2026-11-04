@@ -43,6 +43,8 @@ export interface CoreAgent {
   transcript?: string
   transcriptFormat?: 'codex-exec'
   session?: string
+  /** Recovered native lineage must never silently fall back to a fresh conversation. */
+  recoveredFrom?: string
   started: number
   activityAt?: number
   state: 'starting' | 'idle' | 'working' | 'blocked'

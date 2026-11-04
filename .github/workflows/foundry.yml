@@ -418,6 +418,62 @@ jobs:
             exit 1
           fi
           grep -F '(fail) boot recovery final admission fences' /tmp/recovery-hold-sensitivity.log
+      - name: Prove recovered selection is checked before task effects
+        shell: bash
+        run: |
+          cp server/core/agents.ts /tmp/recovery-selection-original.ts
+          trap 'cp /tmp/recovery-selection-original.ts server/core/agents.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/agents.ts')
+          source = path.read_text()
+          start, end = source.index('  async preflight('), source.index('\n  admit(')
+          before = 'const recovered = this.recoveredSelection(previous, kind, options)'
+          chunk = source[start:end]
+          assert chunk.count(before) == 1
+          path.write_text(source[:start] + chunk.replace(before, 'const recovered = undefined') + source[end:])
+          PYCODE
+          if bun test test/core-operator.test.ts --test-name-pattern 'boot recovery public task Restart refuses changed effort' > /tmp/recovery-selection-sensitivity.log 2>&1; then
+            cat /tmp/recovery-selection-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery public task Restart refuses changed effort' /tmp/recovery-selection-sensitivity.log
+      - name: Prove missing recovered sessions cannot start fresh
+        shell: bash
+        run: |
+          cp server/core/failed-starts.ts /tmp/recovery-session-original.ts
+          trap 'cp /tmp/recovery-session-original.ts server/core/failed-starts.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/failed-starts.ts')
+          source = path.read_text()
+          guards = [line for line in source.splitlines() if line.startswith('    if (agent.recoveredFrom) return this.fail(')]
+          assert len(guards) == 1
+          path.write_text(source.replace(guards[0], ''))
+          PYCODE
+          if bun test test/core-operator.test.ts --test-name-pattern 'boot recovery public continuation with a missing native session' > /tmp/recovery-session-sensitivity.log 2>&1; then
+            cat /tmp/recovery-session-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery public continuation with a missing native session' /tmp/recovery-session-sensitivity.log
+      - name: Prove real operator peer loss revokes recovery admission
+        shell: bash
+        run: |
+          cp server/core/operator.ts /tmp/recovery-peer-original.ts
+          trap 'cp /tmp/recovery-peer-original.ts server/core/operator.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/operator.ts')
+          source = path.read_text()
+          before = "if (framed) { request.abort(Error('Recovery operator peer disconnected before admission')); socket.destroy(); return }"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'if (framed) return'))
+          PYCODE
+          if bun test test/core-operator.test.ts --test-name-pattern 'boot recovery real operator peer loss' > /tmp/recovery-peer-sensitivity.log 2>&1; then
+            cat /tmp/recovery-peer-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery real operator peer loss' /tmp/recovery-peer-sensitivity.log
       - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts test/core-launch-admission.test.ts test/core-client.test.ts test/core-mailbox.test.ts test/core-launcher.test.ts test/core-operator.test.ts test/core-protected-update.test.ts test/core-commands.test.ts test/core-failed-starts.test.ts
       - run: bun x playwright-core install --only-shell chromium
       - run: bun test test/layout-restart.test.ts test/layout-azure-admission.test.ts
