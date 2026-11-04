@@ -5,60 +5,211 @@
 <h2>Free play</h2><p class="muted">Every action remains available. Invalid actions explain why they were refused. “Reload” simulates losing memory while retaining the modelled durable records.</p><div id="actions"></div>
 <div class="panel"><h2>Guided walkthroughs</h2><div id="tabs" role="tablist" aria-label="Lifecycle scenarios"></div><h3 id="scenarioTitle"></h3><p id="description"></p><div id="steps"></div><p id="verdict" class="result"></p></div>
 <details><summary>Event history and full model</summary><ol id="trace"></ol><pre id="raw"></pre></details>
-<div class="panel"><h2>What this review found</h2><ul><li><strong>Fixed:</strong> changing a saved choice away and back must still invalidate old selectors. The implementation now persists a monotonically increasing selection revision.</li><li><strong>Guarded:</strong> saving does not start work or release holds. Existing conversations remain locked. A lost start reply retains its launch identity and blocks blind retry.</li><li><strong>Open:</strong> a crash after recording a launch but before submitting it can leave an unconfirmed record with no process. Refusing retry prevents duplicates but does not restore progress.</li><li><strong>Open:</strong> the new-task path currently prepares its worktree and can start its coordinator before validating the worker route. Admission should move before these side effects.</li><li><strong>Open:</strong> an admitted restart plan lives only in memory. A crash after the old process stops can lose that plan. The new-start selector does not enable changing existing conversations.</li></ul><p class="muted">Scope: one application owner, one task, two example deployments. Real authentication, provider compatibility, parent identity, task dependency scheduling, terminal reconciliation and filesystem recovery are not implemented here. No credentials, network, local storage or model requests are used.</p><p class="muted">Source: <code>server/core/agents.ts</code> selectionToken, saveSelection, preflight, launch; <code>server/core/tasks.ts</code> launchNow; <code>server/core/pilot-lifecycle.ts</code> regularRestart. Reference implementation: 1f4dc1e. Findings distinguish a source-inspected ordering gap from a modelled crash window.</p></div>
-<footer>Open this single file directly. Reset or reload the page to discard the experiment.</footer>
+<div class="panel"><h2>Simulation boundaries and repair</h2>
+<ul><li><strong>Stale admission:</strong> settings and selection revisions are checked again at recording and submission. The final check and simulated submission are one synchronous transition.</li>
+<li><strong>Recovery:</strong> the simulated launch owner keeps a separate submission ledger. An explicit recovery action atomically confirms never submitted and revokes the old owner's authority. Zero processes alone never permits retry.</li>
+<li><strong>Walkthrough:</strong> Reset resets both model and step position. Other free-play actions pause the walkthrough until restarted. Expected refusals still advance guided scenarios.</li></ul>
+<p><strong>Recovery policy remains undecided.</strong> The button exposes a safe transition for exploration. It does not select automatic or user-triggered production recovery.</p>
+<p class="muted">All state, including the authoritative ledger, is simulated in memory. No credentials, network, local storage, real process, agent or model request is used. A real implementation needs a launch owner that can enforce the same atomic submission and fencing contract.</p>
+<p class="muted">Production trace at 69ecf79: <code>CoreAgents.admit</code> checks a revision, but <code>launch</code> does not repeat that check at recording or terminal.run. Its submitted flag is memory-only; a caught pre-submission error has cleanup, while a process crash skips that cleanup. The prototype's walkthrough reset defect has no production counterpart. No production fix is claimed here.</p>
+<p class="muted">Other previously identified production gaps, including task/coordinator admission ordering, remain outside this repair.</p></div>
+<footer>Throwaway simulation. Reset discards this experiment. Reload application simulates losing application memory only.</footer>
 <script>
-// Pure illustrative reducer. No DOM, I/O, storage or runtime authority.
-const Lifecycle=(()=>{
- const initial=()=>({deployment:'Sonnet',revision:0,settingsRevision:0,picker:null,phase:'draft',hold:true,admitted:null,record:null,processes:0,connected:true,stopping:false,legacyToken:false,decision:'Nothing is running. Saving a choice cannot start anything.',history:[]});
- const token=s=>[s.settingsRevision,s.legacyToken?s.deployment:s.revision,s.record?.id??'none'].join(':');
- function reduce(prior,action){let s=structuredClone(prior);let say=x=>s.decision=x;
- switch(action){
- case 'reset':return initial();
- case 'oldGuard':s.legacyToken=true;s.picker=null;say('Comparison mode: the earlier content-only token has the away-and-back defect.');break;
- case 'open':s.picker={token:token(s),deployment:s.deployment};say(s.record?'Read-only: this conversation already has a launch.':'Selector opened with the current revision.');break;
- case 'save':if(s.record||s.phase==='checking'||s.phase==='admitted')say('Refused: this conversation has started or is starting.');else if(!s.picker||s.picker.token!==token(s))say('Refused: stale selector. Reopen it before saving.');else{s.deployment=s.picker.deployment;s.revision++;say('Choice saved. Zero processes started; the hold is unchanged.')}break;
- case 'other':if(s.record||['checking','admitted'].includes(s.phase))say('Refused: selection is locked.');else{s.deployment=s.deployment==='Sonnet'?'Haiku':'Sonnet';s.revision++;say('Another selector saved '+s.deployment+'.')}break;
- case 'settings':s.settingsRevision++;say('Connection settings changed. Any earlier preflight or selector is stale.');break;
- case 'check':if(s.stopping||s.record||['checking','admitted'].includes(s.phase))say('Refused: stopping, already starting, or a launch record already exists.');else{s.phase='checking';s.admitted={token:token(s),deployment:s.deployment};say('Checking routing without starting a process.')}break;
- case 'admit':if(s.phase!=='checking')say('Refused: there is no pending check.');else if(s.stopping||s.admitted.token!==token(s)){s.phase='draft';s.admitted=null;say('Refused before launch: settings or selection changed, or shutdown began.')}else{s.phase='admitted';say('The checked deployment is frozen for this start.')}break;
- case 'record':if(s.phase!=='admitted'||s.stopping)say('Refused: a non-stopping admitted start is required.');else{s.record={id:'launch-1',deployment:s.admitted.deployment,terminal:null};s.phase='recorded';say('Durable launch identity written. No process has been submitted yet.')}break;
- case 'submit':if(s.phase!=='recorded'||s.stopping)say('Refused: this in-memory operation no longer owns submission.');else{s.processes=1;s.phase='awaiting reply';say('One process exists. Its reply has not arrived.')}break;
- case 'reply':if(s.processes!==1||!s.record||!s.connected)say('No matching process reply can be accepted.');else{s.record.terminal='terminal-1';s.phase='running';say('Matching terminal confirmed. The held task still waits for go.')}break;
- case 'lose':if(s.phase!=='awaiting reply')say('There is no pending start reply to lose.');else{s.connected=false;s.phase='unconfirmed';say('Reply lost. Keep the launch record; do not assume start failed.')}break;
- case 'reload':s.connected=true;s.admitted=null;s.picker=null;s.stopping=false;s.phase=s.record?(s.record.terminal?'running':'unconfirmed'):'draft';say(s.record&&!s.record.terminal?'Reload retained an unconfirmed record. Retry stays blocked until ownership is reconciled.':'Application memory reset; durable state retained.');break;
- case 'retry':if(s.record)say('Refused: a durable launch exists. A blind retry could duplicate work.');else say('No prior launch record. Begin a fresh check.');break;
- case 'reconcile':if(s.record&&s.processes===1){s.record.terminal='terminal-1';s.phase='running';say('Illustrative reconciliation: matching process recovered; still only one.')}else if(s.record)say('RECOVERY GAP: no process found, but absence needs authoritative proof before clearing the record.');else say('No launch record to reconcile.');break;
- case 'oldEvent':say('Ignored: an event for launch-old does not own launch-1.');break;
- case 'shutdown':s.stopping=true;say('Shutdown requested. No new submission may pass. Existing process is unchanged.');break;
+// Pure simulation. Runtime is a separate, in-memory stand-in for an authoritative
+// launch owner. No I/O, promises, real persistence or process creation occurs.
+const Lifecycle = (() => {
+ const initial = () => ({
+  deployment:'Sonnet', revision:0, settingsRevision:0, picker:null,
+  phase:'draft', hold:true, admitted:null, record:null, nextLaunch:1,
+  connected:true, stopping:false, legacyToken:false, retired:null,
+  runtime:{epoch:1, attempts:{}, processes:[]}, recovery:null,
+  outcome:'accepted', decision:'Nothing is running. Saving a choice cannot start anything.', history:[]
+ });
+ const token = s => [s.settingsRevision, s.legacyToken ? s.deployment : s.revision, s.record?.id ?? 'none'].join(':');
+ const current = s => s.admitted && s.admitted.settingsRevision === s.settingsRevision &&
+  s.admitted.selectionRevision === s.revision && s.admitted.ownerEpoch === s.runtime.epoch;
+ const ownsSubmission = (s, record) => {
+  const entry = record && s.runtime.attempts[record.id];
+  return entry && entry.status === 'never submitted' && !entry.revoked &&
+   entry.ownerEpoch === record.ownerEpoch && entry.ownerEpoch === s.runtime.epoch;
+ };
+ function reduce(prior, action) {
+  const s = structuredClone(prior);
+  const say = (message, outcome='accepted') => { s.decision=message; s.outcome=outcome; };
+  const refuse = message => say('Refused: '+message, 'refused');
+  const stale = () => {
+   s.admitted=null; s.phase=s.record ? 'needs recovery' : 'draft';
+   refuse('admission revisions changed. No process created. Recover any never-submitted record, then begin a fresh check.');
+  };
+  switch(action) {
+   case 'reset': return initial();
+   case 'oldGuard':
+    s.legacyToken=true; s.picker=null;
+    say('Comparison mode: the earlier picker token has the away-and-back defect. Launch revision guards remain enabled.'); break;
+   case 'open':
+    s.picker={token:token(s),deployment:s.deployment};
+    say(s.record ? 'Read-only: this conversation has a launch record.' : 'Selector opened with the current revision.'); break;
+   case 'save':
+    if(s.record || ['checking','admitted'].includes(s.phase)) refuse('this conversation has started or is starting.');
+    else if(!s.picker || s.picker.token !== token(s)) refuse('stale selector. Reopen it before saving.');
+    else { s.deployment=s.picker.deployment; s.revision++; say('Choice saved. Zero processes started; the hold is unchanged.'); }
+    break;
+   case 'other':
+    if(s.record || ['checking','admitted'].includes(s.phase)) refuse('selection is locked.');
+    else { s.deployment=s.deployment==='Sonnet' ? 'Haiku' : 'Sonnet'; s.revision++; say('Another selector saved '+s.deployment+'.'); }
+    break;
+   case 'selectionRace':
+    s.revision++; say('Fault injection: an external writer advanced the selection revision. Existing admission is stale.'); break;
+   case 'settings':
+    s.settingsRevision++; say('Connection settings changed. Earlier checks and admission are stale.'); break;
+   case 'check':
+    if(s.stopping || s.record || ['checking','admitted'].includes(s.phase)) refuse('stopping, already starting, or a launch record exists.');
+    else {
+     s.phase='checking';
+     s.admitted={settingsRevision:s.settingsRevision,selectionRevision:s.revision,deployment:s.deployment,ownerEpoch:s.runtime.epoch};
+     say('Checking routing without starting a process.');
+    } break;
+   case 'admit':
+    if(s.phase!=='checking') refuse('there is no pending check.');
+    else if(s.stopping) { s.phase='draft'; s.admitted=null; refuse('shutdown began. Begin a fresh check after recovery.'); }
+    else if(!current(s)) stale();
+    else { s.phase='admitted'; say('Admission is current. It must remain current at recording and submission.'); }
+    break;
+   case 'record':
+    if(s.phase!=='admitted' || s.stopping) refuse('a non-stopping admitted start is required.');
+    else if(!current(s)) stale();
+    else {
+     const id='launch-'+s.nextLaunch++;
+     s.record={id,deployment:s.admitted.deployment,ownerEpoch:s.runtime.epoch,status:'never submitted',terminal:null};
+     s.runtime.attempts[id]={ownerEpoch:s.runtime.epoch,status:'never submitted',revoked:false};
+     s.phase='recorded'; say('Launch recorded with the simulated owner. It authoritatively records never submitted.');
+    } break;
+   case 'submit':
+   case 'uncertain':
+    if(s.phase!=='recorded' || s.stopping) refuse('this operation cannot submit from its current state.');
+    else if(!current(s)) stale();
+    else if(!ownsSubmission(s,s.record)) refuse('launch ownership was revoked or submission already began.');
+    else {
+     // Atomic in this simulator: revision + ownership check, ledger transition,
+     // and submission share this synchronous reducer call. There is no await.
+     s.runtime.attempts[s.record.id].status='submission uncertain';
+     s.record.status='submission uncertain';
+     s.phase=action==='submit' ? 'awaiting reply' : 'unconfirmed';
+     if(action==='submit') s.runtime.processes.push({launch:s.record.id,terminal:'terminal-'+s.record.id});
+     else s.connected=false;
+     say(action==='submit' ? 'One simulated process exists. Submission remains uncertain until its reply.' :
+      'Submission began but no process is visible yet. The outcome is uncertain, not never submitted.');
+    } break;
+   case 'reply':
+   case 'reconcile': {
+    const process=s.record && s.runtime.processes.find(p=>p.launch===s.record.id);
+    if(!s.connected) refuse('reconnect before accepting an identity report.');
+    else if(process && s.runtime.attempts[s.record.id]?.status !== 'never submitted') {
+     s.record.terminal=process.terminal; s.record.status='confirmed running';
+     s.runtime.attempts[s.record.id].status='confirmed running'; s.phase='running';
+     say('Matching launch '+s.record.id+' confirmed. Exactly one owned process is retained.');
+    } else if(s.record) refuse('no matching process report. This does not prove never submitted; use the owner ledger recovery action.');
+    else refuse('there is no launch to reconcile.');
+    break;
+   }
+   case 'lose':
+    if(s.phase!=='awaiting reply') refuse('there is no pending start reply to lose.');
+    else { s.connected=false; s.phase='unconfirmed'; say('Reply lost. Keep the uncertain launch record; do not assume failure.'); }
+    break;
+   case 'reload':
+    s.connected=true; s.admitted=null; s.picker=null; s.stopping=false;
+    s.phase=s.record ? (s.record.status==='confirmed running' ? 'running' : 'unconfirmed') : 'draft';
+    say('Application memory reset. The simulated owner ledger survives; no recovery was triggered automatically.'); break;
+   case 'retry':
+    if(s.record) refuse('a launch record exists. Establish ownership and submission outcome before retry.');
+    else say('No active record. A fresh check is required; retry alone does not submit.');
+    break;
+   case 'recover': {
+    const entry=s.record && s.runtime.attempts[s.record.id];
+    if(!s.connected) refuse('the launch owner must be reachable.');
+    else if(!entry || entry.status!=='never submitted' || entry.revoked || entry.ownerEpoch!==s.record.ownerEpoch)
+     refuse('the owner cannot certify never submitted for this operation. Keep the same identity and reconcile.');
+    else {
+     // Modelled atomic owner operation: certify non-submission AND revoke the
+     // old owner before clearing the application record. Never inspect count.
+     const old=s.record;
+     entry.revoked=true; s.runtime.epoch++;
+     s.recovery={launch:old.id,evidence:'owner ledger: never submitted',revokedEpoch:old.ownerEpoch,newEpoch:s.runtime.epoch};
+     s.retired=old; s.record=null; s.admitted=null; s.picker=null; s.phase='draft';
+     say('Owner certified '+old.id+' never submitted and revoked its operation. Begin fresh validation; no process was started.');
+    } break;
+   }
+   case 'lateSubmit':
+    if(!s.retired) refuse('there is no retired operation to replay.');
+    else if(!ownsSubmission(s,s.retired)) refuse('the retired operation is fenced by the launch owner. No process created.');
+    else {
+     s.runtime.attempts[s.retired.id].status='submission uncertain';
+     s.runtime.processes.push({launch:s.retired.id,terminal:'terminal-'+s.retired.id});
+     say('The retired operation submitted because it still owned the launch. Recovery did not fence it.');
+    }
+    break;
+   case 'oldEvent': say('Ignored: an event for launch-old does not own the current launch.', 'ignored'); break;
+   case 'shutdown': s.stopping=true; say('Shutdown requested. New submission is refused. Existing processes are unchanged.'); break;
+   default: refuse('unknown action.');
+  }
+  s.history.push(action+': '+s.decision);
+  return s;
  }
- s.history.push(action+': '+s.decision);return s;
- }
- return{initial,reduce,token};
+ return {initial,reduce,token};
 })();
 </script>
 <script>
-const actions={reset:'Reset',open:'Open selector',save:'Save this selector',other:'Save another choice',settings:'Change connection settings',check:'Begin start check',admit:'Finish check and admit',record:'Record launch identity',submit:'Submit one process',reply:'Receive start reply',lose:'Lose start reply',reload:'Reload application',retry:'Retry start',reconcile:'Reconcile process',oldEvent:'Receive old event',shutdown:'Begin shutdown',oldGuard:'Compare earlier token'};
+// Pure walkthrough controller: reset, step order and expected refusals have one owner.
+const actions={reset:'Reset',open:'Open selector',save:'Save this selector',other:'Save another choice',settings:'Change connection settings',selectionRace:'Inject selection revision race',check:'Begin start check',admit:'Finish check and admit',record:'Record launch identity',submit:'Submit one process',uncertain:'Submit with uncertain outcome',reply:'Receive start reply',lose:'Lose start reply',reload:'Reload application',retry:'Retry start',recover:'Certify never submitted and revoke owner',lateSubmit:'Old operation tries submission',reconcile:'Reconcile process',oldEvent:'Receive old event',shutdown:'Begin shutdown',oldGuard:'Compare earlier token'};
 const scenarios=[
- ['Save only','A held task can save a model without releasing its hold or starting an agent.',['open','save'],'Expected: draft, hold kept, zero processes.'],
- ['Stale selector','Another editor changes the choice before this selector saves.',['open','other','save'],'Expected: stale save refused.'],
- ['Away and back','Another editor changes Sonnet to Haiku, then back. Values match, but revision does not.',['open','other','other','save'],'Expected: refused. The extra revision guard closes this race.'],
- ['Earlier defect','Compare the earlier content-only token. Same values can hide intervening edits.',['oldGuard','open','other','other','save'],'Expected: the old design incorrectly accepts the stale save.'],
- ['Settings race','Change connection settings while validation is pending.',['check','settings','admit'],'Expected: refused before any process or launch record.'],
- ['Lost reply','Submit once, lose its reply, reload, then try again.',['check','admit','record','submit','lose','reload','retry','reconcile'],'Expected: retry blocked; illustrative reconciliation recovers the same process.'],
- ['Crash before submit','Reload between writing the durable launch and submitting the process.',['check','admit','record','reload','retry','reconcile'],'Expected: no duplicate, but recovery is blocked. This is an open liveness gap.'],
- ['Existing conversation','After a start, selection is read-only and old events cannot replace its identity.',['check','admit','record','submit','reply','open','save','oldEvent'],'Expected: one process, same launch identity, selection refused.'],
- ['Shutdown','Shutdown arrives after checks but before submission.',['check','admit','shutdown','record','submit'],'Expected: no process submitted.']
+ ['Save only','Save a model without releasing a held task or starting an agent.',['open','save'],'Draft, hold kept, zero processes.'],
+ ['Stale selector','Another editor changes the choice before this selector saves.',['open','other',['save','refused']],'Stale save refused.'],
+ ['Away and back','Values return to Sonnet, but the selection revision has advanced.',['open','other','other',['save','refused']],'The old selector is refused.'],
+ ['Earlier defect','Compare the earlier content-only picker token.',['oldGuard','open','other','other','save'],'The old picker incorrectly accepts the stale save. Launch guards stay enabled.'],
+ ['During checking','Change settings while validation is pending.',['check','settings',['admit','refused']],'Refused before recording or submission.'],
+ ['After admission','Change settings after admission, before recording.',['check','admit','settings',['record','refused'],['submit','refused']],'No record and zero processes; fresh validation required.'],
+ ['After recording','Change settings after recording, before submission.',['check','admit','record','settings',['submit','refused'],'recover','check','admit','record','submit'],'Stale submission creates zero processes. Explicit recovery plus fresh validation permits one new start.'],
+ ['Selection revision','Inject a competing selection revision after recording.',['check','admit','record','selectionRace',['submit','refused']],'Selection revision is rechecked too; zero processes.'],
+ ['Crash before submit','Reload after recording. Recover through owner evidence and revocation.',['check','admit','record','reload',['retry','refused'],'recover',['lateSubmit','refused'],'retry','check','admit','record','submit','reply'],'Recovery creates no process; old operation cannot submit; a freshly validated launch creates exactly one.'],
+ ['Uncertain with zero','No visible process does not establish that submission never occurred.',['check','admit','record','uncertain','reload',['retry','refused'],['recover','refused'],['reconcile','refused']],'Zero visible processes; outcome uncertain; retry and recovery stay blocked.'],
+ ['Lost reply','Submit once, lose its reply, reload and reconcile by launch identity.',['check','admit','record','submit','lose','reload',['retry','refused'],['recover','refused'],'reconcile'],'The original launch is retained with exactly one process.'],
+ ['Existing conversation','A running conversation stays locked; old events cannot replace its identity.',['check','admit','record','submit','reply','open',['save','refused'],['oldEvent','ignored']],'Same process and launch identity; save refused and old event ignored.'],
+ ['Shutdown','Shutdown arrives after admission.',['check','admit','shutdown',['record','refused'],['submit','refused']],'Zero processes submitted.'],
+ ['Reset sequencing','Take two steps, then press the free-play Reset button. Only step 1 should be available.',['check','admit','record','submit'],'Reset restores draft state and step zero together.']
 ];
-let state=Lifecycle.initial(),scenario=0,step=0;
+const Walkthrough=(()=>{
+ const initial=(scenario=0)=>({model:Lifecycle.initial(),scenario,step:0,active:true,note:''});
+ function reduce(view,event){
+  if(event.type==='scenario') return initial(event.index);
+  if(event.type==='reset' || event.type==='free' && event.action==='reset') return initial(view.scenario);
+  if(event.type==='free') return {...view,model:Lifecycle.reduce(view.model,event.action),active:false,note:'Free play changed the state. Restart the walkthrough or Reset before continuing guided steps.'};
+  if(event.type!=='step' || !view.active || event.index!==view.step) return view;
+  const item=scenarios[view.scenario][2][view.step];
+  if(!item) return view;
+  const [action,expected]=Array.isArray(item) ? item : [item,'accepted'];
+  const model=Lifecycle.reduce(view.model,action);
+  return model.outcome===expected ? {...view,model,step:view.step+1,note:''} :
+   {...view,model,active:false,note:'Unexpected outcome: '+model.outcome+'. Expected '+expected+'. Restart before continuing.'};
+ }
+ return {initial,reduce};
+})();
+</script>
+<script>
+let view=Walkthrough.initial();
 const el=id=>document.getElementById(id);
-function dispatch(a){state=Lifecycle.reduce(state,a);render()}
+function dispatch(event){view=Walkthrough.reduce(view,event);render()}
 function button(label,handler){const b=document.createElement('button');b.textContent=label;b.onclick=handler;return b}
-function render(){const fields={'Phase':state.phase,'Saved deployment':state.deployment,'Selection revision':state.revision,'Settings revision':state.settingsRevision,'Current token':Lifecycle.token(state),'Open selector token':state.picker?.token??'none','Admitted deployment':state.admitted?.deployment??'none','Launch identity':state.record?.id??'none','Terminal identity':state.record?.terminal??'unconfirmed / none','Process count':state.processes,'Task hold':state.hold?'kept':'released','Application connection':state.connected?'connected':'lost','Shutdown':state.stopping?'requested':'no','Token strategy':state.legacyToken?'earlier content-only':'persisted revision'};
- el('state').replaceChildren(...Object.entries(fields).map(([k,v])=>{const d=document.createElement('dl'),t=document.createElement('dt'),x=document.createElement('dd');t.textContent=k;x.textContent=String(v);d.append(t,x);return d}));el('decision').textContent=state.decision;el('raw').textContent=JSON.stringify(state,null,2);el('trace').replaceChildren(...state.history.map(h=>{const li=document.createElement('li');li.textContent=h;return li}));
- const [name,desc,steps,verdict]=scenarios[scenario];el('scenarioTitle').textContent=name;el('description').textContent=desc;el('verdict').textContent=verdict;el('steps').replaceChildren(...steps.map((a,i)=>{const b=button((i+1)+'. '+actions[a],()=>{step++;dispatch(a)});b.disabled=i!==step;return b}),button('Restart walkthrough',()=>{state=Lifecycle.initial();step=0;render()}));
- [...el('tabs').children].forEach((b,i)=>b.setAttribute('aria-selected',String(i===scenario)));
+function render(){
+ const s=view.model,entry=s.record && s.runtime.attempts[s.record.id];
+ const fields={'Phase':s.phase,'Saved deployment':s.deployment,'Selection revision':s.revision,'Settings revision':s.settingsRevision,'Current token':Lifecycle.token(s),'Open selector token':s.picker?.token??'none','Admitted revisions':s.admitted ? 'settings '+s.admitted.settingsRevision+', selection '+s.admitted.selectionRevision : 'none','Launch identity':s.record?.id??'none','Submission status':s.record?.status??'no active launch','Owner ledger status':entry?.status??'no active launch','Owner epoch':s.runtime.epoch,'Terminal identity':s.record?.terminal??'unconfirmed / none','Simulated process count':s.runtime.processes.length,'Process launch identities':s.runtime.processes.map(p=>p.launch).join(', ')||'none','Task hold':s.hold?'kept':'released','Connection':s.connected?'connected':'lost','Shutdown':s.stopping?'requested':'no','Recovery receipt':s.recovery ? s.recovery.launch+': never submitted, old owner revoked' : 'none','Walkthrough position':view.step+' of '+scenarios[view.scenario][2].length,'Walkthrough status':view.active?'active':'paused'};
+ el('state').replaceChildren(...Object.entries(fields).map(([k,v])=>{const d=document.createElement('dl'),t=document.createElement('dt'),x=document.createElement('dd');t.textContent=k;x.textContent=String(v);d.append(t,x);return d}));
+ el('decision').textContent=s.decision;el('raw').textContent=JSON.stringify(view,null,2);
+ el('trace').replaceChildren(...s.history.map(h=>{const li=document.createElement('li');li.textContent=h;return li}));
+ const [name,desc,steps,verdict]=scenarios[view.scenario];
+ el('scenarioTitle').textContent=name;el('description').textContent=desc;el('verdict').textContent=view.note||'Expected: '+verdict;
+ el('steps').replaceChildren(...steps.map((item,i)=>{const action=Array.isArray(item)?item[0]:item;const b=button((i+1)+'. '+actions[action],()=>dispatch({type:'step',index:i}));b.disabled=!view.active||i!==view.step;return b}),button('Restart walkthrough',()=>dispatch({type:'reset'})));
+ [...el('tabs').children].forEach((b,i)=>b.setAttribute('aria-selected',String(i===view.scenario)));
 }
-el('actions').append(...Object.entries(actions).map(([a,label])=>button(label,()=>dispatch(a))));
-el('tabs').append(...scenarios.map(([name],i)=>{const b=button(name,()=>{scenario=i;step=0;state=Lifecycle.initial();render()});b.setAttribute('role','tab');return b}));render();
+el('actions').append(...Object.entries(actions).map(([action,label])=>button(label,()=>dispatch({type:'free',action}))));
+el('tabs').append(...scenarios.map(([name],index)=>{const b=button(name,()=>dispatch({type:'scenario',index}));b.setAttribute('role','tab');return b}));render();
 </script></html>
