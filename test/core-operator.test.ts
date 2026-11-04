@@ -113,6 +113,7 @@ test('boot recovery arm and same-boot refusal preserve the exact uncertain launc
 }))
 
 test('boot recovery settlement preserves current native bindings and never replays old delivery', () => recoveryFixture(async f => {
+  const unrelated = f.source.mailbox.issue('unrelated-chat', 'unrelated-native-session', f.space.machine, ['cli'])
   expect((await f.request('arm')).code).toBe(0)
   // A legitimate same-session observation after arming must survive settlement.
   f.source.agents.update(f.agent, { transcript: '/observed-current-session.jsonl', runtime: { model: 'gpt-6.1-sol', source: 'session', at: 5 } })
@@ -121,8 +122,8 @@ test('boot recovery settlement preserves current native bindings and never repla
   expect((await f.request('settle')).code).toBe(0)
   expect(f.read('agent', f.chat)).toEqual({ ...current, state: 'idle' })
   expect(f.read('launch-attempt', f.launch)).toMatchObject({ state: 'execution-ended-after-host-reboot' })
-  expect(f.source.mailbox.active().some(row => row.session === f.launch)).toBe(false)
-  expect(f.source.mailbox.active().some(row => row.session !== f.launch)).toBe(true)
+  expect(f.source.mailbox.active().map(row => row.id)).not.toContain(f.agent.grant)
+  expect(f.source.mailbox.active().find(row => row.id === unrelated.id)).toMatchObject({ chat: 'unrelated-chat', session: 'unrelated-native-session', machine: f.space.machine })
   expect(f.read('pending-send', 'submitted')).toMatchObject({ state: 'uncertain', submission: { launch: f.launch, promptHash: 'retained-hash' } })
   const settled = f.rows()
   expect((await f.request('settle')).out).toBe(`${f.launch}: settled\n`); expect(f.rows()).toEqual(settled)
