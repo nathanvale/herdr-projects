@@ -73,7 +73,7 @@ export class CoreFailedStarts {
     const current = this.source.agents.get(agent.chat), observed = current && this.source.agents.terminal(current)
     if (this.source.quiescing || !this.source.connected() || !this.source.machineConnected(agent.machine) ||
       current?.launch !== agent.launch || current.grant !== agent.grant || current.state !== 'starting' ||
-      observed?.state !== 'finished' || observed.address !== terminal.address || observed.pid !== terminal.pid || observed.created_ms !== terminal.created_ms) return
+      observed?.state !== 'finished' || current.pid !== undefined && current.pid !== observed.pid || observed.address !== terminal.address || observed.pid !== terminal.pid || observed.created_ms !== terminal.created_ms) return
     return current
   }
   private async words(terminal: CoreTerminal) {

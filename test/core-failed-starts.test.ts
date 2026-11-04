@@ -248,3 +248,13 @@ test('cold hook completion does not hide a captured native error on clean exit',
   expect(lines()).toContain('Codex couldn’t start. Error: native failure')
   expect(launches).toEqual([])
 })
+
+test('cold hook completion refuses a terminal that no longer matches the recorded PID', async () => {
+  const f = coldCapture('codex'); await source.logs.catchUp(f.chat)
+  source.store.set('agent', f.chat, { ...source.agents.get(f.chat)!, pid: 100 })
+  terminal = { ...terminal, pid: 200 }
+  await settle()
+  expect(source.agents.get(f.chat)).toMatchObject({ launch: 'one', pid: 100, state: 'starting' })
+  expect(source.store.get('message:space', 'start-failed-one')).toBeUndefined()
+  expect(launches).toEqual([])
+})

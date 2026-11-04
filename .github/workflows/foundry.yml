@@ -328,6 +328,24 @@ jobs:
             exit 1
           fi
           grep -F '(fail) cold hook completion reconciles a successful' /tmp/cold-hook-sensitivity.log
+      - name: Prove readiness reconciliation rejects a changed worker PID
+        shell: bash
+        run: |
+          cp server/core/failed-starts.ts /tmp/readiness-pid-original.ts
+          trap 'cp /tmp/readiness-pid-original.ts server/core/failed-starts.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/failed-starts.ts')
+          source = path.read_text()
+          before = "current.pid !== undefined && current.pid !== observed.pid || "
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, ""))
+          PYCODE
+          if bun test test/core-failed-starts.test.ts --test-name-pattern 'cold hook completion refuses a terminal that no longer' > /tmp/readiness-pid-sensitivity.log 2>&1; then
+            cat /tmp/readiness-pid-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) cold hook completion refuses a terminal that no longer' /tmp/readiness-pid-sensitivity.log
       - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts test/core-launch-admission.test.ts test/core-client.test.ts test/core-mailbox.test.ts test/core-launcher.test.ts test/core-operator.test.ts test/core-protected-update.test.ts test/core-commands.test.ts test/core-failed-starts.test.ts
       - run: bun x playwright-core install --only-shell chromium
       - run: bun test test/layout-restart.test.ts test/layout-azure-admission.test.ts
