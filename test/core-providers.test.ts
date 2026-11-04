@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -95,6 +96,14 @@ test('Azure Codex launches Responses with only an environment key reference and 
     await f.agents.launch(space, 'chat', 'codex', 'hello')
     expect(f.calls.map(call => call.method)).toEqual(['machine.exec', 'terminal.run'])
     expect(f.calls[0].input.argv.slice(-1)).toEqual(['AZURE_OPENAI_API_KEY'])
+    // Execute only the emitted environment probe, never the coding CLI. No ambient credentials.
+    const [binary, ...probeArgs] = f.calls[0].input.argv
+    for (const env of [{}, { AZURE_OPENAI_API_KEY: 'synthetic-probe-value' }]) {
+      const result = spawnSync(binary, probeArgs, { env, encoding: 'utf8', timeout: 5000 })
+      expect(result.status).toBe('AZURE_OPENAI_API_KEY' in env ? 0 : 1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toBe('')
+    }
     const { argv, env } = f.calls[1].input
     expect(argv[0]).toBe('codex')
     expect(argv).toContain('model_provider="shepherdr_azure_2249716cdb7b805ce15bd0495b3ccce31783989a92d36ec8d2dbcd2f650cc9a2"')

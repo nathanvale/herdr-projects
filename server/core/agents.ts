@@ -97,7 +97,7 @@ export class CoreAgents {
       // Only an exit status crosses core. terminal.run env overrides are persisted by core.
       try {
         await this.files.exec(space.machine, [process.execPath, '-e', 'process.exit(process.env[process.argv[1]]?.trim() ? 0 : 1)', provider.credential], undefined, undefined, 5)
-      } catch { throw Error(`Azure authentication requires ${provider.credential} in the local core process environment. Configure it through your credential owner; no agent was started.`) }
+      } catch { throw Error(`Could not verify ${provider.credential} in the local core process environment. Check core connectivity and configure that variable through your credential owner; no agent was started.`) }
     }
     if (previous) this.store.set('agent-launch', previous.launch, previous)
     const remote = on ? await this.remotes.prepare(space.machine) : undefined
