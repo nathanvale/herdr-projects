@@ -144,7 +144,7 @@ test('fresh devices can enroll alerts Everywhere, while device names and deliver
 test('global scheduling remains visible from every scope and familiar Browser and private-rule pages remain', () => fixture(settings => {
   const sections = settings.sections()
   const agents = sections.find(section => section.name === 'Agents' && section.level === 'p:box:one')!
-  expect([...new Set(agents.rows.map(row => row.group))]).toEqual(['Tasks', 'Coordinators', 'Backup'])
+  expect([...new Set(agents.rows.map(row => row.group))]).toEqual(['Connection', 'Azure Foundry', 'Tasks', 'Coordinators', 'Backup'])
   expect(agents.about).toContain('Backup takes a task over')
   expect(sections.filter(section => section.name === 'Time zone')).toHaveLength(1)
   expect(sections.find(section => section.name === 'Time zone')).toMatchObject({ global: true, level: 'all' })
