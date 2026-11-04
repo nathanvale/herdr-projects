@@ -337,7 +337,7 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
     // a hook may report a model with its context size: claude-opus-5-5[1m]
     const label = (model?: string) => (model ? this.settings.findModel(kind, model, agent.space ?? '')?.label : undefined)
     const modelLabel = label(agent.model), runtimeLabel = label(runtime?.model?.replace(/\[.*\]$/, ''))
-    return { kind, model: agent.model, ...(modelLabel ? { modelLabel } : {}), effort: agent.effort, speed: agent.speed, runtime: runtime && runtimeLabel ? { ...runtime, modelLabel: runtimeLabel } : runtime }
+    return { kind, ...(agent.provider?.route === 'azure-foundry' ? { providerLabel: 'Azure Foundry' } : {}), model: agent.model, ...(modelLabel ? { modelLabel } : {}), effort: agent.effort, speed: agent.speed, runtime: runtime && runtimeLabel ? { ...runtime, modelLabel: runtimeLabel } : runtime }
   }
   /** Settings changed: an open chat with no agent yet says what they will use now */
   private plannedChanged() {

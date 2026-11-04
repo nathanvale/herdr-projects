@@ -240,10 +240,11 @@ export function AgentLine({ chatKey, cli }: { chatKey: string; cli: string }) {
     <button
       type="button"
       data-agent-line
-      aria-label={`Runs on: ${words}. Change it`}
+      aria-label={`Runs on: ${agent?.providerLabel ? agent.providerLabel + ' · ' : ''}${words}. Change it`}
       onClick={() => setUI({ plus: chatKey })}
       className="press-dim relative mt-1 flex h-4 w-full justify-start pl-3 text-left text-xs/4 text-fg3 after:absolute after:-inset-y-1.5 after:inset-x-0"
     >
+      {agent?.providerLabel && <span className="shrink-0">{agent.providerLabel} · </span>}
       {planned ? <span className="min-w-0 truncate italic">{planned}</span> : bits.length ? [...seen, ...requested].map(part) : `${cli} · Not known yet`}
     </button>
   )
