@@ -656,7 +656,7 @@ export class CoreTasks {
     }
     task.pushedHead = await this.git.pushTaskBranch(repo, task.branch, task.pushedHead); this.save(task)
     const pr = await forge.publish({ branch: task.branch, base: task.base, title: `${task.id}: ${task.name}`, body: task.said || task.desc || task.name, head: task.pushedHead, saved: task.pr })
-    task.pr ??= pr.identity; this.save(task)
+    task.pr = pr.identity; this.save(task)
     return task.pr
   }
   async report(grant: Grant, id: string, message: string, progress: number, eta?: number) { return this.change(id, () => this.reportNow(grant, id, message, progress, eta)) }
