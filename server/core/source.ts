@@ -66,7 +66,19 @@ interface PendingSend { id: string; chat: string; text: string; launch?: string;
 /** Product state is Shepherdr's; terminals, machine commands, files and agent children are core's. */
 export class CoreSource extends Emitter<SourceEvents> implements Source {
   readonly kind = 'live' as const
-  quiescing = false
+  private shutdownRequested = false
+  private updateHold?: symbol
+  get quiescing() { return this.shutdownRequested || !!this.updateHold }
+  set quiescing(value: boolean) { this.shutdownRequested = value }
+  /** Temporary update admission cannot reopen an independent ordinary shutdown. */
+  holdForUpdate() {
+    if (this.quiescing) throw Error('Shepherdr is already stopping')
+    const hold = this.updateHold = Symbol()
+    return {
+      current: () => this.updateHold === hold && !this.shutdownRequested,
+      release: () => { if (this.updateHold === hold) this.updateHold = undefined },
+    }
+  }
   private activeOperations = 0
   updateBusy() { return this.activeOperations > 0 || this.sending.size > 0 }
   private human = 'You'

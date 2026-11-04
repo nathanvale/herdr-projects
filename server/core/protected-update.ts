@@ -41,18 +41,40 @@ export class ProtectedUpdate {
       this.stored(); this.workers(result.terminals)
     } finally { client.close() }
   }
-  async prepareStop() {
+  async prepareStop(signal: AbortSignal, expires: number, commit: () => void) {
+    const checkRequest = () => {
+      signal.throwIfAborted()
+      if (performance.now() >= expires) refusal('operator request expired before admission')
+    }
+    checkRequest()
     if (this.source.quiescing) refusal('the application is already stopping')
     if (!this.source.connected()) refusal('core is disconnected')
     this.stored(); this.workers([...this.source.core.current.terminals.values()], false)
     // New application starts/sends refuse; existing queued work already refused above.
-    this.source.quiescing = true
+    const hold = this.source.holdForUpdate()
     const epoch = this.source.core.current.epoch
+    let abort!: () => void, committed = false
+    const interrupted = new Promise<never>((_, reject) => {
+      abort = () => reject(signal.reason)
+      signal.addEventListener('abort', abort, { once: true })
+      if (signal.aborted) abort()
+    })
     try {
-      const result = await this.source.core.call<{ terminals: CoreTerminal[] }>('terminal.list', { all: true })
+      const result = await Promise.race([
+        this.source.core.call<{ terminals: CoreTerminal[] }>('terminal.list', { all: true }, Math.min(3000, Math.max(1, expires - performance.now()))),
+        interrupted,
+      ])
+      checkRequest()
+      if (!hold.current()) refusal('another shutdown owns admission')
       if (!this.source.connected() || this.source.core.current.epoch !== epoch) refusal('core connection changed during admission')
       this.stored(); this.workers(result.terminals)
-      // Keep admission closed until the operator invokes this app's own shutdown.
-    } catch (error) { this.source.quiescing = false; throw error }
+      checkRequest()
+      // No await between final validation and this operator's synchronous shutdown.
+      committed = true
+      commit()
+    } finally {
+      signal.removeEventListener('abort', abort)
+      if (!committed) hold.release()
+    }
   }
 }

@@ -128,6 +128,42 @@ jobs:
             exit 1
           fi
           grep -F '(fail) protected operator refuses live worker' /tmp/protected-sensitivity.log
+      - name: Prove expired operator requests cannot stop the app later
+        shell: bash
+        run: |
+          cp server/core/operator.ts /tmp/operator-lifetime-original.ts
+          trap 'cp /tmp/operator-lifetime-original.ts server/core/operator.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/operator.ts')
+          source = path.read_text()
+          before = 'prepareStop(request.signal, expires, () => {'
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'prepareStop(new AbortController().signal, Infinity, () => {'))
+          PYCODE
+          if bun test test/core-protected-update.test.ts --test-name-pattern 'protected operator deadline revokes' > /tmp/operator-lifetime-sensitivity.log 2>&1; then
+            cat /tmp/operator-lifetime-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) protected operator deadline revokes' /tmp/operator-lifetime-sensitivity.log
+      - name: Prove protected admission preserves an independent shutdown
+        shell: bash
+        run: |
+          cp server/core/source.ts /tmp/source-shutdown-original.ts
+          trap 'cp /tmp/source-shutdown-original.ts server/core/source.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/source.ts')
+          source = path.read_text()
+          before = 'current: () => this.updateHold === hold && !this.shutdownRequested'
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'current: () => this.updateHold === hold'))
+          PYCODE
+          if bun test test/core-protected-update.test.ts --test-name-pattern 'protected operator cannot reopen' > /tmp/operator-shutdown-sensitivity.log 2>&1; then
+            cat /tmp/operator-shutdown-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) protected operator cannot reopen' /tmp/operator-shutdown-sensitivity.log
       - name: Prove agents cannot redirect connection credentials
         shell: bash
         run: |

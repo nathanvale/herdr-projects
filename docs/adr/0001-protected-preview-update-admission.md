@@ -37,9 +37,14 @@ Propose `--idle-only` on both stop and start. Protected stop targets the exact
 running boot over its OS-owned private operator socket. Before closing admission,
 it refuses cached live terminals, active public actions and retained pending work.
 It then closes application admission, obtains current core inventory including
-finished terminals, and checks again. On refusal it restores admission and returns
-an error. On success the running application owns its shutdown, including when
-the acknowledgement is lost. The launcher never falls back to an ordinary signal.
+finished terminals, and checks again. The observation has a three-second RPC
+budget within the operator request's five-second lifetime. Expiry or disconnect
+revokes the request; a late inventory response cannot regain shutdown authority.
+On refusal it releases only its own temporary admission hold. It cannot reopen
+admission closed by an independent ordinary shutdown. Final checks and the
+synchronous shutdown callback have no intervening await. Once admitted, the
+running application owns its shutdown, including when the acknowledgement is
+lost. The launcher never falls back to an ordinary signal.
 
 Protected startup checks current core and persisted state before permission
 cleanup, subscriptions or delivery. It requires an explicitly selected, already
@@ -70,9 +75,11 @@ safe. No running preview update is authorized by this proposal.
 operator socket and server startup entry point using temporary state and fake
 core inventory. It verifies retained state on refusal, boot identity, delayed
 permission/worker arrival, admission while public actions await, startup before
-cleanup, and idle shutdown ownership. CI removes live-terminal refusal to prove
-the regression detects an unsafe stop, restores the guard and runs the normal
-suite. Native acceptance remains separately authorized and unperformed.
+cleanup, idle shutdown ownership, expired observation, concurrent ordinary shutdown
+and final validation/dispatch ordering. CI removes live-terminal refusal, request
+lifetime binding and independent-shutdown protection to prove the regressions
+detect unsafe stops, then restores the guards and runs the normal suite. Native
+acceptance remains separately authorized and unperformed.
 
 ## References
 

@@ -361,8 +361,12 @@ changes are implied. The opt-in `--idle-only` path uses the running application'
 socket, checks its exact boot identity, closes admission, obtains current core
 inventory, then checks persisted state again. The application owns the resulting
 shutdown; the launcher never falls back to signaling an older app that lacks the
-protocol. Refusal leaves the app running and restores admission if its fresh
-observation fails. Pending permissions, delivery, uncertain launches, in-flight
+protocol. The inventory RPC has a three-second budget inside the operator's
+five-second request lifetime. Expiry or disconnect releases only that request's
+admission hold; a late reply cannot stop the app or reopen an independent ordinary
+shutdown. Final validation invokes shutdown synchronously. Once admitted, a lost
+acknowledgement still requires inspecting the same app before retrying.
+Pending permissions, delivery, uncertain launches, in-flight
 public actions/commands, unfinished tasks, retained automations and Autopilot also
 refuse conservatively, without cancelling or releasing them.
 

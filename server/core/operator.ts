@@ -11,15 +11,17 @@ export async function startOperator(source: CoreSource, boot: string, stop?: () 
   const path = join(source.config.home, `operator.${boot.slice(0, 8)}.sock`)
   if (Buffer.byteLength(path) > 100) throw new Error('Home path is too long for its private operator socket')
   const server = createServer({ allowHalfOpen: true }, socket => {
-    const deadline = setTimeout(() => socket.destroy(), 5000)
-    socket.on('close', () => clearTimeout(deadline))
+    const request = new AbortController(), expires = performance.now() + 5000
+    const cancel = () => request.abort(Error('Protected update refused: operator request expired or disconnected before admission. Inspect application status before retrying.'))
+    const deadline = setTimeout(() => { cancel(); socket.destroy() }, 5000)
+    socket.on('close', () => { clearTimeout(deadline); cancel() })
     let size = 0
     const chunks: Buffer[] = []
-    socket.on('error', () => {})
+    socket.on('error', cancel)
     socket.on('data', data => { const chunk = Buffer.from(data); size += chunk.length; if (size > LIMIT) socket.destroy(); else chunks.push(chunk) })
     socket.on('end', async () => {
       if (socket.destroyed || source.quiescing) { socket.destroy(); return }
-      let result: OperatorResult, stopping = false
+      let result: OperatorResult
       try {
         let input: { args?: unknown; stdin?: unknown }
         try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { throw new Error('Invalid private operator request') }
@@ -28,12 +30,14 @@ export async function startOperator(source: CoreSource, boot: string, stop?: () 
           input.stdin !== undefined && (typeof input.stdin !== 'string' || Buffer.byteLength(input.stdin) > 64 * 1024)) throw new Error('Invalid private operator request')
         if (input.args[0] === 'stop-if-idle') {
           if (!stop || input.args.length !== 2 || input.args[1] !== boot || input.stdin !== undefined) throw Error('Protected stop identity or protocol is unavailable; application left running')
-          await new ProtectedUpdate(source).prepareStop()
-          result = { out: `idle-stop:${boot}`, code: 0 }; stopping = true
+          await new ProtectedUpdate(source).prepareStop(request.signal, expires, () => {
+            // Admission owns shutdown even when its acknowledgement is lost.
+            try { socket.end(JSON.stringify({ out: `idle-stop:${boot}`, code: 0 })) } finally { stop() }
+          })
+          return
         } else result = { out: await source.secrets.operator(input.args, input.stdin as string | undefined), code: 0 }
       } catch (error) { result = { out: (error as Error).message + '\n', code: 1 } }
-      // The app owns shutdown. Lost acknowledgement must not leave a frozen server.
-      try { socket.end(JSON.stringify(result)) } finally { if (stopping) stop!() }
+      socket.end(JSON.stringify(result))
     })
   })
   server.maxConnections = 16

@@ -83,6 +83,56 @@ test('protected operator admits confirmed idle workers and owns the shutdown', (
   expect(f.source.quiescing).toBe(true); expect(f.rows()).toEqual(before)
 }))
 
+test('protected operator deadline revokes a delayed observation before it can stop the app', () => fixture(async f => {
+  let arrived!: () => void, release!: () => void
+  const ready = new Promise<void>(resolve => { arrived = resolve })
+  const wait = new Promise<void>(resolve => { release = resolve })
+  // Deliberately ignore the RPC timeout to exercise the operator's own authority.
+  f.source.core.call = async <T>() => { arrived(); await wait; return { terminals: [] } as T }
+  const before = f.rows(), pending = f.stop().then(() => 'unexpected reply', error => (error as Error).message)
+  let heldAfterExpiry = true
+  await ready
+  try {
+    expect(f.source.quiescing).toBe(true)
+    expect(await pending).toContain('No valid operator reply')
+    heldAfterExpiry = f.source.quiescing
+  } finally { release() }
+  await new Promise<void>(resolve => setImmediate(resolve))
+  expect(f.stops()).toBe(0); expect(heldAfterExpiry).toBe(false); expect(f.source.quiescing).toBe(false)
+  const reader = new CoreStore(f.home)
+  try { expect(reader.db.query('SELECT kind,key,value FROM records ORDER BY kind,key').all()).toEqual(before) }
+  finally { reader.close() }
+}), 10_000)
+
+test('protected operator cannot reopen or repeat an independent ordinary shutdown', () => fixture(async f => {
+  let arrived!: () => void, release!: () => void
+  const ready = new Promise<void>(resolve => { arrived = resolve })
+  const wait = new Promise<void>(resolve => { release = resolve })
+  f.source.core.call = async <T>() => { arrived(); await wait; return { terminals: [] } as T }
+  const pending = f.stop()
+  await ready
+  try { await f.source.drain() } finally { release() }
+  expect(await pending).toMatchObject({ code: 1, out: expect.stringContaining('another shutdown owns admission') })
+  expect(f.source.quiescing).toBe(true); expect(f.stops()).toBe(0)
+  await expect(f.source.act({ type: 'setting', key: 'task.effort', value: 'high' })).rejects.toThrow('stopping')
+}))
+
+test('protected operator commits shutdown before a queued change after final validation', () => fixture(async f => {
+  const all = f.source.store.all.bind(f.source.store)
+  let scans = 0, stopsWhenChanged = -1
+  f.source.store.all = <T>(kind: string) => {
+    const rows = all<T>(kind)
+    if (kind === 'permission' && ++scans === 2) queueMicrotask(() => {
+      stopsWhenChanged = f.stops()
+      f.source.store.set('permission', 'after-commit', { settled: false })
+    })
+    return rows
+  }
+  expect((await f.stop()).code).toBe(0)
+  expect(stopsWhenChanged).toBe(1); expect(f.stops()).toBe(1)
+  expect(f.source.quiescing).toBe(true)
+}))
+
 test('protected operator closes admission during its fresh observation and rechecks new permissions', () => fixture(async f => {
   let arrived!: () => void, release!: () => void
   const ready = new Promise<void>(resolve => { arrived = resolve })
