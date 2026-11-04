@@ -597,7 +597,7 @@ function DeploymentValue({ row, set, edit, refresh }: { row: SettingRow; set: (v
   const discovery = row.discovery!
   return <div className="flex min-w-0 flex-col items-end gap-2">
     {manual ? <TextValue label={row.label} value={row.value} onEdit={edit} onSave={set} /> : <select aria-label={row.label} value={row.value} disabled={discovery.busy} onChange={event => set(event.target.value)} className="max-w-full rounded-lg border border-line bg-bg p-2 text-fg">
-      {!row.value ? <option value="" disabled>Choose deployment</option> : !discovery.options.some(item => item.value === row.value) ? <option value={row.value}>{row.value} (not in inventory)</option> : null}
+      {!row.value ? <option value="" disabled>Choose deployment</option> : !discovery.options.some(item => item.value === row.value) ? <option value={row.value}>{row.value} (saved deployment)</option> : null}
       {discovery.options.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
     </select>}
     <div className="flex flex-wrap justify-end gap-2">
@@ -713,12 +713,12 @@ function PageBody({ page, phone, set, refused, clear, hint }: { page: Page; phon
                 </div>
               ) : (
                 // on a phone, a row's segments fill a line of their own under its label
-                <div key={row.key || row.label} className={clsx(rowLook(phone), row.inherits && 'border-l-2 border-accent pl-3', phone && SEGMENTS.has(row.key) && 'flex-col items-stretch! gap-2.5 pb-3!')}>
+                <div key={row.key || row.label} className={clsx(rowLook(phone), row.inherits && 'border-l-2 border-accent pl-3', (row.discovery || phone && SEGMENTS.has(row.key)) && 'flex-col items-stretch! gap-2.5 pb-3!')}>
                   <dt className="flex min-w-0 flex-1 flex-col">
                     {row.label}
                     {under(row)}
                   </dt>
-                  <dd className={clsx('flex min-w-0 shrink-0 flex-col', phone && SEGMENTS.has(row.key) ? 'items-stretch' : 'max-w-[65%] items-end')}>
+                  <dd className={clsx('flex min-w-0 shrink-0 flex-col', row.discovery || phone && SEGMENTS.has(row.key) ? 'items-stretch' : 'max-w-[65%] items-end')}>
                     <Control row={row} phone={phone} set={(x) => set(row.key, follows(row, x))} edit={() => clear(row.key)} refresh={(key) => set(key, 'refresh')} />
                   </dd>
                 </div>
