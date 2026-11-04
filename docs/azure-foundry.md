@@ -13,7 +13,7 @@ if the CLI already uses an organizational provider, that remains its default.
 Forcing a personal account would be a separate, compatibility-breaking decision.
 No CLI home, binary, launcher, service, shared configuration or lifecycle hook
 is replaced. Legacy agent records without a provider binding remain resumable
-under Personal. There is no database migration or new dependency.
+under Personal. There is no destructive database migration or new dependency; optional selection records and a settings revision use the existing store.
 
 Azure uses an explicit deployment per CLI instead of the personal model catalogue.
 The UI retains personal model choices for switching back. Existing effort settings
@@ -23,6 +23,46 @@ including background work. Separate model aliases are outside this change.
 Autopilot and remote Azure execution refuse before launch. Personal retains their
 existing behavior. Additional clouds and remote credential delivery remain open
 product decisions, rather than silently inheriting unrelated credentials.
+
+## Task and agent selection: new starts only
+
+The model line and existing agent menu open an Azure deployment selector when
+Azure is configured. For a genuinely unstarted task or coordinator, **Save for new
+start** stores the CLI, deployment and effort for that chat. It sends no prompt,
+starts no process and changes no task hold, dependency or merge policy. **Use
+configured defaults** clears that override. A waiting or stopped agent with a
+launch record is an existing conversation, even when its task says To do. Its
+selector is locked; this release does not switch its deployment in place.
+
+Under Agents settings, Tasks and Coordinators have separate Azure deployment
+defaults. They inherit the configured CLI deployment when unset; Personal model
+settings remain separate. Newly created tasks snapshot their deployment like their
+existing model choice. Existing tasks are not backfilled. A per-chat override wins
+on first launch. The model line distinguishes a saved choice from an observed model.
+
+The selector uses the existing inventory and manual entry. Effort choices require
+a known model in the installed CLI catalogue, either matched directly by deployment
+ID or by the underlying model reported in inventory. Unknown manual deployments
+can use Default effort. Discovery is read-only and does not prove inference access.
+
+Saves compare an opaque revision token and reject stale views. A saved explicit
+choice also binds the nonsecret provider configuration; changing its connection
+requires saving again or clearing the choice, never silently falling back to
+Personal. The server refuses selection edits while a start is pending.
+
+Task and coordinator restarts preflight provider compatibility, execution route
+and credential availability before revoking authority or stopping an old process.
+Admission checks the revision again, then carries the checked plan through the
+stop/start operation. Existing Azure conversations resume their recorded deployment
+even if a new-start default changes; changing endpoint, provider or auth still
+refuses. No credential value is stored in a selection or revision token.
+
+Existing per-target guards, durable unconfirmed launch records and launch-specific
+hook reconciliation remain in force. A lost start response cannot be retried as
+another launch until reconciled. Shutdown refuses before native submission. The
+bounded Statechart design is not a proof of arbitrary multi-process execution,
+crash durability or external core idempotency. No new live-agent qualification is
+claimed for this slice. Rollback must retain candidate state and Azure-bound chats.
 
 ## Configuration and authentication
 

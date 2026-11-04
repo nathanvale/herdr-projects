@@ -86,6 +86,7 @@ function Sheet({ chat, name, current, typed }: Opening) {
       })
       .catch((e: Error) => setError(e.message))
   }, [chat, current, typed])
+  if (info?.azure) return <AzureStartSheet chat={chat} initial={info} />
   const cli = info?.clis.find((c) => c.kind === kind)
   const levels = levelsOf(cli, model)
   // Default names no level: where its records say what that came to, on the model that stays, the sheet says so too
@@ -169,6 +170,72 @@ function Sheet({ chat, name, current, typed }: Opening) {
   )
 }
 
+/** Azure choices are save-only. Existing native conversations never enter a restart flow here. */
+function AzureStartSheet({ chat, initial }: { chat: string; initial: RestartInfo }) {
+  const [info, setInfo] = useState(initial)
+  const [kind, setKind] = useState(initial.want.kind)
+  const first = initial.clis.find(cli => cli.kind === initial.want.kind)?.azure
+  const [deployment, setDeployment] = useState(initial.want.deployment ?? first?.deployment ?? '')
+  const [effort, setEffort] = useState(initial.want.effort ?? '')
+  const [busy, setBusy] = useState(false)
+  const [stale, setStale] = useState(false)
+  const [error, setError] = useState('')
+  const cli = info.clis.find(cli => cli.kind === kind), azure = cli?.azure
+  const options = azure?.options ?? [], levels = options.find(option => option.value === deployment)?.efforts ?? []
+  const locked = !!info.azure?.locked || stale
+  const choose = (value: string) => { setDeployment(value); setEffort('') }
+  const refresh = async () => {
+    setBusy(true); setError('')
+    try {
+      const result = await act({ type: 'setting', key: azure!.refreshKey, value: '', place: info.azure!.level })
+      if (result.ok === false) throw Error(result.error || 'Discovery failed')
+      const resultInfo = await act({ type: 'restart-info', chat }) as { info?: RestartInfo; error?: string }
+      if (!resultInfo.info) throw Error(resultInfo.error || 'Could not reload choices')
+      if (resultInfo.info.azure?.token !== info.azure?.token) { setStale(true); throw Error('Configuration changed. Close and reopen the selector before saving.') }
+      setInfo(resultInfo.info)
+    } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
+  const save = async (reset = false) => {
+    setBusy(true); setError('')
+    try {
+      const result = await act({ type: 'select-agent', chat, token: info.azure!.token, kind, deployment: reset ? '' : deployment, effort })
+      if (result.ok === false) throw Error(result.error || 'Could not save selection')
+      close()
+    } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
+  const invalidEffort = !!effort && !levels.includes(effort)
+  return <Dialog title="Azure Foundry model" onCancel={close} buttons={
+    <Primary disabled={locked || busy || !deployment.trim() || invalidEffort} onClick={() => save()}>{busy ? 'Checking…' : 'Save for new start'}</Primary>
+  }>
+    <div data-azure-selection className="flex flex-col gap-4">
+      <p className="text-sm text-fg3">{info.azure?.reason || 'Save a choice for this new agent. Saving does not start an agent or release task holds.'}</p>
+      {info.onKnown ? <p className="text-sm">Current: {info.on.kind} · {info.on.model || 'Not reported'} · {info.on.effort || 'Default effort'}</p> : null}
+      <fieldset disabled={locked || busy} className="flex flex-col gap-3 disabled:opacity-60">
+        <label>Agent<select aria-label="Azure agent" className="mt-1 w-full rounded border border-line bg-bg p-2" value={kind} onChange={event => {
+          const next = event.target.value; setKind(next); choose(info.clis.find(cli => cli.kind === next)?.azure?.deployment ?? '')
+        }}>{info.clis.map(cli => <option key={cli.kind} value={cli.kind}>{cli.name}</option>)}</select></label>
+        <label>Deployment<select aria-label="Azure deployment" className="mt-1 w-full rounded border border-line bg-bg p-2" value={deployment} onChange={event => choose(event.target.value)}>
+          <option value="">Choose a deployment</option>
+          {deployment && !options.some(option => option.value === deployment) ? <option value={deployment}>{deployment} (manual or saved)</option> : null}
+          {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select></label>
+        <button type="button" className="self-start text-sm underline" onClick={refresh}>Refresh deployments</button>
+        <label>Or enter deployment name<input aria-label="Azure deployment name" className="mt-1 w-full rounded border border-line bg-bg p-2" value={deployment} onChange={event => choose(event.target.value)} /></label>
+        <label>Effort<select aria-label="Azure effort" className="mt-1 w-full rounded border border-line bg-bg p-2" value={effort} onChange={event => setEffort(event.target.value)}>
+          <option value="">Default</option>
+          {invalidEffort ? <option value={effort}>{shown(effort)} (not verified)</option> : null}
+          {levels.map(level => <option key={level} value={level}>{shown(level)}</option>)}
+        </select></label>
+      </fieldset>
+      {azure?.warn ? <p role="alert" className="text-need-fg">{azure.warn}</p> : null}
+      {invalidEffort ? <p className="text-need-fg">Choose Default effort or a deployment with verified effort support.</p> : null}
+      {!locked ? <button type="button" disabled={busy} className="self-start text-sm underline" onClick={() => save(true)}>Use configured defaults</button> : null}
+      <p className="text-sm text-fg3">Inventory does not verify inference access. Credentials stay on the execution host.</p>
+      {error ? <p role="alert" className="text-need-fg">{error}</p> : null}
+    </div>
+  </Dialog>
+}
+
 /** "Save as nas's setting", for its role's agents there from now on */
 const saveWords = (i: RestartInfo) => `Use for future ${i.role === 'task' ? 'task agents' : 'coordinators'} ${i.space ? `in ${i.space === '~' ? 'the home space' : i.space}` : 'on this machine'}`
 
@@ -194,12 +261,12 @@ export function PlaceRestartItem({ place }: { place: Place }) {
 }
 
 /** one thing it runs on: what its records say, or else what was asked for or what Settings will use, marked so; none: nothing either way */
-interface Worn { text: string; requested?: boolean; planned?: boolean }
+interface Worn { text: string; requested?: boolean; planned?: boolean; origin?: string }
 
 function runsOn(agent: Chat['agent']): { model?: Worn; effort?: Worn; speed?: Worn } {
   const r = agent?.runtime, plan = agent?.planned
   // not started: Speed is no Setting, so it stays the CLI's own
-  if (plan) return { model: { text: plan.modelLabel ?? plan.model ?? shown(DEFAULT), planned: true }, effort: { text: shown(plan.effort ?? DEFAULT), planned: true }, speed: { text: shown(DEFAULT) } }
+  if (plan) return { model: { text: plan.modelLabel ?? plan.model ?? shown(DEFAULT), planned: true, origin: plan.origin }, effort: { text: shown(plan.effort ?? DEFAULT), planned: true, origin: plan.origin }, speed: { text: shown(DEFAULT) } }
   const seen = (text?: string) => (text ? { text } : undefined)
   const asked = (text?: string) => (text ? { text, requested: true } : undefined)
   const model = r?.modelLabel ?? r?.model
@@ -210,7 +277,7 @@ function runsOn(agent: Chat['agent']): { model?: Worn; effort?: Worn; speed?: Wo
   }
 }
 
-const inMenu = (w?: Worn) => (!w ? 'Not known yet' : w.requested ? `Asked for: ${w.text}` : w.planned ? `${w.text}, from Settings` : w.text)
+const inMenu = (w?: Worn) => (!w ? 'Not known yet' : w.requested ? `Asked for: ${w.text}` : w.planned ? `${w.text}, from ${w.origin ?? 'Settings'}` : w.text)
 
 /** a fast speed wears the zap */
 function SpeedWords({ speed }: { speed: Worn }) {
@@ -223,7 +290,7 @@ export function AgentLine({ chatKey, cli }: { chatKey: string; cli: string }) {
   const agent = useStore((s) => s.chats[chatKey]?.agent)
   const { model, effort, speed } = runsOn(agent)
   const plan = agent?.planned
-  const planned = plan && `${plan.model ? model!.text : `${cli} default`}${plan.effort ? ` · ${effort!.text.toLowerCase()}` : ''}, from Settings`
+  const planned = plan && `${plan.model ? model!.text : `${cli} default`}${plan.effort ? ` · ${effort!.text.toLowerCase()}` : ''}, from ${plan.origin ?? 'Settings'}`
   // Normal that runs is left out: only a speed out of the ordinary earns its place on the line
   const bits = [model, effort && { ...effort, text: effort.text.toLowerCase() }, speed?.text === 'Normal' && !speed.requested ? undefined : speed].filter((w): w is Worn => !!w)
   const seen = bits.filter((w) => !w.requested), requested = bits.filter((w) => w.requested)

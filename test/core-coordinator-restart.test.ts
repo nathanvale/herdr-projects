@@ -24,6 +24,7 @@ function setup(home: string) {
   source.core.current.terminals = new Map([[terminal.address, terminal], [child.address, child]])
   const on = { connected: true, current: terminal as CoreTerminal | undefined }
   source.machineConnected = () => on.connected
+  source.route = async () => undefined // Local core route; no network or model requests in this fixture.
   source.agents.terminal = () => on.current
   const revoked: string[] = [], denied: string[] = [], killed: string[] = [], launches: unknown[] = [], saved: unknown[] = []
   source.mailbox.revoke = chat => { revoked.push(chat) }
@@ -111,4 +112,57 @@ test('task restart refuses a substituted exit and saves defaults only after a su
   await f.source.act({ type: 'restart', chat: task.chat, kind: 'claude', save: true })
   expect(f.launches).toHaveLength(1); expect(f.saved).toHaveLength(1)
   expect(f.source.tasks.get(task.id)?.workflow).toBe('todo')
+}))
+
+for (const role of ['coordinator', 'task'] as const) {
+  test(`Azure ${role} preflight refuses incompatible routing before any interruption`, () => fixture(async f => {
+    const chat = role === 'task' ? taskRestart(f).chat : f.space.id
+    f.source.settings.set('provider.route', 'Azure Foundry')
+    f.source.settings.set('azure.claudeResource', 'example')
+    f.source.settings.set('azure.claudeDeployment', 'claude-sonnet-5-5')
+    const before = f.source.agents.get(chat)
+    f.source.core.call = async <T>(_method: string, input?: unknown) => { f.killed.push((input as { terminal: string }).terminal); f.terminal.state = 'finished'; return {} as T }
+    await expect(f.source.act({ type: 'restart', chat, kind: 'claude' })).rejects.toThrow('cannot be rerouted')
+    expect(f.source.agents.get(chat)).toEqual(before)
+    expect(f.terminal.state).toBe('live')
+    expect(f.revoked).toEqual([]); expect(f.denied).toEqual([]); expect(f.killed).toEqual([]); expect(f.launches).toEqual([])
+  }))
+
+  test(`stale ${role} preflight and concurrent restart cannot interrupt the old worker`, () => fixture(async f => {
+    const chat = role === 'task' ? taskRestart(f).chat : f.space.id
+    let reached!: () => void, release!: () => void
+    const checking = new Promise<void>(resolve => { reached = resolve })
+    const gate = new Promise<void>(resolve => { release = resolve })
+    f.source.route = async () => { reached(); await gate; return undefined }
+    const restart = f.source.act({ type: 'restart', chat, kind: 'claude' })
+    await checking
+    await expect(f.source.act({ type: 'restart', chat, kind: 'claude' })).rejects.toThrow()
+    f.source.settings.set('azure.claudeResource', 'changed-while-checking')
+    release()
+    await expect(restart).rejects.toThrow('Selection changed')
+    expect(f.terminal.state).toBe('live'); expect(f.source.agents.get(chat)?.launch).toBe('old')
+    expect(f.revoked).toEqual([]); expect(f.killed).toEqual([]); expect(f.launches).toEqual([])
+  }))
+}
+
+for (const role of ['coordinator', 'task'] as const) test(`new ${role} selection saves without starting, preserves holds and rejects stale or already-started choices`, () => fixture(async f => {
+  const task = role === 'task' ? taskRestart(f) : undefined, chat = task?.chat ?? f.space.id
+  if (task) { task.after = ['DEPENDENCY-1']; f.source.store.set('task', task.id, task) }
+  f.source.store.delete('agent', chat) // A genuinely unstarted chat, not a stopped native conversation.
+  f.source.settings.set('provider.route', 'Azure Foundry')
+  f.source.settings.set('azure.claudeResource', 'example')
+  f.source.settings.set('azure.claudeDeployment', 'claude-haiku-5-5')
+  const { info } = await f.source.act({ type: 'restart-info', chat }) as { info: import('../shared/types.ts').RestartInfo }
+  expect(info.azure).toMatchObject({ locked: false, level: f.space.id })
+  const action = { type: 'select-agent' as const, chat, token: info.azure!.token, kind: 'claude', deployment: 'claude-sonnet-5-5', effort: 'high' }
+  await f.source.act(action)
+  const readback = new (await import('../server/core/store.ts')).CoreStore(f.source.config.home)
+  try { expect(readback.get('agent-selection', chat)).toMatchObject({ kind: 'claude', deployment: 'claude-sonnet-5-5', effort: 'high', provider: { route: 'azure-foundry' } }) } finally { readback.close() }
+  expect(f.source.agents.get(chat)).toBeUndefined()
+  expect(f.killed).toEqual([]); expect(f.launches).toEqual([])
+  if (task) expect(f.source.tasks.get(task.id)).toMatchObject({ workflow: 'todo', after: ['DEPENDENCY-1'], mergePolicy: 'ask', deployment: 'claude-sonnet-5-5' })
+  await expect(f.source.act({ ...action, deployment: 'claude-haiku-5-5' })).rejects.toThrow('Selection changed')
+  f.source.store.set('agent', chat, { ...f.agent, chat })
+  await expect(f.source.act({ ...action, token: f.source.agents.selectionToken(chat) })).rejects.toThrow('already started')
+  expect(f.terminal.state).toBe('live'); expect(f.revoked).toEqual([])
 }))

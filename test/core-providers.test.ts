@@ -175,14 +175,13 @@ test('saved invalid Azure combinations refuse before any execution', async () =>
   } finally { f.close() }
 })
 
-test('route, deployment and authentication changes preserve the old conversation and refuse its relaunch', async () => {
+test('route and authentication changes refuse relaunch while new defaults preserve the native deployment', async () => {
   const f = fixture()
   try {
     f.azure()
     const record = await f.agents.launch(space, 'chat', 'claude', 'hello')
     for (const [key, value, restore] of [
       ['provider.route', 'Personal', 'Azure Foundry'],
-      ['azure.claudeDeployment', 'another-deployment', 'example-opus-deployment'],
       ['azure.claudeAuth', 'API key', 'Entra ID'],
     ]) {
       f.settings.set(key, value); f.calls.length = 0
@@ -191,8 +190,11 @@ test('route, deployment and authentication changes preserve the old conversation
       expect(f.agents.get('chat')).toEqual(record)
       f.settings.set(key, restore)
     }
+    f.settings.set('azure.claudeDeployment', 'another-deployment')
+    await expect(f.agents.launch(space, 'chat', 'claude', 'hello', { deployment: 'another-deployment' })).rejects.toThrow('cannot be rerouted')
     f.store.set('agent', 'chat', { ...record, session: 'native-azure-session' })
     const resumed = await f.agents.launch(space, 'chat', 'claude', 'hello', { resume: true })
+    expect(resumed.model).toBe('example-opus-deployment')
     expect(resumed.session).toBe('native-azure-session')
     expect(f.calls[0].input.argv).toContain('native-azure-session')
   } finally { f.close() }
@@ -217,5 +219,41 @@ test('child launches cannot change provider route', async () => {
     await expect(f.agents.launch(space, 'child', 'claude', 'hello', { parent })).rejects.toThrow('Child agents cannot switch')
     expect(f.calls).toEqual([])
     expect(f.agents.get('child')).toBeUndefined()
+  } finally { f.close() }
+})
+
+for (const kind of ['claude', 'codex'] as const) test(`new ${kind} selection reaches native launch and cannot silently change connection`, async () => {
+  const f = fixture()
+  try {
+    f.azure()
+    const deployment = kind === 'claude' ? 'claude-sonnet-5-5' : 'gpt-6-sol'
+    f.agents.saveSelection(space, 'new-chat', f.agents.selectionToken('new-chat'), { kind, deployment, effort: 'high' })
+    expect(f.calls).toEqual([]); expect(f.grants()).toBe(0)
+    const record = await f.agents.launch(space, 'new-chat', kind, 'Wait')
+    const request = f.calls.find(call => call.method === 'terminal.run')!.input
+    expect(request.argv[request.argv.indexOf('--model') + 1]).toBe(deployment)
+    expect(record).toMatchObject({ kind, model: deployment, effort: 'high', provider: { route: 'azure-foundry' } })
+    f.agents.saveSelection(space, 'another-chat', f.agents.selectionToken('another-chat'), { kind, deployment })
+    f.settings.set('provider.route', 'Personal'); f.calls.length = 0
+    await expect(f.agents.launch(space, 'another-chat', kind, 'Wait')).rejects.toThrow('saved Azure connection changed')
+    expect(f.calls).toEqual([])
+    f.agents.saveSelection(space, 'another-chat', f.agents.selectionToken('another-chat'), { kind, deployment: '' })
+    expect(f.agents.selection('another-chat')).toBeUndefined()
+  } finally { f.close() }
+})
+
+test('role deployment defaults are separate from Personal models and from the other role', () => {
+  const f = fixture()
+  try {
+    f.azure()
+    f.settings.set('task.model', 'claude-opus-5-5')
+    f.settings.set('task.azure.claudeDeployment', 'claude-sonnet-5-5', space.id)
+    expect(f.settings.agent('task', space.id)).toMatchObject({ deployment: 'claude-sonnet-5-5' })
+    expect(f.settings.agent('coordinator', space.id)).toMatchObject({ deployment: 'example-opus-deployment' })
+    const rows = f.settings.sections().find(section => section.name === 'Agents' && section.level === space.id)!.rows
+    expect(rows.find(row => row.key === 'task.azure.claudeDeployment')).toMatchObject({ value: 'claude-sonnet-5-5', text: true })
+    f.settings.set('provider.route', 'Personal')
+    expect(f.settings.agent('task', space.id)).toMatchObject({ model: 'claude-opus-5-5' })
+    expect(f.settings.agent('task', space.id)).not.toHaveProperty('deployment')
   } finally { f.close() }
 })

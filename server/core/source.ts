@@ -128,6 +128,7 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
     this.logs = new CoreLogs(this.agents, this.files, this.store, changed, (chat, message) => { this.faults.set(chat, message) }, (chat, message) => this.fresh(chat, message), agent => this.pilots.usage.observe(agent), (agent, event) => this.nativeEnded(agent, logEnd(event)))
     this.settings = new CoreSettings(this.store, this.files, () => this.spaces(), id => this.store.get<string>('name', `m:${id}`) || (id === this.local.id ? this.local.name : this.machineName(id) || id), () => { this.emit('snapshot'); this.plannedChanged() })
     this.agents.settings = this.settings
+    this.agents.stopping = () => this.quiescing
     this.agents.observed = (agent, event) => {
       if (event.event === 'PreToolUse' && event.use) this.ends.called(agent.launch, event.use, { tool: event.tool, hash: event.input, sub: event.agent })
       this.nativeEnded(agent, hookEnd(event))
@@ -347,10 +348,15 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
   private plannedWords(key: string): NonNullable<Chat['agent']> {
     const task = this.tasks.forChat(key), level = task?.place ?? key, own = task?.chat === key ? task : undefined
     const want = this.settings.agent(own ? 'task' : task ? 'reviewer' : this.space(key)?.mode === 'autopilot' ? 'autopilot' : 'coordinator', level)
-    const { kind, model, effort } = own ?? (task ? { kind: task.review.kind, model: task.reviewerModel, effort: task.reviewerEffort } : want)
+    const pick = this.agents.selection(key) ?? own ?? (task ? { kind: task.review.kind, model: task.reviewerModel, effort: task.reviewerEffort } : want)
+    const { kind, effort } = pick
+    const azure = this.settings.get('provider.route', level) === 'Azure Foundry'
+    const model = azure ? ('deployment' in pick && pick.deployment || this.settings.deployment(own ? 'task' : task ? 'reviewer' : 'coordinator', kind, level)) : ('model' in pick ? pick.model : undefined)
     const modelLabel = model ? this.settings.findModel(kind, model, level)?.label : undefined
     const words = { model, ...(modelLabel ? { modelLabel } : {}), effort }
-    return kind === want.kind && model === want.model && effort === want.effort ? { kind, planned: words } : { kind, ...words }
+    if (!azure) return kind === want.kind && model === want.model && effort === want.effort ? { kind, planned: words } : { kind, ...words }
+    return { kind, providerLabel: 'Azure Foundry', planned: { ...words, origin: this.agents.selection(key) ? 'saved selection' : own ? 'task brief' : 'Settings' } }
+
   }
   /** What keeps a message out of this chat's agent now; {} is a machine out of reach. A working agent keeps nothing out: it takes it at once. */
   private hold(chat: string): { waitsFor?: Message['waitsFor'] } | undefined {
@@ -463,7 +469,7 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
     if (plugin) this.requirePlugin(plugin)
     const handler = this.hooks.get(action.type)
     if (handler) return handler(action)
-    if ('chat' in action && this.tasks.forChat(action.chat) && ['pin', 'archive', 'pause', 'stop', 'restart-info', 'restart', 'close', 'delete'].includes(action.type)) return this.tasks.act(action)
+    if ('chat' in action && this.tasks.forChat(action.chat) && ['pin', 'archive', 'pause', 'stop', 'restart-info', 'select-agent', 'restart', 'close', 'delete'].includes(action.type)) return this.tasks.act(action)
     switch (action.type) {
       case 'plugin': return this.plugins.act(action)
       case 'limits-check': return this.limits.refresh(60_000)
@@ -576,10 +582,20 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
         })()
         await this.flush(action.chat); return {}
       }
+      case 'select-agent': {
+        const space = this.space(action.chat)
+        if (!space || space.removed || this.places.removing(space.id)) throw Error('No such coordinator')
+        if (this.pilots.lifecycle.busy(space.id) || this.pilots.completion.busy(space.id)) throw Error('The coordinator is changing; try again shortly')
+        this.agents.saveSelection(space, action.chat, action.token, action)
+        return { ok: true }
+      }
       case 'restart-info': {
-        const agent = this.agents.get(action.chat)
-        return { ok: true, info: { role: 'coordinator', space: this.space(action.chat)?.name, on: { kind: agent?.kind ?? this.agentKind(), model: agent?.model, effort: agent?.effort, speed: agent?.speed }, onKnown: !!agent,
-          onWords: agent?.kind ?? this.agentKind(), want: this.settings.agent(this.space(action.chat)?.mode === 'autopilot' ? 'autopilot' : 'coordinator', action.chat), clis: this.settings.clis(action.chat), working: agent?.state === 'working' } }
+        const agent = this.agents.get(action.chat), space = this.space(action.chat)
+        if (!space) throw Error('No such coordinator')
+        const azure = this.agents.selectionInfo(space, action.chat)
+        return { ok: true, info: { azure, role: 'coordinator', space: space.name, on: { kind: agent?.kind ?? this.agentKind(), model: agent?.model, effort: agent?.effort, speed: agent?.speed }, onKnown: !!agent,
+          onWords: agent?.kind ?? this.agentKind(), want: this.agents.selection(action.chat) ?? this.settings.agent(space.mode === 'autopilot' ? 'autopilot' : 'coordinator', action.chat),
+          clis: azure ? this.settings.selectionClis('coordinator', space.id) : this.settings.clis(action.chat), working: agent?.state === 'working' } }
       }
       case 'restart': {
         if (this.space(action.chat)?.mode === 'autopilot') {
@@ -647,7 +663,7 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
           else if (agent && this.agents.terminal(agent)?.state === 'live') await this.agents.send(chat, item.text)
           else {
             if (space.mode === 'autopilot' || agent?.pilot) throw new Error('This contained coordinator has stopped; change mode or explicitly restart its contained run before sending')
-            const pick = this.settings.agent('coordinator', space.id)
+            const pick = this.agents.selection(chat) ?? this.settings.agent('coordinator', space.id)
             await this.agents.launch(space, chat, agent?.kind ?? pick.kind, item.text, agent ? { model: agent.model, effort: agent.effort, speed: agent.speed, resume: true } : { ...pick, resume: true })
           }
           progressed = true

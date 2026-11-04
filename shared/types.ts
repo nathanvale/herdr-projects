@@ -686,6 +686,7 @@ export interface Chat {
 
 /** no agent yet: what Settings will start it on, said as that and never as what runs (docs/runtime-state.md) */
 export interface PlannedAgent {
+  origin?: string
   model?: string
   modelLabel?: string
   effort?: string
@@ -699,6 +700,8 @@ export interface RestartHint {
 
 /** a CLI the restart sheet offers; models and efforts where Shepherdr passes them (none: it runs on its own) */
 export interface RestartCli {
+  azure?: { deployment: string; busy: boolean; warn?: string; options: { value: string; label: string; efforts: string[] }[]; refreshKey: string }
+
   kind: string
   name: string
   models?: { id: string; label: string; efforts: string[]; defaultEffort?: string }[]
@@ -727,6 +730,8 @@ export interface AgentRuntime {
 }
 
 export interface RestartInfo {
+  azure?: { token: string; level: string; locked: boolean; reason?: string }
+
   role: 'task' | 'coordinator'
   /** its space, whose Settings a save changes */
   space?: string
@@ -734,7 +739,7 @@ export interface RestartInfo {
   /** False if no launch record exists; on is then only a proposed starting configuration. */
   onKnown?: boolean
   onWords: string
-  want: { kind: string; model?: string; effort?: string }
+  want: { kind: string; model?: string; effort?: string; deployment?: string }
   clis: RestartCli[]
   /** its agent is mid-turn: a restart interrupts it first */
   working: boolean
@@ -1017,6 +1022,8 @@ export type Action =
   | { type: 'stop'; chat: string }
   /** what the restart sheet shows for a coordinator (chat: its place id) or a task's agent (ID/Agent): RestartInfo */
   | { type: 'restart-info'; chat: string }
+  /** Save a new-start choice only. Never starts or interrupts an agent. */
+  | { type: 'select-agent'; chat: string; token: string; kind: string; deployment: string; effort?: string }
   /** start a coordinator or a task's agent again on this CLI, model and effort (none: the CLI's own; no kind: all as
       Settings say for its role); save: as its space's Settings for its role too */
   /** speed: normal or fast, '' for the CLI's own; left out keeps what it was started on. It lasts as long as this chat, and save leaves it out of Settings. */

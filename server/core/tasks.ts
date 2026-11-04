@@ -1,3 +1,4 @@
+import type { PreparedProvider } from './agents.ts'
 import { age } from '../common/age.ts'
 import { findCoreSpace } from './space-names.ts'
 import { CoreError, Refusal } from './client.ts'
@@ -26,11 +27,13 @@ import { archiveAfterMs } from '../../shared/archive.ts'
 
 export interface CoreTaskInput {
   title: string; brief: string; space?: string; base?: string; after?: string[]; later?: boolean
+  deployment?: string
   kind?: AgentKind; model?: string; effort?: string; reviewer?: AgentKind; reviewerModel?: string; reviewerEffort?: string
   settings?: Record<string, string>; automation?: string; pilot?: string
 }
 
 export interface CoreTask extends Task {
+  deployment?: string
   /** the speed its agent was restarted on, normal or fast; none: the CLI's own */
   speed?: string
   branch: string
@@ -197,7 +200,7 @@ export class CoreTasks {
     const merge = overrides['brief.merge'] ?? this.source.settings.get('brief.merge', space.id)
     const task: CoreTask = {
       id, localId, launchAttempt: randomUUID(), pilot: input.pilot, automation: input.automation, name: input.title.trim(), desc: input.brief, place: space.id, machine: space.machine, folder, repo: space.folder, branch, base: input.base || space.base,
-      chat: `${id}/Agent`, kind: defaults.kind, model: defaults.model, effort: defaults.effort, workflow: after.length ? 'queued' : input.later ? 'todo' : 'working', status: after.length ? 'queued' : input.later ? 'todo' : 'work',
+      chat: `${id}/Agent`, deployment: input.deployment ?? ('deployment' in selected ? selected.deployment : undefined), kind: defaults.kind, model: defaults.model, effort: defaults.effort, workflow: after.length ? 'queued' : input.later ? 'todo' : 'working', status: after.length ? 'queued' : input.later ? 'todo' : 'work',
       reviewerModel: reviewer.model, reviewerEffort: reviewer.effort, mergePolicy: run?.config.approvals.includes('merge') || merge === 'ask me first' ? 'ask' : merge === 'after GitHub checks' ? 'checks' : 'auto', overrides, review: { on: (overrides['brief.review'] ?? this.source.settings.get('brief.review', space.id)) === 'on', kind: reviewer.kind, rounds: parseInt(overrides['review.rounds'] ?? this.source.settings.get('review.rounds', space.id)), mustFix: overrides['review.mustFix'] ?? this.source.settings.get('review.mustFix', space.id) }, after, age: 'now', created: new Date().toISOString(), on: CLI_NAME[defaults.kind], state: 'Working',
     }
     return this.change(task.id, async () => {
@@ -356,7 +359,7 @@ export class CoreTasks {
       else throw new Refusal('This reviewer has finished; request a fresh review')
     })
   }
-  private async launchNow(task: CoreTask, message?: string, model = task.model, effort = task.effort) {
+  private async launchNow(task: CoreTask, message?: string, model = task.model, effort = task.effort, prepared?: PreparedProvider) {
     const handover = task.providerTakeover?.handover
     if (handover && message !== handover) message = handover + (message ? `\n\n${message}` : '')
     task = this.get(task.id) || (() => { throw new Refusal('No such task') })()
@@ -381,7 +384,7 @@ export class CoreTasks {
     let parent = this.source.agents.get(space.id)
     if (pilot && (parent?.pilot?.run !== pilot.id || this.source.agents.terminal(parent)?.state !== 'live')) parent = undefined
     if (!pilot && (!parent || this.source.agents.terminal(parent)?.state !== 'live')) {
-      const pick = this.source.settings.agent('coordinator', space.id)
+      const pick = this.source.agents.selection(space.id) ?? this.source.settings.agent('coordinator', space.id)
       parent = await this.source.agents.launch(space, space.id, pick.kind, '', pick)
     }
     const wait = task.workflow === 'queued' ? `This task is queued after ${task.after?.join(', ')}. Read the brief, then wait for <go>. Do not start implementation yet.`
@@ -390,7 +393,7 @@ export class CoreTasks {
     const role = readFileSync(join(import.meta.dir, '../../skill/shepherdr-agent/SKILL.md'), 'utf8')
     const instructions = `${role}\n\nYou are ${task.id} in standalone Shepherdr on core. Use the launch-provisioned authenticated shepherdr command. ${pilot ? 'Your Git metadata is read-only: use shepherdr checkpoint MESSAGE to commit, and shepherdr review TASK for a fresh managed reviewer. Use the product broker for managed agents and messages; no core socket or outside helper is available.' : 'Use hc for child agents, messages and waits.'} Do not use legacy helpers, SSH workers, a web URL or screen scraping. Your branch is ${task.branch}; stay in this worktree.\n`
     const prompt = `${task.desc}\n\n${wait}\n\nSettings:\n- Agent: ${task.kind}${task.model ? `, model ${task.model}` : ''}${task.effort ? `, effort ${task.effort}` : ''}\n- Review: ${task.review.on ? 'on' : 'off'}\n- Reviewer: ${task.review.kind}${task.reviewerModel ? `, model ${task.reviewerModel}` : ''}${task.reviewerEffort ? `, effort ${task.reviewerEffort}` : ''}\n- Must fix: ${task.review.mustFix}\n- Review rounds: ${task.review.rounds}\n- Merge: ${mergeWords(task.mergePolicy)}\n${Object.keys(task.overrides ?? {}).length ? `Set by the coordinator for this task: ${Object.entries(task.overrides!).map(([key, value]) => `${key}=${value}`).join(', ')}\n` : ''}${message ? `\n<go>${message}</go>` : ''}`
-    const launched = await this.source.agents.launch(space, task.chat, task.kind, prompt, { role: 'task', parent, folder: task.folder, task: task.id, instructions, model, effort, speed: task.speed, resume: !pilot && !prior?.pilot, message: message ?? '', pilot: pilot ? { run: pilot.id, hosts: pilot.config.hosts, deadline: pilot.config.runtime ? pilot.started + pilot.config.runtime : undefined, repo: task.repo } : undefined })
+    const launched = await this.source.agents.launch(space, task.chat, task.kind, prompt, { prepared, deployment: task.deployment, role: 'task', parent, folder: task.folder, task: task.id, instructions, model, effort, speed: task.speed, resume: !pilot && !prior?.pilot, message: message ?? '', pilot: pilot ? { run: pilot.id, hosts: pilot.config.hosts, deadline: pilot.config.runtime ? pilot.started + pilot.config.runtime : undefined, repo: task.repo } : undefined })
     if (pilot) this.source.pilots.policy.bind(pilot.id, { chat: launched.chat, launch: launched.launch, role: 'task', task: task.id })
     await this.label(task)
     const takeover = task.providerTakeover
@@ -646,9 +649,26 @@ export class CoreTasks {
       case 'stop':
         if (['merged', 'closed'].includes(task.workflow)) throw new Refusal('This task is Done; there is nothing to stop')
         await this.stopNow(task); return { ok: true }
-      case 'restart-info': return { ok: true, info: { role: 'task', space: this.source.space(task.place)?.name, on: { kind: agent?.kind ?? task.kind, model: agent?.model, effort: agent?.effort, speed: agent?.speed }, onKnown: !!agent,
-        onWords: agent?.kind ?? task.kind, want: this.source.settings.agent('task', task.place), working: agent?.state === 'working',
-        clis: this.source.settings.clis(task.place) } }
+      case 'select-agent': {
+        if (action.chat !== task.chat || task.pilot || task.archived || !['todo', 'queued'].includes(task.workflow)) throw new Refusal('Only an unstarted task can change its Azure selection')
+        const space = this.source.space(task.place)
+        if (!space) throw new Refusal('Task space is missing')
+        this.source.store.db.transaction(() => {
+          const choice = this.source.agents.saveSelection(space, task.chat, action.token, action)
+          task.kind = choice.kind; task.deployment = choice.deployment; task.effort = choice.effort
+          this.save(task)
+        })()
+        return { ok: true }
+      }
+      case 'restart-info': {
+        const space = this.source.space(task.place)
+        if (!space) throw new Refusal('Task space is missing')
+        const azure = this.source.agents.selectionInfo(space, task.chat)
+        if (azure && (task.pilot || task.archived || !['todo', 'queued'].includes(task.workflow))) { azure.locked = true; azure.reason = 'Only an unstarted task can change its Azure selection.' }
+        return { ok: true, info: { azure, role: 'task', space: space.name, on: { kind: agent?.kind ?? task.kind, model: agent?.model, effort: agent?.effort, speed: agent?.speed }, onKnown: !!agent,
+          onWords: agent?.kind ?? task.kind, want: azure ? this.source.agents.selection(task.chat) ?? { kind: task.kind, model: task.model, effort: task.effort, deployment: task.deployment ?? this.source.settings.deployment('task', task.kind, task.place) } : this.source.settings.agent('task', task.place), working: agent?.state === 'working',
+          clis: azure ? this.source.settings.selectionClis('task', task.place) : this.source.settings.clis(task.place) } }
+      }
       case 'restart':
         if (['merged', 'closed'].includes(task.workflow)) throw new Refusal('This task is Done; ask its coordinator for follow-up work')
         if (action.kind && action.kind !== 'claude' && action.kind !== 'codex') throw new Refusal('Choose Claude Code or Codex')
@@ -658,12 +678,17 @@ export class CoreTasks {
         if (profile && !task.pilot) throw new Refusal('This task needs its worktree moved out of legacy helper storage before contained adoption')
         const choice = this.source.settings.checkedAgent(task.place, { kind: action.kind || task.kind, model: action.model, effort: action.effort })
         const speed = pickSpeed(action.speed, task.speed)
+        const space = this.source.space(task.place)
+        if (!space) throw new Refusal('Task space is missing')
+        const prepared = await this.source.agents.preflight(space, task.chat, choice.kind, { deployment: task.deployment, parent: this.source.agents.get(task.place), pilot: profile })
+        this.source.agents.admit(prepared)
+        if (this.source.quiescing) throw new Refusal('Shepherdr is stopping')
         if (agent) await this.finishForRestart(agent)
         await this.profile(task, profile)
         await this.source.browsers?.close(task.id)
         task.kind = choice.kind; task.model = choice.model; task.effort = choice.effort; task.speed = speed
         delete task.startError; this.save(task)
-        await this.launchNow(task, task.workflow === 'working' ? 'Continue your agreed task. Preserve existing work.' : undefined, task.model, task.effort)
+        await this.launchNow(task, task.workflow === 'working' ? 'Continue your agreed task. Preserve existing work.' : undefined, task.model, task.effort, prepared)
         if (action.save && !this.get(task.id)?.capacity) this.source.settings.saveAgent('task', task.place, choice)
         return { ok: true }
       case 'close': return this.closeNow(task, !!action.force)

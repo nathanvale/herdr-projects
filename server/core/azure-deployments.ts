@@ -23,14 +23,16 @@ export async function discoverDeployments(files: CoreFiles, machine: string, kin
   if (matches.length !== 1 || typeof matches[0].resourceGroup !== 'string') throw Error('The configured resource was not uniquely found in this subscription. Check the resource and subscription, or enter the deployment manually.')
   const inventory = await run(['cognitiveservices', 'account', 'deployment', 'list', '--name', resource, '--resource-group', matches[0].resourceGroup, ...scope, '--query', '[].{name:name,properties:{model:properties.model,provisioningState:properties.provisioningState,capabilities:properties.capabilities}}'], 'Cannot list Azure deployments. Check deployment read access and connectivity, then refresh. Manual entry is still available.')
   if (!Array.isArray(inventory)) throw Error('Azure returned an unreadable deployment inventory. Try refreshing again.')
+  const models: Record<string, string> = {}
   const options: NonNullable<SettingRow['discovery']>['options'] = []
   for (const item of inventory) {
     const p = item?.properties, model = p?.model
     const capability = p?.capabilities?.[kind === 'codex' ? 'responses' : 'chatCompletion']
     const supported = model?.format === (kind === 'codex' ? 'OpenAI' : 'Anthropic') && (capability === 'true' || capability === true)
     if (!supported || p?.provisioningState !== 'Succeeded' || typeof item.name !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(item.name) || typeof model?.name !== 'string') continue
+    models[item.name] = model.name
     options.push({ value: item.name, label: `${item.name} · ${model.name}${model.version ? ` (${String(model.version).slice(0, 64)})` : ''}` })
   }
   options.sort((a, b) => a.value.localeCompare(b.value))
-  return { options, subscription: account.id as string }
+  return { options, models, subscription: account.id as string }
 }

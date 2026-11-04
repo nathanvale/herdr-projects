@@ -1,4 +1,4 @@
-import { providerPlan } from './providers.ts'
+import { providerPlan, type ProviderPlan, type ProviderBinding } from './providers.ts'
 import { homedir } from 'node:os'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -23,6 +23,12 @@ const EVENTS = ['SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd', 'Permi
 const quote = (value: string) => `'${value.replace(/'/g, `'"'"'`)}'`
 const toml = (value: string) => JSON.stringify(value)
 
+/** Internal preflight result, never accepted from a client. It freezes routing across stop/start. */
+export interface StartSelection { kind: AgentKind; deployment: string; effort?: string; provider?: ProviderBinding }
+export interface PreparedProvider {
+  chat: string; kind: AgentKind; previous?: string; token: string; provider: ProviderPlan; on?: string
+}
+
 /** Agent processes belong to core; stopping Shepherdr only stops its observation timer. */
 export class CoreAgents {
   private launching = new Set<string>()
@@ -36,6 +42,7 @@ export class CoreAgents {
     this.remotes = new CoreRemotes(this.files, installation.id, profile)
   }
   settings?: CoreSettings
+  stopping = () => false
   /** every hook of the current launch, before anything below may drop it */
   observed?: (agent: CoreAgent, event: AgentHook) => void
   async worktreeRoot(machine: string) {
@@ -73,7 +80,63 @@ export class CoreAgents {
     }
   }
 
+  selection(chat: string) { return this.store.get<StartSelection>('agent-selection', chat) }
+  selectionToken(chat: string) {
+    return createHash('sha256').update(JSON.stringify([this.settings?.revision(), this.get(chat)?.launch, this.selection(chat)])).digest('hex')
+  }
+  selectionLocked(chat: string) {
+    return this.launching.has(chat) || !!this.get(chat) || this.store.all<CoreAgent>('agent-launch').some(agent => agent.chat === chat)
+  }
+  selectionInfo(space: CoreSpace, chat: string) {
+    if (this.settings?.get('provider.route', space.id) !== 'Azure Foundry' && this.get(chat)?.provider?.route !== 'azure-foundry' && !this.selection(chat)) return undefined
+    const locked = this.selectionLocked(chat) || space.mode !== 'regular'
+    return { token: this.selectionToken(chat), level: space.id, locked,
+      ...(locked ? { reason: 'Azure model selection is for new starts only. This conversation keeps its existing binding.' } : {}) }
+  }
+  saveSelection(space: CoreSpace, chat: string, token: string, input: { kind: string; deployment: string; effort?: string }) {
+    if (space.mode !== 'regular' || this.selectionLocked(chat)) throw Error('This conversation has already started or is contained. Choose a new conversation; existing workers were left untouched.')
+    if (token !== this.selectionToken(chat)) throw Error('Selection changed. Reopen the selector before saving.')
+    if (!input.deployment.trim()) {
+      this.store.delete('agent-selection', chat); this.changed(chat)
+      return this.settings!.agent(chat === space.id ? 'coordinator' : 'task', space.id)
+    }
+    const choice = this.settings!.checkedSelection(space.id, input)
+    // Pure routing validation: no credential probe, model request, process, or global settings write.
+    const provider = providerPlan(choice.kind, key => key === `azure.${choice.kind}Deployment` ? choice.deployment : this.settings!.get(key, space.id))
+    this.store.set('agent-selection', chat, { ...choice, provider: provider.binding }); this.changed(chat)
+    return choice
+  }
+  /** Read-only checks run while the old worker is still alive. No grant, hook file or process is created. */
+  async preflight(space: CoreSpace, chat: string, kind: AgentKind, options: {
+    deployment?: string; parent?: CoreAgent; pilot?: unknown
+  } = {}): Promise<PreparedProvider> {
+    const previous = this.get(chat), revision = this.selectionToken(chat)
+    const selected = previous ? undefined : this.selection(chat)
+    if (selected && selected.kind !== kind) throw Error('Agent choice changed before launch; reopen the selector')
+    const deployment = selected?.deployment ?? options.deployment ?? (previous?.provider?.route === 'azure-foundry' ? previous.model : undefined)
+    const provider = providerPlan(kind, key => key === `azure.${kind}Deployment` && deployment ? deployment : this.settings?.get(key, space.id) ?? '')
+    if (selected?.provider && selected.provider.fingerprint !== provider.binding.fingerprint) throw Error('The saved Azure connection changed. Reopen the selector and save a new choice or use defaults.')
+    if (previous && (previous.provider?.fingerprint ?? 'personal') !== provider.binding.fingerprint) throw Error('Provider, Azure deployment or authentication method changed. Start a separate conversation; this session cannot be rerouted.')
+    if (options.parent && (options.parent.provider?.route ?? 'personal') !== provider.binding.route) throw Error('Child agents cannot switch between Personal and Azure Foundry')
+    if (provider.binding.route === 'azure-foundry' && options.pilot) throw Error('Azure Foundry is not yet supported in Autopilot')
+    const on = await this.route(space.machine)
+    if (on && provider.binding.route === 'azure-foundry') throw Error('Azure Foundry requires a local execution machine; remote credential delivery is not configured')
+    if (provider.credential) {
+      try {
+        await this.files.exec(space.machine, [process.execPath, '-e', 'process.exit(process.env[process.argv[1]]?.trim() ? 0 : 1)', provider.credential], undefined, undefined, 5)
+      } catch { throw Error(`Could not verify ${provider.credential} in the local core process environment. Check core connectivity and configure that variable through your credential owner; no agent was started.`) }
+    }
+    if (revision !== this.selectionToken(chat) || previous?.launch !== this.get(chat)?.launch) throw Error('Selection changed while checking. Reopen the selector and try again; the existing worker was left untouched.')
+    return { chat, kind, previous: previous?.launch, token: revision, provider, on }
+  }
+
+  admit(prepared: PreparedProvider) {
+    if (this.stopping()) throw Error('Shepherdr is stopping')
+    if (prepared.token !== this.selectionToken(prepared.chat)) throw Error('Selection changed before admission; the existing worker was left untouched')
+  }
+
   async launch(space: CoreSpace, chat: string, kind: AgentKind, prompt: string, options: {
+    deployment?: string; prepared?: PreparedProvider
     role?: CoreAgent['role']; parent?: CoreAgent; model?: string; effort?: string; speed?: string; resume?: boolean; folder?: string; task?: string; instructions?: string; readOnly?: boolean
     /** what a fresh start must still say if this resume finds no session; the prompt, when none is given */
     message?: string
@@ -84,21 +147,20 @@ export class CoreAgents {
     let prepared: PilotPrepared | undefined, previous: CoreAgent | undefined, launchRecord: CoreAgent | undefined, submitted = false, cleanup: (() => Promise<void>) | undefined
     try {
     previous = this.get(chat)
+    const selection = previous ? undefined : this.selection(chat)
+    if (selection) {
+      if (kind !== selection.kind) throw Error('Agent choice changed before launch; reopen the selector')
+      options = { ...options, deployment: selection.deployment, effort: selection.effort }
+    }
     if (previous && this.terminal(previous)?.state === 'live') throw new Error('This agent is already running')
     if (previous && !previous.terminal) throw new Error('The previous start is still unconfirmed. Reconnect core and check its state before retrying.')
-    const provider = providerPlan(kind, key => this.settings?.get(key, space.id) ?? '')
-    if (previous && (previous.provider?.fingerprint ?? 'personal') !== provider.binding.fingerprint) throw Error('Provider, Azure deployment or authentication method changed. Start a separate conversation; this session cannot be rerouted.')
+    const preparedProvider = options.prepared ?? await this.preflight(space, chat, kind, options)
+    if (preparedProvider.chat !== chat || preparedProvider.kind !== kind || preparedProvider.previous !== previous?.launch) throw Error('Launch identity changed after preflight; no replacement was started')
+    if (!options.prepared) this.admit(preparedProvider)
+    const { provider, on } = preparedProvider
+    if (selection?.provider && selection.provider.fingerprint !== provider.binding.fingerprint) throw Error('The saved Azure connection changed. Reopen the selector and save a new choice or use defaults.')
     if (options.parent && (options.parent.provider?.route ?? 'personal') !== provider.binding.route) throw Error('Child agents cannot switch between Personal and Azure Foundry')
-    if (provider.binding.route === 'azure-foundry' && options.pilot) throw Error('Azure Foundry is not yet supported in Autopilot')
     if (provider.model) options = { ...options, model: provider.model, speed: undefined }
-    const on = await this.route(space.machine)
-    if (on && provider.binding.route === 'azure-foundry') throw Error('Azure Foundry requires a local execution machine; remote credential delivery is not configured')
-    if (provider.credential) {
-      // Only an exit status crosses core. terminal.run env overrides are persisted by core.
-      try {
-        await this.files.exec(space.machine, [process.execPath, '-e', 'process.exit(process.env[process.argv[1]]?.trim() ? 0 : 1)', provider.credential], undefined, undefined, 5)
-      } catch { throw Error(`Could not verify ${provider.credential} in the local core process environment. Check core connectivity and configure that variable through your credential owner; no agent was started.`) }
-    }
     if (previous) this.store.set('agent-launch', previous.launch, previous)
     const remote = on ? await this.remotes.prepare(space.machine) : undefined
     const launch = randomUUID()
@@ -201,6 +263,7 @@ export class CoreAgents {
       argv = [remote?.bun ?? process.execPath, join(root, 'helper/core-review.ts'), launchFile]
     }
     const parent = options.parent && this.terminal(options.parent)
+    if (this.stopping()) throw Error('Shepherdr is stopping; no agent was started')
     submitted = true // A timed-out core request may still have created its holder; never erase its mounted state.
     const terminal = await this.core.call<CoreTerminal>('terminal.run', {
       argv, cwd: options.folder ?? space.folder, on,

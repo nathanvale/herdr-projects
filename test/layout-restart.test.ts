@@ -149,3 +149,50 @@ describe.skipIf(!browser)('restarting an agent', () => {
   })
 
 })
+
+describe.skipIf(!browser)('Azure new-start selection', () => {
+  test('task and coordinator pickers save without restarting; existing conversations are locked', async () => {
+    const original = world.act.bind(world), requests: import('../shared/types.ts').Action[] = []
+    const place = world.snapshot().places.find(p => p.id === world.tasks.find(task => task.id === 'GTM-17')!.place)!
+    let locked = false
+    world.act = async action => {
+      requests.push(action)
+      if (action.type === 'restart-info') return { ok: true, info: {
+        role: action.chat.includes('/Agent') ? 'task' : 'coordinator', onKnown: locked,
+        on: { kind: 'claude', model: 'claude-sonnet-5-5', effort: 'high' }, onWords: 'Claude Code', working: false,
+        want: { kind: 'claude', deployment: 'claude-sonnet-5-5', effort: 'high' },
+        azure: { token: 'selection-version', level: place.id, locked, reason: locked ? 'Azure model selection is for new starts only.' : undefined },
+        clis: [{ kind: 'claude', name: 'Claude Code', azure: { deployment: 'claude-sonnet-5-5', busy: false, refreshKey: 'azure.claudeRefresh',
+          options: [{ value: 'claude-sonnet-5-5', label: 'Sonnet deployment', efforts: ['low', 'high'] }, { value: 'claude-haiku-5-5', label: 'Haiku deployment', efforts: ['low'] }] } }]
+      } }
+      if (action.type === 'select-agent') return { ok: true }
+      if (action.type === 'restart') throw Error('Azure selection must never restart')
+      return original(action)
+    }
+    try {
+      for (const task of [false, true]) {
+        const page = await browser!.newPage({ viewport: { width: 390, height: 844 } })
+        try {
+          await page.goto(`http://127.0.0.1:${server!.port}/?place=${encodeURIComponent(place.id)}${task ? '&task=GTM-17' : ''}`)
+          const box = page.locator('[data-composer]:visible textarea').last()
+          await box.fill('/model'); await box.press('Enter')
+          const sheet = page.getByRole('alertdialog', { name: 'Azure Foundry model' })
+          await sheet.getByLabel('Azure deployment', { exact: true }).selectOption('claude-haiku-5-5')
+          await sheet.getByLabel('Azure effort', { exact: true }).selectOption('low')
+          await sheet.getByRole('button', { name: 'Save for new start' }).click()
+          await sheet.waitFor({ state: 'detached' })
+          expect(requests.at(-1)).toMatchObject({ type: 'select-agent', chat: task ? 'GTM-17/Agent' : place.chat, deployment: 'claude-haiku-5-5', effort: 'low', token: 'selection-version' })
+          locked = true
+          await box.fill('/model'); await box.press('Enter')
+          await sheet.waitFor()
+          expect(await sheet.getByRole('button', { name: 'Save for new start' }).isDisabled()).toBe(true)
+          expect(await sheet.getByLabel('Azure deployment', { exact: true }).isDisabled()).toBe(true)
+          expect(await sheet.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+          locked = false
+        } finally { await page.close() }
+      }
+      expect(requests.filter(action => action.type === 'restart')).toEqual([])
+      expect(requests.filter(action => action.type === 'select-agent')).toHaveLength(2)
+    } finally { world.act = original }
+  }, 30_000)
+})

@@ -55,7 +55,28 @@ jobs:
             exit 1
           fi
           grep -F '(fail) deployment discovery offers' /tmp/discovery-sensitivity.log
-      - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts
+      - name: Prove preflight refusal precedes interruption
+        shell: bash
+        run: |
+          cp server/core/agents.ts /tmp/agents-original.ts
+          trap 'cp /tmp/agents-original.ts server/core/agents.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/agents.ts')
+          source = path.read_text()
+          before = "if (previous && (previous.provider?.fingerprint ?? 'personal') !== provider.binding.fingerprint)"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'if (false)'))
+          PYCODE
+          if bun test test/core-coordinator-restart.test.ts --test-name-pattern 'preflight refuses incompatible' > /tmp/preflight-sensitivity.log 2>&1; then
+            cat /tmp/preflight-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) Azure coordinator preflight refuses incompatible' /tmp/preflight-sensitivity.log
+          grep -F '(fail) Azure task preflight refuses incompatible' /tmp/preflight-sensitivity.log
+      - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts
+      - run: bun x playwright-core install --only-shell chromium
+      - run: bun test test/layout-restart.test.ts
       - run: bun run build
       - uses: actions/upload-artifact@v4
         with:
