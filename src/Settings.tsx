@@ -596,7 +596,7 @@ function DeploymentValue({ row, set, edit, refresh }: { row: SettingRow; set: (v
   const [manual, setManual] = useState(false)
   const discovery = row.discovery!
   return <div className="flex min-w-0 flex-col items-end gap-2">
-    {manual ? <TextValue label={row.label} value={row.value} onEdit={edit} onSave={set} /> : <select aria-label={row.label} value={row.value} disabled={discovery.busy} onChange={event => set(event.target.value)} className="max-w-full rounded-lg border border-line bg-bg p-2 text-fg">
+    {manual ? <TextValue label={row.label} value={row.value} onEdit={edit} onSave={set} /> : <select aria-label={row.label} value={row.value} disabled={discovery.busy} onChange={event => set(event.target.value)} className="max-w-full rounded-full border border-line bg-bg p-2 text-fg">
       {!row.value ? <option value="" disabled>Choose deployment</option> : !discovery.options.some(item => item.value === row.value) ? <option value={row.value}>{row.value} (saved deployment)</option> : null}
       {discovery.options.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
     </select>}

@@ -160,9 +160,10 @@ export class CoreAgents {
     return { chat, kind, previous: previous?.launch, token, revision, provider, on, parent }
   }
 
-  admit(prepared: PreparedProvider) {
+  admit(prepared: PreparedProvider, expectedLaunch = prepared.previous) {
     if (this.stopping()) throw Error('Shepherdr is stopping')
     if (prepared.revision !== this.configurationRevision(prepared.chat)) throw Error('Selection changed before launch; fresh validation is required')
+    if (this.get(prepared.chat)?.launch !== expectedLaunch) throw Error('Launch identity changed after admission; fresh validation is required')
     this.checkParent(prepared.parent)
   }
 
@@ -309,7 +310,7 @@ export class CoreAgents {
     // Commit uncertainty before writing to core. No await or user callback may
     // separate this final check/commit from CoreSession.call's synchronous write.
     this.store.db.transaction(() => {
-      this.admit(preparedProvider); this.checkParent(parentIdentity)
+      this.admit(preparedProvider, launch); this.checkParent(parentIdentity)
       if (this.get(chat)?.launch !== launch) throw Error('Launch identity changed before submission')
       this.launches.submitting(chat, launch)
       if (headless) this.store.set('agent', chat, record)

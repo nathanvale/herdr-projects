@@ -76,6 +76,10 @@ jobs:
       # Real Autopilot namespace enforcement tests use fake agents and no provider credentials.
       - run: sudo apt-get update -qq && sudo apt-get install -y bubblewrap
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      # Tests supply private SSH profiles and a fake transport. Do not inherit a
+      # hosted runner's ProxyCommand; production must continue refusing it.
+      - name: Isolate system SSH configuration for transport fixtures
+        run: sudo install -m 644 /dev/null /etc/ssh/ssh_config
       # Chromium's headless shell for playwright-core, at the version it wants (the runner has the libraries it needs),
       # and WebKit, Safari's engine, for an iPhone's tests (layout-iphone.test.ts), with the libraries it needs
       - id: playwright

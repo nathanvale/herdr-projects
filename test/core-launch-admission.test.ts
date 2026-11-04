@@ -256,3 +256,20 @@ test('launch admission keeps a lost reply uncertain and reconciles its existing 
   expect(f.source.agents.get('chat')?.launch).toBe(launch)
   expect(f.source.store.get<LaunchAttempt>('launch-attempt', launch)?.state).toBe('confirmed')
 }))
+
+
+test('launch admission detects a competing task identity while its coordinator validates', () => fixture(async f => {
+  const row = task(f)
+  const preflight = f.source.agents.preflight.bind(f.source.agents)
+  f.source.agents.preflight = async (...args) => {
+    const admitted = await preflight(...args)
+    if (args[1] === f.space.id) f.source.store.set('agent', row.chat, {
+      chat: row.chat, space: f.space.id, machine: f.space.machine, role: 'task', kind: row.kind,
+      launch: 'competing', grant: 'other-grant', hook: '/unused', started: 1, state: 'starting',
+    })
+    return admitted
+  }
+  await expect(f.source.tasks.launch(row)).rejects.toThrow('Launch identity changed')
+  expect(f.effects).toEqual([]); expect(f.runs).toEqual([])
+  expect(f.source.agents.get(row.chat)?.launch).toBe('competing')
+}))
