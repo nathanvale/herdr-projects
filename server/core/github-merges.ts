@@ -12,7 +12,8 @@ export class CoreGitHubMerges {
       if (!this.source.space(task.place) || !this.source.machineConnected(task.machine) || this.source.tasks.busy(task.id) || now - (this.source.store.get<Check>('github-merge-check', task.id)?.at ?? 0) < 60000) continue
       count++
       try {
-        const pr = await this.source.tasks.git.pullRequest({ machine: task.machine, folder: task.folder }, task.branch, false)
+        const forge = await this.source.tasks.forge.require({ machine: task.machine, folder: task.folder })
+        const pr = await forge.read(task.branch, false, task.pr)
         if (this.source.quiescing || this.source.tasks.busy(task.id)) continue
         if (pr.state === 'MERGED') await this.source.tasks.observedMerge(task.id, pr)
         this.source.store.set('github-merge-check', task.id, { at: now })

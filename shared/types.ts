@@ -222,6 +222,9 @@ export interface TaskAgent {
   note: string
 }
 
+/** Forge identity on a persisted task or card. Missing qualification denotes a legacy GitHub record. */
+export interface ForgePrRecord { number: number; url: string; provider?: 'github' | 'bitbucket'; host?: string; repository?: string }
+
 export interface Task {
   /** short name, as people say it: GTM-15 */
   id: string
@@ -252,8 +255,8 @@ export interface Task {
   created: string
   /** its agent's job, while it works or pauses; none once it is done */
   report?: Report
-  /** its pull request on GitHub, once one is open */
-  pr?: { number: number; url: string }
+  /** its pull request, once one is open */
+  pr?: ForgePrRecord
   /** queued: the tasks it still waits for ("SHE-12", "vm-str:SHE-12" on another machine) */
   after?: string[]
   /** how it ended, for a task queued after it: done (merged, or closed with nothing to merge), stopped, failed */
@@ -582,7 +585,7 @@ export interface UpdateCard {
       such row in a chat, updated where it stands */
   text: string
   /** the task's pull request, linked from the card */
-  pr?: { number: number; url: string }
+  pr?: ForgePrRecord
   /** a machine health card: what crossed its limit (or came back under it); text says it in words */
   health?: { level: HealthLevel; machine: string }
   /** the project's base branch went red on GitHub ("main"); text says which checks failed */
@@ -927,7 +930,7 @@ export interface PrCheck {
   url?: string
 }
 
-/** a task's pull request on GitHub */
+/** a task's pull request as presented by its forge */
 export interface PullRequest {
   number: number
   title: string

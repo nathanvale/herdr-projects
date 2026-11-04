@@ -24,10 +24,15 @@ export class CoreWorktree {
       return reply.value
     }
     if (ask.what !== 'pr') return read()
-    const old = this.prs.get(task.id)
+    const key = JSON.stringify([task.id, task.machine, task.folder, task.branch, task.pr])
+    const old = this.prs.get(key)
     if (old && Date.now() - old.at < 30000) return old.value
-    const value = read()
-    this.prs.set(task.id, { at: Date.now(), value })
+    const value = (async () => {
+      try {
+        return await this.source.tasks.forge.presentation({ machine: task.machine, folder: task.folder }, task.branch, task.pr)
+      } catch (error) { return { pr: null, why: String((error as Error).message).slice(0, 1000) } }
+    })()
+    this.prs.set(key, { at: Date.now(), value })
     for (const [id, item] of this.prs) if (Date.now() - item.at > 300000) this.prs.delete(id)
     return value
   }

@@ -1,5 +1,5 @@
 import { stripVTControlCharacters } from 'node:util'
-import type { CoreGit, RepoLocation } from './git.ts'
+import type { CoreGit, RepoLocation } from '../git.ts'
 const FAILED = new Set(['failure', 'timed_out', 'action_required', 'startup_failure', 'stale'])
 
 /** Read through the configured host explicitly; CLI run URLs can name another API host. */

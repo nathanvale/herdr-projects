@@ -12,7 +12,7 @@ import { CoreTaskProcesses } from './task-processes.ts'
 import { mergeWords, taskOptions, validateTaskSettings } from './task-options.ts'
 import { CLI_NAME, kindOf } from './settings.ts'
 import { CoreGit } from './git.ts'
-import { checkWords } from './github-pr.ts'
+import { CoreForge, samePr, sameSavedPr, type ForgePullRequest } from './forge/index.ts'
 import { pickSpeed } from '../common/restart.ts'
 import type { CoreSource } from './source.ts'
 import type { AgentKind, CoreSpace, CoreAgent } from './model.ts'
@@ -46,6 +46,8 @@ export interface CoreTask extends Task {
   workflow: 'todo' | 'queued' | 'working' | 'ready' | 'merging' | 'merged' | 'closed'
   mergePolicy: 'ask' | 'checks' | 'auto'
   readyHead?: string
+  readyBase?: string
+  readyPr?: CoreTask['pr']
   pushedHead?: string
   approvedHead?: string
   review: { on: boolean; kind: AgentKind; rounds: number; mustFix: string }
@@ -97,11 +99,12 @@ const REVIEW_RELAY = 2 * 60000 // A finished reviewer's report reaches the agent
 /** Workflow is explicit persisted metadata, mirrored to core labels. It is never inferred from process exit. */
 export class CoreTasks {
   readonly git: CoreGit
+  readonly forge: CoreForge
   private ticking = false
   private merging = new Set<string>()
   private changing = new Set<string>()
   private drains = new Set<() => void>()
-  constructor(private readonly source: CoreSource) { this.git = new CoreGit(source.files, (repo, additional) => new CorePilotRepositories(source.store).context(repo, additional), machine => source.agents.browserRuntime(machine)) }
+  constructor(private readonly source: CoreSource) { this.git = new CoreGit(source.files, (repo, additional) => new CorePilotRepositories(source.store).context(repo, additional), machine => source.agents.browserRuntime(machine)); this.forge = new CoreForge(this.git) }
   /** Internal product transaction gate; callbacks never come from network input. */
   async change<T>(id: string, perform: () => Promise<T>): Promise<T> {
     if (this.source.quiescing) throw new Refusal('Shepherdr is stopping; retry after it restarts')
@@ -490,20 +493,19 @@ export class CoreTasks {
     }
     if (task.review.on && (!task.reviewReport || !task.reviewTurn || task.reviewHead !== task.readyHead)) throw new Refusal(`Complete a fresh review of this exact commit before reporting ready${this.roundsLeft(task) || this.reviewRunning(task) ? '' : `. ${this.roundsUsed(task)}`}`)
     if (task.pr) {
-      const location = { machine: task.machine, folder: task.folder }, remote = await this.git.remote(location)
-      if (!remote) throw new Refusal('The saved pull request no longer has its GitHub origin')
-      const pr = await this.git.pullRequest(location, task.branch, false)
-      if (pr.number !== task.pr.number || pr.headRefOid !== task.readyHead || pr.baseRefName !== task.base || pr.state !== 'OPEN') throw new Refusal('Push this exact commit to its open pull request before reporting ready')
-      await this.git.ghRun(location, ['pr', 'edit', String(pr.number), '--repo', remote, '--body-file', '-'], 60, `${summary.trim()}${facts ? '\n\nFacts: ' + facts : ''}`)
-      if (pr.isDraft) await this.git.ghRun(location, ['pr', 'ready', String(pr.number), '--repo', remote])
+      const location = { machine: task.machine, folder: task.folder }, forge = await this.forge.require(location)
+      const pr = await forge.read(task.branch, false, task.pr)
+      if (pr.head !== task.readyHead || pr.source !== task.branch || pr.base !== task.base || pr.state !== 'OPEN') throw new Refusal('Push this exact commit to its open pull request before reporting ready')
+      await forge.prepare(pr, `${summary.trim()}${facts ? '\n\nFacts: ' + facts : ''}`)
     }
     delete task.approvedHead
+    task.readyBase = task.base; task.readyPr = task.pr && { ...task.pr }
     task.said = summary; task.facts = facts; task.workflow = 'ready'; task.readyAt = Date.now(); delete task.reservedAt
     this.save(task); await this.label(task); this.card(task, `Ready: ${summary}`)
     if (task.mergePolicy === 'ask') {
       const question: Question = { id: randomUUID(), title: `Merge ${task.id}?`, kind: 'Question', choices: [{ label: 'Merge' }, { label: 'Not yet' }], to: task.chat, evidence: await this.evidence(task) }
       task.mergeQuestion = question.id; this.save(task)
-      this.source.store.set('merge-question', question.id, { task: task.id, head: task.readyHead })
+      this.source.store.set('merge-question', question.id, { task: task.id, head: task.readyHead, base: task.base, pr: task.readyPr })
       this.source.post(task.chat, { id: question.id, who: 'agent', question, at: Date.now() })
     }
     return task
@@ -517,7 +519,7 @@ export class CoreTasks {
       const files = rows.map(row => { const [added, removed, ...path] = row.split('\t'); return { path: path.join('\t').slice(0, 300), added: parseInt(added) || 0, removed: parseInt(removed) || 0 } })
       evidence.diff = { files: files.length, added: files.reduce((sum, file) => sum + file.added, 0), removed: files.reduce((sum, file) => sum + file.removed, 0), list: files.slice(0, 50) }
     } catch { /* the card says it couldn't read them */ }
-    if (task.pr) evidence.checks = await this.git.pullRequest(location, task.branch).then(pr => pr.headRefOid === head ? checkWords(pr.statusCheckRollup) : { state: 'unknown' as const, text: "GitHub's checks are for another commit" }).catch(() => ({ state: 'unknown' as const, text: "Couldn't read GitHub's checks" }))
+    if (task.pr) evidence.checks = await this.forge.require(location).then(forge => forge.read(task.branch, true, task.pr)).then(pr => pr.head === head ? pr.checks!.summary : { state: 'unknown' as const, text: "GitHub's checks are for another commit" }).catch(() => ({ state: 'unknown' as const, text: "Couldn't read GitHub's checks" }))
     return evidence
   }
   async answer(question: string, choice: number, chat: string): Promise<boolean> {
@@ -525,14 +527,14 @@ export class CoreTasks {
     return request ? this.change(request.task, () => this.answerNow(question, choice, chat)) : false
   }
   private async answerNow(question: string, choice: number, chat: string): Promise<boolean> {
-    const request = this.source.store.get<{ task: string; head: string }>('merge-question', question)
+    const request = this.source.store.get<{ task: string; head: string; base?: string; pr?: CoreTask['pr'] }>('merge-question', question)
     if (!request) return false
     const task = this.get(request.task)
     if (!task || task.chat !== chat || task.mergeQuestion !== question || task.workflow !== 'ready') throw new Refusal('This merge request is no longer current')
     if (choice !== 0 && choice !== 1) throw new Refusal('Choose Merge or Not yet')
     if (choice === 0) {
       const head = await this.git.head({ machine: task.machine, folder: task.folder })
-      if (head !== request.head) throw new Refusal('The task changed after this request; ask for a fresh ready report')
+      if (head !== request.head || request.base !== undefined && task.base !== request.base || request.pr && !sameSavedPr(task.pr, request.pr)) throw new Refusal('The task changed after this request; ask for a fresh ready report')
       task.approvedHead = head
     } else delete task.approvedHead
     this.source.saveAndDeliver(chat, `answer-${question}`, `<answer question="Merge ${task.id}?">${choice === 0 ? 'Merge' : 'Not yet'}</answer>`, () => {
@@ -556,23 +558,27 @@ export class CoreTasks {
     try {
       const worktree = { machine: task.machine, folder: task.folder }, repo = { machine: task.machine, folder: task.repo }
       const head = await this.git.head(worktree)
-      if (!task.readyHead || head !== task.readyHead) throw new Refusal('Report this exact commit ready before merging')
+      if (!task.readyHead || head !== task.readyHead || task.readyBase !== undefined && task.readyBase !== task.base || task.readyPr && !sameSavedPr(task.readyPr, task.pr)) throw new Refusal('Report this exact commit ready before merging')
       if (task.mergePolicy === 'ask' && task.approvedHead !== head) throw new Refusal('The human must approve this commit using its merge card first')
       if (!await this.git.clean(worktree)) throw new Refusal('The worktree has uncommitted work')
-      const remote = await this.git.remote(repo)
-      if (task.mergePolicy === 'checks' && !remote) throw new Refusal('This merge requires verified GitHub checks; the repository has no GitHub remote')
-      if (remote) {
-        const pr = await this.git.pullRequest(worktree, task.branch!)
-        if (pr.headRefOid !== head || pr.baseRefName !== task.base) throw new Refusal('The pull request head or base differs from the approved task')
+      const forge = await this.forge.repository(worktree)
+      if (task.pr && !forge) throw new Refusal('The saved pull request no longer has its forge origin')
+      if (task.mergePolicy === 'checks' && !forge) throw new Refusal('This merge requires verified GitHub checks; the repository has no GitHub remote')
+      if (forge) {
+        const pr = await forge.read(task.branch, true, task.pr)
+        if (pr.head !== head || pr.source !== task.branch || pr.base !== task.base) throw new Refusal('The pull request head or base differs from the approved task')
         if (pr.state !== 'MERGED') {
-          if (task.mergePolicy === 'checks' && !pr.statusCheckRollup.length) throw new Refusal('No GitHub checks have reported for this commit')
-          if (pr.statusCheckRollup.some(check => !['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(check.conclusion || check.state || 'PENDING'))) throw new Refusal('GitHub checks are not green')
+          if (pr.state !== 'OPEN') throw new Refusal('The task pull request is not open')
+          if (task.mergePolicy === 'checks' && !pr.checks!.items.length) throw new Refusal('No GitHub checks have reported for this commit')
+          if (!pr.checks?.complete || !pr.checks.green) throw new Refusal('GitHub checks are not green or complete')
           task.workflow = 'merging'; this.save(task); await this.label(task)
-          await this.git.ghRun({ machine: task.machine, folder: task.folder }, ['pr', 'merge', String(pr.number), '--squash', '--match-head-commit', head, '--repo', remote], 90)
+          const result = await forge.integrate(pr, head)
+          if (result.state === 'pending' || result.state === 'uncertain') throw new Refusal('Forge integration is pending or uncertain; inspect this same pull request before any retry')
         }
-        const done = await this.git.pullRequest(worktree, task.branch!)
+        const done = await forge.read(String(pr.identity.number), false, pr.identity)
+        if (done.head !== head || done.source !== task.branch || done.base !== task.base) throw new Refusal('The pull request changed while confirming integration')
         if (done.state !== 'MERGED') throw new Refusal('GitHub has not confirmed the merge')
-        const merged = done.mergeCommit?.oid
+        const merged = done.mergeCommit
         if (!merged || !/^[a-f0-9]{40,64}$/.test(merged)) throw new Refusal('GitHub confirmed the merge but has not returned its commit yet; retry to finish recording it')
         task.mergeCommit = merged; task.baseSyncPending = true; this.save(task)
       } else {
@@ -605,11 +611,11 @@ export class CoreTasks {
     }
   }
   /** Internal GitHub observer only: GitHub's completed merge is already an action, not a new approval. */
-  async observedMerge(id: string, pr: { number: number; url: string; state: string; headRefOid: string; baseRefName: string; mergeCommit?: { oid: string } | null }) {
+  async observedMerge(id: string, pr: ForgePullRequest) {
     return this.change(id, async () => {
       const task = this.get(id)
-      if (!task || !['ready', 'merging'].includes(task.workflow) || task.pr?.number !== pr.number || task.pr.url !== pr.url || pr.state !== 'MERGED' || !task.readyHead || task.readyHead !== pr.headRefOid || task.base !== pr.baseRefName) return false
-      const commit = pr.mergeCommit?.oid
+      if (!task || !['ready', 'merging'].includes(task.workflow) || !task.pr || !samePr(task.pr, pr.identity) || pr.state !== 'MERGED' || !task.readyHead || task.readyHead !== pr.head || task.branch !== pr.source || task.base !== pr.base) return false
+      const commit = pr.mergeCommit
       if (!commit || !/^[a-f0-9]{40,64}$/.test(commit)) throw new Refusal('GitHub has not confirmed its merge commit')
       task.mergeCommit = commit; task.externalMerge = true; task.baseSyncPending = true
       task.workflow = 'merged'; task.status = 'done'; task.doneAt = Date.now(); task.outcome = 'done'; task.cleanupPending = true
@@ -643,15 +649,14 @@ export class CoreTasks {
     if (!task) throw new Refusal('No such task')
     this.assert(grant, task)
     const repo = { machine: task.machine, folder: task.folder }
-    const remote = await this.git.remote(repo)
-    if (!remote) throw new Refusal('This task has no GitHub origin')
-    task.pushedHead = await this.git.pushTaskBranch(repo, task.branch, task.pushedHead); this.save(task)
-    let pr = await this.git.findPullRequest(repo, task.branch, task.base)
-    if (!pr) {
-      await this.git.ghRun({ machine: task.machine, folder: task.folder }, ['pr', 'create', '--repo', remote, '--draft', '--base', task.base!, '--head', task.branch!, '--title', `${task.id}: ${task.name}`, '--body-file', '-'], 60, task.said || task.desc || task.name)
-      pr = await this.git.pullRequest(repo, task.branch!, false)
+    const forge = await this.forge.require(repo)
+    if (task.pr) {
+      const saved = await forge.read(task.branch, false, task.pr)
+      if (saved.source !== task.branch || saved.base !== task.base || saved.state !== 'OPEN') throw new Refusal('The saved pull request no longer matches this task; nothing was pushed')
     }
-    task.pr = { number: pr.number, url: pr.url }; this.save(task)
+    task.pushedHead = await this.git.pushTaskBranch(repo, task.branch, task.pushedHead); this.save(task)
+    const pr = await forge.publish({ branch: task.branch, base: task.base, title: `${task.id}: ${task.name}`, body: task.said || task.desc || task.name, head: task.pushedHead, saved: task.pr })
+    task.pr = pr.identity; this.save(task)
     return task.pr
   }
   async report(grant: Grant, id: string, message: string, progress: number, eta?: number) { return this.change(id, () => this.reportNow(grant, id, message, progress, eta)) }
@@ -1111,7 +1116,8 @@ export class CoreTasks {
         return text({ comments: [{ ...comment, body: bytes.subarray(from, end).toString('utf8') }], offset, from, bodyBytes: bytes.length,
           nextFrom: end < bytes.length ? end : undefined, total: comments.length, next: end === bytes.length && offset + 1 < comments.length ? offset + 1 : undefined })
       }
-      return text((await this.git.pullRequest({ machine: task.machine, folder: task.folder }, task.branch!)).statusCheckRollup)
+      const forge = await this.forge.require({ machine: task.machine, folder: task.folder })
+      return text((await forge.read(task.branch, true, task.pr)).checks)
     }
     if (verb === 'review') return text(`Fresh reviewer started: ${await this.review(grant, id)}\nIts native final reply will be forwarded to your chat. Wait for that report before ready; do not read terminal screens as the review result.`)
     if (verb === 'merge' || verb === 'task' && sub === 'merge') {
