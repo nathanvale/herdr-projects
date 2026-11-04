@@ -31,14 +31,20 @@ export interface ForgeBaseObservation {
   context: { sinceGreen?: string; merged: { sha: string; title: string }[]; logTail?: string; unavailable?: boolean }
 }
 export interface ForgeIntegration { state: 'accepted' | 'pending' | 'uncertain' | 'merged'; location?: string }
-export interface ForgePublication { branch: string; base: string; title: string; body: string; head: string; saved?: ForgePrRecord }
+export interface ForgePublication {
+  branch: string; base: string; title: string; body: string; head: string; saved?: ForgePrRecord
+  /** Internal task-owned admission. Never supplied by request text or a helper. */
+  owner?: { task: string; validate: () => void }
+}
 /** Task-facing seam. Local Git, approvals, delivery and cleanup stay with their existing owners. */
 export interface RepositoryForge {
   readonly identity: ForgeRepository
   readonly name: string
   read(ref: string, checks?: boolean, saved?: ForgePrRecord): Promise<ForgePullRequest>
+  /** Holds shared publication ownership and preflights before the caller pushes. */
+  publishing?<T>(input: ForgePublication, perform: (admit: () => void) => Promise<T>): Promise<T>
   publish(input: ForgePublication): Promise<ForgePullRequest>
-  prepare(pr: ForgePullRequest, body: string): Promise<void>
+  prepare(pr: ForgePullRequest, body: string, admit?: () => void): Promise<void>
   integrate(pr: ForgePullRequest, head: string): Promise<ForgeIntegration>
   comments(saved: ForgePrRecord): Promise<ForgeComment[]>
   observeBase(branch: string, previous: { green?: string; red?: string }): Promise<ForgeBaseObservation>

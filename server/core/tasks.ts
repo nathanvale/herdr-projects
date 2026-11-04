@@ -104,7 +104,13 @@ export class CoreTasks {
   private merging = new Set<string>()
   private changing = new Set<string>()
   private drains = new Set<() => void>()
-  constructor(private readonly source: CoreSource) { this.git = new CoreGit(source.files, (repo, additional) => new CorePilotRepositories(source.store).context(repo, additional), machine => source.agents.browserRuntime(machine)); this.forge = new CoreForge(this.git) }
+  constructor(private readonly source: CoreSource) {
+    const repositories = new CorePilotRepositories(source.store)
+    this.git = new CoreGit(source.files, (repo, additional) => repositories.context(repo, additional), (machine, provision) => source.agents.browserRuntime(machine, provision))
+    this.forge = new CoreForge(this.git, { files: source.files, store: source.store,
+      contained: repo => !!repositories.context(repo), runtime: machine => source.agents.browserRuntime(machine),
+      binding: machine => source.forgeExecutionBinding(machine) })
+  }
   /** Internal product transaction gate; callbacks never come from network input. */
   async change<T>(id: string, perform: () => Promise<T>): Promise<T> {
     if (this.source.quiescing) throw new Refusal('Shepherdr is stopping; retry after it restarts')
@@ -130,6 +136,15 @@ export class CoreTasks {
     if (this.source.store.get<CoreSpace>('space', task.place)?.removed || this.source.places?.removing(task.place)) throw new Refusal('This space is removed or being removed; add it again before changing its tasks')
     if (!agent || agent.launch !== grant.session || agent.grant !== grant.id || agent.machine !== task.machine ||
       !(grant.chat === task.chat || (agent.role === 'coordinator' && agent.space === task.place))) throw new Refusal('This session does not own that task')
+  }
+  private forgeAdmission(grant: Grant, task: CoreTask) {
+    const binding = (row: CoreTask) => JSON.stringify([row.id, row.place, row.machine, row.repo, row.folder, row.branch, row.base, row.pr, row.pilot, row.workflow, row.name, row.desc, row.said])
+    const expected = binding(task)
+    return () => {
+      const current = this.get(task.id)
+      if (this.source.quiescing || !current || binding(current) !== expected) throw new Refusal('The task changed before forge dispatch; nothing was submitted by this call')
+      this.assert(grant, current)
+    }
   }
   view(task: CoreTask): Task {
     const agent = this.source.agents.get(task.chat)
@@ -480,6 +495,7 @@ export class CoreTasks {
     const task = this.get(id)
     if (!task) throw new Refusal('No such task')
     this.assert(grant, task)
+    const admit = this.forgeAdmission(grant, task)
     if (['merged', 'closed'].includes(task.workflow)) return task
     if (!summary.trim() || summary.length > SUMMARY_MAX) throw new Refusal(`Write a summary of at most ${SUMMARY_MAX} characters`)
     if (!await this.git.clean({ machine: task.machine, folder: task.folder })) throw new Refusal('Commit or remove the worktree changes before reporting ready')
@@ -494,9 +510,15 @@ export class CoreTasks {
     if (task.review.on && (!task.reviewReport || !task.reviewTurn || task.reviewHead !== task.readyHead)) throw new Refusal(`Complete a fresh review of this exact commit before reporting ready${this.roundsLeft(task) || this.reviewRunning(task) ? '' : `. ${this.roundsUsed(task)}`}`)
     if (task.pr) {
       const location = { machine: task.machine, folder: task.folder }, forge = await this.forge.require(location)
-      const pr = await forge.read(task.branch, false, task.pr)
+      const pr = await forge.read(task.branch, forge.identity.provider === 'bitbucket', task.pr)
       if (pr.head !== task.readyHead || pr.source !== task.branch || pr.base !== task.base || pr.state !== 'OPEN') throw new Refusal('Push this exact commit to its open pull request before reporting ready')
-      await forge.prepare(pr, `${summary.trim()}${facts ? '\n\nFacts: ' + facts : ''}`)
+      if (forge.identity.provider === 'bitbucket' && (!pr.checks?.complete || pr.checks.head !== task.readyHead)) throw new Refusal('Bitbucket checks are unavailable or incomplete for this exact candidate')
+      await forge.prepare(pr, `${summary.trim()}${facts ? '\n\nFacts: ' + facts : ''}`, admit)
+      if (forge.identity.provider === 'bitbucket') {
+        admit()
+        if (await this.git.head(location) !== task.readyHead) throw new Refusal('The candidate changed during readiness; report this exact commit again')
+        admit()
+      }
     }
     delete task.approvedHead
     task.readyBase = task.base; task.readyPr = task.pr && { ...task.pr }
@@ -519,7 +541,10 @@ export class CoreTasks {
       const files = rows.map(row => { const [added, removed, ...path] = row.split('\t'); return { path: path.join('\t').slice(0, 300), added: parseInt(added) || 0, removed: parseInt(removed) || 0 } })
       evidence.diff = { files: files.length, added: files.reduce((sum, file) => sum + file.added, 0), removed: files.reduce((sum, file) => sum + file.removed, 0), list: files.slice(0, 50) }
     } catch { /* the card says it couldn't read them */ }
-    if (task.pr) evidence.checks = await this.forge.require(location).then(forge => forge.read(task.branch, true, task.pr)).then(pr => pr.head === head ? pr.checks!.summary : { state: 'unknown' as const, text: "GitHub's checks are for another commit" }).catch(() => ({ state: 'unknown' as const, text: "Couldn't read GitHub's checks" }))
+    if (task.pr) {
+      const name = task.pr.provider === 'bitbucket' ? 'Bitbucket' : 'GitHub'
+      evidence.checks = await this.forge.require(location).then(forge => forge.read(task.branch, true, task.pr)).then(pr => pr.head === head && pr.source === task.branch && pr.base === task.base && pr.checks?.head === head ? pr.checks.summary : { state: 'unknown' as const, text: `${name}'s checks are for another commit` }).catch(() => ({ state: 'unknown' as const, text: `Couldn't read ${name}'s checks` }))
+    }
     return evidence
   }
   async answer(question: string, choice: number, chat: string): Promise<boolean> {
@@ -565,6 +590,7 @@ export class CoreTasks {
       if (task.pr && !forge) throw new Refusal('The saved pull request no longer has its forge origin')
       if (task.mergePolicy === 'checks' && !forge) throw new Refusal('This merge requires verified GitHub checks; the repository has no GitHub remote')
       if (forge) {
+        if (forge.identity.provider === 'bitbucket') throw new Refusal('Native Bitbucket merge cannot enforce the approved source head; no merge or lifecycle transition was requested')
         const pr = await forge.read(task.branch, true, task.pr)
         if (pr.head !== head || pr.source !== task.branch || pr.base !== task.base) throw new Refusal('The pull request head or base differs from the approved task')
         if (pr.state !== 'MERGED') {
@@ -650,14 +676,21 @@ export class CoreTasks {
     this.assert(grant, task)
     const repo = { machine: task.machine, folder: task.folder }
     const forge = await this.forge.require(repo)
-    if (task.pr) {
-      const saved = await forge.read(task.branch, false, task.pr)
-      if (saved.source !== task.branch || saved.base !== task.base || saved.state !== 'OPEN') throw new Refusal('The saved pull request no longer matches this task; nothing was pushed')
+    const input = { branch: task.branch, base: task.base, title: `${task.id}: ${task.name}`, body: task.said || task.desc || task.name,
+      head: await this.git.head(repo), saved: task.pr, owner: { task: task.id, validate: this.forgeAdmission(grant, task) } }
+    const publish = async (admit?: () => void) => {
+      if (task.pr) {
+        const saved = await forge.read(task.branch, false, task.pr)
+        if (saved.source !== task.branch || saved.base !== task.base || saved.state !== 'OPEN') throw new Refusal('The saved pull request no longer matches this task; nothing was pushed')
+      }
+      task.pushedHead = await this.git.pushTaskBranch(repo, task.branch, task.pushedHead, admit, forge.publishing ? input.head : undefined)
+      admit?.(); this.save(task)
+      input.head = task.pushedHead
+      const pr = await forge.publish(input)
+      admit?.(); task.pr ??= pr.identity; this.save(task)
+      return task.pr
     }
-    task.pushedHead = await this.git.pushTaskBranch(repo, task.branch, task.pushedHead); this.save(task)
-    const pr = await forge.publish({ branch: task.branch, base: task.base, title: `${task.id}: ${task.name}`, body: task.said || task.desc || task.name, head: task.pushedHead, saved: task.pr })
-    task.pr ??= pr.identity; this.save(task)
-    return task.pr
+    return forge.publishing ? forge.publishing(input, publish) : publish()
   }
   async report(grant: Grant, id: string, message: string, progress: number, eta?: number) { return this.change(id, () => this.reportNow(grant, id, message, progress, eta)) }
   private async reportNow(grant: Grant, id: string, message: string, progress: number, eta?: number) {

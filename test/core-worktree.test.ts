@@ -89,7 +89,7 @@ async function withGitHubPanel(origin: string, canonicalHost: string, run: (cont
   try {
     await runChild(['git', 'init', '-b', 'main'], { cwd: root, env })
     await runChild(['git', 'remote', 'add', 'origin', origin], { cwd: root, env })
-    const source = { store, files: { exec: async (_machine: string, argv: string[], cwd?: string, input?: Uint8Array) => {
+    const source = { store, forgeExecutionBinding: () => { throw Error('Bitbucket execution is unavailable in this GitHub-only fixture') }, files: { exec: async (_machine: string, argv: string[], cwd?: string, input?: Uint8Array) => {
       calls.push([...argv])
       if (argv[0] === 'gh') return Buffer.from(JSON.stringify({
         number: 7, title: 'Enterprise candidate', state: 'OPEN', isDraft: false,
@@ -123,7 +123,7 @@ test('public PR panel retains arbitrary GitHub Enterprise hosts and canonical li
     // Read-only legacy compatibility must not turn an unknown origin into task write authority.
     await expect(tasks.forge.require({ machine: 'machine', folder: root })).rejects.toThrow('unsupported forge')
     await git('remote', 'set-url', 'origin', 'git@bitbucket.org:owner/repo.git')
-    expect(await new CoreWorktree(source).ask({ task: 'DEMO-1', what: 'pr' })).toMatchObject({ pr: null, why: expect.stringContaining('Bitbucket Cloud operations are not implemented') })
+    expect(await new CoreWorktree(source).ask({ task: 'DEMO-1', what: 'pr' })).toMatchObject({ pr: null, why: expect.stringContaining('Bitbucket execution is unavailable') })
     expect(calls.filter(argv => argv[0] === 'gh')).toHaveLength(2)
 }))
 

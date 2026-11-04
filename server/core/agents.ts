@@ -58,8 +58,13 @@ export class CoreAgents {
     const home = await this.route(machine) ? (await this.remotes.prepare(machine)).home : homedir()
     return join(home, '.cache/shepherdr-worktrees', this.installation.id)
   }
-  async browserRuntime(machine: string) {
-    const remote = await this.route(machine) ? await this.remotes.prepare(machine) : undefined
+  async browserRuntime(machine: string, provision = true) {
+    const on = await this.route(machine)
+    if (on && !provision) {
+      const existing = await this.remotes.existingChecked(machine, this.all().filter(agent => agent.machine === machine).sort((a, b) => b.started - a.started).map(agent => dirname(dirname(agent.hook))))
+      return { ...existing, bin: join(existing.root, 'bin/agent-browser'), sessions: join(existing.root, 'sessions') }
+    }
+    const remote = on ? await this.remotes.prepare(machine) : undefined
     return { root: remote?.root ?? join(import.meta.dir, '../..'), bun: remote?.bun ?? process.execPath, bin: remote?.browser ?? join(import.meta.dir, '../../bin/agent-browser'),
       sessions: remote ? join(remote.root, 'sessions') : join(this.config.home, 'sessions') }
   }

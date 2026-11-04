@@ -1,14 +1,19 @@
 import type { CoreSession } from './session.ts'
 
 interface ExecResult { stdout: string; stderr: string; code?: number | null; timed_out: boolean; truncated: boolean }
+/** Internal synchronous gate after route resolution, immediately before the core write. */
+export type ExecAdmission = (route: string | undefined) => void
 export interface TextFile { text: string; first: number; last: number; lines: number }
 
 /** All machine commands and file access travel through core, including on the main machine. */
 export class CoreFiles {
   constructor(private readonly core: CoreSession, readonly route: (machine: string) => Promise<string | undefined>) {}
-  async exec(machine: string, argv: string[], cwd?: string, input?: Uint8Array, timeout = 30) {
+  async exec(machine: string, argv: string[], cwd?: string, input?: Uint8Array, timeout = 30, admit?: ExecAdmission) {
+    const on = await this.route(machine)
+    const params = { argv, cwd, on, input: input && Buffer.from(input).toString('base64'), timeout }
+    admit?.(on)
     const result = await this.core.call<ExecResult>('machine.exec', {
-      argv, cwd, on: await this.route(machine), input: input && Buffer.from(input).toString('base64'), timeout,
+      ...params,
     }, (timeout + 20) * 1000)
     const stdout = Buffer.from(result.stdout, 'base64'), stderr = Buffer.from(result.stderr, 'base64')
     if (result.timed_out || result.truncated || result.code !== 0) throw new Error(result.timed_out ? 'Command timed out' : result.truncated ? 'Command output exceeded the core limit' : stderr.toString('utf8').slice(0, 4000) || `Command exited with ${result.code}`)

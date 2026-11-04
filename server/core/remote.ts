@@ -8,11 +8,13 @@ import { CORE_ENVIRONMENT, type CoreEnvironment, type CoreEndpoint } from './cli
 export interface RemoteRuntime { root: string; home: string; bun: string; hc: string; path: string; session?: string; socket?: string; environment?: CoreEnvironment; endpoint: CoreEndpoint; browser: string }
 export const PARTS = ['helper/core-worktree-includes.ts', 'helper/core-worktree-move.ts', 'helper/core-cli.ts', 'helper/core-hook.ts', 'helper/core-review.ts', 'helper/core-secret.ts', 'helper/core-browser.ts', 'helper/core-browser-session.ts', 'server/browser-pick.ts', 'shared/browser.ts', 'server/core/browser-protocol.ts', 'server/core/home.ts', 'server/core/client.ts', 'server/core/protocol.ts', 'server/core/envelope.ts', 'server/core/mailbox.ts', 'server/core/store.ts', 'server/core/request.ts']
 PARTS.push(...['artifact', 'inventory', 'native', 'path', 'ssh', 'git', 'backend', 'bootstrap', 'capture', 'cli', 'gateway', 'home', 'hook', 'launch', 'proxy', 'records', 'runtime', 'sandbox', 'tls'].map(name => `helper/core-pilot-${name}.ts`))
+PARTS.push('helper/core-bitbucket.ts', 'server/core/forge/bitbucket-protocol.ts', 'server/core/forge/bitbucket-http.ts')
 const quote = (text: string) => `'${text.replace(/'/g, `'"'"'`)}'`
 
 /** Provision only private agent helper files through core exec. No SSH client, listener, worker or service. */
 export class CoreRemotes {
   private preparing = new Map<string, Promise<RemoteRuntime>>()
+  private ready = new Map<string, RemoteRuntime>()
   constructor(private readonly files: CoreFiles, private readonly installation: string,
     private readonly profile: (machine: string) => { session?: string | null; version?: string }) {}
   async bun(machine: string) {
@@ -26,7 +28,21 @@ export class CoreRemotes {
     if (running) return running
     const promise = this.prepareNow(machine)
     this.preparing.set(machine, promise)
-    try { return await promise } finally { this.preparing.delete(machine) }
+    try { const runtime = await promise; this.ready.set(machine, runtime); return runtime } finally { this.preparing.delete(machine) }
+  }
+  /** Read-only origin admission can use an existing immutable checked bundle, never create one. */
+  async existingChecked(machine: string, roots: string[]): Promise<{ root: string; bun: string }> {
+    const ready = this.ready.get(machine)
+    if (ready) return ready
+    const root = roots.find(path => path.includes(`/.local/share/shepherdr-agents/${this.installation}/`) && /^[a-f0-9]{24}$/.test(path.split('/').at(-1) ?? ''))
+    if (!root) throw new Error('An already provisioned checked Git runtime is required for contained origin admission; nothing was provisioned')
+    const bun = await this.bun(machine)
+    const source = join(import.meta.dir, '../..')
+    const names = ['helper/core-pilot-git.ts', 'helper/core-pilot-path.ts', 'helper/core-pilot-sandbox.ts']
+    const expected = Object.fromEntries(names.map(path => [path, readFileSync(join(source, path), 'utf8')]))
+    const script = `const f=require('node:fs'),p=require('node:path'),x=JSON.parse(await Bun.stdin.text()),r=f.lstatSync(x.root);if(!r.isDirectory()||r.isSymbolicLink()||r.uid!==process.getuid()||(r.mode&0o077)||f.realpathSync(x.root)!==x.root)throw Error('Existing checked Git root differs');for(const[n,t]of Object.entries(x.expected)){const q=p.join(x.root,n),s=f.lstatSync(q);if(!s.isFile()||s.isSymbolicLink()||s.uid!==process.getuid()||s.nlink!==1||(s.mode&0o077)||f.realpathSync(p.dirname(q))!==p.dirname(q)||f.readFileSync(q,'utf8')!==t)throw Error('Existing checked Git bundle differs; nothing was provisioned')}console.log('checked')`
+    await this.files.exec(machine, [bun, '--no-env-file', '-e', script], undefined, Buffer.from(JSON.stringify({ root, expected })))
+    return { root, bun }
   }
   private async prepareNow(machine: string): Promise<RemoteRuntime> {
     const profile = this.profile(machine)
