@@ -43,4 +43,3 @@ export function bitbucketCredential(origins: BitbucketContext['origins'], reposi
   }
   return { host: 'bitbucket.org', path, ...(username ? { username } : {}) }
 }
-
