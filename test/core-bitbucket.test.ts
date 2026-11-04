@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import { CoreFiles } from '../server/core/files.ts'
 import type { CoreSession } from '../server/core/session.ts'
 import { Refusal } from '../server/core/client.ts'
@@ -11,6 +12,113 @@ import { withBitbucket } from './bitbucket-fixture.ts'
 
 // Independent oracle: these provider-qualified identities are test-owned literals.
 const expectedPr: ForgePrRecord = { provider: 'bitbucket', host: 'bitbucket.org', repository: 'space/sample', number: 37, url: 'https://bitbucket.org/space/sample/pull-requests/37' }
+
+test('Bitbucket public delayed pushurl change cannot redirect an admitted push to a foreign repository', () => withBitbucket(async f => {
+  const foreignBefore = await f.git(f.repo, '--git-dir', f.foreignBare, 'show-ref')
+  let changed = false
+  f.route.before = async () => {
+    // Hold the final CoreFiles route lookup after Git has read the candidate,
+    // before the already-constructed push command is dispatched.
+    if (!changed && f.calls.at(-1)?.argv.at(-1) === 'refs/heads/work/two^{commit}') {
+      changed = true
+      await f.git(f.repo, 'remote', 'set-url', '--push', 'origin', 'https://alice@bitbucket.org/other/foreign.git')
+    }
+  }
+  await expect(f.tasks.pr(f.grant, f.task.id)).rejects.toThrow('changed')
+  expect(changed).toBe(true)
+  expect(await f.git(f.repo, '--git-dir', f.bare, 'rev-parse', 'refs/heads/work/two')).toBe(f.head)
+  expect(await f.git(f.repo, '--git-dir', f.foreignBare, 'show-ref')).toBe(foreignBefore)
+  expect(f.tasks.get(f.task.id)?.pushedHead).toBe(f.head)
+  expect(f.tasks.get(f.task.id)?.pr).toBeUndefined()
+  expect(f.state().creates).toBe(0)
+  expect(f.source.store.all('forge-publication')).toHaveLength(0)
+}))
+
+test('Bitbucket public lost Git push reply reconciles the admitted destination after origin changes', () => withBitbucket(async f => {
+  const foreignBefore = await f.git(f.repo, '--git-dir', f.foreignBare, 'show-ref')
+  f.update({ losePushReply: true })
+  await expect(f.tasks.pr(f.grant, f.task.id)).rejects.toThrow('changed')
+  expect(f.tasks.get(f.task.id)?.pushedHead).toBe(f.head)
+  expect(await f.git(f.repo, '--git-dir', f.bare, 'rev-parse', 'refs/heads/work/two')).toBe(f.head)
+  expect(await f.git(f.repo, '--git-dir', f.foreignBare, 'show-ref')).toBe(foreignBefore)
+  expect(f.calls.filter(call => call.argv[1] === 'push')).toHaveLength(1)
+  expect(f.calls.filter(call => call.argv[1] === 'ls-remote')).toHaveLength(1)
+  expect(f.state().creates).toBe(0)
+  expect(f.tasks.get(f.task.id)?.pr).toBeUndefined()
+}))
+
+test('Bitbucket public draft publication and readiness preserve independently expected payloads and provider state', () => withBitbucket(async f => {
+  expect(await f.tasks.pr(f.grant, f.task.id)).toEqual(expectedPr)
+  const posts = f.requests().filter(request => request.method === 'POST')
+  expect(posts).toHaveLength(1)
+  expect(posts[0].body).toEqual({ title: 'DEMO-2: Bitbucket candidate', description: 'Publish a candidate', draft: true, close_source_branch: false,
+    source: { branch: { name: 'work/two' }, commit: { hash: f.head }, repository: { full_name: 'space/sample' } },
+    destination: { branch: { name: 'main' }, repository: { full_name: 'space/sample' } } })
+  expect(f.state().pr).toMatchObject({ draft: true, close_source_branch: false, description: 'Publish a candidate' })
+  f.reopen()
+  expect((await f.tasks.forge.presentation({ machine: f.task.machine, folder: f.folder }, 'work/two', expectedPr)).pr?.state).toBe('draft')
+  await f.tasks.ready(f.grant, f.task.id, '  Ready candidate  ', 'Build passed')
+  const puts = f.requests().filter(request => request.method === 'PUT')
+  expect(puts).toHaveLength(1)
+  expect(puts[0].body).toEqual({ description: 'Ready candidate\n\nFacts: Build passed', draft: false })
+  expect(f.state().pr).toMatchObject({ draft: false, close_source_branch: false, description: 'Ready candidate\n\nFacts: Build passed' })
+  expect(await f.git(f.repo, '--git-dir', f.bare, 'rev-parse', 'refs/heads/work/two')).toBe(f.head)
+  f.reopen()
+  expect(f.tasks.get(f.task.id)).toMatchObject({ workflow: 'ready', readyHead: f.head, readyPr: expectedPr })
+  expect((await f.tasks.forge.presentation({ machine: f.task.machine, folder: f.folder }, 'work/two', expectedPr)).pr?.state).toBe('open')
+}))
+
+test('Bitbucket public two-machine race keeps one repository source destination publication owner', () => withBitbucket(async f => {
+  const second = await f.secondMachine()
+  expect(second.task.machine).toBe('second-machine')
+  expect(await f.git(second.task.folder, 'rev-parse', 'HEAD')).toBe(f.head)
+  let release!: () => void, arrived!: () => void, preparations = 0
+  const held = new Promise<void>(resolve => { release = resolve }), entered = new Promise<void>(resolve => { arrived = resolve })
+  const runtime = f.source.agents.browserRuntime.bind(f.source.agents)
+  f.source.agents.browserRuntime = async machine => {
+    // First owner has completed empty discovery, but not dispatched create.
+    if (machine === f.task.machine && ++preparations === 3) { arrived(); await held }
+    return runtime(machine)
+  }
+  const first = f.tasks.pr(f.grant, f.task.id)
+  await entered
+  try { await expect(f.tasks.pr(second.grant, second.task.id)).rejects.toThrow('Another task is publishing') } finally { release() }
+  expect(await first).toEqual(expectedPr)
+  expect(f.state().creates).toBe(1)
+  expect(f.requests().filter(request => request.method === 'POST')).toHaveLength(1)
+  const original = f.source.store.all<Record<string, any>>('forge-publication')
+  expect(original).toHaveLength(1)
+  expect(original[0]).toMatchObject({ task: 'DEMO-2', machine: 'local-machine', binding: '[1,null]', state: 'confirmed', pr: expectedPr })
+  f.reopen()
+  await expect(f.tasks.pr(second.grant, second.task.id)).rejects.toThrow('another task')
+  expect(f.source.store.all<Record<string, any>>('forge-publication')[0].id).toBe(original[0].id)
+  expect(f.state().creates).toBe(1)
+}), 30000)
+
+test('Bitbucket public publication preserves a legacy uncertain machine-keyed record across another host and reopen', () => withBitbucket(async f => {
+  const second = await f.secondMachine()
+  f.update({ loseCreateReply: true, hidePr: true })
+  await expect(f.tasks.pr(f.grant, f.task.id)).rejects.toThrow('uncertain')
+  const record = f.source.store.all<Record<string, any>>('forge-publication')[0]
+  // Independent persisted-format fixtures: old key includes the host, new key does not.
+  const identity = { provider: 'bitbucket', host: 'bitbucket.org', repository: 'space/sample' }
+  const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+  const legacy = digest(['local-machine', identity, 'work/two', 'main'])
+  f.source.store.delete('forge-publication', digest([identity, 'work/two', 'main']))
+  delete record.binding; delete record.on
+  f.source.store.set('forge-publication', legacy, record)
+  f.reopen()
+  const requests = f.requests().length
+  await expect(f.tasks.pr(second.grant, second.task.id)).rejects.toThrow('another task')
+  expect(f.requests()).toHaveLength(requests)
+  await expect(f.tasks.pr(f.grant, f.task.id)).rejects.toThrow('uncertain')
+  expect(f.source.store.get('forge-publication', legacy)).toEqual(record)
+  expect(f.state().creates).toBe(1)
+  f.update({ hidePr: false })
+  expect(await f.tasks.pr(f.grant, f.task.id)).toEqual(expectedPr)
+  expect(f.source.store.all('forge-publication')).toHaveLength(1)
+  expect(f.source.store.get<Record<string, any>>('forge-publication', legacy)).toMatchObject({ id: record.id, state: 'confirmed', pr: expectedPr })
+}))
 
 test('Bitbucket public publication reconciles a lost reply into one qualified draft PR on regular local and remote routes', async () => {
   for (const remote of [false, true]) await withBitbucket(async f => {

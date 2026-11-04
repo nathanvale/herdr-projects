@@ -42,7 +42,7 @@ export interface RepositoryForge {
   readonly name: string
   read(ref: string, checks?: boolean, saved?: ForgePrRecord): Promise<ForgePullRequest>
   /** Holds shared publication ownership and preflights before the caller pushes. */
-  publishing?<T>(input: ForgePublication, perform: (admit: () => void) => Promise<T>): Promise<T>
+  publishing?<T>(input: ForgePublication, perform: (admit: () => void, destination: string) => Promise<T>): Promise<T>
   publish(input: ForgePublication): Promise<ForgePullRequest>
   prepare(pr: ForgePullRequest, body: string, admit?: () => void): Promise<void>
   integrate(pr: ForgePullRequest, head: string): Promise<ForgeIntegration>

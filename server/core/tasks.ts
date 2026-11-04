@@ -678,12 +678,12 @@ export class CoreTasks {
     const forge = await this.forge.require(repo)
     const input = { branch: task.branch, base: task.base, title: `${task.id}: ${task.name}`, body: task.said || task.desc || task.name,
       head: await this.git.head(repo), saved: task.pr, owner: { task: task.id, validate: this.forgeAdmission(grant, task) } }
-    const publish = async (admit?: () => void) => {
+    const publish = async (admit?: () => void, destination?: string) => {
       if (task.pr) {
         const saved = await forge.read(task.branch, false, task.pr)
         if (saved.source !== task.branch || saved.base !== task.base || saved.state !== 'OPEN') throw new Refusal('The saved pull request no longer matches this task; nothing was pushed')
       }
-      task.pushedHead = await this.git.pushTaskBranch(repo, task.branch, task.pushedHead, admit, forge.publishing ? input.head : undefined)
+      task.pushedHead = await this.git.pushTaskBranch(repo, task.branch, task.pushedHead, admit, forge.publishing ? input.head : undefined, destination)
       admit?.(); this.save(task)
       input.head = task.pushedHead
       const pr = await forge.publish(input)

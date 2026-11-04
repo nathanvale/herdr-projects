@@ -21,6 +21,7 @@ interface Admission { binding: string; on?: string; validate?: () => void }
 interface PublicationRecord {
   id: string; task: string; machine: string; repository: ForgeRepository; branch: string; base: string; head: string
   folder: string; origins: BitbucketContext['origins']; credential: BitbucketContext['credential']; saved?: ForgePrRecord; state: 'uncertain' | 'confirmed'; pr?: ForgePrRecord
+  binding?: string; on?: string
 }
 const messages = {
   'invalid-request': 'Bitbucket refused an unsupported operation or credential context',
@@ -96,9 +97,27 @@ export class BitbucketForge implements RepositoryForge {
     if (saved && !/^\d+$/.test(ref) && pr.source !== ref) throw new Refusal('The Bitbucket source branch differs from this task')
     return pr
   }
-  private key(input: ForgePublication) { return createHash('sha256').update(JSON.stringify([this.repo.machine, this.identity, input.branch, input.base])).digest('hex') }
+  private key(input: ForgePublication) { return createHash('sha256').update(JSON.stringify([this.identity, input.branch, input.base])).digest('hex') }
   private record(input: ForgePublication) {
-    return this.host.store.get<PublicationRecord>('forge-publication', this.key(input))
+    // Older records used a machine-specific key. They retain their original
+    // authority and uncertainty; changing the exclusion key must not release them.
+    const records = this.host.store.all<PublicationRecord>('forge-publication').filter(record =>
+      record.repository.provider === this.identity.provider && record.repository.host === this.identity.host && record.repository.repository === this.identity.repository && record.branch === input.branch && record.base === input.base)
+    if (records.length > 1) throw new Refusal(messages['uncertain-write'])
+    return records[0]
+  }
+  private recordKey(input: ForgePublication, record: PublicationRecord) {
+    const key = this.key(input)
+    if (this.host.store.get<PublicationRecord>('forge-publication', key)?.id === record.id) return key
+    const legacy = createHash('sha256').update(JSON.stringify([record.machine, record.repository, record.branch, record.base])).digest('hex')
+    if (this.host.store.get<PublicationRecord>('forge-publication', legacy)?.id === record.id) return legacy
+    throw new Refusal(messages['uncertain-write'])
+  }
+  private owns(record: PublicationRecord, input: ForgePublication, admission: Admission) {
+    const sameOwner = record.task === input.owner!.task && record.machine === this.repo.machine && record.folder === this.repo.folder
+    const sameRoute = (record.binding === undefined || record.binding === admission.binding) && (record.on === undefined || record.on === admission.on)
+    const sameContext = JSON.stringify(record.origins) === JSON.stringify(this.context.origins) && JSON.stringify(record.credential) === JSON.stringify(this.context.credential)
+    return sameOwner && sameRoute && sameContext
   }
   private matches(pr: ForgePullRequest, input: ForgePublication) {
     this.checked(pr, input.saved)
@@ -106,10 +125,10 @@ export class BitbucketForge implements RepositoryForge {
   }
   private confirm(input: ForgePublication, pr: ForgePullRequest) {
     this.matches(pr, input)
-    const key = this.key(input), record = this.record(input)
-    if (record) this.host.store.set('forge-publication', key, { ...record, state: 'confirmed', pr: pr.identity })
+    const record = this.record(input)
+    if (record) this.host.store.set('forge-publication', this.recordKey(input, record), { ...record, state: 'confirmed', pr: pr.identity })
   }
-  async publishing<T>(input: ForgePublication, perform: (admit: () => void) => Promise<T>) {
+  async publishing<T>(input: ForgePublication, perform: (admit: () => void, destination: string) => Promise<T>) {
     if (!input.owner) throw new Refusal('Bitbucket publication requires task-owned admission')
     const key = this.key(input)
     if (this.publishingKeys.has(key)) throw new Refusal('Another task is publishing this Bitbucket source and destination; retry after it finishes')
@@ -117,14 +136,14 @@ export class BitbucketForge implements RepositoryForge {
     try {
       this.active = await this.admission(input.owner.validate); this.input = input
       const record = this.record(input)
-      if (record && (record.task !== input.owner.task || record.folder !== this.repo.folder || JSON.stringify(record.origins) !== JSON.stringify(this.context.origins) || JSON.stringify(record.credential) !== JSON.stringify(this.context.credential))) throw new Refusal('This publication belongs to another task or credential context; no new create is permitted')
+      if (record && !this.owns(record, input, this.active)) throw new Refusal('This publication belongs to another task, execution route or credential context; no new create is permitted')
       const result = await this.request({ kind: 'probe', branch: input.branch, base: input.base })
       if (record?.state === 'uncertain') {
         if (record.head !== input.head || !result.matches?.[0]) throw new Refusal(messages['uncertain-write'])
         this.confirm(input, this.checked(result.matches[0], record.saved))
       }
       if (record?.state === 'confirmed' && (!result.matches?.[0] || !samePr(record.pr!, result.matches[0].identity))) throw new Refusal('The originally published Bitbucket pull request is no longer open; nothing was created')
-      return await perform(() => this.validate(this.active!))
+      return await perform(() => this.validate(this.active!), this.context.origins.push)
     } finally { this.active = undefined; this.input = undefined; this.publishingKeys.delete(key) }
   }
   async publish(input: ForgePublication) {
@@ -132,7 +151,7 @@ export class BitbucketForge implements RepositoryForge {
     let pr: ForgePullRequest | undefined = await this.find(input.branch, input.base)
     if (pr) { this.confirm(input, pr); return pr }
     if (input.saved || this.record(input)) throw new Refusal(messages['uncertain-write'])
-    const record: PublicationRecord = { id: randomUUID(), task: input.owner.task, machine: this.repo.machine, repository: this.identity, branch: input.branch, base: input.base, head: input.head, folder: this.repo.folder, origins: this.context.origins, credential: this.context.credential, saved: input.saved, state: 'uncertain' }
+    const record: PublicationRecord = { id: randomUUID(), task: input.owner.task, machine: this.repo.machine, binding: this.active.binding, on: this.active.on, repository: this.identity, branch: input.branch, base: input.base, head: input.head, folder: this.repo.folder, origins: this.context.origins, credential: this.context.credential, saved: input.saved, state: 'uncertain' }
     let dispatched = false
     try {
       const result = await this.request({ kind: 'create', branch: input.branch, base: input.base, head: input.head, title: input.title, body: input.body }, () => {

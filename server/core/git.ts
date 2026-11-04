@@ -65,7 +65,7 @@ export class CoreGit {
     else await this.addWorktree(repo, folder, branch, base)
     return true
   }
-  async pushTaskBranch(repo: RepoLocation, branch: string, expected?: string, admit?: () => void, candidate?: string) {
+  async pushTaskBranch(repo: RepoLocation, branch: string, expected?: string, admit?: () => void, candidate?: string, destination = 'origin') {
     if (!/^[A-Za-z0-9][A-Za-z0-9/_.-]*$/.test(branch) || branch.includes('..') || expected !== undefined && !/^[a-f0-9]{40,64}$/.test(expected)) throw Error('Invalid saved task branch identity')
     const ref = `refs/heads/${branch}`
     if (await this.run(repo, ['symbolic-ref', '--quiet', 'HEAD']) !== ref) throw Error('The task branch is not checked out; nothing was pushed')
@@ -73,13 +73,18 @@ export class CoreGit {
     if (!/^[a-f0-9]{40,64}$/.test(head)) throw Error('Git did not return a task commit identity')
     if (candidate && head !== candidate) throw new Refusal('The task candidate changed during publication preflight; nothing was pushed')
     try {
-      const args = ['push', `--force-with-lease=${ref}:${expected ?? ''}`, 'origin', `${head}:${ref}`]
+      // The adapter supplies its admitted effective URL. Never resolve a mutable
+      // remote name again for either the write or lost-response reconciliation.
+      const args = ['push', `--force-with-lease=${ref}:${expected ?? ''}`, destination, `${head}:${ref}`]
       if (admit) await this.execute(repo, 'git', args, 90, undefined, undefined, admit)
       else await this.run(repo, args, 90)
     } catch (error) {
       // A lost response is not a reason to blindly repeat a force push. Confirm the exact remote commit.
       let remote: string
-      try { remote = await this.run(repo, ['ls-remote', '--heads', 'origin', ref], 60) } catch { throw error }
+      try {
+        const args = ['ls-remote', '--heads', destination, ref]
+        remote = admit ? (await this.execute(repo, 'git', args, 60, undefined, undefined, admit)).toString('utf8').trim() : await this.run(repo, args, 60)
+      } catch { throw error }
       if (remote !== `${head}\t${ref}`) throw error
     }
     return head

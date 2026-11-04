@@ -7,7 +7,8 @@ const statePath = process.env.BITBUCKET_FIXTURE_STATE!
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = new URL(String(input)), state = JSON.parse(readFileSync(statePath, 'utf8'))
   const method = init?.method ?? 'GET', authorization = new Headers(init?.headers).get('Authorization')
-  appendFileSync(state.requests, JSON.stringify({ url: url.href, method, authorization }) + '\n')
+  const body = init?.body ? JSON.parse(String(init.body)) : undefined
+  appendFileSync(state.requests, JSON.stringify({ url: url.href, method, authorization, body }) + '\n')
   if (url.origin !== 'https://api.bitbucket.org') throw Error('Fixture refuses all other hosts')
   const reply = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })
   if (state.rejectCredential || authorization !== `Bearer ${state.token}`) return reply({ error: `private diagnostic ${state.token}` }, 403)
@@ -22,10 +23,11 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   if (url.pathname === root + '/pullrequests') {
     if (method === 'POST') {
       if (state.rejectCreate) return reply({ error: state.token }, 403)
+      // Independent provider contract, with live Git evidence for the candidate.
+      if (body?.source?.repository?.full_name !== 'space/sample' || body?.destination?.repository?.full_name !== 'space/sample' || body?.source?.branch?.name !== 'work/two' || body?.destination?.branch?.name !== 'main' || body?.source?.commit?.hash !== head('work/two')) return reply({}, 400)
       state.creates++
-      const body = JSON.parse(String(init!.body))
-      state.pr = { id: 37, title: state.providerTitle ?? body.title, state: 'OPEN', draft: true,
-        source: { repository: repo, branch: { name: 'work/two' }, commit: { hash: head('work/two') } },
+      state.pr = { id: 37, title: state.providerTitle ?? body.title, description: body.description, state: 'OPEN', draft: body.draft ?? false, close_source_branch: body.close_source_branch ?? true,
+        source: { repository: repo, branch: { name: body.source.branch.name }, commit: { hash: head('work/two') } },
         destination: { repository: repo, branch: { name: 'main' } }, links: { html: { href: 'https://bitbucket.org/space/sample/pull-requests/37' } } }
       writeFileSync(statePath, JSON.stringify(state))
       return reply(state.pr, 201)
@@ -37,7 +39,12 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     if (!state.pr) return reply({}, 404)
     // Mimic the provider's live source branch rather than echoing caller input.
     state.pr.source.commit.hash = state.overrideHead ?? head('work/two')
-    if (method === 'PUT') { state.prepares++; state.pr.draft = false; writeFileSync(statePath, JSON.stringify(state)) }
+    if (method === 'PUT') {
+      state.prepares++
+      if (body && 'draft' in body) state.pr.draft = body.draft
+      if (body && 'description' in body) state.pr.description = body.description
+      writeFileSync(statePath, JSON.stringify(state))
+    }
     return reply(state.pr)
   }
   if (/\/commit\/[a-f0-9]{40}\/statuses$/.test(url.pathname)) {
