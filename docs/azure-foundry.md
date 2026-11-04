@@ -152,7 +152,7 @@ proof. The host and native CLIs retain their own security and logging policies;
 this integration is not a secret sandbox against same-user processes.
 
 A saved conversation records a nonsecret route/configuration fingerprint. Changing
-its route, Azure endpoint, deployment or authentication method refuses relaunch,
+its route, Azure endpoint, explicitly requested deployment or authentication method refuses relaunch,
 including resume. Start a separate conversation to change those values. Rotating
 a credential without changing the method does not alter the fingerprint; account
 identity is not pinned or attested by it. Same-configuration resume preserves the
@@ -160,6 +160,53 @@ native session ID and hooks. Child launches cannot cross Personal/Azure routes.
 Cross-CLI Azure backup cannot reuse an existing conversation and refuses; select
 Backup off when using that combination. No silent personal-provider fallback is
 added. Personal model catalogue and quota checks do not prove Azure readiness.
+
+## Model choices for new starts
+
+Task and coordinator settings have separate Azure deployment defaults for each
+CLI. Personal model defaults are retained separately. A conversation that has
+never launched can save an explicit agent, deployment and effort through its
+model menu. Saving does not start a process, release a task hold, or change global
+settings. Use configured defaults clears that conversation override. Existing
+conversations, including stopped or waiting agents, show a locked selector.
+Creating a task still follows the existing startup behavior: a task marked for
+later can already have a waiting agent. This feature does not add agent-free
+backlog creation.
+
+Discovery supplies deployment identifiers; known model metadata supplies effort
+choices. Unknown deployments support Default effort until compatibility is known.
+Manual deployment entry remains available. Refresh does not select a replacement.
+Changing global deployment defaults affects new conversations; an existing
+Azure conversation retains its bound deployment during compatible resume.
+
+Selection saves compare a token containing persisted settings and selection
+revisions plus current launch identity. Changing a selection away and back still
+invalidates an older open selector. Restart preflight validates provider binding,
+execution route and credential presence before revocation or stopping the old
+worker. Admission freezes the checked provider plan. Shutdown prevents terminal
+submission, and an unconfirmed durable launch blocks blind retry after a lost
+reply or application reload. These guards assume one application owner per home.
+
+### Remaining lifecycle qualification gaps
+
+The new selectors are restricted to new starts. Do not interpret the protocol
+coverage as complete crash recovery or support for rerouting live conversations.
+
+- New task startup currently prepares its worktree and can start its coordinator
+  before worker provider preflight. Move validation ahead of those side effects
+  before claiming a failed task start has no collateral effects.
+- A crash between durable launch recording and terminal submission can leave an
+  unconfirmed record with no process. Retry refusal prevents duplicates but needs
+  authoritative reconciliation to recover progress safely.
+- Restart admission is held in memory. A crash after stopping the old process but
+  before recording its replacement loses that admitted plan. Durable intent and
+  recovery behavior require separate implementation and fault-injection proof.
+- Parent and child admission are not one atomic operation. Parent identity and
+  route changes during asynchronous work need a dedicated concurrency case.
+
+The throwaway lifecycle prototype is retained on the separate
+`prototype/azure-selection-lifecycle` branch. It models these boundaries without
+connecting to core or Azure; it is not shipped with the application.
 
 ## Official contracts and version scope
 
