@@ -4,6 +4,7 @@ import type { PilotRepositoryContext } from './pilot-repositories.ts'
 import { Refusal } from './client.ts'
 import type { CoreFiles } from './files.ts'
 import type { ExecAdmission } from './files.ts'
+import type { BitbucketGitOperation, BitbucketGitRequest } from '../../helper/core-bitbucket-git.ts'
 
 export interface RepoLocation { machine: string; folder: string }
 export class CoreGit {
@@ -26,6 +27,24 @@ export class CoreGit {
     return (await this.execute(repo, 'git', args, 30, undefined, undefined, undefined, false)).toString('utf8').trim()
   }
   async ghRun(repo: RepoLocation, args: string[], timeout = 60, stdin?: string) { return (await this.execute(repo, 'gh', args, timeout, stdin)).toString('utf8').trim() }
+  private async frozen(repo: RepoLocation, destination: string, operation: BitbucketGitOperation, admit: () => void) {
+    const validate = () => {
+      if (this.guard?.(repo)) throw new Refusal('Contained repository ownership changed before publication; nothing was provisioned or pushed')
+      admit()
+    }
+    validate()
+    if (!this.runtime) throw new Refusal('The admitted Git transport runtime is unavailable')
+    const runtime = await this.runtime(repo.machine, false)
+    validate()
+    const input: BitbucketGitRequest = { folder: repo.folder, destination, operation }
+    const output = await this.files.exec(repo.machine, [runtime.bun, '--no-env-file', join(runtime.root, 'helper/core-bitbucket-git.ts')], join(runtime.root, 'helper'),
+      Buffer.from(JSON.stringify(input)), 120, validate)
+    validate()
+    let reply: { ok: boolean; observed?: string }
+    try { reply = JSON.parse(output.toString('utf8')) } catch { throw new Refusal('The admitted Git transport did not return a complete response') }
+    if (reply.ok !== true || typeof reply.observed !== 'string') throw new Refusal('Git did not confirm the operation on the admitted destination')
+    return reply.observed
+  }
   async head(repo: RepoLocation, ref = 'HEAD') { return this.run(repo, ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`]) }
   async branchHead(repo: RepoLocation, branch: string) {
     const ref = `refs/heads/${branch}`
@@ -73,17 +92,15 @@ export class CoreGit {
     if (!/^[a-f0-9]{40,64}$/.test(head)) throw Error('Git did not return a task commit identity')
     if (candidate && head !== candidate) throw new Refusal('The task candidate changed during publication preflight; nothing was pushed')
     try {
-      // The adapter supplies its admitted effective URL. Never resolve a mutable
-      // remote name again for either the write or lost-response reconciliation.
       const args = ['push', `--force-with-lease=${ref}:${expected ?? ''}`, destination, `${head}:${ref}`]
-      if (admit) await this.execute(repo, 'git', args, 90, undefined, undefined, admit)
+      if (admit) await this.frozen(repo, destination, { kind: 'push', branch, head, expected }, admit)
       else await this.run(repo, args, 90)
     } catch (error) {
       // A lost response is not a reason to blindly repeat a force push. Confirm the exact remote commit.
       let remote: string
       try {
         const args = ['ls-remote', '--heads', destination, ref]
-        remote = admit ? (await this.execute(repo, 'git', args, 60, undefined, undefined, admit)).toString('utf8').trim() : await this.run(repo, args, 60)
+        remote = admit ? await this.frozen(repo, destination, { kind: 'observe', branch }, admit) : await this.run(repo, args, 60)
       } catch { throw error }
       if (remote !== `${head}\t${ref}`) throw error
     }

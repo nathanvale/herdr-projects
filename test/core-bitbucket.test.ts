@@ -13,6 +13,64 @@ import { withBitbucket } from './bitbucket-fixture.ts'
 // Independent oracle: these provider-qualified identities are test-owned literals.
 const expectedPr: ForgePrRecord = { provider: 'bitbucket', host: 'bitbucket.org', repository: 'space/sample', number: 37, url: 'https://bitbucket.org/space/sample/pull-requests/37' }
 
+test('Bitbucket public real insteadOf rewrite after admission cannot redirect the frozen push', async () => {
+  for (const remote of [false, true]) await withBitbucket(async f => {
+    const foreignBefore = await f.git(f.repo, '--git-dir', f.foreignBare, 'show-ref')
+    let changed = false
+    f.route.before = async () => {
+      if (!changed && f.calls.at(-1)?.argv.at(-1) === 'refs/heads/work/two^{commit}') {
+        changed = true
+        await f.git(f.repo, 'config', `url.${f.foreignBare}.insteadOf`, 'https://alice@bitbucket.org/space/sample.git')
+        expect(await f.git(f.folder, 'remote', 'get-url', '--push', 'origin')).toBe(f.foreignBare)
+      }
+    }
+    await expect(f.tasks.pr(f.grant, f.task.id)).rejects.toThrow('changed')
+    expect(changed).toBe(true)
+    expect(await f.git(f.repo, '--git-dir', f.bare, 'rev-parse', 'refs/heads/work/two')).toBe(f.head)
+    expect(await f.git(f.repo, '--git-dir', f.foreignBare, 'show-ref')).toBe(foreignBefore)
+    expect(f.gitTransports()).toEqual([{ url: 'https://alice@bitbucket.org/space/sample.git', repository: f.bare, username: 'alice' }])
+    expect(f.tasks.get(f.task.id)?.pushedHead).toBe(f.head)
+    expect(f.state().creates).toBe(0)
+    expect(f.tasks.get(f.task.id)?.pr).toBeUndefined()
+  }, remote)
+}, 30000)
+
+test('Bitbucket public real pushInsteadOf rewrite after admission cannot redirect the frozen push', () => withBitbucket(async f => {
+  const foreignBefore = await f.git(f.repo, '--git-dir', f.foreignBare, 'show-ref')
+  let changed = false
+  f.route.before = async () => {
+    if (!changed && f.calls.at(-1)?.argv.at(-1) === 'refs/heads/work/two^{commit}') {
+      changed = true
+      await f.git(f.repo, 'config', `url.${f.foreignBare}.pushInsteadOf`, 'https://alice@bitbucket.org/space/sample.git')
+      expect(await f.git(f.folder, 'remote', 'get-url', '--push', 'origin')).toBe(f.foreignBare)
+      expect(await f.git(f.folder, 'remote', 'get-url', 'origin')).toBe('https://alice@bitbucket.org/space/sample.git')
+    }
+  }
+  await expect(f.tasks.pr(f.grant, f.task.id)).rejects.toThrow('changed')
+  expect(changed).toBe(true)
+  expect(await f.git(f.repo, '--git-dir', f.bare, 'rev-parse', 'refs/heads/work/two')).toBe(f.head)
+  expect(await f.git(f.repo, '--git-dir', f.foreignBare, 'show-ref')).toBe(foreignBefore)
+  expect(f.gitTransports()).toEqual([{ url: 'https://alice@bitbucket.org/space/sample.git', repository: f.bare, username: 'alice' }])
+  expect(f.tasks.get(f.task.id)?.pushedHead).toBe(f.head)
+  expect(f.state().creates).toBe(0)
+}), 30000)
+
+test('Bitbucket public real insteadOf rewrite after a lost push reply cannot redirect reconciliation', () => withBitbucket(async f => {
+  const foreignBefore = await f.git(f.repo, '--git-dir', f.foreignBare, 'show-ref')
+  f.update({ losePushReply: true, rewriteAfterPush: true })
+  await expect(f.tasks.pr(f.grant, f.task.id)).rejects.toThrow('changed')
+  expect(await f.git(f.folder, 'remote', 'get-url', 'origin')).toBe(f.foreignBare)
+  expect(f.tasks.get(f.task.id)?.pushedHead).toBe(f.head)
+  expect(await f.git(f.repo, '--git-dir', f.bare, 'rev-parse', 'refs/heads/work/two')).toBe(f.head)
+  expect(await f.git(f.repo, '--git-dir', f.foreignBare, 'show-ref')).toBe(foreignBefore)
+  expect(f.gitTransports()).toEqual([
+    { url: 'https://alice@bitbucket.org/space/sample.git', repository: f.bare, username: 'alice' },
+    { url: 'https://alice@bitbucket.org/space/sample.git', repository: f.bare, username: 'alice' },
+  ])
+  expect(f.state().creates).toBe(0)
+  expect(f.tasks.get(f.task.id)?.pr).toBeUndefined()
+}), 30000)
+
 test('Bitbucket public delayed pushurl change cannot redirect an admitted push to a foreign repository', () => withBitbucket(async f => {
   const foreignBefore = await f.git(f.repo, '--git-dir', f.foreignBare, 'show-ref')
   let changed = false
@@ -41,8 +99,8 @@ test('Bitbucket public lost Git push reply reconciles the admitted destination a
   expect(f.tasks.get(f.task.id)?.pushedHead).toBe(f.head)
   expect(await f.git(f.repo, '--git-dir', f.bare, 'rev-parse', 'refs/heads/work/two')).toBe(f.head)
   expect(await f.git(f.repo, '--git-dir', f.foreignBare, 'show-ref')).toBe(foreignBefore)
-  expect(f.calls.filter(call => call.argv[1] === 'push')).toHaveLength(1)
-  expect(f.calls.filter(call => call.argv[1] === 'ls-remote')).toHaveLength(1)
+  expect(f.calls.filter(call => call.operation === 'push' || call.argv[1] === 'push')).toHaveLength(1)
+  expect(f.calls.filter(call => call.operation === 'observe' || call.argv[1] === 'ls-remote')).toHaveLength(1)
   expect(f.state().creates).toBe(0)
   expect(f.tasks.get(f.task.id)?.pr).toBeUndefined()
 }))
@@ -72,17 +130,24 @@ test('Bitbucket public two-machine race keeps one repository source destination 
   const second = await f.secondMachine()
   expect(second.task.machine).toBe('second-machine')
   expect(await f.git(second.task.folder, 'rev-parse', 'HEAD')).toBe(f.head)
-  let release!: () => void, arrived!: () => void, preparations = 0
+  let release!: () => void, arrived!: () => void
   const held = new Promise<void>(resolve => { release = resolve }), entered = new Promise<void>(resolve => { arrived = resolve })
   const runtime = f.source.agents.browserRuntime.bind(f.source.agents)
   f.source.agents.browserRuntime = async machine => {
     // First owner has completed empty discovery, but not dispatched create.
-    if (machine === f.task.machine && ++preparations === 3) { arrived(); await held }
+    if (machine === f.task.machine && f.calls.at(-1)?.operation === 'find') { arrived(); await held }
     return runtime(machine)
   }
   const first = f.tasks.pr(f.grant, f.task.id)
   await entered
-  try { await expect(f.tasks.pr(second.grant, second.task.id)).rejects.toThrow('Another task is publishing') } finally { release() }
+  try {
+    await expect(f.tasks.pr(second.grant, second.task.id)).rejects.toThrow('Another task is publishing')
+  } finally {
+    release()
+    // A RED assertion must not tear down the provider/store while the original
+    // publisher is still using them. Settle it before propagating that failure.
+    await first.catch(() => {})
+  }
   expect(await first).toEqual(expectedPr)
   expect(f.state().creates).toBe(1)
   expect(f.requests().filter(request => request.method === 'POST')).toHaveLength(1)
@@ -162,11 +227,11 @@ test('Bitbucket changed candidate cannot replace an uncertain publication operat
   await expect(f.tasks.pr(f.grant, f.task.id)).rejects.toThrow('uncertain')
   const record = f.source.store.all<Record<string, any>>('forge-publication')[0]
   writeFileSync(join(f.folder, 'value.txt'), 'later\n'); await f.git(f.folder, 'commit', '-am', 'Later')
-  const pushes = f.calls.filter(call => call.argv[1] === 'push').length
+  const pushes = f.calls.filter(call => call.operation === 'push' || call.argv[1] === 'push').length
   f.reopen()
   await expect(f.tasks.pr(f.grant, f.task.id)).rejects.toThrow('uncertain')
   expect(f.source.store.all<Record<string, any>>('forge-publication')[0].id).toBe(record.id)
-  expect(f.calls.filter(call => call.argv[1] === 'push')).toHaveLength(pushes)
+  expect(f.calls.filter(call => call.operation === 'push' || call.argv[1] === 'push')).toHaveLength(pushes)
   expect(f.state().creates).toBe(1)
 }))
 
@@ -188,7 +253,7 @@ test('Bitbucket missing malformed and rejected host credentials refuse before a 
   for (const failure of ['missingCredential', 'malformedCredential', 'rejectCredential']) await withBitbucket(async f => {
     f.update({ [failure]: true })
     await expect(f.tasks.pr(f.grant, f.task.id)).rejects.toThrow(/credential|permission|REST/i)
-    expect(f.calls.filter(call => call.argv[1] === 'push')).toHaveLength(0)
+    expect(f.calls.filter(call => call.operation === 'push' || call.argv[1] === 'push')).toHaveLength(0)
     expect(f.state().creates).toBe(0)
     expect(f.source.store.all('forge-publication')).toHaveLength(0)
     expect(f.outputs.join('')).not.toContain('SYNTHETIC_TOKEN_ALICE_123')
@@ -324,7 +389,7 @@ test('Bitbucket admission refuses task and route changes while preparation is aw
     }
     await expect(f.tasks.pr(f.grant, f.task.id)).rejects.toThrow()
     expect(f.requests()).toHaveLength(0)
-    expect(f.calls.filter(call => call.argv[1] === 'push')).toHaveLength(0)
+    expect(f.calls.filter(call => call.operation === 'push' || call.argv[1] === 'push')).toHaveLength(0)
     expect(f.source.store.all('forge-publication')).toHaveLength(0)
   })
 })
@@ -341,11 +406,11 @@ test('core final exec admission runs after delayed route resolution and before t
 
 test('Bitbucket create admission rejects a changed task or replaced core route after awaited route resolution without recording a dispatch', async () => {
   for (const change of ['task', 'route']) await withBitbucket(async f => {
-    let entered!: () => void, release!: () => void, preparations = 0
+    let entered!: () => void, release!: () => void
     const arrived = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
     const runtime = f.source.agents.browserRuntime.bind(f.source.agents)
     f.source.agents.browserRuntime = async machine => {
-      if (++preparations === 3) f.route.before = async () => { entered(); await gate }
+      if (f.calls.at(-1)?.operation === 'find') f.route.before = async () => { entered(); await gate }
       return runtime(machine)
     }
     const pending = f.tasks.pr(f.grant, f.task.id)
@@ -367,7 +432,7 @@ test('Bitbucket retained containment refuses its REST helper before publication 
   let bitbucketRuntime = 0
   f.source.agents.browserRuntime = async (machine, provision) => { if (provision !== false) bitbucketRuntime++; return runtime(machine, provision) }
   await expect(f.tasks.pr(f.grant, f.task.id)).rejects.toThrow('Contained Bitbucket')
-  expect(f.calls.some(call => call.argv.at(-1)?.endsWith('core-bitbucket.ts') || call.argv[1] === 'push')).toBe(false)
+  expect(f.calls.some(call => call.argv.at(-1)?.endsWith('core-bitbucket.ts') || call.operation === 'push' || call.argv[1] === 'push')).toBe(false)
   expect(f.requests()).toHaveLength(0)
   expect(f.state().creates).toBe(0)
   expect(bitbucketRuntime).toBe(0)
