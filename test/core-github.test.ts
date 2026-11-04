@@ -2,8 +2,10 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { CoreForge } from '../server/core/forge/index.ts'
 import { CoreStore } from '../server/core/store.ts'
-import { CoreGitHub, mainCandidates, mainVerdict } from '../server/core/github.ts'
+import { CoreGitHub } from '../server/core/github.ts'
+import { GitHubForge, mainCandidates, mainVerdict } from '../server/core/forge/github.ts'
 import type { CoreSource } from '../server/core/source.ts'
 import type { CoreSpace } from '../server/core/model.ts'
 import type { Happened } from '../server/common/trigger.ts'
@@ -30,6 +32,8 @@ async function fixture(run: (f: { source: CoreSource; monitor: CoreGitHub; space
     post: (chat: string, message: { id: string }) => store.set(`message:${chat}`, message.id, message),
     saveAndDeliver: (_chat: string, id: string, _text: string, save: () => void) => store.db.transaction(() => { save(); sent.push(id) })(),
   } as unknown as CoreSource
+  Object.assign(source.tasks, { forge: new CoreForge(source.tasks.git) })
+  source.tasks.forge.repository = async () => new GitHubForge(source.tasks.git, { machine: space.machine, folder: space.folder }, { provider: 'github', host: 'github.test', repository: 'o/r' })
   const monitor = new CoreGitHub(source)
   try { await run({ source, monitor, space, events, sent, calls, setRows: value => { rows = value }, setHead: value => { head = value } }) }
   finally { monitor.stop(); await monitor.drain(); store.close(); rmSync(home, { recursive: true, force: true }) }

@@ -12,7 +12,7 @@ test('completed merges are observed without a live agent, bounded and throttled 
   const tasks = Array.from({ length: 3 }, (_, index) => ({ id: `TASK-${index}`, place: 'space', machine: 'machine', folder: `/task/${index}`, branch: `work/${index}`, workflow: 'ready', pr: { number: index + 1 } }) as CoreTask)
   const seen: string[] = [], synced: string[] = []
   const source = { store, space: () => ({}), machineConnected: () => true, tasks: { all: () => tasks, busy: () => false,
-    git: { pullRequest: async (_repo: unknown, branch: string, checks: boolean) => { expect(checks).toBe(false); return { state: 'MERGED', branch } } },
+    forge: { require: async () => ({ read: async (branch: string, checks: boolean) => { expect(checks).toBe(false); return { state: 'MERGED', branch } } }) },
     observedMerge: async (id: string) => { seen.push(id); const task = tasks.find(t => t.id === id)!; task.workflow = 'merged'; task.baseSyncPending = true; return true },
     syncBase: async (id: string) => { synced.push(id); const task = tasks.find(t => t.id === id)!; task.baseSyncPending = undefined },
   } } as unknown as CoreSource

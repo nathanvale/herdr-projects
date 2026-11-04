@@ -2,6 +2,11 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync, symlinkSync, linkSync, unlinkSync, mkdirSync, chmodSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { CoreWorktree } from '../server/core/worktree.ts'
+import { CoreTasks, type CoreTask } from '../server/core/tasks.ts'
+import type { CoreSource } from '../server/core/source.ts'
+import { CoreStore } from '../server/core/store.ts'
+import { runChild } from './child.ts'
 import { readWorktree } from '../helper/core-worktree.ts'
 
 // Real scratch Git repositories, run on GitHub only.
@@ -27,7 +32,7 @@ test('native worktree files, literal paths, rename diff and path isolation', asy
     unlinkSync(join(root, 'linked.txt'))
     expect(await readWorktree({ ...ask, what: 'diff' })).toMatchObject({ files: expect.arrayContaining([expect.objectContaining({ path: 'example.txt', add: 1, del: 1 }), expect.objectContaining({ path: '[literal].txt', add: 1 }), expect.objectContaining({ path: 'a\tb.txt', add: 1, del: 1 }), expect.objectContaining({ path: 'renamed.txt', status: 'renamed', from: 'original.txt' })]) })
     expect(await readWorktree({ ...ask, what: 'patch', path: '[literal].txt' })).toMatchObject({ text: expect.stringContaining('+new') })
-    expect(await readWorktree({ ...ask, what: 'pr' })).toMatchObject({ pr: null, why: 'This space has no GitHub remote.' })
+    await expect(readWorktree({ ...ask, what: 'pr' })).rejects.toThrow('forge module')
     await expect(readWorktree({ ...ask, what: 'patch', path: '.env' })).rejects.toThrow('no changes')
     unlinkSync(join(root, 'example.txt')); linkSync(join(root, '.env'), join(root, 'example.txt'))
     await expect(readWorktree({ ...ask, what: 'file', path: 'example.txt' })).rejects.toThrow()
@@ -45,12 +50,14 @@ test('unreadable GitHub checks are not reported as no checks', async () => {
     git('init', '-b', 'main'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid')
     writeFileSync(join(root, 'example.txt'), 'example\n'); git('add', '.'); git('commit', '-m', 'baseline'); git('remote', 'add', 'origin', 'https://github.com/example/example.git')
     const gh = join(bin, 'gh')
-    writeFileSync(gh, `#!${process.execPath}\nconst args=process.argv.slice(2);if(args.some(word=>word.split(',').includes('headRefOid'))){process.stdout.write(JSON.stringify({number:1,title:'Example',state:'OPEN',isDraft:false,url:'https://github.com/example/example/pull/1',headRefOid:'abc'}))}else{process.stderr.write('not accessible by personal access token');process.exitCode=1}`)
+    writeFileSync(gh, `#!${process.execPath}\nconst args=process.argv.slice(2);if(!args.some(word=>word.split(',').includes('statusCheckRollup'))){process.stdout.write(JSON.stringify({number:1,title:'Example',state:'OPEN',isDraft:false,url:'https://github.com/example/example/pull/1',headRefOid:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',headRefName:'main',baseRefName:'main'}))}else{process.stderr.write('not accessible by personal access token');process.exitCode=1}`)
     chmodSync(gh, 0o700)
-    const script = readFileSync(join(import.meta.dir, '../helper/core-worktree.ts'), 'utf8') + '\nprocess.stdout.write(JSON.stringify(await readWorktree(JSON.parse(await Bun.stdin.text()))))'
-    const child = Bun.spawnSync([process.execPath, '-e', script], { env: { ...process.env, PATH: bin + ':' + process.env.PATH }, stdin: Buffer.from(JSON.stringify({ folder: root, base: 'main', branch: 'main', what: 'pr' })) })
-    expect(child.exitCode).toBe(0)
-    expect(JSON.parse(child.stdout.toString())).toMatchObject({ pr: { checks: [], checksError: 'Could not read GitHub checks.' } })
+    const store = new CoreStore(join(root, 'home'))
+    const task = { id: 'DEMO-1', machine: 'machine', folder: root, branch: 'main' } as CoreTask
+    const source = { store, files: { exec: async (_machine: string, argv: string[], cwd?: string, input?: Uint8Array) => runChild(argv, { cwd, input, env: { ...process.env, PATH: bin + ':' + process.env.PATH } }) } } as unknown as CoreSource
+    const tasks = new CoreTasks(source); Object.assign(source, { tasks }); tasks.get = () => task
+    try { expect(await new CoreWorktree(source).ask({ task: 'DEMO-1', what: 'pr' })).toMatchObject({ pr: { number: 1, title: 'Example', checks: [], checksError: 'Could not read GitHub checks.' } }) }
+    finally { store.close() }
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
@@ -72,4 +79,46 @@ test('contained file and diff panels use checked Git without executing host call
     git('config', 'include.path', '../not-created.cfg')
     await expect(readWorktree({ ...ask, what: 'files' })).rejects.toThrow('no longer available')
   } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('public PR panel retains arbitrary GitHub Enterprise hosts and canonical links after SSH rewrites', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'shep-tree-enterprise-')), store = new CoreStore(join(root, 'home'))
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' }
+  const calls: string[][] = []
+  const task = { id: 'DEMO-1', machine: 'machine', folder: root, branch: 'work/one' } as CoreTask
+  try {
+    await runChild(['git', 'init', '-b', 'main'], { cwd: root, env })
+    await runChild(['git', 'remote', 'add', 'origin', 'git@ghe.example.com:owner/repo.git'], { cwd: root, env })
+    const source = { store, files: { exec: async (_machine: string, argv: string[], cwd?: string, input?: Uint8Array) => {
+      calls.push([...argv])
+      if (argv[0] === 'gh') return Buffer.from(JSON.stringify({
+        number: 7, title: 'Enterprise candidate', state: 'OPEN', isDraft: false,
+        url: 'https://ghe.example.com/owner/repo/pull/7', headRefOid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        headRefName: 'work/one', baseRefName: 'main', mergeCommit: null,
+        statusCheckRollup: [{ name: 'Build', conclusion: 'SUCCESS', detailsUrl: 'https://ghe.example.com/owner/repo/actions/runs/9' }],
+      }))
+      return runChild(argv, { cwd, input, env })
+    } } } as unknown as CoreSource
+    const tasks = new CoreTasks(source); Object.assign(source, { tasks }); tasks.get = () => task
+    expect(await new CoreWorktree(source).ask({ task: 'DEMO-1', what: 'pr' })).toEqual({ pr: {
+      number: 7, title: 'Enterprise candidate', state: 'open', url: 'https://ghe.example.com/owner/repo/pull/7',
+      checks: [{ name: 'Build', state: 'pass', url: 'https://ghe.example.com/owner/repo/actions/runs/9' }],
+    } })
+    await runChild(['git', 'config', 'url.git@ssh-alias:.insteadOf', 'git@ghe.example.com:'], { cwd: root, env })
+    expect(await new CoreWorktree(source).ask({ task: 'DEMO-1', what: 'pr' })).toEqual({ pr: {
+      number: 7, title: 'Enterprise candidate', state: 'open', url: 'https://ghe.example.com/owner/repo/pull/7',
+      checks: [{ name: 'Build', state: 'pass', url: 'https://ghe.example.com/owner/repo/actions/runs/9' }],
+    } })
+    expect(calls.filter(argv => argv[0] === 'gh')).toEqual([
+      ['gh', 'pr', 'view', 'work/one', '--repo', 'ghe.example.com/owner/repo', '--json',
+        'number,url,title,state,isDraft,headRefOid,headRefName,baseRefName,mergeCommit,statusCheckRollup'],
+      ['gh', 'pr', 'view', 'work/one', '--repo', 'ssh-alias/owner/repo', '--json',
+        'number,url,title,state,isDraft,headRefOid,headRefName,baseRefName,mergeCommit,statusCheckRollup'],
+    ])
+    // Read-only legacy compatibility must not turn an unknown origin into task write authority.
+    await expect(tasks.forge.require({ machine: 'machine', folder: root })).rejects.toThrow('unsupported forge')
+    await runChild(['git', 'remote', 'set-url', 'origin', 'git@bitbucket.org:owner/repo.git'], { cwd: root, env })
+    expect(await new CoreWorktree(source).ask({ task: 'DEMO-1', what: 'pr' })).toMatchObject({ pr: null, why: expect.stringContaining('Bitbucket Cloud operations are not implemented') })
+    expect(calls.filter(argv => argv[0] === 'gh')).toHaveLength(2)
+  } finally { store.close(); rmSync(root, { recursive: true, force: true }) }
 })

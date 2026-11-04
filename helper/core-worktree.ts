@@ -2,7 +2,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { lstatSync, realpathSync, statSync, openSync, closeSync, readSync, fstatSync, constants } from 'node:fs'
-import type { Diff, DiffFile, FileText, Patch, PullRequest, PrCheck, TreeFiles, WorktreeAsk } from '../shared/types.ts'
+import type { Diff, DiffFile, FileText, Patch, TreeFiles, WorktreeAsk } from '../shared/types.ts'
 
 interface CheckedRepository { repo: string; writableRoots: string[]; bun: string; helper: string }
 const checkedRepository = new AsyncLocalStorage<CheckedRepository>()
@@ -46,22 +46,6 @@ function readHead(path: string, max: number) {
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
   try { const stat = fstatSync(fd); if (!stat.isFile() || stat.nlink !== 1) throw Error('No such file.'); const bytes = Buffer.alloc(max); const n = readSync(fd, bytes, 0, max, 0); return bytes.subarray(0, n) } finally { closeSync(fd) }
 }
-const noChecksAccess = (said: string) => /not accessible by personal access token/i.test(said)
-async function actionJobs(g: { host: string; repo: string }, cwd: string, sha: string) {
-  const gh = (...args: string[]) => sh(['gh', ...args], cwd, { env: { GH_HOST: g.host }, timeoutMs: 15000 })
-  const runs = await gh('api', '--paginate', '--jq', '.workflow_runs[].id', `repos/${g.repo}/actions/runs?head_sha=${sha}&per_page=100`)
-  if (!runs.ok) return null
-  const ids = runs.out.split('\n').filter(Boolean)
-  if (ids.length > 20 || ids.some(id => !/^\d+$/.test(id))) return null
-  const checks: { name: string; bucket: string; link: string }[] = []
-  for (const id of ids) {
-    const jobs = await gh('api', '--paginate', '--jq', '.jobs[] | {name, status, conclusion, html_url}', `repos/${g.repo}/actions/runs/${id}/jobs?per_page=100`)
-    if (!jobs.ok) return null
-    try { for (const text of jobs.out.split('\n').filter(Boolean)) { const job = JSON.parse(text); checks.push({ name: job.name, link: job.html_url, bucket: job.status !== 'completed' ? 'pending' : ({ success: 'pass', neutral: 'pass', skipped: 'skipping', cancelled: 'cancel' }[String(job.conclusion)] ?? 'fail') }) } } catch { return null }
-  }
-  return checks
-}
-
 /** the most files a tree lists */
 export const MAX_FILES = 20_000
 /** the most bytes a file or a diff shows */
@@ -217,59 +201,6 @@ export async function diffPatch(wt: string, base: string, path: unknown): Promis
   return { path: rel, text: tooBig ? r.out.slice(0, MAX_BYTES) : r.out, tooBig: tooBig || undefined }
 }
 
-/* ---------- its pull request ---------- */
-
-/** the GitHub host and repo of a remote URL: github.com, or a GitHub Enterprise host */
-export function ghRepo(url: string): { host: string; repo: string } | null {
-  const m = url.trim().match(/^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?([^/:]+)(?::\d+)?[:/]([^/]+\/[^/]+?)(?:\.git)?\/?$/i)
-  return m ? { host: m[1], repo: m[2] } : null
-}
-
-const CHECK: Record<string, PrCheck['state']> = {
-  SUCCESS: 'pass',
-  NEUTRAL: 'pass',
-  FAILURE: 'fail',
-  ERROR: 'fail',
-  TIMED_OUT: 'fail',
-  CANCELLED: 'fail',
-  ACTION_REQUIRED: 'fail',
-  STARTUP_FAILURE: 'fail',
-  SKIPPED: 'skip',
-  STALE: 'skip',
-}
-
-type Rollup = { __typename?: string; name?: string; context?: string; status?: string; conclusion?: string; state?: string; detailsUrl?: string; targetUrl?: string }
-
-const BUCKET: Record<string, PrCheck['state']> = { pass: 'pass', fail: 'fail', cancel: 'fail', pending: 'pending', skipping: 'skip' }
-
-/** gh's checks, in plain states: a check run (status, conclusion) or a commit status (state) */
-export function checksOf(rollup: Rollup[] = []): PrCheck[] {
-  return rollup.map((c) => {
-    const raw = c.conclusion || c.state || ''
-    const done = c.status ? c.status === 'COMPLETED' : raw !== 'PENDING' && raw !== 'EXPECTED' && raw !== ''
-    return { name: c.name || c.context || 'Check', state: done ? (CHECK[raw] ?? 'pending') : 'pending', url: c.detailsUrl || c.targetUrl || undefined }
-  })
-}
-
-/** the open (or last) pull request of a branch, by gh; none when there is none, or gh can't tell */
-export async function pullRequest(wt: string, branch: string): Promise<{ pr: PullRequest | null; why?: string }> {
-  if (!branch) return { pr: null, why: 'No branch yet.' }
-  const remote = await git(wt, 'remote', 'get-url', 'origin')
-  const gh = remote.ok ? ghRepo(remote.out) : null
-  if (!gh) return { pr: null, why: 'This space has no GitHub remote.' }
-  const view = (fields: string) => sh(['gh', 'pr', 'view', branch, '-R', gh.repo, '--json', `number,title,state,isDraft,url,${fields}`], wt, { env: { GH_HOST: gh.host }, timeoutMs: 15_000 }).catch(() => null)
-  let r = await view('statusCheckRollup')
-  // a token that can't read checks: the pull request without them, and its Actions jobs instead
-  const actions = !!r && !r.ok && noChecksAccess(r.err)
-  if (actions) r = await view('headRefOid')
-  if (!r) return { pr: null, why: 'gh is not installed here.' }
-  if (!r.ok) return { pr: null, why: /no pull requests found/i.test(r.err) ? 'No pull request yet.' : "Couldn't ask GitHub about it." }
-  const j = JSON.parse(r.out) as { number: number; title: string; state: string; isDraft: boolean; url: string; statusCheckRollup?: Rollup[]; headRefOid?: string }
-  const state = j.state === 'MERGED' ? 'merged' : j.state === 'CLOSED' ? 'closed' : j.isDraft ? 'draft' : 'open'
-  const jobs = actions && j.headRefOid ? await actionJobs(gh, wt, j.headRefOid) : null
-  return { pr: { number: j.number, title: j.title, state, url: j.url, ...(actions && jobs === null ? { checksError: 'Could not read GitHub checks.' } : {}), checks: jobs ? jobs.map((c) => ({ name: c.name, state: BUCKET[c.bucket] ?? 'fail', url: c.link })) : checksOf(j.statusCheckRollup) } }
-}
-
 async function readWorktreeAt(ask: { folder: string; base: string; branch: string } & Omit<WorktreeAsk, 'task'> & { path?: string }) {
   let root: string
   try { root = realpathSync(ask.folder) } catch { throw Error('This task worktree is no longer available') }
@@ -279,7 +210,7 @@ async function readWorktreeAt(ask: { folder: string; base: string; branch: strin
   if (ask.what === 'file') return readFile(root, ask.path)
   if (ask.what === 'diff') return diffFiles(root, ask.base)
   if (ask.what === 'patch') return diffPatch(root, ask.base, ask.path)
-  if (ask.what === 'pr') return pullRequest(root, ask.branch)
+  if (ask.what === 'pr') throw Error('Pull request views are owned by the forge module')
   throw Error('Unknown worktree view')
 }
 

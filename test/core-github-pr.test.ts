@@ -2,8 +2,10 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { CoreForge } from '../server/core/forge/index.ts'
 import { CoreStore } from '../server/core/store.ts'
-import { checkWords, CoreGitHubPr, prComments } from '../server/core/github-pr.ts'
+import { CoreGitHubPr } from '../server/core/github-pr.ts'
+import { checkWords, prComments, GitHubForge } from '../server/core/forge/github.ts'
 import type { CoreSource } from '../server/core/source.ts'
 import type { CoreTask } from '../server/core/tasks.ts'
 const head = 'a'.repeat(40), since = Date.parse('2026-10-30T10:00:00.800Z')
@@ -25,11 +27,12 @@ async function fixture(run: (f: { source: CoreSource; monitor: CoreGitHubPr; tas
   let notes: object[] = [], checks: object[] = []
   const source = { store, machineConnected: () => true, status: () => 'idle', agents: { get: () => ({ launch: 'launch' }), terminal: () => ({ state: 'live' }) },
     tasks: { all: () => [task], get: (id: string) => id === task.id ? task : undefined, busy: () => false, git: {
-      remote: async () => 'github.test/o/r', pullRequest: async () => ({ number: 1, state: 'OPEN', headRefOid: head, statusCheckRollup: checks }),
-      gh: async (_repo: unknown, args: string[]) => [args.at(-1)?.includes('/issues/') ? notes : []],
+      gh: async (_repo: unknown, args: string[]) => args[0] === 'pr' ? ({ number: 1, url: task.pr!.url, state: 'OPEN', isDraft: false, title: 'Example', headRefOid: head, headRefName: task.branch, baseRefName: 'main', statusCheckRollup: checks }) : [args.at(-1)?.includes('/issues/') ? notes : []],
     } }, emit: () => {}, post: (chat: string, message: { id: string }) => store.set(`message:${chat}`, message.id, message),
     saveAndDeliver: (_chat: string, id: string, text: string, save: () => void, _quiet: boolean, work: boolean) => store.db.transaction(() => { save(); sent.push({ id, text, work }) })(),
   } as unknown as CoreSource
+  Object.assign(source.tasks, { forge: new CoreForge(source.tasks.git) })
+  source.tasks.forge.repository = async () => new GitHubForge(source.tasks.git, { machine: task.machine, folder: task.folder }, { provider: 'github', host: 'github.test', repository: 'o/r' })
   const monitor = new CoreGitHubPr(source)
   try { await run({ source, monitor, task, sent, setNotes: value => { notes = value }, setChecks: value => { checks = value } }) }
   finally { monitor.stop(); store.close(); rmSync(home, { recursive: true, force: true }) }
@@ -79,8 +82,8 @@ test('busy agents retain unseen comments and stale native launches cannot receiv
   f.setNotes([raw(1)]); f.source.status = () => 'work'
   await f.monitor.scan(since + 1000); expect(f.sent).toHaveLength(0)
   f.source.status = () => 'idle'
-  const query = f.source.tasks.git.pullRequest.bind(f.source.tasks.git)
-  f.source.tasks.git.pullRequest = async (...args) => { const result = await query(...args); f.source.agents.get = (() => ({ launch: 'replacement' })) as unknown as typeof f.source.agents.get; return result }
+  const query = f.source.tasks.git.gh.bind(f.source.tasks.git)
+  f.source.tasks.git.gh = async (...args) => { const result = await query(...args); f.source.agents.get = (() => ({ launch: 'replacement' })) as unknown as typeof f.source.agents.get; return result as never }
   await f.monitor.scan(since + 62000)
   expect(f.sent).toHaveLength(0)
   expect(f.source.store.all('github-pr')).toHaveLength(0)
@@ -95,8 +98,8 @@ test('large comments are explicitly excerpted in the wake and remain fully reada
 }))
 
 test('check-read denial cannot hide published feedback or produce a green-check merge nudge', async () => fixture(async f => {
-  const query = f.source.tasks.git.pullRequest.bind(f.source.tasks.git)
-  f.source.tasks.git.pullRequest = async (repo, branch, checks = true) => { if (checks) throw Error('Checks HTTP 403'); return query(repo, branch, false) }
+  const query = f.source.tasks.git.gh.bind(f.source.tasks.git)
+  f.source.tasks.git.gh = async (repo, args, timeout) => { if (args[0] === 'pr' && args.at(-1)?.includes('statusCheckRollup')) throw Error('Checks HTTP 403'); return query(repo, args, timeout) as never }
   f.task.mergePolicy = 'checks'; f.setNotes([raw(1, 'Please apply this published correction')])
   await f.monitor.scan(since + 1000)
   expect(f.sent).toHaveLength(1)
@@ -106,4 +109,18 @@ test('check-read denial cannot hide published feedback or produce a green-check 
   expect(f.source.store.get<{ error: string }>('github-pr', f.task.id)?.error).toBe('Checks HTTP 403')
   await new CoreGitHubPr(f.source).scan(since + 62000)
   expect(f.sent).toHaveLength(1)
+}))
+
+test('a same-number PR identity replaced during observation cannot receive stale feedback', async () => fixture(async f => {
+  f.setNotes([raw(1, 'For the original repository only')])
+  const query = f.source.tasks.git.gh.bind(f.source.tasks.git)
+  f.source.tasks.git.gh = async (...args) => {
+    const result = await query(...args)
+    f.task.pr = { number: 1, url: 'https://github.test/another/repository/pull/1' }
+    return result as never
+  }
+  await f.monitor.scan(since + 1000)
+  expect(f.sent).toEqual([])
+  expect(f.source.store.all('github-pr')).toEqual([])
+  expect(f.source.store.all('github-pr-notice')).toEqual([])
 }))
