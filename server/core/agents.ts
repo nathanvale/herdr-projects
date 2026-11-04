@@ -1,3 +1,4 @@
+import { CoreNotSubmitted } from './client.ts'
 import { CoreLaunches } from './launches.ts'
 import { providerPlan, type ProviderPlan, type ProviderBinding } from './providers.ts'
 import { homedir } from 'node:os'
@@ -27,7 +28,7 @@ const toml = (value: string) => JSON.stringify(value)
 /** Internal preflight result, never accepted from a client. It freezes routing across stop/start. */
 export interface StartSelection { kind: AgentKind; deployment: string; effort?: string; provider?: ProviderBinding }
 export interface PreparedProvider {
-  chat: string; kind: AgentKind; previous?: string; token: string; revision: string; provider: ProviderPlan; on?: string
+  chat: string; level: string; kind: AgentKind; previous?: string; token: string; revision: string; provider: ProviderPlan; on?: string
   parent?: { chat: string; launch: string; terminal?: string; pid?: number | null }
 }
 
@@ -86,18 +87,19 @@ export class CoreAgents {
   }
 
   selection(chat: string) { return this.store.get<StartSelection>('agent-selection', chat) }
-  private configurationRevision(chat: string) {
-    return createHash('sha256').update(JSON.stringify([this.settings?.revision(), this.store.get<number>('selection-revision', chat), this.selection(chat)])).digest('hex')
+  private configurationRevision(chat: string, level: string) {
+    return createHash('sha256').update(JSON.stringify([this.settings?.launchRevision(level), this.store.get<number>('selection-revision', chat), this.selection(chat)])).digest('hex')
   }
   private parentIdentity(parent?: CoreAgent) {
     if (!parent) return undefined
     const terminal = this.terminal(parent)
     return { chat: parent.chat, launch: parent.launch, terminal: terminal?.address, pid: terminal?.pid }
   }
-  private checkParent(parent: PreparedProvider['parent']) {
+  private checkParent(parent: PreparedProvider['parent'], live = false) {
     if (!parent) return
     const current = this.get(parent.chat)
     if (!current || JSON.stringify(this.parentIdentity(current)) !== JSON.stringify(parent)) throw Error('Parent identity changed during launch; start refused')
+    if (live && this.terminal(current)?.state !== 'live') throw Error('Parent is no longer running; fresh validation is required')
   }
   /** Internal mechanism only. No automatic recovery or human-facing policy is wired. */
   recoverUnsubmitted(chat: string, launch: string) {
@@ -138,7 +140,7 @@ export class CoreAgents {
   async preflight(space: CoreSpace, chat: string, kind: AgentKind, options: {
     deployment?: string; parent?: CoreAgent; pilot?: unknown
   } = {}): Promise<PreparedProvider> {
-    const previous = this.get(chat), token = this.selectionToken(chat), revision = this.configurationRevision(chat), parent = this.parentIdentity(options.parent)
+    const previous = this.get(chat), token = this.selectionToken(chat), revision = this.configurationRevision(chat, space.id), parent = this.parentIdentity(options.parent)
     this.checkParent(parent)
     const selected = previous ? undefined : this.selection(chat)
     if (selected && selected.kind !== kind) throw Error('Agent choice changed before launch; reopen the selector')
@@ -157,12 +159,12 @@ export class CoreAgents {
     }
     this.checkParent(parent)
     if (token !== this.selectionToken(chat) || previous?.launch !== this.get(chat)?.launch) throw Error('Selection changed while checking. Reopen the selector and try again; the existing worker was left untouched.')
-    return { chat, kind, previous: previous?.launch, token, revision, provider, on, parent }
+    return { chat, level: space.id, kind, previous: previous?.launch, token, revision, provider, on, parent }
   }
 
   admit(prepared: PreparedProvider, expectedLaunch = prepared.previous) {
     if (this.stopping()) throw Error('Shepherdr is stopping')
-    if (prepared.revision !== this.configurationRevision(prepared.chat)) throw Error('Selection changed before launch; fresh validation is required')
+    if (prepared.revision !== this.configurationRevision(prepared.chat, prepared.level)) throw Error('Selection changed before launch; fresh validation is required')
     if (this.get(prepared.chat)?.launch !== expectedLaunch) throw Error('Launch identity changed after admission; fresh validation is required')
     this.checkParent(prepared.parent)
   }
@@ -191,7 +193,7 @@ export class CoreAgents {
     this.admit(preparedProvider)
     if (preparedProvider.parent && JSON.stringify(preparedProvider.parent) !== JSON.stringify(this.parentIdentity(options.parent))) throw Error('Parent identity changed after preflight')
     const parentIdentity = preparedProvider.parent ?? this.parentIdentity(options.parent)
-    this.checkParent(parentIdentity)
+    this.checkParent(parentIdentity, true)
     const { provider, on } = preparedProvider
     if (selection?.provider && selection.provider.fingerprint !== provider.binding.fingerprint) throw Error('The saved Azure connection changed. Reopen the selector and save a new choice or use defaults.')
     if (options.parent && (options.parent.provider?.route ?? 'personal') !== provider.binding.route) throw Error('Child agents cannot switch between Personal and Azure Foundry')
@@ -201,7 +203,7 @@ export class CoreAgents {
     const launch = randomUUID()
     const role = options.role ?? 'coordinator'
     const grant = this.store.db.transaction(() => {
-      this.admit(preparedProvider); this.checkParent(parentIdentity)
+      this.admit(preparedProvider); this.checkParent(parentIdentity, true)
       if (this.get(chat)?.launch !== previous?.launch) throw Error('Launch identity changed before claim')
       this.launches.claim(chat, launch, previous)
       return this.mailbox.issue(chat, launch, space.machine, options.pilot ? ['pilot', 'cli', ...(role === 'reviewer' ? [] : ['secret', 'artifact'])] : role === 'reviewer'
@@ -251,7 +253,7 @@ export class CoreAgents {
       pilot: options.pilot && prepared ? { run: options.pilot.run, home: prepared.sandbox.home, captures: prepared.paths.captures, pending: true } : undefined,
     }
     this.store.db.transaction(() => {
-      this.admit(preparedProvider); this.checkParent(parentIdentity)
+      this.admit(preparedProvider); this.checkParent(parentIdentity, true)
       this.launches.owned(chat, launch)
       if (this.get(chat)?.launch !== previous?.launch) throw Error('Launch identity changed before recording')
       this.store.set('agent', chat, record)
@@ -310,7 +312,7 @@ export class CoreAgents {
     // Commit uncertainty before writing to core. No await or user callback may
     // separate this final check/commit from CoreSession.call's synchronous write.
     this.store.db.transaction(() => {
-      this.admit(preparedProvider, launch); this.checkParent(parentIdentity)
+      this.admit(preparedProvider, launch); this.checkParent(parentIdentity, true)
       if (this.get(chat)?.launch !== launch) throw Error('Launch identity changed before submission')
       this.launches.submitting(chat, launch)
       if (headless) this.store.set('agent', chat, record)
@@ -327,7 +329,17 @@ export class CoreAgents {
       },
       env: { SHEPHERDR_CHAT: '', SHEPHERDR_SECRET_FILE: '', SHEPHERDR_URL: '',
         ...shellEnv, ...provider.env, SHEPHERDR_CORE_HOOK_FILE: hook },
-    }, 45_000)
+    }, 45_000).catch(error => {
+      if (error instanceof CoreNotSubmitted) {
+        this.store.db.transaction(() => {
+          this.launches.notSubmitted(chat, launch)
+          this.mailbox.revoke(chat, launch)
+        })()
+        submitted = false
+        this.changed(chat)
+      }
+      throw error
+    })
     const current = this.get(chat)
     if (!current || current.launch !== launch || current.grant !== grant.id) throw new Error('Agent launch was replaced before core confirmed it')
     this.launches.confirm(chat, launch)

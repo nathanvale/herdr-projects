@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { CoreSession } from '../server/core/session.ts'
 import { CoreSource } from '../server/core/source.ts'
 import { CoreStore } from '../server/core/store.ts'
 import type { LaunchAttempt } from '../server/core/launches.ts'
@@ -124,6 +125,43 @@ for (const explicit of [false, true]) test(`task selection reset restores brief 
     expect(reader.all('agent')).toEqual([]); expect(reader.all('launch-attempt')).toEqual([])
   } finally { reader.close() }
   expect(f.runs).toEqual([]); expect(f.effects).toEqual([]); expect(f.source.mailbox.active()).toEqual([])
+}))
+
+for (const route of ['Personal', 'Azure Foundry'] as const) test(`task restart survives unrelated settings edits while awaiting worker exit (${route})`, () => fixture(async f => {
+  f.source.settings.set('provider.route', route)
+  f.source.machineConnected = () => true
+  const row = task(f), parent = await f.source.agents.launch(f.space, f.space.id, 'claude', 'Wait')
+  const worker = await f.source.agents.launch(f.space, row.chat, 'claude', 'Wait', { role: 'task', parent })
+  const gate = barrier(), call = f.source.core.call.bind(f.source.core)
+  f.source.core.call = async <T>(method: string, params: Record<string, unknown> = {}, timeout?: number) => {
+    if (method !== 'terminal.kill') return call<T>(method, params, timeout)
+    gate.reached(); await gate.wait; f.source.agents.terminal(worker)!.state = 'finished'; return {} as T
+  }
+  const pending = f.source.act({ type: 'restart', chat: row.chat, kind: 'claude' })
+  await gate.ready
+  try {
+    f.source.settings.set('time.zone', 'UTC')
+    f.source.store.set('space', 'other', { ...f.space, id: 'other' })
+    f.source.settings.set('tasks.archiveAfter', '30 days', 'other')
+    f.source.settings.set('azure.claudeResource', 'different-resource', 'other')
+  } finally { gate.release() }
+  await pending
+  const reader = new CoreStore(f.source.config.home)
+  try {
+    expect(reader.get<import('../server/core/model.ts').CoreAgent>('agent', row.chat)?.launch).not.toBe(worker.launch)
+    expect(reader.get<CoreTask>('task', row.id)).toMatchObject({ after: ['EX-0'], workflow: 'todo', mergePolicy: 'ask', desc: row.desc })
+    expect(reader.get<CoreTask>('task', row.id)?.startError).toBeUndefined()
+  } finally { reader.close() }
+  expect(f.runs).toHaveLength(3); expect(f.runs[2]!.parent).toBe(parent.terminal)
+}))
+
+for (const scope of ['all', 'm:machine', 'space']) test(`launch admission detects inherited settings changed away and back at ${scope}`, () => fixture(async f => {
+  f.source.settings.set('azure.claudeResource', 'example', scope)
+  const prepared = await f.source.agents.preflight(f.space, 'chat', 'claude')
+  f.source.settings.set('azure.claudeResource', 'changed', scope)
+  f.source.settings.set('azure.claudeResource', 'example', scope)
+  await expect(f.source.agents.launch(f.space, 'chat', 'claude', 'Wait', { prepared })).rejects.toThrow('Selection changed')
+  expect(f.runs).toEqual([]); expect(f.source.mailbox.active()).toEqual([])
 }))
 
 for (const change of ['settings', 'selection'] as const) test(`launch admission refuses ${change} changed after admission`, () => fixture(async f => {
@@ -337,4 +375,107 @@ test('launch admission detects a competing task identity while its coordinator v
   await expect(f.source.tasks.launch(row)).rejects.toThrow('Launch identity changed')
   expect(f.effects).toEqual([]); expect(f.runs).toEqual([])
   expect(f.source.agents.get(row.chat)?.launch).toBe('competing')
+}))
+
+for (const previous of [false, true]) test(`local non-submission releases only its own launch (${previous ? 'resume' : 'new'})`, () => fixture(async f => {
+  f.source.settings.set('provider.route', 'Personal')
+  const old = previous ? await f.source.agents.launch(f.space, 'chat', 'claude', 'Wait') : undefined
+  if (old) f.source.agents.terminal(old)!.state = 'finished'
+  const call = f.source.core.call
+  // Exercise the real disconnected CoreSession gate, not a made-up core error.
+  f.source.core.call = CoreSession.prototype.call.bind(f.source.core)
+  await expect(f.source.agents.launch(f.space, 'chat', 'claude', 'Wait')).rejects.toThrow('Core is reconnecting')
+  const reader = new CoreStore(f.source.config.home)
+  try {
+    const attempts = reader.all<LaunchAttempt>('launch-attempt')
+    expect(attempts.filter(attempt => attempt.state === 'cancelled')).toHaveLength(1)
+    expect(attempts.filter(attempt => attempt.state === 'submission-uncertain')).toEqual([])
+    expect(reader.get('launch-claim', 'chat')).toBeUndefined()
+    expect(reader.get('agent', 'chat')).toEqual(old)
+  } finally { reader.close() }
+  expect(f.source.mailbox.active().filter(grant => grant.session !== old?.launch)).toEqual([])
+  expect(f.runs).toHaveLength(previous ? 1 : 0)
+  f.source.core.call = call
+  const replacement = await f.source.agents.launch(f.space, 'chat', 'claude', 'Wait')
+  expect(replacement.terminal).toBeDefined()
+  expect(f.runs).toHaveLength(previous ? 2 : 1)
+}))
+
+for (const finished of [false, true]) test(`task restart validates required coordinator before interrupting worker (${finished ? 'finished' : 'missing'})`, () => fixture(async f => {
+  f.source.machineConnected = () => true
+  const row = task(f)
+  const parent = finished ? await f.source.agents.launch(f.space, f.space.id, 'codex', 'Wait') : undefined
+  if (parent) f.source.agents.terminal(parent)!.state = 'finished'
+  const worker = await f.source.agents.launch(f.space, row.chat, 'claude', 'Wait', { role: 'task' })
+  f.source.settings.set('coordinator.agent', 'Codex')
+  f.source.settings.set('azure.codexEndpoint', '')
+  const calls: string[] = [], call = f.source.core.call.bind(f.source.core)
+  f.source.core.call = async <T>(method: string, params?: Record<string, unknown>, timeout?: number) => {
+    calls.push(method); return call<T>(method, params, timeout)
+  }
+  await expect(f.source.act({ type: 'restart', chat: row.chat, kind: 'claude' })).rejects.toThrow('endpoint')
+  expect(calls).not.toContain('terminal.kill')
+  expect(f.source.agents.get(row.chat)).toEqual(worker)
+  expect(f.source.agents.terminal(worker)?.state).toBe('live')
+  expect(f.source.mailbox.active().some(grant => grant.session === worker.launch)).toBe(true)
+  expect(f.effects).toEqual([])
+  expect(f.runs).toHaveLength(finished ? 2 : 1)
+}))
+
+test('task start retains a finished Azure coordinator binding and native session after defaults change', () => fixture(async f => {
+  const row = task(f), parent = await f.source.agents.launch(f.space, f.space.id, 'claude', 'Wait', { effort: 'high' })
+  f.source.agents.update(parent, { session: 'retained-native-session' })
+  f.source.agents.terminal(parent)!.state = 'finished'
+  f.source.settings.set('coordinator.agent', 'Codex')
+  f.source.settings.set('azure.claudeDeployment', 'claude-haiku-5-5')
+  await f.source.tasks.launch(row)
+  const reader = new CoreStore(f.source.config.home)
+  try {
+    const current = reader.get<import('../server/core/model.ts').CoreAgent>('agent', f.space.id)!
+    expect(current).toMatchObject({ kind: 'claude', model: parent.model, effort: 'high', session: 'retained-native-session', provider: parent.provider })
+    expect(current.launch).not.toBe(parent.launch)
+    expect(f.runs[1]!.argv).toContain('--resume')
+    expect(f.runs[1]!.argv).toContain('retained-native-session')
+    expect(f.runs[2]!.parent).toBe(current.terminal)
+  } finally { reader.close() }
+  expect(f.runs).toHaveLength(3)
+}))
+
+for (const route of ['Personal', 'Azure Foundry'] as const) for (const timing of ['validation', 'checkout'] as const) test(`task start replaces a coordinator that finishes during ${timing} (${route})`, () => fixture(async f => {
+  f.source.settings.set('provider.route', route)
+  const row = task(f), parent = await f.source.agents.launch(f.space, f.space.id, 'claude', 'Wait')
+  const finish = () => { f.source.agents.terminal(parent)!.state = 'finished' }
+  if (timing === 'validation') f.source.route = async () => { finish(); return undefined }
+  else f.source.tasks.git.ensureWorktree = async () => { finish(); return false }
+  await f.source.tasks.launch(row)
+  const reader = new CoreStore(f.source.config.home)
+  try {
+    const current = reader.get<import('../server/core/model.ts').CoreAgent>('agent', f.space.id)!
+    expect(current.launch).not.toBe(parent.launch)
+    expect(f.runs[2]!.parent).toBe(current.terminal)
+    expect(reader.get<CoreTask>('task', row.id)).toMatchObject({ desc: row.desc, after: row.after, workflow: 'todo', mergePolicy: 'ask' })
+  } finally { reader.close() }
+  expect(f.runs).toHaveLength(3)
+}))
+
+test('worker final submission refuses a parent that finished after recording', () => fixture(async f => {
+  const parent = await f.source.agents.launch(f.space, f.space.id, 'claude', 'Wait')
+  const set = f.source.store.set.bind(f.source.store)
+  f.source.store.set = (kind, key, value) => {
+    set(kind, key, value)
+    if (kind === 'agent-launch') queueMicrotask(() => { f.source.agents.terminal(parent)!.state = 'finished' })
+  }
+  await expect(f.source.agents.launch(f.space, 'child', 'codex', 'Wait', { parent, readOnly: true })).rejects.toThrow('Parent is no longer running')
+  expect(f.runs).toHaveLength(1)
+  expect(f.source.agents.get('child')).toBeUndefined()
+}))
+
+test('task selector supplies known model effort metadata without discovery', () => fixture(async f => {
+  const row = task(f)
+  const result = await f.source.act({ type: 'restart-info', chat: row.chat })
+  expect(result).toMatchObject({ ok: true, info: { clis: expect.arrayContaining([
+    expect.objectContaining({ kind: 'claude', models: expect.arrayContaining([expect.objectContaining({ id: 'claude-sonnet-5-5', efforts: expect.arrayContaining(['high']) })]) }),
+    expect.objectContaining({ kind: 'codex', models: expect.arrayContaining([expect.objectContaining({ id: 'gpt-6.1-sol', efforts: expect.arrayContaining(['high']) })]) }),
+  ]) } })
+  expect(f.runs).toEqual([]); expect(f.effects).toEqual([])
 }))

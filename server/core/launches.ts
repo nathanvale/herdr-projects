@@ -32,6 +32,14 @@ export class CoreLaunches {
     const attempt = this.get(launch)
     if (attempt?.chat === chat && attempt.state === 'submission-uncertain') this.store.set('launch-attempt', launch, { ...attempt, state: 'confirmed' })
   }
+  /** Only a local transport refusal can release a submitted claim. The sender
+   * has already returned without writing and has no deferred retry authority. */
+  notSubmitted(chat: string, launch: string) {
+    const attempt = this.get(launch)
+    if (attempt?.chat !== chat || attempt.state !== 'submission-uncertain' || this.store.get<string>('launch-claim', chat) !== launch) throw Error('Launch authority changed; local refusal cannot release this claim')
+    this.store.set('launch-attempt', launch, { ...attempt, state: 'never-submitted' })
+    this.cancel(chat, launch)
+  }
   /** Caller holds the store transaction, fencing a sender's final transition.
    * Never infer non-submission from absence in a core snapshot. */
   cancel(chat: string, launch: string) {

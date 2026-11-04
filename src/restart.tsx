@@ -1,7 +1,7 @@
 // Restart picks for either chat role, used once or saved for its space. Opened from the + or ⋯ menu.
 import clsx from 'clsx'
 import { ChevronUpDownIcon } from '@heroicons/react/20/solid'
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { taskChatId, type Chat, type Place, type RestartCli, type RestartInfo } from '@shared/types.ts'
 import { act, setUI, taskOf, useSnap, useStore } from './kernel.ts'
 import { Dialog } from './rowmenu.tsx'
@@ -181,7 +181,15 @@ function AzureStartSheet({ chat, initial }: { chat: string; initial: RestartInfo
   const [stale, setStale] = useState(false)
   const [error, setError] = useState('')
   const cli = info.clis.find(cli => cli.kind === kind), azure = cli?.azure
-  const options = azure?.options ?? [], levels = options.find(option => option.value === deployment)?.efforts ?? []
+  const raw = deployment.trim().toLowerCase()
+  const known = cli?.models?.find(model => model.id.toLowerCase() === raw || model.label.toLowerCase() === raw || kind === 'claude' && ['opus', 'sonnet', 'haiku', 'fable'].includes(raw) && model.id.includes(`-${raw}-`))
+  const options = azure?.options ?? [], levels = options.find(option => option.value === deployment)?.efforts ?? known?.efforts ?? []
+  const content = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    // The loading Dialog restores its opener on unmount. Focus after that
+    // cleanup, including a locked sheet whose only enabled control is Cancel.
+    content.current?.closest('[role="alertdialog"]')?.querySelector<HTMLElement>('select:not(:disabled), button:not(:disabled)')?.focus()
+  }, [])
   const locked = !!info.azure?.locked || stale
   const choose = (value: string) => { setDeployment(value); setEffort('') }
   const refresh = async () => {
@@ -207,7 +215,7 @@ function AzureStartSheet({ chat, initial }: { chat: string; initial: RestartInfo
   return <Dialog title="Azure Foundry model" onCancel={close} buttons={
     <Primary disabled={locked || busy || !deployment.trim() || invalidEffort} onClick={() => save()}>{busy ? 'Checking…' : 'Save for new start'}</Primary>
   }>
-    <div data-azure-selection className="flex flex-col gap-4">
+    <div ref={content} data-azure-selection className="flex flex-col gap-4">
       <p className="text-sm text-fg3">{info.azure?.reason || 'Save a choice for this new agent. Saving does not start an agent or release task holds.'}</p>
       {info.onKnown ? <p className="text-sm">Current: {info.on.kind} · {info.on.model || 'Not reported'} · {info.on.effort || 'Default effort'}</p> : null}
       <fieldset disabled={locked || busy} className="flex flex-col gap-3 disabled:opacity-60">

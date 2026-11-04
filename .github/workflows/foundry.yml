@@ -101,15 +101,87 @@ jobs:
           from pathlib import Path
           path = Path('server/core/agents.ts')
           source = path.read_text()
-          before = "this.admit(preparedProvider, launch); this.checkParent(parentIdentity)\n      if (this.get(chat)?.launch !== launch)"
+          before = "this.admit(preparedProvider, launch); this.checkParent(parentIdentity, true)\n      if (this.get(chat)?.launch !== launch)"
           assert source.count(before) == 1
-          path.write_text(source.replace(before, "this.checkParent(parentIdentity)\n      if (this.get(chat)?.launch !== launch)"))
+          path.write_text(source.replace(before, "this.checkParent(parentIdentity, true)\n      if (this.get(chat)?.launch !== launch)"))
           PYCODE
           if bun test test/core-launch-admission.test.ts --test-name-pattern 'rechecks stale settings before-submit' > /tmp/admission-sensitivity.log 2>&1; then
             cat /tmp/admission-sensitivity.log
             exit 1
           fi
           grep -F '(fail) launch admission rechecks stale settings before-submit' /tmp/admission-sensitivity.log
+      - name: Prove unrelated settings cannot cancel an admitted replacement
+        shell: bash
+        run: |
+          cp server/core/agents.ts /tmp/scoped-revision-original.ts
+          trap 'cp /tmp/scoped-revision-original.ts server/core/agents.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/agents.ts')
+          source = path.read_text()
+          before = 'this.settings?.launchRevision(level)'
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'this.settings?.revision()'))
+          PYCODE
+          if bun test test/core-launch-admission.test.ts --test-name-pattern 'task restart survives unrelated settings' > /tmp/scoped-revision-sensitivity.log 2>&1; then
+            cat /tmp/scoped-revision-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) task restart survives unrelated settings' /tmp/scoped-revision-sensitivity.log
+      - name: Prove local non-submission cannot strand a conversation
+        shell: bash
+        run: |
+          cp server/core/agents.ts /tmp/feedback-0-original.ts
+          trap 'cp /tmp/feedback-0-original.ts server/core/agents.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/agents.ts')
+          source = path.read_text()
+          before = 'if (error instanceof CoreNotSubmitted)'
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'if (false)'))
+          PYCODE
+          if bun test test/core-launch-admission.test.ts --test-name-pattern 'local non-submission releases' > /tmp/feedback-0-sensitivity.log 2>&1; then
+            cat /tmp/feedback-0-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) local non-submission releases' /tmp/feedback-0-sensitivity.log
+      - name: Prove required coordinator validation precedes worker interruption
+        shell: bash
+        run: |
+          cp server/core/tasks.ts /tmp/feedback-1-original.ts
+          trap 'cp /tmp/feedback-1-original.ts server/core/tasks.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/tasks.ts')
+          source = path.read_text()
+          before = "const coordinator = !profile && (!parent || this.source.agents.terminal(parent)?.state !== 'live')"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'const coordinator = false'))
+          PYCODE
+          if bun test test/core-launch-admission.test.ts --test-name-pattern 'task restart validates required coordinator' > /tmp/feedback-1-sensitivity.log 2>&1; then
+            cat /tmp/feedback-1-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) task restart validates required coordinator' /tmp/feedback-1-sensitivity.log
+      - name: Prove late parent liveness is rechecked
+        shell: bash
+        run: |
+          cp server/core/tasks.ts /tmp/feedback-2-original.ts
+          trap 'cp /tmp/feedback-2-original.ts server/core/tasks.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/tasks.ts')
+          source = path.read_text()
+          before = "if (!pilot && (!parent || this.source.agents.terminal(parent)?.state !== 'live')) {"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'if (needsParent) {'))
+          PYCODE
+          if bun test test/core-launch-admission.test.ts --test-name-pattern 'task start replaces a coordinator that finishes during' > /tmp/feedback-2-sensitivity.log 2>&1; then
+            cat /tmp/feedback-2-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) task start replaces a coordinator that finishes during' /tmp/feedback-2-sensitivity.log
       - name: Prove protected stop refuses live workers
         shell: bash
         run: |

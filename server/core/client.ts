@@ -6,6 +6,10 @@ import { CORE_GENERATION, CORE_MINIMUM, FRAME, MAX_FRAME, FrameReader, coreVersi
 export class CoreError extends Error {
   constructor(readonly kind: string, message: string, readonly hint?: string) { super(message); this.name = 'CoreError' }
 }
+/** Local transport receipt: this call was rejected before any socket write.
+ * Remote errors never construct this type, regardless of their error kind. */
+export class CoreNotSubmitted extends CoreError {}
+
 /** Deliberate product refusal whose message is safe for the owning agent/human to read. */
 export class Refusal extends Error {
   constructor(message: string) { super(message); this.name = 'Refusal' }
@@ -101,9 +105,20 @@ export class CoreClient {
   }
 
   call<T = unknown>(method: string, params: Record<string, unknown> = {}, timeout = 15_000, beforeResolve?: (value: T) => void): Promise<T> {
-    if (this.ended) return Promise.reject(new CoreError('disconnected', 'Core connection is closed'))
-    if (this.pending.size >= 256) return Promise.reject(new CoreError('busy', 'Too many pending core requests'))
+    if (this.ended) return Promise.reject(new CoreNotSubmitted('disconnected', 'Core connection is closed'))
+    if (this.pending.size >= 256) return Promise.reject(new CoreNotSubmitted('busy', 'Too many pending core requests'))
     const id = ++this.next
+    let frame: Buffer
+    try {
+      const bytes = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id, method, params }))
+      frame = this.framed ? encodeFrame(0, FRAME.data, bytes) : Buffer.concat([bytes, Buffer.from('\n')])
+    } catch { return Promise.reject(new CoreNotSubmitted('invalid', 'Core request could not be encoded')) }
+    if (this.socket.writableLength + frame.length > MAX_FRAME * 2) {
+      // Existing calls remain uncertain. This new call has not entered pending
+      // and cannot be sent later by a reconnect or queue drain.
+      this.fail(new CoreError('slow', 'Core write buffer is full'))
+      return Promise.reject(new CoreNotSubmitted('slow', 'Core write buffer is full'))
+    }
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
@@ -114,8 +129,7 @@ export class CoreClient {
         catch (error) { reject(error) }
       }, reject, timer })
       try {
-        const bytes = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id, method, params }))
-        this.write(this.framed ? encodeFrame(0, FRAME.data, bytes) : Buffer.concat([bytes, Buffer.from('\n')]))
+        this.write(frame)
       } catch (error) {
         this.pending.delete(id); clearTimeout(timer)
         reject(error)

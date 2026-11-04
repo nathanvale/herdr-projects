@@ -15,7 +15,7 @@ import { CoreGit } from './git.ts'
 import { checkWords } from './github-pr.ts'
 import { pickSpeed } from '../common/restart.ts'
 import type { CoreSource } from './source.ts'
-import type { AgentKind, CoreSpace } from './model.ts'
+import type { AgentKind, CoreSpace, CoreAgent } from './model.ts'
 import type { CorePilotRun } from './pilot-policy.ts'
 import type { Grant } from './mailbox.ts'
 import { one, parseArgs, summaryOpts, type Parsed } from '../common/args.ts'
@@ -358,7 +358,17 @@ export class CoreTasks {
       else throw new Refusal('This reviewer has finished; request a fresh review')
     })
   }
-  private async launchNow(task: CoreTask, message?: string, model = task.model, effort = task.effort, prepared?: PreparedProvider, create = false) {
+  private async prepareCoordinator(space: CoreSpace, parent: CoreAgent | undefined, worker: PreparedProvider) {
+    // An existing Azure conversation owns its deployment and session. Role
+    // defaults only choose new conversations, never reroute a retained one.
+    const pick = parent?.provider?.route === 'azure-foundry'
+      ? { kind: parent.kind, model: parent.model, deployment: parent.model, effort: parent.effort, resume: true }
+      : this.source.agents.selection(space.id) ?? this.source.settings.agent('coordinator', space.id)
+    const prepared = await this.source.agents.preflight(space, space.id, pick.kind, pick)
+    if (prepared.provider.binding.route !== worker.provider.binding.route) throw new Refusal('Worker and coordinator provider routes differ')
+    return { pick, prepared }
+  }
+  private async launchNow(task: CoreTask, message?: string, model = task.model, effort = task.effort, prepared?: PreparedProvider, create = false, coordinator?: Awaited<ReturnType<CoreTasks['prepareCoordinator']>>) {
     const handover = task.providerTakeover?.handover
     if (handover && message !== handover) message = handover + (message ? `\n\n${message}` : '')
     task = this.get(task.id) || (() => { throw new Refusal('No such task') })()
@@ -380,22 +390,14 @@ export class CoreTasks {
     const parentLaunch = parent?.launch
     if (pilot && (parent?.pilot?.run !== pilot.id || this.source.agents.terminal(parent)?.state !== 'live')) parent = undefined
     const needsParent = !pilot && (!parent || this.source.agents.terminal(parent)?.state !== 'live')
-    const pick = needsParent ? this.source.agents.selection(space.id) ?? this.source.settings.agent('coordinator', space.id) : undefined
-    // Preserve ordinary Personal task preparation; Azure admission precedes all
-    // checkout/browser/coordinator effects, including the initial task-add path.
-    const guarded = !!prepared || this.source.settings.get('provider.route', space.id) === 'Azure Foundry' || prior?.provider?.route === 'azure-foundry' || parent?.provider?.route === 'azure-foundry'
-    let coordinator: PreparedProvider | undefined
-    if (guarded) {
-      prepared ??= await this.source.agents.preflight(space, task.chat, task.kind, { deployment: task.deployment, parent: needsParent ? undefined : parent, pilot })
-      if (pick) coordinator = await this.source.agents.preflight(space, space.id, pick.kind, pick)
-      if (coordinator && coordinator.provider.binding.route !== prepared.provider.binding.route) throw new Refusal('Worker and coordinator provider routes differ')
-    }
+    // Validate both routes before checkout, browser or coordinator effects.
+    prepared ??= await this.source.agents.preflight(space, task.chat, task.kind, { deployment: task.deployment, parent: needsParent ? undefined : parent, pilot })
+    if (needsParent) coordinator ??= await this.prepareCoordinator(space, parent, prepared)
     const admit = () => {
-      if (!guarded) return
       if (this.source.agents.get(space.id)?.launch !== parentLaunch) throw new Refusal('Parent identity changed during task admission')
       if (this.source.quiescing) throw new Refusal('Shepherdr is stopping')
       this.source.agents.admit(prepared!)
-      if (coordinator) this.source.agents.admit(coordinator)
+      if (coordinator) this.source.agents.admit(coordinator.prepared)
     }
     admit()
     let created = false
@@ -412,13 +414,21 @@ export class CoreTasks {
     admit()
     await this.source.browsers?.close(task.id)
     admit()
-    if (pick) {
+    // Liveness may change without changing launch, address or PID while the
+    // checkout is prepared. Only we may replace the same admitted parent.
+    if (!pilot && (!parent || this.source.agents.terminal(parent)?.state !== 'live')) {
+      if (!coordinator) {
+        coordinator = await this.prepareCoordinator(space, parent, prepared)
+      }
+      if (this.source.agents.get(space.id)?.launch !== parentLaunch) throw new Refusal('Parent identity changed during task admission')
+      this.source.agents.admit(prepared!)
+      this.source.agents.admit(coordinator.prepared)
       // Admission above still checks the old parent. Only this owned replacement
       // may release that identity; the worker captures the new parent below.
       if (prepared) prepared = { ...prepared, parent: undefined }
-      parent = await this.source.agents.launch(space, space.id, pick.kind, '', { ...pick, prepared: coordinator })
+      parent = await this.source.agents.launch(space, space.id, coordinator.pick.kind, '', { ...coordinator.pick, prepared: coordinator.prepared })
     }
-    if (guarded && parent && this.source.agents.get(space.id)?.launch !== parent.launch) throw new Refusal('Parent identity changed before worker launch')
+    if (parent && this.source.agents.get(space.id)?.launch !== parent.launch) throw new Refusal('Parent identity changed before worker launch')
     const wait = task.workflow === 'queued' ? `This task is queued after ${task.after?.join(', ')}. Read the brief, then wait for <go>. Do not start implementation yet.`
       : task.workflow === 'todo' ? 'Read the brief, then wait for the human’s go. Do not start implementation yet.'
       : task.workflow === 'ready' ? 'This task is already Ready. Preserve the work and wait for the human. Do not begin implementation or merge.' : ''
@@ -721,14 +731,18 @@ export class CoreTasks {
         if (!space) throw new Refusal('Task space is missing')
         const parent = this.source.agents.get(task.place)
         const prepared = await this.source.agents.preflight(space, task.chat, choice.kind, { deployment: task.deployment, parent: parent && this.source.agents.terminal(parent)?.state === 'live' ? parent : undefined, pilot: profile })
+        const coordinator = !profile && (!parent || this.source.agents.terminal(parent)?.state !== 'live')
+          ? await this.prepareCoordinator(space, parent, prepared) : undefined
+        if (this.source.agents.get(space.id)?.launch !== parent?.launch) throw new Refusal('Parent identity changed during task admission')
         this.source.agents.admit(prepared)
+        if (coordinator) this.source.agents.admit(coordinator.prepared)
         if (this.source.quiescing) throw new Refusal('Shepherdr is stopping')
         if (agent) await this.finishForRestart(agent)
         await this.profile(task, profile)
         await this.source.browsers?.close(task.id)
         task.kind = choice.kind; task.model = choice.model; task.effort = choice.effort; task.speed = speed
         delete task.startError; this.save(task)
-        await this.launchNow(task, task.workflow === 'working' ? 'Continue your agreed task. Preserve existing work.' : undefined, task.model, task.effort, prepared)
+        await this.launchNow(task, task.workflow === 'working' ? 'Continue your agreed task. Preserve existing work.' : undefined, task.model, task.effort, prepared, false, coordinator)
         if (action.save && !this.get(task.id)?.capacity) this.source.settings.saveAgent('task', task.place, choice)
         return { ok: true }
       case 'close': return this.closeNow(task, !!action.force)

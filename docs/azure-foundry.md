@@ -200,14 +200,21 @@ reply or application reload. These guards assume one application owner per home.
 
 ### Launch admission and recovery boundaries
 
-Configuration revisions contain settings and selection revisions, separately from
+Configuration revisions contain monotonic launch-setting counters for the target's
+space, machine and global inheritance chain, plus its selection revision. Unrelated
+space settings and display preferences do not invalidate an admitted replacement.
+Changes away and back remain detectable. These revisions are separate from
 launch identity. Recording an attempt does not invalidate its own admission.
 `CoreAgents` checks the admitted revision before claiming, recording and submitting,
 and checks the captured parent launch, terminal address and PID across asynchronous
-work. A changed revision refuses and requires fresh validation. Azure task starts
-preflight their worker and required coordinator before preparing the checkout,
-seeding includes or starting either process. Existing Personal task preparation
-and capacity holds remain unchanged.
+work, and requires a live parent immediately before dispatch. A changed revision
+refuses and requires fresh validation. Task starts preflight their worker and
+required coordinator before preparing the checkout, seeding includes or starting
+either process. Restarts perform both checks before interrupting the old worker.
+Personal defaults and capacity holds remain unchanged. A parent that finishes
+during preparation is revalidated before its owned replacement; an unrelated
+identity change refuses. Retained Azure coordinators keep their CLI, deployment,
+effort and native session even when new-start defaults change.
 
 `CoreLaunches` persists a per-chat claim and an attempt keyed by launch UUID:
 
@@ -225,6 +232,14 @@ or application callback, so settings actions in this application cannot interlea
 The socket write, not recording an agent or allocating a grant, is the external
 submission boundary. A crash after committing uncertainty but before the write
 is deliberately conservative: it remains uncertain.
+
+A local `CoreNotSubmitted` receipt is narrower than a core RPC error. The app's
+transport can prove rejection before writing when disconnected, full, or unable
+to encode the request. It has no deferred sender or retry queue for that call.
+Only that receipt releases the exact uncertain claim and revokes its new grant,
+restoring the previous conversation record. Remote error kinds, socket failures,
+timeouts and lost replies remain uncertain. This is ordinary failed-call cleanup,
+not automatic crash recovery or an inference from empty inventory.
 
 The internal `recoverUnsubmitted(chat, launch)` operation requires that exact
 persisted claim, a never-submitted attempt and an unchanged conversation identity.

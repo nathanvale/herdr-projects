@@ -109,6 +109,10 @@ export class CoreSettings {
     return pick ? names[pick] : key === 'task.fallback' ? 'off' : names[own]
   }
   revision() { return this.store.get<number>('meta', 'settings-revision') ?? 0 }
+  /** Admission follows the target's inheritance chain, not unrelated UI preferences. */
+  launchRevision(level: string) {
+    return this.chain(level).map(scope => [scope, this.store.get<number>('launch-settings-revision', scope) ?? 0])
+  }
   get(key: string, level = 'all') { return this.pick(key, level).value }
   /** Explicit refresh only; snapshots and application startup never query Azure. */
   async refreshDeployments(kind: AgentKind, level = 'all') {
@@ -182,6 +186,9 @@ export class CoreSettings {
       this.store.set('settings', `${level}\0${key}`, value)
     } else this.store.delete('settings', `${level}\0${key}`)
     this.store.set('meta', 'settings-revision', this.revision() + 1)
+    if (key === 'provider.route' || key.startsWith('azure.') || /^(task|coordinator|reviewer|backup|autopilot)\./.test(key)) {
+      this.store.set('launch-settings-revision', level, (this.store.get<number>('launch-settings-revision', level) ?? 0) + 1)
+    }
     // A response already in flight retains its old object, so it cannot repopulate this map.
     if (['azure.subscription', 'azure.claudeResource', 'azure.codexEndpoint'].includes(key)) this.deployments.clear()
     if (!this.saving) this.changed()
@@ -230,7 +237,8 @@ export class CoreSettings {
       const deployment = this.deployment(role, kind, level)
       const choices = [...state?.options ?? []]
       if (deployment && !choices.some(option => option.value === deployment)) choices.push({ value: deployment, label: `${deployment} (saved deployment)` })
-      return { kind, name: cli.name, azure: { deployment, busy: state?.busy ?? false, warn: state?.warn,
+      const catalog = this.catalog(kind, level)
+      return { kind, name: cli.name, models: [...catalog.models, ...catalog.others ?? []], azure: { deployment, busy: state?.busy ?? false, warn: state?.warn,
         options: choices.map(option => ({ ...option, efforts: this.deploymentEfforts(kind, option.value, level) })), refreshKey: `azure.${kind}Refresh` } }
     })
   }

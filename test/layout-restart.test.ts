@@ -154,7 +154,7 @@ describe.skipIf(!browser)('Azure new-start selection', () => {
   test('task and coordinator pickers save without restarting; existing conversations are locked', async () => {
     const original = world.act.bind(world), requests: import('../shared/types.ts').Action[] = []
     const place = world.snapshot().places.find(p => p.id === world.tasks.find(task => task.id === 'GTM-17')!.place)!
-    let locked = false
+    let locked = false, inventory = true
     world.act = async action => {
       requests.push(action)
       if (action.type === 'restart-info') return { ok: true, info: {
@@ -162,8 +162,8 @@ describe.skipIf(!browser)('Azure new-start selection', () => {
         on: { kind: 'claude', model: 'claude-sonnet-5-5', effort: 'high' }, onWords: 'Claude Code', working: false,
         want: { kind: 'claude', deployment: 'claude-sonnet-5-5', effort: 'high' },
         azure: { token: 'selection-version', level: place.id, locked, reason: locked ? 'Azure model selection is for new starts only.' : undefined },
-        clis: [{ kind: 'claude', name: 'Claude Code', azure: { deployment: 'claude-sonnet-5-5', busy: false, refreshKey: 'azure.claudeRefresh',
-          options: [{ value: 'claude-sonnet-5-5', label: 'Sonnet deployment', efforts: ['low', 'high'] }, { value: 'claude-haiku-5-5', label: 'Haiku deployment', efforts: ['low'] }] } }]
+        clis: [{ kind: 'claude', name: 'Claude Code', models: [{ id: 'claude-sonnet-5-5', label: 'Sonnet 5.5', efforts: ['low', 'high'] }, { id: 'claude-haiku-5-5', label: 'Haiku 5.5', efforts: ['low'] }], azure: { deployment: 'claude-sonnet-5-5', busy: false, refreshKey: 'azure.claudeRefresh',
+          options: inventory ? [{ value: 'claude-sonnet-5-5', label: 'Sonnet deployment', efforts: ['low', 'high'] }, { value: 'claude-haiku-5-5', label: 'Haiku deployment', efforts: ['low'] }] : [] } }]
       } }
       if (action.type === 'select-agent') return { ok: true }
       if (action.type === 'restart') throw Error('Azure selection must never restart')
@@ -180,7 +180,9 @@ describe.skipIf(!browser)('Azure new-start selection', () => {
           }
           await openModel()
           const sheet = page.getByRole('alertdialog', { name: 'Azure Foundry model' })
-          await sheet.getByLabel('Azure agent', { exact: true }).focus()
+          await sheet.waitFor()
+          await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Azure agent')
+          expect(await sheet.getByLabel('Azure agent', { exact: true }).evaluate(element => element === document.activeElement)).toBe(true)
           await page.keyboard.press('Tab')
           expect(await sheet.getByLabel('Azure deployment', { exact: true }).evaluate(element => element === document.activeElement)).toBe(true)
           await sheet.getByLabel('Azure deployment', { exact: true }).selectOption('claude-haiku-5-5')
@@ -191,14 +193,29 @@ describe.skipIf(!browser)('Azure new-start selection', () => {
           locked = true
           await openModel()
           await sheet.waitFor()
+          await page.waitForFunction(() => document.activeElement?.textContent === 'Cancel')
+          expect(await sheet.getByRole('button', { name: 'Cancel', exact: true }).evaluate(element => element === document.activeElement)).toBe(true)
           expect(await sheet.getByRole('button', { name: 'Save for new start' }).isDisabled()).toBe(true)
           expect(await sheet.getByLabel('Azure deployment', { exact: true }).isDisabled()).toBe(true)
           expect(await sheet.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
-          locked = false
+          await sheet.getByRole('button', { name: 'Cancel', exact: true }).click()
+          locked = false; inventory = false
+          await openModel(); await sheet.waitFor()
+          // A saved known model's effort survives without discovery inventory.
+          expect(await sheet.getByLabel('Azure effort', { exact: true }).inputValue()).toBe('high')
+          expect(await sheet.getByRole('button', { name: 'Save for new start' }).isEnabled()).toBe(true)
+          await sheet.getByLabel('Azure deployment name', { exact: true }).fill('unverified-team-alias')
+          expect(await sheet.getByLabel('Azure effort', { exact: true }).locator('option').allTextContents()).toEqual(['Default'])
+          await sheet.getByLabel('Azure deployment name', { exact: true }).fill('claude-sonnet-5-5')
+          await sheet.getByLabel('Azure effort', { exact: true }).selectOption('high')
+          await sheet.getByRole('button', { name: 'Save for new start' }).click()
+          await sheet.waitFor({ state: 'detached' })
+          expect(requests.at(-1)).toMatchObject({ type: 'select-agent', deployment: 'claude-sonnet-5-5', effort: 'high' })
+          inventory = true
         } finally { await page.close() }
       }
       expect(requests.filter(action => action.type === 'restart')).toEqual([])
-      expect(requests.filter(action => action.type === 'select-agent')).toHaveLength(2)
+      expect(requests.filter(action => action.type === 'select-agent')).toHaveLength(4)
     } finally { world.act = original }
   }, 30_000)
 })
