@@ -145,7 +145,7 @@ jobs:
             exit 1
           fi
           grep -F '(fail) coordinator connection changes' /tmp/connection-sensitivity.log
-      - name: Prove task restart rejects a stale finished parent admission
+      - name: Prove task restart rebinds only its owned coordinator replacement
         shell: bash
         run: |
           cp server/core/tasks.ts /tmp/task-parent-original.ts
@@ -154,15 +154,33 @@ jobs:
           from pathlib import Path
           path = Path('server/core/tasks.ts')
           source = path.read_text()
-          before = "parent: parent && this.source.agents.terminal(parent)?.state === 'live' ? parent : undefined, pilot: profile"
+          before = "      if (prepared) prepared = { ...prepared, parent: undefined }"
           assert source.count(before) == 1
-          path.write_text(source.replace(before, 'parent, pilot: profile'))
+          path.write_text(source.replace(before, ''))
           PYCODE
           if bun test test/core-launch-admission.test.ts --test-name-pattern 'task restart replaces a finished coordinator' > /tmp/task-parent-sensitivity.log 2>&1; then
             cat /tmp/task-parent-sensitivity.log
             exit 1
           fi
           grep -F '(fail) task restart replaces a finished coordinator' /tmp/task-parent-sensitivity.log
+      - name: Prove task selection reset preserves brief requirements
+        shell: bash
+        run: |
+          cp server/core/tasks.ts /tmp/task-selection-original.ts
+          trap 'cp /tmp/task-selection-original.ts server/core/tasks.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/tasks.ts')
+          source = path.read_text()
+          before = "if (!action.deployment.trim()) {"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'if (false) {'))
+          PYCODE
+          if bun test test/core-launch-admission.test.ts --test-name-pattern 'task selection reset restores' > /tmp/task-selection-sensitivity.log 2>&1; then
+            cat /tmp/task-selection-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) task selection reset restores' /tmp/task-selection-sensitivity.log
       - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts test/core-launch-admission.test.ts test/core-client.test.ts test/core-mailbox.test.ts test/core-launcher.test.ts test/core-operator.test.ts test/core-protected-update.test.ts test/core-commands.test.ts
       - run: bun x playwright-core install --only-shell chromium
       - run: bun test test/layout-restart.test.ts test/layout-azure-admission.test.ts

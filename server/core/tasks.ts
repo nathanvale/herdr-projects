@@ -412,7 +412,12 @@ export class CoreTasks {
     admit()
     await this.source.browsers?.close(task.id)
     admit()
-    if (pick) parent = await this.source.agents.launch(space, space.id, pick.kind, '', { ...pick, prepared: coordinator })
+    if (pick) {
+      // Admission above still checks the old parent. Only this owned replacement
+      // may release that identity; the worker captures the new parent below.
+      if (prepared) prepared = { ...prepared, parent: undefined }
+      parent = await this.source.agents.launch(space, space.id, pick.kind, '', { ...pick, prepared: coordinator })
+    }
     if (guarded && parent && this.source.agents.get(space.id)?.launch !== parent.launch) throw new Refusal('Parent identity changed before worker launch')
     const wait = task.workflow === 'queued' ? `This task is queued after ${task.after?.join(', ')}. Read the brief, then wait for <go>. Do not start implementation yet.`
       : task.workflow === 'todo' ? 'Read the brief, then wait for the human’s go. Do not start implementation yet.'
@@ -683,6 +688,13 @@ export class CoreTasks {
         this.source.store.db.transaction(() => {
           const choice = this.source.agents.saveSelection(space, task.chat, action.token, action)
           task.kind = choice.kind; task.deployment = choice.deployment; task.effort = choice.effort
+          task.model = undefined
+          if (!action.deployment.trim()) {
+            const defaults = this.source.settings.launch('task', space.id, kindOf(task.overrides?.['task.agent'] ?? ''))
+            const restored = this.source.settings.checkedAgent(space.id, { kind: defaults.kind,
+              model: task.overrides?.['task.model'] ?? defaults.model, effort: task.overrides?.['task.effort'] ?? defaults.effort })
+            task.kind = restored.kind; task.model = restored.model; task.effort = restored.effort; task.deployment = defaults.deployment
+          }
           this.save(task)
         })()
         return { ok: true }

@@ -30,7 +30,9 @@ The model line and existing agent menu open an Azure deployment selector when
 Azure is configured. For a genuinely unstarted task or coordinator, **Save for new
 start** stores the CLI, deployment and effort for that chat. It sends no prompt,
 starts no process and changes no task hold, dependency or merge policy. **Use
-configured defaults** clears that override. A waiting or stopped agent with a
+configured defaults** clears that override and restores current role defaults,
+subject to explicit CLI, model and effort requirements retained in the task brief.
+Choosing another CLI clears the previous CLI's model field. A waiting or stopped agent with a
 launch record is an existing conversation, even when its task says To do. Its
 selector is locked; this release does not switch its deployment in place.
 
@@ -56,6 +58,9 @@ Admission checks the revision again, then carries the checked plan through the
 stop/start operation. Existing Azure conversations resume their recorded deployment
 even if a new-start default changes; changing endpoint, provider or auth still
 refuses. No credential value is stored in a selection or revision token.
+If the coordinator finishes while a task restart waits for its old worker to stop,
+the application can replace that coordinator and bind the new worker to it. This
+owned replacement does not permit an unrelated parent identity change during admission.
 
 Existing per-target guards, durable unconfirmed launch records and launch-specific
 hook reconciliation remain in force. A lost start response cannot be retried as

@@ -61,18 +61,20 @@ function barrier() {
   return { wait, ready, release, reached }
 }
 
-for (const route of ['Personal', 'Azure Foundry'] as const) test(`task restart replaces a finished coordinator without stale parent admission (${route})`, () => fixture(async f => {
+for (const route of ['Personal', 'Azure Foundry'] as const) for (const timing of ['before-restart', 'during-kill'] as const) test(`task restart replaces a finished coordinator without stale parent admission (${route}, ${timing})`, () => fixture(async f => {
   f.source.settings.set('provider.route', route)
   f.source.machineConnected = () => true
   const row = task(f)
   const parent = await f.source.agents.launch(f.space, f.space.id, 'claude', 'Wait')
   const worker = await f.source.agents.launch(f.space, row.chat, 'claude', 'Wait', { role: 'task', parent })
-  f.source.agents.terminal(parent)!.state = 'finished'
+  if (timing === 'before-restart') f.source.agents.terminal(parent)!.state = 'finished'
   const oldTerminal = f.source.agents.terminal(worker)!, kills: string[] = []
   const call = f.source.core.call.bind(f.source.core)
   f.source.core.call = async <T>(method: string, params: Record<string, unknown> = {}, timeout?: number) => {
     if (method !== 'terminal.kill') return call<T>(method, params, timeout)
-    kills.push(String(params.terminal)); oldTerminal.state = 'finished'; return {} as T
+    kills.push(String(params.terminal)); oldTerminal.state = 'finished'
+    if (timing === 'during-kill') f.source.agents.terminal(parent)!.state = 'finished'
+    return {} as T
   }
   await f.source.act({ type: 'restart', chat: row.chat, kind: 'claude' })
   const reader = new CoreStore(f.source.config.home)
@@ -87,6 +89,41 @@ for (const route of ['Personal', 'Azure Foundry'] as const) test(`task restart r
     expect(f.runs[3]!.parent).toBe(newParent.terminal)
     expect(kills).toEqual([oldTerminal.address])
   } finally { reader.close() }
+}))
+
+for (const explicit of [false, true]) test(`task selection reset restores brief overrides and current role defaults (${explicit ? 'explicit' : 'inherited'})`, () => fixture(async f => {
+  const row = task(f)
+  f.source.settings.set('task.agent', 'Codex')
+  f.source.settings.set('task.azure.codexDeployment', 'team-codex')
+  f.source.settings.set('task.model', 'gpt-6.1-sol')
+  f.source.settings.set('task.effort', 'high')
+  row.kind = 'codex'; row.model = 'gpt-6.1-sol'; row.effort = 'high'; row.deployment = 'team-codex'
+  if (explicit) row.overrides = { 'task.agent': 'codex', 'task.model': 'gpt-6.1-sol', 'task.effort': 'high' }
+  f.source.store.set('task', row.id, row)
+  const select = (deployment: string) => f.source.act({ type: 'select-agent', chat: row.chat,
+    token: f.source.agents.selectionToken(row.chat), kind: 'claude', deployment, effort: 'high' })
+  await select('claude-sonnet-5-5')
+  expect(f.source.tasks.get(row.id)).toMatchObject({ kind: 'claude', deployment: 'claude-sonnet-5-5', effort: 'high' })
+  expect(f.source.tasks.get(row.id)?.model).toBeUndefined()
+  // Defaults can change while a per-task selection is saved. Explicit brief
+  // requirements win on reset; otherwise use the newly configured role.
+  f.source.settings.set('task.agent', 'Claude Code')
+  f.source.settings.set('task.model', 'claude-sonnet-5-5')
+  f.source.settings.set('task.effort', 'low')
+  f.source.settings.set('task.azure.claudeDeployment', 'team-claude')
+  await select('')
+  const reader = new CoreStore(f.source.config.home)
+  try {
+    expect(reader.get<CoreTask>('task', row.id)).toMatchObject({
+      kind: explicit ? 'codex' : 'claude', model: explicit ? 'gpt-6.1-sol' : 'claude-sonnet-5-5',
+      effort: explicit ? 'high' : 'low', deployment: explicit ? 'team-codex' : 'team-claude',
+      desc: row.desc, after: ['EX-0'], mergePolicy: 'ask', workflow: 'todo',
+    })
+    expect(reader.get<CoreTask>('task', row.id)?.overrides).toEqual(row.overrides)
+    expect(reader.get('agent-selection', row.chat)).toBeUndefined()
+    expect(reader.all('agent')).toEqual([]); expect(reader.all('launch-attempt')).toEqual([])
+  } finally { reader.close() }
+  expect(f.runs).toEqual([]); expect(f.effects).toEqual([]); expect(f.source.mailbox.active()).toEqual([])
 }))
 
 for (const change of ['settings', 'selection'] as const) test(`launch admission refuses ${change} changed after admission`, () => fixture(async f => {
