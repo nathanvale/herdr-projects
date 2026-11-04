@@ -38,3 +38,11 @@ jobs:
           grep -F '(fail) Personal codex launches' /tmp/provider-sensitivity.log
       # Protocol fakes only: no native coding agents, credentials, or model requests.
       - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts
+      - run: bun run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: foundry-preview-assets
+          path: |
+            dist/
+            generated/
+          retention-days: 3
