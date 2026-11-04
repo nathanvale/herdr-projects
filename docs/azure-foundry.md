@@ -476,3 +476,19 @@ even when all worker PIDs match. A lost reply must reconcile the same launch; it
 must not spend the remaining budget on blind retries. Keep raw receipts private.
 Do not call native acceptance complete from the prototype, protocol fakes, green
 CI, a saved deployment label or an earlier candidate's canary.
+
+
+## Late native hook readiness
+
+Complete the native folder and generated-hook trust review before the first turn
+when possible. Codex can finish a first turn while SessionStart was missed during
+that review. A later SessionEnd may provide its genuine session and transcript.
+For a confirmed clean process exit, Shepherdr captures that transcript before
+classifying startup. A completed current-launch turn settles the stopped
+conversation without a false startup failure or another model request.
+Incomplete, unreadable or historical capture stays unconfirmed. Nonzero exits
+and captured native errors retain failure handling. Launch, grant, terminal
+address/PID/creation and shutdown state are rechecked after the asynchronous read.
+This does not infer non-submission or authorize a retry. The source repair has
+regressions; the earlier bounded native run reproduced the warning before this
+repair and does not qualify its installed behavior.
