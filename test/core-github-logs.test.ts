@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { failureLogTail } from '../server/core/github-logs.ts'
+import { failureLogTail } from '../server/core/forge/github-logs.ts'
 import type { CoreGit } from '../server/core/git.ts'
 const repo = { machine: 'machine', folder: '/scratch' }
 const jobs = { total_count: 1, jobs: [{ id: 9, name: 'Build', status: 'completed', conclusion: 'failure' }] }
