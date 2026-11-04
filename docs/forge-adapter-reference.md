@@ -6,6 +6,8 @@ This page is not a setup guide or a claim of native acceptance.
 
 The [execution contract](forge-adapters.md) owns delivery scope and task order.
 The [transport decision](adr/0002-bitbucket-rest-transport.md) explains the direct REST design.
+The [authentication and execution design](forge-bitbucket-transport.md) specifies the proposed host helper and host-managed authentication.
+The [glossary](../GLOSSARY.md) defines the shared vocabulary. The [review map](forge-review-map.md) connects those terms to source and qualification limits.
 
 ## Module ownership
 
@@ -60,7 +62,7 @@ These are the current interface names. The guarantees below are required for eac
 
 The approved scope is Bitbucket Cloud at `https://api.bitbucket.org/2.0`.
 Bitbucket Server, Data Center, and arbitrary API base URLs are outside this change.
-REST transport ships with Shepherdr. It has no runtime dependency on the private `bb` CLI.
+REST transport ships with Shepherdr. It requires no additional provider CLI.
 
 Repository identity comes from the admitted Git origin and provider response.
 The transport validates the scheme, host, port, path, and repository context before sending credentials.
@@ -68,22 +70,23 @@ Redirects and pagination links receive the same checks. A response URL cannot wi
 
 Requests execute within the admitted machine and containment boundary.
 An unsupported route refuses before network writes or worktree preparation.
-The exact supported helper and credential-delivery mechanism remain implementation decisions, not installed capabilities.
+The proposed host helper and Git credential lookup are specified in the authentication and execution design. They remain unimplemented.
 
 ### Authentication
 
-Atlassian documents Basic authentication with an Atlassian account email and API token.
-It also documents OAuth and repository, project, and workspace access tokens.
+The proposed host helper obtains a token through Git's existing credential interface and uses Bearer authentication.
+Atlassian documents Bearer support for API tokens, access tokens, and OAuth access tokens.
 The [authentication documentation](https://developer.atlassian.com/cloud/bitbucket/rest/intro/#authentication-methods) defines provider credentials.
-The [API token guide](https://support.atlassian.com/bitbucket-cloud/docs/using-api-tokens/) describes the email and token combination.
+The [API token guide](https://support.atlassian.com/bitbucket-cloud/docs/using-api-tokens/) documents API-token Bearer authentication.
+A credential that works for Git still requires REST compatibility and the permissions needed by the requested operation.
 
-Shepherdr's configuration stores credential references, not token values.
+Shepherdr adds no Bitbucket authentication settings or credential store. The proposed helper uses the execution host's existing Git credential owner.
 Credential values stay out of task records, PR bodies, command arguments, errors, logs, and browser snapshots.
 The existing [secret-access contract](secrets.md) remains authoritative.
 Its agent mailbox does not automatically grant a background observer access to credentials.
 
 The extension has no required account, workspace name, 1Password item, or operating-system keychain entry.
-No authentication setting or environment-variable name is documented as available until implementation establishes that contract.
+GitHub continues to use gh authentication. Bitbucket uses a host Git credential helper because gh does not authenticate to Bitbucket.
 
 ### Pagination and bounded reads
 
@@ -114,11 +117,12 @@ Cleanup does not repeat integration. Remote source-branch deletion remains outsi
 
 GitHub keeps its existing gh authentication and command execution route.
 Legacy PR records, exact-commit approval, task holds, conversations, and lifecycle hooks remain compatibility requirements.
-Adding Bitbucket does not change Azure settings or the running preview.
+Adding Bitbucket preserves existing provider settings and running installations.
 
 The current candidate exposes the shared interface and GitHub implementation.
 Bitbucket transport, authentication setup, and native acceptance are not complete.
-The Enterprise-host presentation repair still needs admission before dependent work proceeds.
+The Enterprise-host presentation repair passed bounded source review and local typecheck.
+Its source checkpoint is `9194764e7957d310e06d64be4c3c4ca3e0746f53`. CI and dependent-task admission remain separate.
 
 The acceptance boundary covers public task commands and observer behavior, not only HTTP helper tests.
 Required cases include cross-repository responses, changed heads, incomplete pages, lost replies, credential redaction, and unsupported execution routes.
