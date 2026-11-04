@@ -486,6 +486,8 @@ test('task selector supplies known model effort metadata without discovery', () 
 // Production send entry -> launch -> persisted receipt -> real native reader.
 // Only the existing core/worktree adapters are fake; no coding CLI is executed.
 async function deliveryStart(f: ReturnType<typeof setup>, kind: 'claude' | 'codex', role: 'coordinator' | 'task', resume: boolean) {
+  f.source.machineConnected = () => true
+  f.source.store.set('health-sample', f.space.machine, { at: Date.now(), cores: 8, load: 1, memTotal: 1000, memUsed: 400, disks: [], gpus: [] })
   const row = role === 'task' ? task(f) : undefined
   if (row) {
     row.kind = kind; row.deployment = kind === 'claude' ? 'claude-sonnet-5-5' : 'gpt-6.1-sol'; row.workflow = 'working'
@@ -508,7 +510,7 @@ async function sendDelivery(f: ReturnType<typeof setup>, chat: string) {
     if (item?.state === 'uncertain' || item?.submission && f.source.agents.get(chat)?.terminal) return
     await Bun.sleep(5)
   }
-  throw Error('The production send did not reach submission')
+  throw Error('The production send did not reach submission: ' + JSON.stringify({ pending: f.source.store.get('pending-send', 'delivery-proof'), task: f.source.tasks.forChat(chat) }))
 }
 function deliveryLog(f: ReturnType<typeof setup>, chat: string) {
   const agent = f.source.agents.get(chat)!, path = join(f.source.config.home, 'delivery-native.jsonl')
@@ -591,24 +593,30 @@ for (const kind of ['claude', 'codex'] as const) for (const role of ['coordinato
 for (const kind of ['claude', 'codex'] as const) test(`launch delivery is not resurrected by a late lost reply (${kind})`, () => fixture(async f => {
   f.source.settings.set('provider.route', 'Personal')
   const { chat } = await deliveryStart(f, kind, 'coordinator', true)
-  const call = f.source.core.call.bind(f.source.core)
+  const call = f.source.core.call.bind(f.source.core), observed = barrier()
   f.source.core.call = async <T>(method: string, params: Record<string, unknown> = {}, timeout?: number) => {
     const result = await call<T>(method, params, timeout)
     if (method === 'terminal.run') {
       const log = deliveryLog(f, chat)
       try { await log.observe((params.argv as string[]).at(-1)!) } finally { log.logs.stop() }
+      observed.reached(); await observed.wait
       throw Error('Reply lost after the native log acknowledged')
     }
     return result
   }
-  await f.source.act({ type: 'send', chat, text: 'Continue with the same choice', cid: 'delivery-proof' })
+  const sending = f.source.act({ type: 'send', chat, text: 'Continue with the same choice', cid: 'delivery-proof' })
+  await observed.ready
   const reader = new CoreStore(f.source.config.home)
   try {
+    expect(reader.get('pending-send', 'delivery-proof')).toBeUndefined()
+    observed.release(); await sending
+    for (let n = 0; n < 200 && f.source.updateBusy(); n++) await Bun.sleep(5)
+    expect(f.source.updateBusy()).toBe(false)
     expect(reader.get('pending-send', 'delivery-proof')).toBeUndefined()
     expect(reader.get(`message:${chat}`, 'delivery-proof')).toMatchObject({ waiting: false, source: expect.any(String) })
     expect(f.source.agents.get(chat)?.provider?.route).toBe('personal')
     expect(f.runs).toHaveLength(2)
-  } finally { reader.close() }
+  } finally { observed.release(); reader.close() }
 }))
 
 for (const reason of ['queued', 'cancelled', 'replacement-launch', 'legacy-without-receipt'] as const) {
