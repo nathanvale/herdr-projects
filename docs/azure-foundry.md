@@ -172,8 +172,21 @@ Codex 0.166.0 Azure `gpt-6.1-sol` High first turn and resume in the same native
 session, with SessionStart, UserPromptSubmit and Stop hook evidence. Both disposable
 terminals were stopped. The native UI displayed both replies and the Azure Foundry
 label. The stock application's process/boot identity and core inventory remained
-unchanged across that canary. No Claude Azure runtime, token expiry, remote execution
-or additional cloud is qualified by this proof. No live installation was replaced.
+unchanged across that canary.
+
+A separate authorized Claude Code 2.1.318 canary then completed an Entra ID
+`claude-sonnet-5-5` High first reply and same-native-session resume through the
+actual Shepherdr UI. Native `/status` identified Microsoft Foundry and the configured
+resource. Both launches emitted SessionStart, UserPromptSubmit and Stop hooks;
+the transcript contained both expected replies and zero tool calls. Both canary
+terminals were stopped, its repository stayed clean, and the existing Codex session,
+prior terminal inventory and stock application identity were unchanged.
+
+This qualifies those exact two routes and CLI versions. Claude API-key and supplied
+bearer-token execution, token expiry, remote execution and additional clouds remain
+unqualified. No live installation was replaced. An unrelated Monash catalogue refresh
+reported missing configured deployments; the exact Claude target was independently
+verified through Azure's deployment API before the successful native test.
 
 For an unused candidate, reset Provider to Personal (and any machine/space
 overrides), then stop only that candidate. The CLI homes and shared configuration
