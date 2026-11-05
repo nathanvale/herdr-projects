@@ -40,20 +40,19 @@ def remote_of(main):
     return "origin" if "origin" in names else (names[0] if names else "origin")
 
 
-def pr_open(s, task, repo, summary=None):
+def pr_open(s, task, repo, summary=None, current=None):
     """Pushes the task's branch and opens its pull request (or keeps the open one, also one opened
-    by hand or by its agent for the branch: SHEP-13's "already exists")."""
+    by hand or by its agent for the branch: SHEP-13's "already exists"). current: its saved one as
+    the forge read it and found it is this task's (None: none saved)."""
     wt, br = task["worktree"], task["branch"]
     ok, _, err = git(wt, "push", "--force-with-lease", "-u", remote_of(s.loc["folder"]), br)
     if not ok:
         raise Fail(f"Couldn't push {br}: {err}")
     pr = task.get("pr") or {}
-    if pr.get("number"):
-        ok, out, _ = gh("pr", "view", str(pr["number"]), "--repo", repo, "--json", "state", "-q", ".state")
-        if ok and out == "OPEN":
-            if summary:
-                gh("pr", "comment", str(pr["number"]), "--repo", repo, "--body", summary)
-            return pr
+    if current and current.get("state") == "OPEN":
+        if summary:
+            gh("pr", "comment", str(pr["number"]), "--repo", repo, "--body", summary)
+        return pr
     if pr_adopt(task, repo):
         if summary:
             gh("pr", "comment", str(task["pr"]["number"]), "--repo", repo, "--body", summary)
@@ -80,7 +79,7 @@ def pr_adopt(task, repo):
                     "--json", "number,url,isCrossRepository,baseRefName,headRefOid")
     tip_ok, tip, _ = git(task["worktree"], "rev-parse", task["branch"])
     try:
-        found = next((p for p in json.loads(out) if not p.get("isCrossRepository")
+        found = next((p for p in json.loads(out) if not p.get("isCrossRepository") and answered_in(p, repo)
                       and p.get("baseRefName") == (task.get("base") or "main")
                       and tip_ok and tip and p.get("headRefOid") == tip), None) if ok and out else None
     except (ValueError, TypeError, AttributeError):
@@ -112,6 +111,12 @@ def pr_identity(v):
     url = str(v.get("url") or "")
     m = re.fullmatch(r"https?://([^/]+)/([^/]+/[^/]+)/pull/(\d+)/?", url)
     return {"provider": "github", "host": m.group(1).lower(), "repo": m.group(2), "number": int(m.group(3)), "url": url} if m else None
+
+
+def answered_in(p, repo):
+    """GitHub's answer is that pull request in `repo`, by its own link."""
+    i = pr_identity(p)
+    return bool(i) and i["repo"] == repo and i["number"] == p.get("number")
 
 
 def pr_is_merged(v):

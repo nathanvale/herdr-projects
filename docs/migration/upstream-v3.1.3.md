@@ -50,7 +50,9 @@ owners, not implemented interfaces.
 `bin/check-migration` names each phase's admitted owner paths; the manifest's
 `source_deltas` pins each one's content hash and exact-U blob. Every other U path
 remains byte-identical. A phase cannot widen its owners, drift its content or
-roll back over its changes.
+roll back over its changes. Every path a commit could hold (tracked, or untracked
+and not ignored) must be U's, one of S0's named foundation additions or an
+admitted owner: a new source file outside them fails whatever the manifest lists.
 
 - `T/forge.py` is the single route from commands, tick and the Accept card to a
   task's pull request. `T/github.py` remains the GitHub adapter and transport.
@@ -62,11 +64,18 @@ roll back over its changes.
   refused before merge, comment or completion. This includes a renamed or
   transferred repository, as P requires.
 - Publication refuses before pushing when the saved record belongs to another
-  provider or repository than the folder's discovered one.
-- Regression: `test/test_forge.py` runs public `herdr-task merge` as a CI-only
-  process over a real repository, a recording `gh` and a reopened task list. Only
-  `merge` avoids `hc`, which the guard refuses in a throwaway HOME. Existing
-  `test_herdr_task.py` assertions are unchanged; three patch points moved to the seam.
+  provider or repository than the folder's discovered one. A saved pull request
+  is read and its answered identity confirmed before any push or comment; no
+  answer, or one for another link, host, repository or number, refuses with
+  nothing pushed. A record saved for another host never routes to the default
+  one. Adoption takes only a listed pull request whose own link is in the
+  folder's repository.
+- Regression: `test/test_forge.py` runs public `herdr-task merge` and
+  `herdr-task review --pass` (the `hc`-free route to the same `finalize()` as
+  `ready`) as CI-only processes over a real repository and origin, a recording
+  `gh` and a reopened task list. The guard refuses `hc` in a throwaway HOME.
+  Existing `test_herdr_task.py` assertions are unchanged; three patch points moved
+  to the seam, and the merge fake answers only `gh pr merge`.
 - Remaining for B1/B2: read-only presentation in `service/worktree.ts` and
   `mods/task-pr/main.js` still sends saved `repo` to `gh`; GitHub news (`T/ghnews.py`)
   stays GitHub-only; host-qualified GitHub transport is not added.

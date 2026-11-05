@@ -54,13 +54,24 @@ def repository(s):
 
 
 def pr_open(s, task, where, summary=None):
-    """Publishes the task's branch as its pull request in `where`; refused before any push when its
-    saved one is another provider's or another repository's."""
-    saved = task.get("pr")
-    if saved and (provider_of(saved) != provider_of(where) or saved.get("repo") not in (None, where["repo"])):
+    """Publishes the task's branch as its pull request in `where`. A saved one is read first and kept
+    only when its forge answers for exactly it; refused before any push or comment when it is another
+    provider's or repository's, its forge doesn't answer, or answers for another pull request (one
+    saved for another host never reaches this one's)."""
+    saved, current = task.get("pr"), None
+    if saved:
         mine = saved.get("url") or f"#{saved.get('number')} in {saved.get('repo')}"
-        raise Fail(f"This task's pull request {mine} isn't in {where['repo']}, this folder's repository; nothing was pushed.")
-    return adapter_of(where).pr_open(s, task, where["repo"], summary)
+        if provider_of(saved) != provider_of(where) or saved.get("repo") not in (None, where["repo"]):
+            raise Fail(f"This task's pull request {mine} isn't in {where['repo']}, this folder's repository; nothing was pushed.")
+    if saved and saved.get("number"):
+        a, known = adapter_of(saved), {**saved, "repo": saved.get("repo") or where["repo"]}
+        current = a.pr_view({**task, "pr": known})
+        if not current:
+            raise Fail(f"{a.NAME} didn't answer for this task's pull request {mine}; nothing was pushed.")
+        why = mismatch(known, a.pr_identity(current), a.NAME)
+        if why:
+            raise Fail(why)
+    return adapter_of(where).pr_open(s, task, where["repo"], summary, current)
 
 
 def pr_adopt(task, where):

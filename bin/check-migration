@@ -25,6 +25,15 @@ missing-history launch-uncertainty late-sender-fence one-revival-owner manual-re
 delivery-retries task-lifecycle-holds screen-reconnect protected-update
 plugin-state-compatibility fork-ci-obligations matching-state-rollback'''.split())
 OVERRIDES = {'AGENTS.md', 'docs/develop.md', '.github/workflows/check.yml'}
+# The paths the reviewed S0 foundation adds beyond exact U: this gate, the migration contract and
+# reference material. With U's own paths and each phase's owners, the only paths a checkout may hold.
+FOUNDATION = frozenset('''CODING_STANDARDS.md GLOSSARY.md bin/check-migration
+docs/adr/0001-protected-preview-update-admission.md docs/adr/0002-bitbucket-rest-transport.md
+docs/adr/0003-operator-boot-fenced-launch-recovery.md docs/agents/README.md docs/agents/domain.md
+docs/agents/issue-tracker.md docs/agents/triage-labels.md docs/azure-foundry.md docs/core/launch-recovery.md
+docs/forge-adapter-reference.md docs/forge-adapters.md docs/forge-bitbucket-transport.md docs/forge-review-map.md
+docs/migration/upstream-v3.1.3-files.json docs/migration/upstream-v3.1.3.json docs/migration/upstream-v3.1.3.md
+test/test_migration.py'''.split())
 # Reviewed source phases, in order, and the owner paths each may change. The manifest pins each
 # admitted path's content; this table, not the manifest, decides what a phase may touch.
 PHASES = {
@@ -141,6 +150,13 @@ def validate_foundation(deltas):
     actual_hc = {path.relative_to(ROOT).as_posix() for path in (ROOT / 'service/hc').rglob('*') if path.is_file()}
     if actual_hc != expected_hc:
         raise ValueError('Old product modules were relocated into native core transport')
+    # Every path a commit here could hold (tracked, or new and not ignored): U's, the foundation's or
+    # an admitted owner's. A new source file nobody admitted fails, whatever the manifest lists.
+    held = set(git('ls-files', '-z', '--cached', '--others', '--exclude-standard').decode().split('\0')) - {''}
+    allowed = {line.split('\t')[1] for line in files} | FOUNDATION | set(deltas)
+    unadmitted = sorted(held - allowed)
+    if unadmitted:
+        raise ValueError('Source path outside the foundation and its admitted phase owners: ' + ', '.join(unadmitted))
     return len(files)
 
 

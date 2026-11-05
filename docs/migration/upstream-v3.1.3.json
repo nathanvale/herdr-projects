@@ -26,13 +26,13 @@
       "phase": "S1",
       "path": "mods/tasks/bin/herdr_task/forge.py",
       "upstream_blob": null,
-      "sha256": "d920d2be3cd0ece72aca5dce2f0098ca563ddbdf29ee20f21dd1c87f9eec9379"
+      "sha256": "1800c1800b249e208bcb57d631b8a1accfdef853d30ec4d0f2eafe11f6247acf"
     },
     {
       "phase": "S1",
       "path": "mods/tasks/bin/herdr_task/github.py",
       "upstream_blob": "b80f7cc5e44d62e1b0d587222c5bfbadc951f708",
-      "sha256": "3d1eabee39c986e2413dbf5d4929922838ef73cd518f6db69bb70e98d34e7047"
+      "sha256": "992b6250c61c89f060f17bd0b1ad95ef6efa543bb8bd281eac5880a48b055453"
     },
     {
       "phase": "S1",
@@ -50,7 +50,7 @@
       "phase": "S1",
       "path": "test/test_forge.py",
       "upstream_blob": null,
-      "sha256": "1c1b699f04559305327033ab6debec9eacd9d2ec2df9d1791930a1a86c46dfbb"
+      "sha256": "44067f827d008d6dc1facc7e14e9ecacdeec093cb1e5fd73ab3060023b7acead"
     },
     {
       "phase": "S1",

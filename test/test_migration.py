@@ -12,11 +12,11 @@ INVENTORY = ROOT / 'docs/migration/upstream-v3.1.3-files.json'
 
 
 class SourceCheckpoint(unittest.TestCase):
-    def run_check(self, *args):
+    def run_check(self, *args, root=ROOT):
         env = {key: value for key, value in os.environ.items()
                if not key.startswith(('SHEPHERDR_', 'ANTHROPIC_', 'CLAUDE_', 'AZURE_', 'OPENAI_'))}
-        result = subprocess.run([sys.executable, str(ROOT / 'bin/check-migration'), *map(str, args)],
-                                cwd=ROOT, env=env, capture_output=True, text=True, timeout=60)
+        result = subprocess.run([sys.executable, str(root / 'bin/check-migration'), *map(str, args)],
+                                cwd=root, env=env, capture_output=True, text=True, timeout=60)
         return result, json.loads(result.stdout)
 
     def fixture(self, source, mutate, flag):
@@ -94,3 +94,20 @@ class SourceCheckpoint(unittest.TestCase):
         result, observed = self.fixture(MANIFEST, rewrite, '--manifest')
         self.assertEqual(result.returncode, 1)
         self.assertIn('upstream provenance changed at mods/tasks/bin/herdr_task/github.py', observed['error'])
+
+    def test_an_unadmitted_source_file_cannot_join_the_phase(self):
+        """This commit checked out again (sharing this repository's objects, so F/U/P/B are there), then
+        a new adapter nobody admitted dropped into the native source: no manifest row changes."""
+        head = subprocess.run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
+        with tempfile.TemporaryDirectory() as folder:
+            clone = Path(folder) / 'checkout'
+            subprocess.run(['git', 'clone', '--quiet', '--shared', '--no-checkout', str(ROOT), str(clone)], capture_output=True, check=True)
+            subprocess.run(['git', '-C', str(clone), 'checkout', '--quiet', '--detach', head], capture_output=True, check=True)
+            result, observed = self.run_check(root=clone)
+            self.assertEqual(result.returncode, 0, result.stdout)  # the same checkout passes without it
+            (clone / 'mods/tasks/bin/herdr_task/bitbucket.py').write_text('"""An adapter no phase admitted."""\n')
+            result, observed = self.run_check(root=clone)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(observed['candidate_readiness'], 'blocked')
+        self.assertEqual(observed['error'], 'Source path outside the foundation and its admitted phase owners: '
+                                            'mods/tasks/bin/herdr_task/bitbucket.py')

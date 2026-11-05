@@ -1,12 +1,16 @@
-"""The forge seam through the public command: `herdr-task merge` as its own process, in a throwaway
-HOME and store, with a real Git repository, its origin and the task's worktree, and a recording
-stand-in for gh (HERDR_TASK_GH). hc is never reachable here (base.guard refuses it in this HOME).
+"""The forge seam through the public commands, each as its own process, in a throwaway HOME and
+store, with a real Git repository, its origin and the task's worktree, and a recording stand-in for
+gh (HERDR_TASK_GH). hc is never reachable here (base.guard refuses it in this HOME), so publication
+is driven by `herdr-task review --pass`: the hc-free command that reaches the same finalize() as
+`ready` (ready asks hc for its agents first). Merging is driven by `herdr-task merge`.
 
-Oracle: the gh argv this file writes out, and the task list reopened from disk after the process
-ends. Wrong implementations these catch: sending every saved pull request to GitHub whatever its
-provider (gh is called for the Bitbucket one); trusting `--repo` without checking which pull request
-GitHub answered for (a merge goes to another repository's or host's); qualifying or dropping legacy
-records (the saved record changes, or the unqualified one is refused).
+Oracle: the gh argv this file writes out, the origin's branches, and the task list reopened from
+disk after the process ends. Wrong implementations these catch: sending every saved pull request to
+GitHub whatever its provider (gh is called for the Bitbucket one); trusting `--repo` without
+checking which pull request GitHub answered for (a merge, push or comment goes to another
+repository's or host's); pushing before the saved one is confirmed; adopting another repository's
+pull request; qualifying or dropping legacy records (the saved record changes, or the unqualified
+one is refused).
 
 Runs only on CI, as test_herdr_task's command tests: herdr-task never runs with a changed HOME on
 a person's machine."""
@@ -24,6 +28,10 @@ CI = os.environ.get("CI") == "true"
 
 LEGACY = {"number": 7, "url": "https://github.com/o/r/pull/7", "repo": "o/r"}
 VIEW = ["pr", "view", "7", "--repo", "o/r", "--json", "state,mergeable,headRefOid,statusCheckRollup,mergeCommit,url"]
+REPO = ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"]
+LIST = ["pr", "list", "--repo", "o/r", "--head", "task/1", "--state", "open", "--json", "number,url,isCrossRepository,baseRefName,headRefOid"]
+COMMENT = ["pr", "comment", "7", "--repo", "o/r", "--body", "Done."]
+FOREIGN_HOST = {"provider": "github", "host": "github.example.com", "repo": "o/r", "number": 7, "url": "https://github.example.com/o/r/pull/7"}
 FAKE_GH = """#!{python}
 import json, os, sys
 with open(os.environ["FAKE_GH_LOG"], "a") as f:
@@ -37,8 +45,7 @@ print(reply if isinstance(reply, str) else json.dumps(reply))
 """
 
 
-@unittest.skipUnless(CI, "runs only on CI: herdr-task never runs with a changed HOME on a person's machine")
-class MergeThroughTheForge(unittest.TestCase):
+class Fixture(unittest.TestCase):
     def setUp(self):
         self.root = os.path.realpath(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
@@ -76,18 +83,18 @@ class MergeThroughTheForge(unittest.TestCase):
     def view(self, url="https://github.com/o/r/pull/7", checks=({"name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"},)):
         return {"state": "OPEN", "mergeable": "MERGEABLE", "headRefOid": self.tip, "statusCheckRollup": list(checks), "url": url}
 
-    def merge(self, pr, view):
-        """`herdr-task merge FRG-1 --json` on a Ready task saved with `pr`, gh answering `view`:
+    def run_task(self, command, task, scene):
+        """`herdr-task <command> FRG-1 --json` on `task` as saved, gh answering `scene` ("pr view": ...):
         (exit code, its JSON, gh's argv lists, the task as saved afterwards, the list saved)."""
         os.makedirs(self.store, exist_ok=True)
-        task = {"id": 1, "title": "Forge seam", "state": "ready", "mode": "worktree", "worktree": self.wt,
-                "branch": "task/1", "base": "main", "start": self.start, "head": self.tip, "agents": [], "pr": pr}
+        task = {"id": 1, "title": "Forge seam", "mode": "worktree", "worktree": self.wt, "branch": "task/1",
+                "base": "main", "start": self.start, "head": self.tip, "agents": [], **task}
         with open(os.path.join(self.store, "repo.json"), "w") as f:
             json.dump({"version": 1, "folder": self.repo, "kind": "repo", "name": "repo", "slug": "repo",
                        "prefix": "FRG", "next": 2, "tasks": [task]}, f)
         with open(self.scene, "w") as f:
-            json.dump({"pr view": view, "pr merge": ""}, f)
-        p = subprocess.run([sys.executable, os.path.join(BIN, "herdr-task"), "merge", "FRG-1", "--folder", self.repo, "--json"],
+            json.dump(scene, f)
+        p = subprocess.run([sys.executable, os.path.join(BIN, "herdr-task"), *command, "FRG-1", "--folder", self.repo, "--json"],
                            capture_output=True, text=True, env=self.env, timeout=60)
         calls = []
         if os.path.exists(self.log):
@@ -97,6 +104,13 @@ class MergeThroughTheForge(unittest.TestCase):
             saved = json.load(f)
         self.assertTrue(p.stdout.strip(), p.stderr)
         return p.returncode, json.loads(p.stdout), calls, saved["tasks"][0], saved
+
+
+@unittest.skipUnless(CI, "runs only on CI: herdr-task never runs with a changed HOME on a person's machine")
+class MergeThroughTheForge(Fixture):
+    def merge(self, pr, view):
+        """`herdr-task merge` on a Ready task saved with `pr`, gh answering `view`."""
+        return self.run_task(["merge"], {"state": "ready", "pr": pr}, {"pr view": view, "pr merge": ""})
 
     def merge_call(self):
         return ["pr", "merge", "7", "--repo", "o/r", "--squash", "--delete-branch", "--match-head-commit", self.tip]
@@ -168,6 +182,64 @@ class MergeThroughTheForge(unittest.TestCase):
         self.assertEqual(calls, [VIEW])
         self.assertIn("nothing was changed", out["error"])
         self.assert_untouched(saved, calls)
+
+
+@unittest.skipUnless(CI, "runs only on CI: herdr-task never runs with a changed HOME on a person's machine")
+class PublishThroughTheForge(Fixture):
+    """A reviewed task's publication: its branch pushed and its pull request kept, adopted or refused."""
+
+    def publish(self, pr=None, view=None, listed=()):
+        """`herdr-task review --pass` on a working task (saved with `pr`, if any) whose summary is "Done.":
+        GitHub knows this folder as o/r, answers `view` for the saved one and lists `listed` for its branch."""
+        task = {"state": "running", "summary": "Done.", **({"pr": pr} if pr else {})}
+        return self.run_task(["review", "--pass"], task, {"repo view": "o/r", "pr view": view, "pr list": list(listed), "pr comment": ""})
+
+    def pushed(self):
+        """The task branch's tip on the origin, or None when nothing was pushed."""
+        p = subprocess.run(["git", "-C", self.repo, "ls-remote", "--heads", "origin", "task/1"], capture_output=True, text=True, check=True)
+        return p.stdout.split()[0] if p.stdout.strip() else None
+
+    def listed(self, url="https://github.com/o/r/pull/7"):
+        return {"number": 7, "url": url, "isCrossRepository": False, "baseRefName": "main", "headRefOid": self.tip}
+
+    def assert_refused(self, code, calls, saved, pr):
+        self.assertEqual(code, 0)  # ready all the same; the person is told why it wasn't published
+        self.assertEqual(calls, [REPO, VIEW])  # read only: no comment, no new pull request
+        self.assertIsNone(self.pushed())
+        self.assertEqual(saved["pr"], pr)
+        self.assertIn("nothing was changed", saved["attention"])
+
+    def test_its_open_pull_request_is_kept_and_told(self):
+        code, out, calls, saved, _ = self.publish(dict(LEGACY), self.view())
+        self.assertEqual(code, 0, out)
+        self.assertEqual(calls, [REPO, VIEW, COMMENT])
+        self.assertEqual(self.pushed(), self.tip)
+        self.assertEqual((saved["state"], saved["pr"]), ("ready", {**LEGACY, "checked": 0}))
+        self.assertNotIn("attention", saved)
+
+    def test_an_open_one_for_its_branch_is_adopted(self):
+        code, out, calls, saved, _ = self.publish(listed=[self.listed()])
+        self.assertEqual(code, 0, out)
+        self.assertEqual(calls, [REPO, LIST, COMMENT])
+        self.assertEqual(self.pushed(), self.tip)
+        self.assertEqual(saved["pr"], {**LEGACY, "checked": 0})  # recorded as before: unqualified, GitHub's
+
+    def test_another_repositorys_pull_request_is_never_adopted(self):
+        code, out, calls, saved, _ = self.publish(listed=[self.listed("https://github.com/o/fork/pull/7")])
+        self.assertEqual(code, 0, out)
+        self.assertEqual(calls[:2], [REPO, LIST])
+        self.assertEqual([c[:2] for c in calls[2:]], [["pr", "create"]])  # opening one is tried instead
+        self.assertNotIn("pr", saved)
+        self.assertIn("Couldn't open a pull request", saved["attention"])
+
+    def test_one_saved_for_another_host_is_never_published_on_this_one(self):
+        code, _, calls, saved, _ = self.publish(dict(FOREIGN_HOST), self.view())
+        self.assert_refused(code, calls, saved, FOREIGN_HOST)
+
+    def test_github_answering_for_another_repository_publishes_nothing(self):
+        code, _, calls, saved, _ = self.publish(dict(LEGACY), self.view("https://github.com/o/fork/pull/7"))
+        self.assert_refused(code, calls, saved, LEGACY)
+        self.assertIn("not this task's pull request https://github.com/o/r/pull/7", saved["attention"])
 
 
 if __name__ == "__main__":
