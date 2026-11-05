@@ -1,0 +1,294 @@
+{
+  "task": "FORG-2",
+  "head": "d83ca8fe47f524c28d7d7d59d9971cc3a27e28e1",
+  "tree": "08afe585868f426b10c4aa86b43d13cca2eb94e5",
+  "parent": "95dc488190581a3a8696d126f12d7b8d66626ddb",
+  "branch": "work/2-bitbucket-prs-and-checks",
+  "worker_checkout": "/Users/server/.local/state/shepherdr-forge-work/20261104/app/worktrees/forge-adapters/work-2-bitbucket-prs-and-checks",
+  "native_session": "01a1a5f6-6707-7391-885e-7de63d7df11d",
+  "state": "LOCAL_COMMITTED_CLEAN; ROOT_REVIEW_AND_CI_PENDING; NO_PUBLICATION",
+  "authorized_repair": "/Users/server/.local/state/shepherdr-forge-work/20261104/checkpoints/FORG-2/95dc488190581a3a8696d126f12d7b8d66626ddb/coordinator-payload-preflight-repair.md",
+  "native_route": "Existing coordinator-verified Azure gpt-6.1-sol High native Fast/priority, fallback off reused. No provider/model/account/settings/worker discovery or activation.",
+  "scoped_files": [
+    "server/core/forge/bitbucket-http.ts",
+    "server/core/forge/bitbucket-protocol.ts",
+    "server/core/forge/bitbucket.ts",
+    "test/bitbucket-fixture.ts",
+    "test/core-bitbucket-preflight.test.ts"
+  ],
+  "source_files": {
+    "helper/core-bitbucket-git.ts": "33459469a98bf07b009bf4b66af152e120265b8546a8b1adc4d8addcfbcf9963",
+    "helper/core-bitbucket.ts": "6e04ed2180b776dc09db1f10d8df0fa1c3dfc79f4daf525a57c8b2562e2f87ee",
+    "server/core/agents.ts": "f2c3a2f2718d425cfbd4423cb8697c9a0150d3673eee78220b78b713fb85921f",
+    "server/core/files.ts": "0c4a6481b5b5f2964ee0c8b9af554f941fa4bf11585096e3085fa799d8fd6115",
+    "server/core/forge/bitbucket-http.ts": "47cba322f9a85d32ab218c6b12fdffdd03bd044fc95bc1b1a3142a2ea65ea579",
+    "server/core/forge/bitbucket-protocol.ts": "699ac919fc93d7b459fe0840a0a41d9f1603026c56c19c9015600cb84ef8eb4e",
+    "server/core/forge/bitbucket.ts": "4baaa816c34f2e94916b7ee986432a4639e46ee15c98370f080fd8775c3ca170",
+    "server/core/forge/index.ts": "1ba0e149561cedda6768ebfdc1192be8726b1913719bd0396fc8de891e58098b",
+    "server/core/forge/types.ts": "09431da2017466936d2f1061a0a09fbbf9aee844aa2a5e4327eff15d553c3971",
+    "server/core/git.ts": "52b7ba6e568d7b26bf5b2d5dc20e43a29e3a857abb88d30a3c5434159ad4b65b",
+    "server/core/github.ts": "4c2da0c773ce474247a2f0064a56fb98eab45d0869416c037681b7ab456337bd",
+    "server/core/remote.ts": "f08c97a3341f4c24f9f0a81b50c9cf90f5b0cecedbf0a9e89185766aa0173ddd",
+    "server/core/source.ts": "0d43fab0732d4b772b73fb37b977b13faf1646e4ef75de2c28ca181e86cfb1ea",
+    "server/core/tasks.ts": "f362010de65690c049854c1dbb704121057c9785fa68b55b98e67a11578bb3cc",
+    "test/bitbucket-fixture.ts": "10deb3dc7ef6a5076cd7ee6e1d1da8327983a171e1e0cb1651c1fc8e14a0e97b",
+    "test/core-bitbucket-contracts.test.ts": "06f601f2fc078db345c497f0ea60edd95359d475a86b477c2924f7381e86284f",
+    "test/core-bitbucket-preflight.test.ts": "1319597e04848312f5add6d964c99766f1ff483c99acb82c87b3856bcd9162e2",
+    "test/core-bitbucket.test.ts": "8e0e962362cb8234f0beb33c1ea1c0f87dac759dc466ca3c58a551a94f68bd09",
+    "test/core-forge-observer.test.ts": "06a27656b0f0260d4ac5fb09ec11fdae70e87ec4e8f4d86862ca3846a0fc745f",
+    "test/core-worktree.test.ts": "493a2403a09ee2756f961d9de83df27dea202cdf91772677d3fd4cb866bb1d17",
+    "test/fixtures/bitbucket-credential-fill.ts": "56ce1a4b02a7609f83acc8dce71e359394218cc117541b90c724c4b527215eae",
+    "test/fixtures/bitbucket-fetch.ts": "e5ab9a119e885a484c4cdd1eaa09dc1497b7dbe26a61e19075407abd517dea05",
+    "test/fixtures/bitbucket-git-remote.ts": "6b07ad9299ae8ccce73a4f83e51d0fb277b5c0ae0307f05f6fc1e8bf9b7b16ee"
+  },
+  "protected_docs": {
+    "AGENTS.md": "bb05c92727cc18d5d561285aba39d4cb156a4b991c5d6ece0820dc447c0ad393",
+    "CODING_STANDARDS.md": "e8fc7979e76d3b6e6fa5a7bbc7106089363e4cfe6a1d056d70654fe8e0e5e2a9",
+    "GLOSSARY.md": "51e9e82930ae4cc4f75884daabaf05cb6b142cf9155852861b0f9d1cda23e887",
+    "docs/adr/0002-bitbucket-rest-transport.md": "60c04496329bca0778f42f1c1450cd80172893c279a4de47e28340c4128ffe8c",
+    "docs/agents/README.md": "b772eb96d605d586ffb2ab95b6b7b9f5984b7c7ec1058cab14e6ced10339b351",
+    "docs/agents/domain.md": "44a33c5d4ddf3c0a068e5dd763187ea51077eb1f33244186bfcad8f741fbbb04",
+    "docs/agents/issue-tracker.md": "683714bee9347354f0fa1f9758a014fcf310ec9e99faaaa3cdb94cfcdc43270a",
+    "docs/agents/triage-labels.md": "5c7b1088421cf32e7bc2520dea730ce5f7a70efd3005b9b609cd9ac3d8a71d32",
+    "docs/develop.md": "e57967a4ab57ee00e82ea7410e360a460bb4fdbdbce137a79d582f80eedd6a99",
+    "docs/forge-adapter-reference.md": "6199395e81de1630bacd9e285617bcf775b167b15bba4c78e63bc31b133714ca",
+    "docs/forge-adapters.md": "94d51d7f9a3d909cb747aa9eaf5f887de8e4d3bf0658a33ef0d806548cfd5748",
+    "docs/forge-bitbucket-transport.md": "e972a043d24428b6a1ecb6ab96f76e5e0c4248412c1311de5395e753c7b9e972",
+    "docs/forge-review-map.md": "1faab3acdc501cc89b8e1086a5c463c77dd43044f8d79db577e9414a96a937fa"
+  },
+  "protected_docs_status": "All13 byte-identical to95dc488; no docs edits. Existing accepted launch/recovery/holds wiring and all source outside five named paths preserved.",
+  "typecheck": {
+    "command": [
+      "bun",
+      "run",
+      "typecheck"
+    ],
+    "cwd": "/Users/server/.local/state/shepherdr-forge-work/20261104/app/worktrees/forge-adapters/work-2-bitbucket-prs-and-checks",
+    "parent": "95dc488190581a3a8696d126f12d7b8d66626ddb",
+    "candidate_tree": "08afe585868f426b10c4aa86b43d13cca2eb94e5",
+    "started_utc": "2026-11-05T04:34:28.611122+00:00",
+    "finished_utc": "2026-11-05T04:34:32.418920+00:00",
+    "exit_code": 0,
+    "checked_scoped_files": {
+      "server/core/forge/bitbucket-http.ts": "47cba322f9a85d32ab218c6b12fdffdd03bd044fc95bc1b1a3142a2ea65ea579",
+      "server/core/forge/bitbucket-protocol.ts": "699ac919fc93d7b459fe0840a0a41d9f1603026c56c19c9015600cb84ef8eb4e",
+      "server/core/forge/bitbucket.ts": "4baaa816c34f2e94916b7ee986432a4639e46ee15c98370f080fd8775c3ca170",
+      "test/bitbucket-fixture.ts": "10deb3dc7ef6a5076cd7ee6e1d1da8327983a171e1e0cb1651c1fc8e14a0e97b",
+      "test/core-bitbucket-preflight.test.ts": "1319597e04848312f5add6d964c99766f1ff483c99acb82c87b3856bcd9162e2"
+    },
+    "log_sha256": "8a0d508b353756f7b2ea348dd7c2285dc2829d087361a52e5362d49e5ab0a519",
+    "tests_build_browser_controls": "UNRUN locally",
+    "initial_failure": "TS2769 in supplemental expected-value typing; replaced output equality with direct independent acceptance assertion; first raw log/receipt retained.",
+    "head": "d83ca8fe47f524c28d7d7d59d9971cc3a27e28e1",
+    "tree": "08afe585868f426b10c4aa86b43d13cca2eb94e5",
+    "rebound_utc": "2026-11-05T04:37:11.766551+00:00"
+  },
+  "public_regressions": [
+    {
+      "file": "test/core-bitbucket-preflight.test.ts",
+      "selector": "^Bitbucket\\ public\\ complete\\ payload\\ preflight\\ refuses\\ oversized\\ brief\\ before\\ effects\\ and\\ recovers\\ after\\ reopen$",
+      "expected_test_count": 1,
+      "layer": "public CoreTasks.pr, real synthetic fixture Git/provider processes and persisted reopen",
+      "execution": "UNRUN exact head; declaration count static only"
+    },
+    {
+      "file": "test/core-bitbucket-preflight.test.ts",
+      "selector": "^Bitbucket\\ public\\ complete\\ payload\\ preflight\\ accepts\\ exact\\ title\\ and\\ brief\\ boundaries$",
+      "expected_test_count": 1,
+      "layer": "public CoreTasks.pr, real synthetic fixture Git/provider processes and persisted reopen",
+      "execution": "UNRUN exact head; declaration count static only"
+    },
+    {
+      "file": "test/core-bitbucket-preflight.test.ts",
+      "selector": "^Bitbucket\\ public\\ complete\\ payload\\ preflight\\ rejects\\ all\\ malformed\\ create\\ fields\\ and\\ encoded\\ bounds$",
+      "expected_test_count": 1,
+      "layer": "public CoreTasks.pr, real synthetic fixture Git/provider processes and persisted reopen",
+      "execution": "UNRUN exact head; declaration count static only"
+    },
+    {
+      "file": "test/core-bitbucket-preflight.test.ts",
+      "selector": "^Bitbucket\\ public\\ complete\\ payload\\ preflight\\ never\\ releases\\ an\\ existing\\ uncertain\\ claim$",
+      "expected_test_count": 1,
+      "layer": "public CoreTasks.pr, real synthetic fixture Git/provider processes and persisted reopen",
+      "execution": "UNRUN exact head; declaration count static only"
+    },
+    {
+      "file": "test/core-bitbucket-preflight.test.ts",
+      "selector": "^Bitbucket\\ shared\\ complete\\ payload\\ validator\\ retains\\ strict\\ request\\ context\\ and\\ operation\\ shapes$",
+      "expected_test_count": 1,
+      "layer": "supporting pure protocol acceptance/rejection",
+      "execution": "UNRUN exact head; declaration count static only"
+    }
+  ],
+  "negative_controls": [
+    {
+      "id": "uncertain-create",
+      "selector": "Bitbucket uncertain publication survives",
+      "mutations": [
+        {
+          "file": "server/core/forge/bitbucket.ts",
+          "sha256": "4baaa816c34f2e94916b7ee986432a4639e46ee15c98370f080fd8775c3ca170",
+          "find": "if (record?.state === 'uncertain') {",
+          "replace": "if (false) {"
+        },
+        {
+          "file": "server/core/forge/bitbucket.ts",
+          "sha256": "4baaa816c34f2e94916b7ee986432a4639e46ee15c98370f080fd8775c3ca170",
+          "find": "if (input.saved || this.record(input)) throw new Refusal(messages['uncertain-write'])",
+          "replace": "if (input.saved) throw new Refusal(messages['uncertain-write'])"
+        },
+        {
+          "file": "server/core/forge/bitbucket.ts",
+          "sha256": "4baaa816c34f2e94916b7ee986432a4639e46ee15c98370f080fd8775c3ca170",
+          "find": "if (this.record(input)) throw new Refusal(messages['uncertain-write'])",
+          "replace": "// Disposable RED control bypasses the existing claim"
+        }
+      ],
+      "max_fixture_creates": 2,
+      "command": "bun run test core-bitbucket -t \"Bitbucket uncertain publication survives\"",
+      "expected_test_count": 1,
+      "expected_exit": "nonzero",
+      "execution": "UNRUN on corrected new head; fae5 parent17-control PASS only",
+      "restore": "Run this control alone. ci-control.py restores original exact candidate bytes in finally, verifies source and protected-doc hashes, and runs the same selector GREEN before another control starts.",
+      "authority": "foreground coordinator CI only; never the worker/live candidate; synthetic credentials and closed Git/HTTP transports only",
+      "cwd": "resolved --checkout argument of ci-control.py; standalone disposable CI clone only",
+      "fixture_boundary": "Only closed synthetic provider and separate temporary Git repositories; no application lifecycle or live installation.",
+      "driver_argv": [
+        "python3",
+        "<reviewed checkpoint>/ci-control.py",
+        "--checkout",
+        "<disposable CI clone>",
+        "--control",
+        "uncertain-create",
+        "--evidence-dir",
+        "<new raw CI evidence directory outside both checkouts>"
+      ],
+      "state": "PROPOSED_UNRUN_NEW_HEAD",
+      "protocol": "Run separately in standalone disposable CI clone; restore exact candidate bytes in finally, then GREEN. Inspect complete discovery/counts, failure and collateral errors."
+    },
+    {
+      "id": "durable-reconnect-owner",
+      "selector": "Bitbucket public confirmed publication continues",
+      "test_target": "core-bitbucket",
+      "mutations": [
+        {
+          "file": "server/core/forge/bitbucket.ts",
+          "sha256": "4baaa816c34f2e94916b7ee986432a4639e46ee15c98370f080fd8775c3ca170",
+          "find": "    const sameRoute = (owner === undefined || owner === admission.ownership) && (record.on === undefined || record.on === admission.on)",
+          "replace": "    const sameRoute = (record.binding === undefined || record.binding === admission.binding) && (record.on === undefined || record.on === admission.on)"
+        }
+      ],
+      "command": "bun run test core-bitbucket -t \"Bitbucket public confirmed publication continues\"",
+      "expected_test_count": 1,
+      "expected_exit": "nonzero",
+      "execution": "UNRUN on corrected new head; fae5 parent17-control PASS only",
+      "independent_failure_observation": "Same task/host/context must continue after actual CoreSession epoch change and CoreStore reopen with original UUID and one POST. Rebinding durable ownership to the old epoch must refuse this legitimate continuation.",
+      "max_fixture_creates_per_fixture": 1,
+      "restore": "One control per standalone disposable CI clone invocation; finally restore exact bytes, verify20 source/13 doc hashes, run identical selector GREEN, inspect full logs/discovery/causes/collateral errors.",
+      "authority": "Root/coordinator foreground CI only; no worker/live checkout, shared Git metadata or native/private provider authority.",
+      "cwd": "resolved --checkout argument of ci-control.py",
+      "driver_argv": [
+        "python3",
+        "<reviewed checkpoint>/ci-control.py",
+        "--checkout",
+        "<disposable CI clone>",
+        "--control",
+        "durable-reconnect-owner",
+        "--evidence-dir",
+        "<new raw CI evidence directory outside both checkouts>"
+      ],
+      "state": "PROPOSED_UNRUN_NEW_HEAD",
+      "protocol": "Run separately in standalone disposable CI clone; restore exact candidate bytes in finally, then GREEN. Inspect complete discovery/counts, failure and collateral errors."
+    },
+    {
+      "id": "completed-push-freshness",
+      "selector": "^Bitbucket\\ public\\ confirmed\\ push\\ survives\\ epoch\\ change\\ and\\ reopened\\ next\\ candidate\\ lease$",
+      "expected_test_count": 1,
+      "test_target": "core-bitbucket",
+      "mutations": [
+        {
+          "file": "server/core/git.ts",
+          "find": "    let reply: { ok: boolean; observed?: string }",
+          "replace": "    validate()\n    let reply: { ok: boolean; observed?: string }",
+          "sha256": "52b7ba6e568d7b26bf5b2d5dc20e43a29e3a857abb88d30a3c5434159ad4b65b"
+        }
+      ],
+      "claim": "Restoring post-effect freshness rejection must lose the actual confirmed pushed head and break reopened next-lease assertions.",
+      "state": "PROPOSED_UNRUN_NEW_HEAD",
+      "protocol": "Run separately in standalone disposable CI clone; restore exact candidate bytes in finally, then GREEN. Inspect complete discovery/counts, failure and collateral errors."
+    },
+    {
+      "id": "complete-create-payload-early-preflight",
+      "test_target": "core-bitbucket",
+      "selector": "^Bitbucket public complete payload preflight refuses oversized brief before effects and recovers after reopen$",
+      "expected_test_count": 1,
+      "mutations": [
+        {
+          "file": "server/core/forge/bitbucket.ts",
+          "find": "    this.regular(); this.preflight(input)",
+          "replace": "    this.regular() // Disposable RED bypasses complete payload preflight",
+          "sha256": "4baaa816c34f2e94916b7ee986432a4639e46ee15c98370f080fd8775c3ca170"
+        }
+      ],
+      "claim": "Bypass only application early validation. Real remote refs must change before the helper refuses the oversized body; first no-effect history assertion must demonstrate RED. Shared helper defense and uncertainty protections stay enabled. Restore exact bytes and GREEN in the same harness.",
+      "state": "PROPOSED_UNRUN_NEW_HEAD"
+    }
+  ],
+  "controls": {
+    "retained_rebound": 40,
+    "new": 1,
+    "total": 41,
+    "state": "PROPOSED_UNRUN_NEW_HEAD",
+    "anchors": "All41 mutation anchors statically unique/hash-bound; not executed discovery/sensitivity evidence.",
+    "driver": "ci-control.py reused unchanged; standalone disposable CI clone, exact candidate HEAD/tree/hash check, separate overlapping controls, finally restore exact bytes before GREEN. Original two-machine async publication settles before teardown. Root foreground owner inspects complete logs/counts/cause/collateral errors."
+  },
+  "proposed_disposition": {
+    "confirmed_complete_create_payload_P2": "Source repaired, Root exact-head review/CI/Astra re-review pending. Complete versioned create request is validated before publication key/admission/probe/push/claim. Application preflight and host defense import one parseBitbucketRequest owner. No durable records are cleared or changed by validation."
+  },
+  "contract_inventory": {
+    "title": "Shared request validator title512 character budget; accepted public generated title512 and refused513 use independent literals.",
+    "body": "Shared description32000 character budget; accepted32000, refused32001 and33000 public cases use independent literals.",
+    "branch_base_head": "Shared source/destination validators and exact40-hex candidate. Public malformed source/destination plus bounded malformed core reply after actual Git head; actual remote histories/claim readers assert no effects.",
+    "envelope_context": "Shared version1, allowed top/context/origin/credential/operation fields, repository/folder bounds, credential context derived from admitted origins. Supporting15 independent malformed protocol cases; these supplement public evidence.",
+    "serialized_input": "Shared128KiB input byte bound.32000 NUL characters fit character budget but encoded JSON exceeds byte budget; public case refuses before effects. Helper stdin stream bound retained using the same limit owner.",
+    "static_http_fields": "Draft=true, close_source_branch=false and fixed source/destination/repository JSON remain host-owner constants, existing payload controls unchanged."
+  },
+  "design_tradeoff": {
+    "chosen": "Move the existing helper request validator into the already-shared protocol module and compose create operations once inside BitbucketForge. Validate complete request at publishing entry; keep helper defense. Existing common caller interface/CoreTasks state owners unchanged.",
+    "flexible_alternative": "A configurable generic validator or request/HTTP abstraction would enlarge scope without improving this fixed operation.",
+    "common_caller_alternative": "Checking provider limits in CoreTasks would duplicate provider contracts. The existing publishing seam owns pre-push validation.",
+    "uncertainty": "Local refusal is not non-submission proof for any earlier attempt. Existing uncertain UUID/head/host/context record stays held through invalid payload and corrected empty lookup. Only positive same-operation evidence confirms it."
+  },
+  "criteria": {
+    "SFA-01": "Complete admitted create payload checked before effects; corrected reopened task can publish one qualified draft. New public proof authored, CI pending.",
+    "SFA-03": "Unknown claim preserved byte-for-byte through oversized/corrected hidden lookup, same original UUID positively reconciles without another create. Existing durable/lost-reply controls retained; new execution pending.",
+    "SFA-04": "Complete commit status/check interpretation unchanged; existing controls rebound, new exact-head CI pending.",
+    "SFA-08": "Final synchronous admission/core epoch/containment dispatch guards unchanged; both current-record saves and validated completed push attribution untouched.",
+    "SFA-09": "No new operation/command/HTTP/auth/settings mode; strict shared context/field guards retained; contained/retained refusal before effects remains."
+  },
+  "parent_evidence": {
+    "head": "95dc488190581a3a8696d126f12d7b8d66626ddb",
+    "typecheck": "PASS from parent artifact",
+    "publication": "Coordinator brief states native pushedHead95dc/PR3 reconciliation complete; worker did not repeat or query publication.",
+    "CI": "No parent95dc CI receipt relied upon. Earlier a2dc CI is ancestor-only, not new candidate acceptance."
+  },
+  "proof_gaps": [
+    "Root exact-head independent source review, exact-head CI and independent Astra re-review PENDING.",
+    "All new tests/build/browser/41 RED-GREEN controls UNRUN; static selector/anchor counts do not prove discovery, sensitivity or native outcomes.",
+    "Native execution-host Git/credential permission/noninteractive/runtime/hooks/provider compatibility remains UNQUALIFIED; separately bounded authority required.",
+    "Fixture Git/provider results are synthetic process/state evidence only when Root CI executes them; no real Bitbucket/private-forge effects performed.",
+    "Unconditional readiness GET/PUT still cannot guarantee against concurrent provider updates; unchanged prior limitation.",
+    "No publication/ready/merge/lifecycle/downstream GO/deploy/native qualification; existing holds remain and worker stops."
+  ],
+  "next_owner": "Coordinator routes exact candidate to Root review/CI/Astra; Root owns publication and replies. Worker stops after metadata handback.",
+  "artifacts": {
+    "focused.diff": "57ab5bbc0ecdb44ebcec63120f147d32035a277461a887720c7af84e942b3a8c",
+    "controls.json": "6aad802924d77038aa4370b116934d803b442e2a6628d506e306bbd3544df5dc",
+    "ci-control.py": "0d8aacd36e0bd920e9bdf0160fb9d3525691644502ccb4b7c5a820e5bdaa2fab",
+    "typecheck.log": "8a0d508b353756f7b2ea348dd7c2285dc2829d087361a52e5362d49e5ab0a519",
+    "typecheck-receipt.json": "050257ce5b0baac3f4ed19ebe151e8d42a4993a998eecc8b123b682672e656ce",
+    "typecheck-initial-failed.log": "1a336c5ecd4deb4b76bf09b95d45fdd5b6775570c063024eb3be01ca9b0471eb",
+    "typecheck-initial-failed-receipt.json": "eda65a005cbbadff8afe3c29fa9ece278c62ad930941be522a46d245d4a42a88",
+    "evidence.md": "3ec36ab7b3894eed081a7f1c94e4d8bb629b595a4b0c50becf915463383ced01"
+  }
+}
