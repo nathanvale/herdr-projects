@@ -1,0 +1,2176 @@
+{
+  "schema": 1,
+  "inputs": {
+    "F": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+    "U": "dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc",
+    "P": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+    "B": "de8e17957efb4aa016d7e4d652f397aaa95f0880"
+  },
+  "files": [
+    {
+      "range": "fork",
+      "path": ".github/workflows/check.yml",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "3832ede3b4e6cabcf5d0cf85477f698d5a49fa12",
+        "sha256": "6e0ac61c02c915430f44adb4a3f137dcc5ec25eecb54bd97eddff3d2cb2eca88",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "de748cd4d6d051d3ef21731ccc9b7a4990944486",
+        "sha256": "8978aaca33237ed1643c91dc77db011aec15767c736fac9880014feedc6349ba",
+        "static_test_declarations": null
+      },
+      "disposition": "native-upstream-source",
+      "phase": "Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": ".github/workflows/foundry.yml",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "b1d2383dda24a56581cf346cd43d060b0f59ae0f",
+        "sha256": "6b5de23f9dee1197014bdeb4c9d2236e22093132e5254429d267f32602de7aaa",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "AGENTS.md",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "c1a012f7e40427e7bb5b210bd9ddeb1c28101694",
+        "sha256": "69d4c6bc67d9227012f6b63256292b1fab58471af7ec3a05ae81dae7b5dd746a",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "610572c2e9e49952599bc260da2380392b681efd",
+        "sha256": "bb05c92727cc18d5d561285aba39d4cb156a4b991c5d6ece0820dc447c0ad393",
+        "static_test_declarations": null
+      },
+      "disposition": "native-upstream-source",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "CODING_STANDARDS.md",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "f89f576df19891c758ae72225c36c6a3f7d34b75",
+        "sha256": "e8fc7979e76d3b6e6fa5a7bbc7106089363e4cfe6a1d056d70654fe8e0e5e2a9",
+        "static_test_declarations": null
+      },
+      "disposition": "retained-instruction-or-historical-contract",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "GLOSSARY.md",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "452e30f0923489d2a6b9574f23ab9ad9c0c60ef4",
+        "sha256": "51e9e82930ae4cc4f75884daabaf05cb6b142cf9155852861b0f9d1cda23e887",
+        "static_test_declarations": null
+      },
+      "disposition": "retained-instruction-or-historical-contract",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "bin/shepherdr",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "7eb34890dd0db3c05d4d81814f58d1aa30ccf4ba",
+        "sha256": "1d0d66533a8fc1fff0a0540a6831ba7b269a821306417eb0bf5e3a48119d15e3",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "f7499b4bb3ae3aa2241311bac69ab9c2f4985a42",
+        "sha256": "d17f19c33ce8a6184664d0b72401dea70e7c74e29022429b37a23dd3c97ffe62",
+        "static_test_declarations": null
+      },
+      "disposition": "native-upstream-source",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "docs/adr/0001-protected-preview-update-admission.md",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "0c81754070c8b1ff8eba9403f506d85ae5bedb15",
+        "sha256": "6f0b9adc915e02b6aaef7beff3983906938fe74707452adfd319ff92e2359d53",
+        "static_test_declarations": null
+      },
+      "disposition": "retained-instruction-or-historical-contract",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "docs/adr/0002-bitbucket-rest-transport.md",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "464b58a619def243c37b083afab0355208718774",
+        "sha256": "60c04496329bca0778f42f1c1450cd80172893c279a4de47e28340c4128ffe8c",
+        "static_test_declarations": null
+      },
+      "disposition": "retained-instruction-or-historical-contract",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "docs/adr/0003-operator-boot-fenced-launch-recovery.md",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "1c9b0d4c6ace54a38d9feb9a3b0ddf83f2002d57",
+        "sha256": "2f033959c6e8cd9630f6e00397c30071d1dfe048d1927ea61b9d24e74c3a0968",
+        "static_test_declarations": null
+      },
+      "disposition": "retained-instruction-or-historical-contract",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "docs/agents/README.md",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "6097da915eb83c5556407d26034afdd7347cebd5",
+        "sha256": "b772eb96d605d586ffb2ab95b6b7b9f5984b7c7ec1058cab14e6ced10339b351",
+        "static_test_declarations": null
+      },
+      "disposition": "retained-instruction-or-historical-contract",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "docs/agents/domain.md",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "7573491d5b08fe786f46695253ba8ae5ed92dc9d",
+        "sha256": "44a33c5d4ddf3c0a068e5dd763187ea51077eb1f33244186bfcad8f741fbbb04",
+        "static_test_declarations": null
+      },
+      "disposition": "retained-instruction-or-historical-contract",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "docs/agents/issue-tracker.md",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "1b8706a2d8003e4a62c46c848f1aa6d0542e9a42",
+        "sha256": "683714bee9347354f0fa1f9758a014fcf310ec9e99faaaa3cdb94cfcdc43270a",
+        "static_test_declarations": null
+      },
+      "disposition": "retained-instruction-or-historical-contract",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "docs/agents/triage-labels.md",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "7f7e92a74674b85f6872dff20b8cc120786100a3",
+        "sha256": "5c7b1088421cf32e7bc2520dea730ce5f7a70efd3005b9b609cd9ac3d8a71d32",
+        "static_test_declarations": null
+      },
+      "disposition": "retained-instruction-or-historical-contract",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "docs/azure-foundry.md",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "fc7e7b65fce265225989d8f3b571eaeb3666bef2",
+        "sha256": "e7e6b8fd76823efaf197fb1544a380808ff1c7368da2a3236366786529415a55",
+        "static_test_declarations": null
+      },
+      "disposition": "retained-instruction-or-historical-contract",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "docs/core/launch-recovery.md",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "8328d38eb78bb3cf00195599b6e2a6e659052e52",
+        "sha256": "c5dea26ff9ee9cde07d673b3d3083008493fcc8c1550935c88be4c27ca7bae77",
+        "static_test_declarations": null
+      },
+      "disposition": "retained-instruction-or-historical-contract",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "docs/core/start.md",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "973d969417686611762cb659c39058e6efe494db",
+        "sha256": "5917062fe29abba3ff213bed372ae09e11d6a76c117c44abb1a8825feb31d719",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "4ace15252983b036d394b54e4422095182f19f6b",
+        "sha256": "c23994c3b0fd103d3bf216ca49a357c71c32c638dd0a12b833f94560b8e34a88",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "docs/develop.md",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "32ae715573992b5553797125b7566af8cc838589",
+        "sha256": "6dbcb2a58c05e7b64b46d43bf6d7830e79603b920579ac39d00af6f01deaaa58",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "016f9093d21bb75e0096d2c9296f0a90a6082eeb",
+        "sha256": "e57967a4ab57ee00e82ea7410e360a460bb4fdbdbce137a79d582f80eedd6a99",
+        "static_test_declarations": null
+      },
+      "disposition": "native-upstream-source",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "docs/forge-adapter-reference.md",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "b335b3f846949d9b41d7838ac4e0f1cf8c880698",
+        "sha256": "6199395e81de1630bacd9e285617bcf775b167b15bba4c78e63bc31b133714ca",
+        "static_test_declarations": null
+      },
+      "disposition": "retained-instruction-or-historical-contract",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "docs/forge-adapters.md",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "c41c1e8c13922093e55192e02b5e56af0c332216",
+        "sha256": "94d51d7f9a3d909cb747aa9eaf5f887de8e4d3bf0658a33ef0d806548cfd5748",
+        "static_test_declarations": null
+      },
+      "disposition": "retained-instruction-or-historical-contract",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "docs/forge-bitbucket-transport.md",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "abd2d300b72c23f472a44258aad3011276b075b9",
+        "sha256": "e972a043d24428b6a1ecb6ab96f76e5e0c4248412c1311de5395e753c7b9e972",
+        "static_test_declarations": null
+      },
+      "disposition": "retained-instruction-or-historical-contract",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "docs/forge-review-map.md",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "609375bafb83ad42136088ea4fd1706ac84e224b",
+        "sha256": "1faab3acdc501cc89b8e1086a5c463c77dd43044f8d79db577e9414a96a937fa",
+        "static_test_declarations": null
+      },
+      "disposition": "retained-instruction-or-historical-contract",
+      "phase": "S0/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "helper/core-worktree.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "21f074b0820a6bb00191383f9640d6f1940b3954",
+        "sha256": "3c6597c48e508144ec2b9d05610ba5a9a664475ff9fb58983c385932553ba651",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "7774e48a7df70ceeabfc29262c5081463c4ac6e4",
+        "sha256": "b459f2edac5d581637d2bfa99852364dcf52904471ef9628116d067b6bc25bad",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/agents.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "d6b1448f241bc943c464fa5e606fa6cb0c585657",
+        "sha256": "3f2fa67285db0839f9e3bde26edd232b875097b78bac3304e940dc50c4023496",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "c29244ffad26f1356f36bd00d2c93abf532a7df7",
+        "sha256": "b6813387af266ece286413adcf165bcabc152f75d409c16f3c5b3cfce4ad94b0",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/azure-deployments.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "f3e0f1d92aab8be4889f99f61e5ec6d0ad9fc1dc",
+        "sha256": "2c3ec33ec1c903968aa17feb87983cffc794beeb164263be36b9b9d770e5e7eb",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "A1/A2/L2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/client.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "3b3d6a416c4cf5395d08db531a5d4b1a61b0e02d",
+        "sha256": "6ace352fc90d37dd11c5f14dfca4d3e62e8fbe33c5ff5e8fd9cd615ec7394647",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "c76d195c7f6e66b5dbcb605e53d3df5dfc9988ee",
+        "sha256": "430ca9235e72c0e85c9576628e1564505bad61870212a5ca6afc1cd6cd908d8f",
+        "static_test_declarations": null
+      },
+      "disposition": "upstream transport at service/hc/client.ts; fork transport guarantees pending",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/commands.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "f72b8de21623894dca65dc5c4e1217d60836366b",
+        "sha256": "0c6648afd42d5f98830501f572e98b8f1909ca19a05b9924a5097370787b7b2f",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "3bc626324123800a3df1e943e741154ceab69a13",
+        "sha256": "c5bb0517779952b87d028f394244369ffe32cd15c4dc68ce2d75ee2ec5450933",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/config.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "17881fd368a73dc8be2aad165e0549c39683fc96",
+        "sha256": "420cb90d32f56e88472d589f8aacc5632397d421c04a6c1444c99333b06738b8",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "551ad39d95dd505ac762048d511c96504d939828",
+        "sha256": "9b809aa3f234b0b05666f33fb4950621e2c7e0e668c8b5b5f5cd7bc931955d68",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/failed-starts.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "b4a8ffd3b863bce3864af1ead9b62b8fa61551e5",
+        "sha256": "ab100e38e1fa36e5e79e4270a72950948a6a0110660ff47db886c708c275e776",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "a7a723485478cc11919c34ed651dc8c86f03533a",
+        "sha256": "a9bf22fb1b4e1b22e0b2ea0a63a9ba6ea465f2445d72b6ab70db5fabcae193eb",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/forge/github-logs.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "e3b8525efb63879837bab69d8aec5495c0d768f7",
+        "sha256": "9fd253fd90d707c71fea41724240f94654910106a4af575b9172b55a8a3079ca",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/forge/github.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "a081ea6a29898f1dfe58d1c42e80d131d79566df",
+        "sha256": "4ab3153981f9580c474fac2f9c486587a6b90d8aa210492e6e5212dc216b51a5",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/forge/identity.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "c208606d3623ff25f57658a32654f672592890bc",
+        "sha256": "dad964953c28e92268111e98e4cd549637f5c5be23283444f1d798008b7237ed",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/forge/index.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "3037793ca9c568649094b341c9818406fdafb1c1",
+        "sha256": "98a26fe4f61673a204d1a4778712c184ccb5fc2510d132649101796a3c3fb95b",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/forge/types.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "de38df53441f0825069ce77c58c032d7e15a45cd",
+        "sha256": "17c5e1674c89079615649ab99ae25d3d3e635a156c6244298e46e1ced57b5bde",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/git.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "1502271bed83777c5c9acb1515a4d5167c6d0727",
+        "sha256": "52f8f2d38764256c84389829937b00863a942929f9ca6ead720855b3eef11eca",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "56cbec7826a1c485d21ffb0a1c749205f8b32330",
+        "sha256": "095963962c26cf6daa637ca2ccd972fb7df52d9f10d84a5cc9a82687793839c1",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/github-logs.ts",
+      "change": "D",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "4a179fb5f8f5549b00987459c37b35b792197661",
+        "sha256": "004a56190f6ca9e940e3c86a9f4d3be2cc24bece7582db27a0acd7387683b44b",
+        "static_test_declarations": null
+      },
+      "after": null,
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/github-merges.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "2df02697fe6c2ac9c9adda484c2a95d04970b802",
+        "sha256": "74181a3ab34c0169615ef4ba1be9f3cc14228024a615ea84209465962c7e7e51",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "30c0c8c665113579e9515673bdcaee8e4827a044",
+        "sha256": "a2b62049617e5fa7a808e97a5ba2753489c6eb55bc959ede24278d2d505994f6",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/github-pr.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "3e4b9ee8be663cda7f465be475af218f26ce24ac",
+        "sha256": "06968fdefe5dcdbf1872c65906774355fbf4afbffebd9e6832d697b2fade0116",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "dc4035e46ad176366da768d68799d83d2cacf122",
+        "sha256": "20372d9fd07ca89d640e67ea5d82c2a8bcbda1dafb4cd411bb0e04f1b1347cea",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/github.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "49d6cd17f66a8430871d370a48507a0103769cb2",
+        "sha256": "6bce25342010f18627b3a6ea20fe78112d1f69ad4d86a06dd44d1023bf9933d5",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "bff5c9f6721a88c1caca497aaec0d10240d74a16",
+        "sha256": "f703287a8e54f9a032acb3bfd6460f8334e78a74c9210df95483bfaeb7abe81a",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/launch-recovery.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "c32ecef2af1976b7ff4534acf8a6c01bd144cb4e",
+        "sha256": "805c3c3d1127eeacd741acf98490c16e92f9a16999fba195c88c4114303dba26",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/launcher.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "2d43d5dc8354a8bb86ac0ddbcc59c011a5bf056d",
+        "sha256": "b60bf7a5b2af17334a0a6632732fcd6c0678dc149f8d691441e71a909233ca82",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "7d95008d4eec82587668ef719ebe3be981bcfcdd",
+        "sha256": "8ebcafac04c989230aa93121724aa8bfb8712c657ab1539e776103877678aff3",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/launches.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "4afb6c1c77fdad878c88fe99523bbf08649268f0",
+        "sha256": "a48df83558e41abe15cf082f8d72b172a6cb5d7131f289f0da023ad2abd4d7e1",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/logs.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "c58ea8080fa18a6b0fc4bc6513fba4258bd6af70",
+        "sha256": "053c54c62ca587cbe5cee7c63e557ddf256002240083ef9da695af44884090f9",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "95c2a0f16dd6b629a22c4a389e4f6085ee02fc0a",
+        "sha256": "233d56db87fc754bbe8b945773832b9178ac6cab78e157bac525f1c56b1e793a",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/mailbox.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "f08a0a7a0543a93f88d44cab7f823aaa4b390e83",
+        "sha256": "79a38ff1d0c5a2f0e53caa9ed0d81c9c64716667517e5fc99d43cd5a1ef0dd93",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "e68592f0120629abe33e19ed320dd8d541357580",
+        "sha256": "8bc67fbf58e79a6671a740b7c2cf37af1fcadf6773bbc2f9cef51fe161a7c966",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/main.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "f042072693aa69fca87d46144c59770fc5e49a0f",
+        "sha256": "773ee7c4d74ed2a6b290add0d49bacdc419cd6bc830cd586b766bf8838f88d64",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "853d39b6e078c50a17ae8fb0611af096b625fee1",
+        "sha256": "dd45884aea86c03dc08c60f45df07dd509cb5bfc72dde1542abb107b6eef2c35",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/model.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "92bf6eefbeffe9e950b57b433369cc9ef45fec9c",
+        "sha256": "ab36c30b5f9159ff23b7edbc12c55f2912d72fb33d571f96f54aeb9269875009",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "7d45dab76cde313d98a36ed9d17508a464129fc4",
+        "sha256": "56b2970e1f99172637a3115e5c531ce8cf39a2c8255ef8d8428b9a0c552f6210",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/operator.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "63153e7a225ecb12a4a1f0087995b3558dad5886",
+        "sha256": "228f37b2e929f5e1a3ed2abff85a2bb8150aee884599195803d355dd3a801cf5",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "d1e920470ad0c23b5a93af5141856ee6cc236397",
+        "sha256": "aefbebedc15cf20cb836fc7b05d22fd5ef45d501d906b4f511484bef990ca0d8",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/pilot-lifecycle.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "d68bd108ac4bc1ee39ffd974d3ba89f713cbc493",
+        "sha256": "95a6cb1f88263c8360db2e79c8fe382d65c3ef0f83f54f932110da66ab094c67",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "e64f8cea887ae8c2bbefc7767cf3a6577fc144ff",
+        "sha256": "9d5184f35905a78b9ed8faaf7f89c68b45379fee00d0732ebf1fd202f219685a",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/protected-update.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "a12a0e32f7bec450e1c8e188b579f9cee0873956",
+        "sha256": "d3c4c360162c17527e61791618f4305a3877ffbcca59f41226abebf63847d4d3",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/provider-retries.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "04e639f912e93c664a2ad6df54c7f7d823a1432f",
+        "sha256": "eb32a4739085435357360a72a55f711a26a470b8d87d8e141e0a61cd34858292",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "3285c1e20c1501b4d503cc4bb68c63888608441c",
+        "sha256": "0385c59def991963400fe5d2bb853a2db4fb19896f0ac22e64ea3dbbd06126b2",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "A1/A2/L2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/providers.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "40debfc4a8f181d558c939184d521f6d868789ed",
+        "sha256": "4c596cef783853fc1417d1748e544628965cac075e7405b33aabcdb3b4f0c005",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "A1/A2/L2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/screens.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "73271d0dea8bc93ed91580b36eefbec65ef6150d",
+        "sha256": "4d430831ef7e143a5523f4f1083ef6d885ee0903fddb7a0dbe3a1a4bbbad2155",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "f46ef3d9b79f0f5da7234b32d4a1b9c7d5316899",
+        "sha256": "7e400f439c76dec171be63afd57593108e37152fea2585a48f9d7581405d2e89",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/session.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "f3fc93cb9d1c476da315acf2b0bb6f83ed955cae",
+        "sha256": "3cd536dfcfd4053751501912033cec3d96664d8a52a035e60ddd0041ff1251d6",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "8c8f827b31fc032ca4ff473b2824139f80068d4c",
+        "sha256": "2560645496b49066e6757fd79827b0b21b6c11c60b644eefaf5c26d86ca0a883",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/settings.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "163f07da393426a7e1dc774b9f1cfaaba4ce3127",
+        "sha256": "7bc87c81b8367773fea0d42d5761bc3a9536ffef9c9aebda5d9c49a6257d1739",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "605c37ee03abfad73654ce3f44f9bf11049067d8",
+        "sha256": "e2072da823aa6ad148c3afcaabd8fae46088d5ef1eee00b26e366772eb88837e",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "A1/A2/L2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/source.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "244613ae80a2fde5036a87ce6b1bad24b1c6fe34",
+        "sha256": "3bedcb1a10fb132e4232535c0ee9a0d26d68c7fe3f2e110a75416664d09689c3",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "6cdc348bdcec3a6e060a090ae5462abfad6354e5",
+        "sha256": "90c103bad61a624b5f2607ece479c1d7791a75b78031b2dcb6b5a0dad7f8addd",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/task-processes.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "c1b802f8adbbce83e64df9c013a6584d3623475a",
+        "sha256": "bb8af6055c399f03590cb557e44807af72a1d4c10ed4b95374be17f2d63951dd",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "2228c9736c483fb10ea7cef5afc48fac473652c3",
+        "sha256": "465295edf667896402ea6ffcf364d17dea396d3aea0cdffa8ecf945c51fb022a",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/tasks.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "58b81f2ae748bf99a00cc569c8bb075c2b3628d4",
+        "sha256": "16b0708beec793d482128c35bf6a966ac406961e082ede88cd9a0e8e47e7c562",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "ca927c9dafbfe9da1420dacba8c77d7691015d22",
+        "sha256": "4e876906ef0cb9c8f24c226d9438713f49e33feb4ea8a5e90fbc4fe187e2a464",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/terminal.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "b617076bc1797c61335705d6d640f46bed429aea",
+        "sha256": "63a03c6442290276ed6e6c1408f66aefbf52df7f27da44f3c69a0588616de38f",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "ac27d114157ce2d3b83a729f9a400e5c7af1ff8e",
+        "sha256": "5d83f39c94f9c203640b727973246b66cdd5c64062b1f993ea4931215ddcd27b",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "server/core/worktree.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "cda652efe935d1879a2673043f3f4686c47b3611",
+        "sha256": "d1f819c79286481fdb05b7e66f1ddf0f7069320e99f8e0aeeef63aeb069eccc5",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "3e1c69332b20102912446036e83e28dd40540607",
+        "sha256": "71fea37c9bdbe83f907a5d193eb95e165f6d58fe657ff6e1320085caf3399dcc",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "shared/types.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "570b5a2f2b174645f752f9c63cdd97b84934e2bc",
+        "sha256": "a5e7c7ad13daaea612654565fbde75bf0fb6dcab21f6da6adc6182c3ad90dc50",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "906655e2aaa3b8e52e7b9a5f70d13650d01c19c6",
+        "sha256": "80d50f940ef63eb1a6db395939c5f1c3ec9e396303f26bc31e2e1d57d9cc0c21",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "src/Settings.tsx",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "f2a115416cfc5c464d588d9bdecdbbc3d5d03398",
+        "sha256": "7eac91ffb605fc954ac7eb2ee257e57c5b13078fe4a69e20ad3324a9423fae65",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "fbd92e731d64b3c63af8f76685e7de83ff487b0e",
+        "sha256": "e39b132a394a3668559b1494a02cbe6dd2b2cd0c2daee409eda4379972366912",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "src/restart.tsx",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "bab46f81e643d15bd036843be833cbd927d9d4b6",
+        "sha256": "52e0131834566739c7b1b5f1b83091cba1868f8a38c06b795af4a4b65a77f2b8",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "cd208988fc8ec68d0a4badc9c85be14d7ee6adb2",
+        "sha256": "c7e9a0f78d3d618ffa5fb028e165442570201b8a20bd39380f9bb39261de4c41",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "A1/A2/L2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "src/rowmenu.tsx",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "2e2ef9c03425a375852da009e442aff3bd186083",
+        "sha256": "66b667062db43f321cd6fd257e1d8231f6ce09ce59429a16f453f29718c8acd5",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "4dc8b9ffcc2b01c325dc179b7c905d35fc8f553b",
+        "sha256": "5675d23a0fedfbf5b6e791053e8cb48a7f2c8a5242b827c4afe17abb8d269ce9",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "A1/A2/L2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-agents.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "2f0790b1819e3df2c5650150e7099da7fa6da064",
+        "sha256": "343acf5ff0d26c6864ff82a1fa808b14d7fa8174aa0143528df84dfe982fd1cd",
+        "static_test_declarations": 7
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "d0e495b3b189be784a71f7320b26ba8396799c20",
+        "sha256": "917c8310a852b586c04cbfe29c0eab7cb6dd52dffbf91ea31f84a74d468d4d78",
+        "static_test_declarations": 9
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-azure-deployments.test.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "ba41f3d46bed9c4237031ac94985a73d1bf86e56",
+        "sha256": "d05989abe118a3be779b21d326035857d2b98c27f82bd4d25f119936cb07a871",
+        "static_test_declarations": 6
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "A1/A2/L2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-client.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "8de3340d92745281c3f3650a50ffc7c9ffc70a5d",
+        "sha256": "89e3d3aa626f19e315a53b189aa030cb509af88df3487977cba93dd7f350ef9f",
+        "static_test_declarations": 11
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "1017a505cc87ab9326c2f80b314089b72534d3f1",
+        "sha256": "8fb9686cfbc8a099646bb21b2909d249ebcd86a9f26c1ce377744de84b4bdabb",
+        "static_test_declarations": 12
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-commands.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "dbd42696bfb2e17e100cb1fae45383284ba9cb48",
+        "sha256": "d804230b2b683325bceb313c178532ab356e4071608d1a29750f98ed7d7b2eec",
+        "static_test_declarations": 4
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "9bb9775dd6ebf154940188b6945e354f3c013471",
+        "sha256": "8735ec0bc922f90f036385634f1dc968158bcc985efde5cd546a0f0a04cf3f3e",
+        "static_test_declarations": 5
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-coordinator-restart.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "816f0da088a97e5d8fc80b88990014e62414d411",
+        "sha256": "fdcbfa78bfc73f14d955dd833d2102f57e4dac2c65869a6dad7dcda231fba20b",
+        "static_test_declarations": 6
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "6573347e6ef7892746cfb4daf9df4024923842ef",
+        "sha256": "bc87de2756997e8810ca4ff88df8a582c3044a3c3481da26a29e7bcb9d81f3da",
+        "static_test_declarations": 9
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-failed-starts.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "e8c209550e5882c6f79206ea325903a580102296",
+        "sha256": "2a8210d9ee99495bd547f14ccf3c80d8821368c2d78a79f35a28f0c5903b03f9",
+        "static_test_declarations": 12
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "c496733d2b36bcaa383079353ade151260fcabca",
+        "sha256": "8faa274eeb778768096cc55e884c273a12599d6805ab714a6f9e606177d88466",
+        "static_test_declarations": 22
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-forge.test.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "bda4b7a084dce38a9a609fa4e84431fd635aebe3",
+        "sha256": "492cf66fc3bd6da1787f0cc44ca4b363d5793c544c3f1327f930d5eec65fa15c",
+        "static_test_declarations": 11
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-git.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "6946b523c01e841b8df7897438f9eda610900643",
+        "sha256": "fd23820aaef2793a722e86cd8fc0621c0d49b8e968d730ad34e440f333b7c4d7",
+        "static_test_declarations": 6
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "f5b692b3d1f51ce0c6c05581d456fb9a21340d66",
+        "sha256": "aa9afb8f2ee676b434f603b1208d0451e648efbf8a202cd0033cf19e37727fd7",
+        "static_test_declarations": 3
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-github-logs.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "b3fcee39283fb87bd6c917c54583c9d1750573c5",
+        "sha256": "304503525919b900f30c6964e9e4b2d43b497c297e315097969b35a321834742",
+        "static_test_declarations": 2
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "af7393c5098050c13c1135fc8c2a53da6ad9f19b",
+        "sha256": "1ac789b8af3b79c63e21c150e4b545e9bcd0116a59ae025b319308787ce0e3cc",
+        "static_test_declarations": 2
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-github-merges.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "fb57b20fb085e4329c9a493075c8fb4e9d9062b8",
+        "sha256": "5251c38de0c5df619478a02a50fcd1a7d31e0b5c9b0441d07e54dd80740293cc",
+        "static_test_declarations": 1
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "6cc279c2a5caaacfdbb38d992c99846796a30518",
+        "sha256": "4fb8e1d0704b35db6531b1664d3a3982cdd2b0c2c8a5ea6742cdef6624e65164",
+        "static_test_declarations": 1
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-github-pr.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "e23574b0a0dd4aa29705161172b249d86fbc7361",
+        "sha256": "2b9b3b81f4f88f31ab23f9d4ed3dedb2387de744d96660fd33e37a3eb09c457a",
+        "static_test_declarations": 8
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "92597728e9bc9d02fb5375cf2ae486e97b249013",
+        "sha256": "a5e231bf750bebcce60185386478fa3462c22ae1f463966fcd4391b863d76ab4",
+        "static_test_declarations": 9
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-github.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "139609d74101c1782bda08d9dbf6ec5995c46253",
+        "sha256": "2140eeeee6797cff78ae64c71c053d07dfbe18c90c37abe3f9be6f91ef66742f",
+        "static_test_declarations": 10
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "4667e4757effc121c04e3560cd749b900a52178a",
+        "sha256": "1a3b428111fd07759d972410bfacf184051d660140cb508a1e99b735db203c4f",
+        "static_test_declarations": 10
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-launch-admission.test.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "2f332f58740aaeeb321f4c3ddddf7f51e62655cd",
+        "sha256": "4cd02c330ca2199b814d3084f3f6633c065ec978cf15e9ad18f0df890c2b70ab",
+        "static_test_declarations": 28
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-operator.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "9b7656fa599dd5c17812730e6d3754f4d711b55a",
+        "sha256": "f445f7e43934afc2adc0984bdf70158ee05a7c73619d4c9f8e99549e0d99bbc5",
+        "static_test_declarations": 1
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "65fdc79e45f3653067f76a6f71f432d48e466d03",
+        "sha256": "2db17de304daf82569d3f82df8865233828ed893bb19b506f93b6a06f3eccc37",
+        "static_test_declarations": 25
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-pilot-commands.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "b74dff5f8d3edad28fba50591c35c255cb3740d5",
+        "sha256": "d823932a0fa7259fa00e65345a765c32eb1336fa53655103e1fa135a4966c7a2",
+        "static_test_declarations": 11
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "0a19d66f9ab1891a2f7d3146b8809b2fec251f34",
+        "sha256": "33fb805fb1d4cddb9113ee792272cb6e0443defa3c1a1c4b4945ae5c572ea302",
+        "static_test_declarations": 11
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-protected-update.test.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "4112d5d8679967137182bf4e59a3718821222ebe",
+        "sha256": "fcf822f8b741b61130f324b8bcee696d6e64fe8e25c38a014a7611685d7b87c3",
+        "static_test_declarations": 15
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-provider-retries.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "04ef0d0bb6134e64df8aee1b081261f9e2ed483d",
+        "sha256": "196755e6d07b7747230e361ef587616fb07470ad828eec0c4a0738d1cce05118",
+        "static_test_declarations": 7
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "82f99a7c50a8c08a70b108fcc701bb7f5aa5ebd8",
+        "sha256": "8296f5b9989d9b15d565e983e4481d5c18ab2894e8b4f328b0bbb07807b1b773",
+        "static_test_declarations": 9
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "A1/A2/L2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-providers.test.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "550bb323f620cce81c9dc953f25672848375ec09",
+        "sha256": "f22050f26890fceb621849835aa07f448f677c994665469923923a0ecc0b4636",
+        "static_test_declarations": 15
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "A1/A2/L2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-screens.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "fa89e70e414e2bc6a527cf43cf0d4a6d00010ce7",
+        "sha256": "9166568509a2e861344a139700bc6d50cea3d4de4ad6dc77c011ebf1a97fd60f",
+        "static_test_declarations": 30
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "70d717f3d333b79303ebec0fe0db03b6a95cd961",
+        "sha256": "7898029b02d8e71f0e2467c6fcba8e211d7de2fde73a07c2e9c50649b31f3bf5",
+        "static_test_declarations": 31
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-settings.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "753defebabb69b78856a13516454d0ddd7fba55e",
+        "sha256": "ddf492fff8ea18b60e96e7a22ff958d56a913560a8e98bbcb786f058f435cb75",
+        "static_test_declarations": 20
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "4fbcd9a65982c9dac37a7dbe96644a19e81acb0a",
+        "sha256": "1da47c3a4979b80089aa0ab7a5f63de44ff624c179e25e435c78af71eb93d431",
+        "static_test_declarations": 20
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "A1/A2/L2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-source.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "ce7367fd670a2b98149059d7867056c8a4af81bc",
+        "sha256": "337c4f6050c9d122b33a7c0eb7239d5b3797dd7bd75c2cd33001635600d0246a",
+        "static_test_declarations": 16
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "eadf6316ba3ab16c7c12735d575df980aa582dff",
+        "sha256": "9180acb7960ff504506c5b2eef2723306d52494351a65f06379107a4a6d9fbfe",
+        "static_test_declarations": 20
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-task-processes.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "dd3db37a377917852b9f69f1d840e46ded37f350",
+        "sha256": "134cbad1182b3aa951852b6fd3f2603fa3cc9ea8c9ef793c22a2f9898154c761",
+        "static_test_declarations": 4
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "30ea01b259b286e744f85478eac17b05f90cccb1",
+        "sha256": "3925fa61eaebed9a83be9068b5b05c788c3a8ba8f651d0d113e9612bcc08675c",
+        "static_test_declarations": 7
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-tasks.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "e63c2070472895dd06d29cc3473371692bb0beec",
+        "sha256": "f3a7acb6134d23efe1eacf8cf38862417eecb671620a0a1cebed9a45844ea3eb",
+        "static_test_declarations": 51
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "786d39dc61bf1c7d8e4224d326b61053e69a3644",
+        "sha256": "5ddfa0cd23318de7163648f2aeeb8b297f60dda5347ff22e6ed333236ea224f5",
+        "static_test_declarations": 63
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-terminal.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "8e26c68bf741f37076ccc1ae9f4c2253c7b15b81",
+        "sha256": "1799a80d3f8ba57c095ce15dc3341c5a649ae4044a127b900f82e2a882e66b57",
+        "static_test_declarations": 7
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "290f0d82d555ce8e0b2ad6ec7ce3fad07de45a77",
+        "sha256": "89f41523c872007f843573b213f8a185221e782318507190dfb2126f38148cc3",
+        "static_test_declarations": 9
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/core-worktree.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "61ac2026f05cdc13d2b2229180e35fab88626612",
+        "sha256": "061c49c25b518e35f7b1c4867c97b7cb2169493846f794256113eeb602e9b312",
+        "static_test_declarations": 3
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "fb78c9d3461ee51890fdb12ccae2cdbdcc3131cc",
+        "sha256": "73f81e41b142e9351755997dcbd563f506c8fa1d5cf03c7ccaee3344c774a672",
+        "static_test_declarations": 6
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/fixtures/core-launch-crash.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "b39796a40286fbbc485faa947b83d1aa99cadd12",
+        "sha256": "1b78fa6e169722e4546b488e1c5f285da138ea84a54f48ca8ea1c147e3ebc6b5",
+        "static_test_declarations": 0
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/layout-azure-admission.test.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "66cc83c4608209c709877307162ef2325df293ad",
+        "sha256": "7e9c166f54a3e96e0a46fcb35d090f3489b85a20dd7c9a830cff68f33d4b11b2",
+        "static_test_declarations": 1
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "A1/A2/L2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "fork",
+      "path": "test/layout-restart.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "de8e17957efb4aa016d7e4d652f397aaa95f0880",
+        "git_blob": "306268ecde1474c9fa3b72370b57f101e7e66bf9",
+        "sha256": "153d0dd81bafb53ef458e8cdb0b18fffe2263bac4673a4f3b0ca402c63136102",
+        "static_test_declarations": 6
+      },
+      "after": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "c8114e8c440d0af9b729b5cac412a2a9a16d4307",
+        "sha256": "993279d92b276c593f9b73cc5e90dd3c5b836c3793d8ddf83800356d1e802d15",
+        "static_test_declarations": 7
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "helper/core-bitbucket-git.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "99bb3bf1c39b289e6605813f92ec56ce710ec779",
+        "sha256": "33459469a98bf07b009bf4b66af152e120265b8546a8b1adc4d8addcfbcf9963",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "helper/core-bitbucket.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "16d4790666af96b29c621ef70d308376c5e5a880",
+        "sha256": "6e04ed2180b776dc09db1f10d8df0fa1c3dfc79f4daf525a57c8b2562e2f87ee",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "server/core/agents.ts",
+      "change": "M",
+      "before": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "c29244ffad26f1356f36bd00d2c93abf532a7df7",
+        "sha256": "b6813387af266ece286413adcf165bcabc152f75d409c16f3c5b3cfce4ad94b0",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "3c60fe97d91f9f6507409df5e5fba09183b1cdbb",
+        "sha256": "f2c3a2f2718d425cfbd4423cb8697c9a0150d3673eee78220b78b713fb85921f",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "server/core/client.ts",
+      "change": "M",
+      "before": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "c76d195c7f6e66b5dbcb605e53d3df5dfc9988ee",
+        "sha256": "430ca9235e72c0e85c9576628e1564505bad61870212a5ca6afc1cd6cd908d8f",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "969ca398962b65014d011f700094571c75ae8cb3",
+        "sha256": "b8d3579fdb44d20497b067e9ff5bca4f4c312894aaa3337f648a49cfb23fcb96",
+        "static_test_declarations": null
+      },
+      "disposition": "upstream transport at service/hc/client.ts; fork transport guarantees pending",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "server/core/files.ts",
+      "change": "M",
+      "before": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "965502090124aa5ab6d2ab4512e9dd91207e2707",
+        "sha256": "def7fceda21a310f6048eff0bfbcca64eee5846e7c4c21b8156fcbe2b085b66b",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "42035839e24d188ea0daea5d3c4f3ac9cacc9e7b",
+        "sha256": "0c4a6481b5b5f2964ee0c8b9af554f941fa4bf11585096e3085fa799d8fd6115",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "server/core/forge/bitbucket-http.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "761d6572798199c2cd9e7c3edbe34ce560e8f1f6",
+        "sha256": "47cba322f9a85d32ab218c6b12fdffdd03bd044fc95bc1b1a3142a2ea65ea579",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "server/core/forge/bitbucket-protocol.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "2bf25cec8e4793219999f049f2a41721ca0ebcde",
+        "sha256": "699ac919fc93d7b459fe0840a0a41d9f1603026c56c19c9015600cb84ef8eb4e",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "server/core/forge/bitbucket.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "74c5435a7c1176e037ea1226333b08a1baa5430b",
+        "sha256": "bdf2173f77ec70420066d85d902bfb19fe5952b29ecf8267effcc811675ca9b8",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "server/core/forge/index.ts",
+      "change": "M",
+      "before": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "3037793ca9c568649094b341c9818406fdafb1c1",
+        "sha256": "98a26fe4f61673a204d1a4778712c184ccb5fc2510d132649101796a3c3fb95b",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "e1d957b4147754945082bfb2cfcbd7dbe5d64c6d",
+        "sha256": "1ba0e149561cedda6768ebfdc1192be8726b1913719bd0396fc8de891e58098b",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "server/core/forge/types.ts",
+      "change": "M",
+      "before": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "de38df53441f0825069ce77c58c032d7e15a45cd",
+        "sha256": "17c5e1674c89079615649ab99ae25d3d3e635a156c6244298e46e1ced57b5bde",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "055ccc84e379d217a06ee0a51a011ef4d577365e",
+        "sha256": "d28a37503b70d9a2ddfa90893796ee57edd69f1aedb16e20459d6d6b83ecb2cb",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "server/core/git.ts",
+      "change": "M",
+      "before": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "56cbec7826a1c485d21ffb0a1c749205f8b32330",
+        "sha256": "095963962c26cf6daa637ca2ccd972fb7df52d9f10d84a5cc9a82687793839c1",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "4d434488ba1d961cdf8fdaedaa3ece0bde031fc0",
+        "sha256": "52b7ba6e568d7b26bf5b2d5dc20e43a29e3a857abb88d30a3c5434159ad4b65b",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "server/core/github.ts",
+      "change": "M",
+      "before": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "bff5c9f6721a88c1caca497aaec0d10240d74a16",
+        "sha256": "f703287a8e54f9a032acb3bfd6460f8334e78a74c9210df95483bfaeb7abe81a",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "86c42835c562523a456ec1f75d38d3066cf5f598",
+        "sha256": "4c2da0c773ce474247a2f0064a56fb98eab45d0869416c037681b7ab456337bd",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "server/core/mailbox.ts",
+      "change": "M",
+      "before": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "e68592f0120629abe33e19ed320dd8d541357580",
+        "sha256": "8bc67fbf58e79a6671a740b7c2cf37af1fcadf6773bbc2f9cef51fe161a7c966",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "7a6d350372feccc2302c75db539d1736d55e5635",
+        "sha256": "90dec6b5e35ad8e44c03b32537ea364247a5c5ca54a3717aa34afd065f9b1b19",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "server/core/remote.ts",
+      "change": "M",
+      "before": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "959db472c78e96d5938558732dc34387617faad7",
+        "sha256": "55d1de53daef46f3d967bb5d997ba4e190c864ae72f5ca06469f3767f32047e5",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "2513acb6d559652464bcd2c765e71eee56f2238f",
+        "sha256": "f08c97a3341f4c24f9f0a81b50c9cf90f5b0cecedbf0a9e89185766aa0173ddd",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "server/core/source.ts",
+      "change": "M",
+      "before": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "6cdc348bdcec3a6e060a090ae5462abfad6354e5",
+        "sha256": "90c103bad61a624b5f2607ece479c1d7791a75b78031b2dcb6b5a0dad7f8addd",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "f4a29c7bc15c1f924c4080a5fc9fb25a0e388c98",
+        "sha256": "0d43fab0732d4b772b73fb37b977b13faf1646e4ef75de2c28ca181e86cfb1ea",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "server/core/tasks.ts",
+      "change": "M",
+      "before": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "ca927c9dafbfe9da1420dacba8c77d7691015d22",
+        "sha256": "4e876906ef0cb9c8f24c226d9438713f49e33feb4ea8a5e90fbc4fe187e2a464",
+        "static_test_declarations": null
+      },
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "dfc51485b87aa701a251c754b0f056899ab7c57c",
+        "sha256": "9087fffa9006a7b8613da360bdce12bd58a085143efafe6be26a8e94635b4539",
+        "static_test_declarations": null
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "test/bitbucket-cli-fixture.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "784782e3a02c2daecf1518b90b40a13debd85dd6",
+        "sha256": "01da569100acf7fb293382c6c273610bc6eda752ef289aa5926c25833a597e1c",
+        "static_test_declarations": 0
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "test/bitbucket-fixture.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "37bc2177cf15343944b8572ca8af4e89b99ed833",
+        "sha256": "d05689af78df17e0d3e2daccdba0edfafc9a98ede9aeda85339a45472951d7c8",
+        "static_test_declarations": 0
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "test/core-bitbucket-cli.test.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "e6f003596e6944406ace7e39bb4552b706fd5742",
+        "sha256": "6514501d73238fa7befd66367b1e96d4c8c7e36bf80e2a8888cdc695c540a77b",
+        "static_test_declarations": 6
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "test/core-bitbucket-contracts.test.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "f6ebcd8c7c446b21d203383ff0ccec77a122deea",
+        "sha256": "06f601f2fc078db345c497f0ea60edd95359d475a86b477c2924f7381e86284f",
+        "static_test_declarations": 9
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "test/core-bitbucket-preflight.test.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "27ff3f804f76e9805b2f5ac5d8ede8478362a3ea",
+        "sha256": "1319597e04848312f5add6d964c99766f1ff483c99acb82c87b3856bcd9162e2",
+        "static_test_declarations": 5
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "test/core-bitbucket.test.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "dfaa74dcc45a911819cc43220a419a87cc0535d7",
+        "sha256": "9eb162e54efb84ca3d5a220626805b62e2ae9d86d318ffcdb019c4feaaba0026",
+        "static_test_declarations": 34
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "test/core-client.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "1017a505cc87ab9326c2f80b314089b72534d3f1",
+        "sha256": "8fb9686cfbc8a099646bb21b2909d249ebcd86a9f26c1ce377744de84b4bdabb",
+        "static_test_declarations": 12
+      },
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "6a644ebe39d6330e37047c614ac88eb09c3e148d",
+        "sha256": "1628c0ce3d18999ae0b72a68eb6bfe9cd01c2e4df14437617f26255928b81285",
+        "static_test_declarations": 12
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "test/core-forge-observer.test.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "9482fd93c7209fbefb5e71120230e11d67e5b60b",
+        "sha256": "06a27656b0f0260d4ac5fb09ec11fdae70e87ec4e8f4d86862ca3846a0fc745f",
+        "static_test_declarations": 1
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "test/core-mailbox.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "ab04917ddc8464eb32412f7a3060fe348bc8b0d0",
+        "sha256": "d8dfc3cb500e85d464c96096e053174d2674a10dad67e57fe1bf1400e4362df9",
+        "static_test_declarations": 6
+      },
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "0fa7525440b6cbb26a2af4099ec13ccfb92a1f3f",
+        "sha256": "53e64238962377b341ffecb834ca8884cdc5376f1bdb836fe837fad1c0efe862",
+        "static_test_declarations": 6
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "test/core-wire.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "1a00bf56035a678a490639ea9121fb341d5b051d",
+        "sha256": "71c72f9b4f7582b0db3fdb3b1d789c650b743cf72d85d836d30eea1867603b05",
+        "static_test_declarations": 0
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "test/core-worktree.test.ts",
+      "change": "M",
+      "before": {
+        "commit": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+        "git_blob": "fb78c9d3461ee51890fdb12ccae2cdbdcc3131cc",
+        "sha256": "73f81e41b142e9351755997dcbd563f506c8fa1d5cf03c7ccaee3344c774a672",
+        "static_test_declarations": 6
+      },
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "799327fe7d1399078ca7d1249a65160b9c7fb056",
+        "sha256": "493a2403a09ee2756f961d9de83df27dea202cdf91772677d3fd4cb866bb1d17",
+        "static_test_declarations": 6
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "test/fixtures/bitbucket-credential-fill.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "d53d931505fd3ac1a661363acdb37c2e31eab1e9",
+        "sha256": "56ce1a4b02a7609f83acc8dce71e359394218cc117541b90c724c4b527215eae",
+        "static_test_declarations": 2
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "test/fixtures/bitbucket-fetch.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "26ac8856aee89d783239e19dbbb1053265687490",
+        "sha256": "e5ab9a119e885a484c4cdd1eaa09dc1497b7dbe26a61e19075407abd517dea05",
+        "static_test_declarations": 1
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "test/fixtures/bitbucket-git-remote.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "b0cfc9d008e802b47595b48d1cd53a9f32b800f1",
+        "sha256": "6b07ad9299ae8ccce73a4f83e51d0fb277b5c0ae0307f05f6fc1e8bf9b7b16ee",
+        "static_test_declarations": 1
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "S1/B1/B2",
+      "parity": "not-qualified"
+    },
+    {
+      "range": "pr3",
+      "path": "test/mailbox-documents.ts",
+      "change": "A",
+      "before": null,
+      "after": {
+        "commit": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+        "git_blob": "87411e1ce10162f72d4b5dfe9daba72b71c0d4e5",
+        "sha256": "850e5c4bc504ef32a01f6da13a6bd3d5c405a8c9e4e6dc2448f50378058030ae",
+        "static_test_declarations": 0
+      },
+      "disposition": "removed legacy owner; original Git object/proof obligation retained",
+      "phase": "L1/L2/Q",
+      "parity": "not-qualified"
+    }
+  ]
+}

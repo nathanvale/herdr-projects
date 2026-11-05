@@ -2,6 +2,9 @@
 status: proposed
 ---
 
+> Historical 2.x contract reference from fixed F/P. Old implementation paths refer
+> to those Git trees, not this native foundation. See the [migration contract](../migration/upstream-v3.1.3.md).
+
 # Protected preview update admission belongs to the running application
 
 ## Context and Problem
@@ -84,4 +87,4 @@ acceptance remains separately authorized and unperformed.
 ## References
 
 - [Configuration, update limits and native acceptance](../azure-foundry.md)
-- [Manual lifecycle controls](../core/start.md)
+- [Manual lifecycle controls](https://github.com/nathanvale/herdr-projects/blob/074dec5ea0bf0a057f520fa50497bf9e1b696ad9/docs/core/start.md)

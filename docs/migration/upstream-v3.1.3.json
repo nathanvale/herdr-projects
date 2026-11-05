@@ -1,0 +1,937 @@
+{
+  "schema": 1,
+  "phase": "S0",
+  "architecture": "full-upstream-3.x",
+  "candidate_readiness": "blocked",
+  "inputs": {
+    "F": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
+    "U": "dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc",
+    "P": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+    "B": "de8e17957efb4aa016d7e4d652f397aaa95f0880"
+  },
+  "requirements": [
+    {
+      "id": "github-defaults",
+      "phase": "S1",
+      "status": "reuse-unqualified",
+      "requirement": "GitHub defaults and legacy unqualified record meaning",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/github.py",
+          "existing": true
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/commands.py",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/forge/github.ts",
+        "test/core-github-pr.test.ts",
+        "test/core-worktree.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "forge-identity",
+      "phase": "S1/B1",
+      "status": "pending",
+      "requirement": "Provider/host/repository-qualified identity and clear adapter interface",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/forge.py",
+          "existing": false
+        },
+        {
+          "path": "service/worktree.ts",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/forge/bitbucket.ts",
+        "test/core-bitbucket-cli.test.ts",
+        "test/core-bitbucket.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "bitbucket-credentials",
+      "phase": "B1",
+      "status": "pending",
+      "requirement": "Host Git credential ownership; no fallback; helper isolation",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/bitbucket_http.py",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/forge/bitbucket.ts",
+        "test/core-bitbucket-cli.test.ts",
+        "test/core-bitbucket.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "bitbucket-reads",
+      "phase": "B1",
+      "status": "pending",
+      "requirement": "Exact-commit pagination; incomplete/empty/pending/failed/passed checks",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/bitbucket.py",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/forge/bitbucket.ts",
+        "test/core-bitbucket-cli.test.ts",
+        "test/core-bitbucket.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "bitbucket-publication",
+      "phase": "B2",
+      "status": "pending",
+      "requirement": "Preflight, draft publication and exact source/destination identity",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/publications.py",
+          "existing": false
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/commands.py",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/forge/bitbucket.ts",
+        "test/core-bitbucket-cli.test.ts",
+        "test/core-bitbucket.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "bitbucket-current-fields",
+      "phase": "B2",
+      "status": "pending",
+      "requirement": "Preserve current title/reviewers/destination/close_source_branch",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/bitbucket_http.py",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/forge/bitbucket.ts",
+        "test/core-bitbucket-cli.test.ts",
+        "test/core-bitbucket.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "bitbucket-push-facts",
+      "phase": "B2",
+      "status": "pending",
+      "requirement": "Frozen push route and truthful post-effect facts without stale task overwrite",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/commands.py",
+          "existing": true
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/publications.py",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/forge/bitbucket.ts",
+        "test/core-bitbucket-cli.test.ts",
+        "test/core-bitbucket.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "bitbucket-uncertainty",
+      "phase": "B2",
+      "status": "pending",
+      "requirement": "Durable exact UUID, no blind retry, positive-same-UUID reconciliation",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/publications.py",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/forge/bitbucket.ts",
+        "test/core-bitbucket-cli.test.ts",
+        "test/core-bitbucket.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "bitbucket-two-machine",
+      "phase": "B2",
+      "status": "pending",
+      "requirement": "Canonical claim exclusion across execution machines",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/publications.py",
+          "existing": false
+        },
+        {
+          "path": "service/store.ts",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/forge/bitbucket.ts",
+        "test/core-bitbucket-cli.test.ts",
+        "test/core-bitbucket.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "bitbucket-merge-refusal",
+      "phase": "B2",
+      "status": "pending",
+      "requirement": "No native/local/agent merge without official expected-source-head guarantee",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/commands.py",
+          "existing": true
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/bitbucket.py",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/forge/bitbucket.ts",
+        "test/core-bitbucket-cli.test.ts",
+        "test/core-bitbucket.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "public-cli-outcomes",
+      "phase": "B2",
+      "status": "pending",
+      "requirement": "Truthful public ready/evidence/accept outcomes with typed unknowns",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/cli.py",
+          "existing": true
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/output.py",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/forge/bitbucket.ts",
+        "test/core-bitbucket-cli.test.ts",
+        "test/core-bitbucket.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "approval-exact-head",
+      "phase": "B2/L2",
+      "status": "pending",
+      "requirement": "Current candidate/provider identity admission before effects",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/commands.py",
+          "existing": true
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/proof.py",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/forge/bitbucket.ts",
+        "test/core-bitbucket-cli.test.ts",
+        "test/core-bitbucket.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "request-replay",
+      "phase": "B2/L1",
+      "status": "pending",
+      "requirement": "Durable request identity/input binding; interrupted effects never redispatch",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/publications.py",
+          "existing": false
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/launch_admission.py",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/forge/bitbucket.ts",
+        "test/core-bitbucket-cli.test.ts",
+        "test/core-bitbucket.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "azure-personal",
+      "phase": "A1",
+      "status": "pending",
+      "requirement": "Personal pass-through defaults; no account selection by model",
+      "owners": [
+        {
+          "path": "core/settings.js",
+          "existing": true
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/providers.py",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "docs/azure-foundry.md",
+        "server/core/settings.ts",
+        "server/core/providers.ts",
+        "test/core-azure-deployments.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "azure-claude-entra",
+      "phase": "A1",
+      "status": "pending",
+      "requirement": "Claude Foundry SDK default chain on admitted host",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/providers.py",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "docs/azure-foundry.md",
+        "server/core/settings.ts",
+        "server/core/providers.ts",
+        "test/core-azure-deployments.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "azure-claude-key",
+      "phase": "A1",
+      "status": "pending",
+      "requirement": "Claude inherited ANTHROPIC_FOUNDRY_API_KEY; no stored values",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/providers.py",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "docs/azure-foundry.md",
+        "server/core/settings.ts",
+        "server/core/providers.ts",
+        "test/core-azure-deployments.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "azure-claude-token",
+      "phase": "A1",
+      "status": "pending",
+      "requirement": "Claude inherited ANTHROPIC_FOUNDRY_AUTH_TOKEN; host renewal",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/providers.py",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "docs/azure-foundry.md",
+        "server/core/settings.ts",
+        "server/core/providers.ts",
+        "test/core-azure-deployments.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "azure-codex-key",
+      "phase": "A1",
+      "status": "pending",
+      "requirement": "Codex Azure v1 Responses/env_key and stable reserved provider table",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/providers.py",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "docs/azure-foundry.md",
+        "server/core/settings.ts",
+        "server/core/providers.ts",
+        "test/core-azure-deployments.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "azure-credential-custody",
+      "phase": "A1",
+      "status": "pending",
+      "requirement": "No values in argv/settings/labels/logs/records/core overrides; human connections",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/providers.py",
+          "existing": false
+        },
+        {
+          "path": "service/settings.ts",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "docs/azure-foundry.md",
+        "server/core/settings.ts",
+        "server/core/providers.ts",
+        "test/core-azure-deployments.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "azure-discovery",
+      "phase": "A1/A2",
+      "status": "pending",
+      "requirement": "Explicit both-CLI Refresh, manual fallback and supported provisioning/capability filters",
+      "owners": [
+        {
+          "path": "service/azure-deployments.ts",
+          "existing": false
+        },
+        {
+          "path": "service/settings.ts",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "docs/azure-foundry.md",
+        "server/core/settings.ts",
+        "server/core/providers.ts",
+        "test/core-azure-deployments.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "azure-discovery-scope",
+      "phase": "A1/A2",
+      "status": "pending",
+      "requirement": "Memory-only scoped cache; explicit subscription; public-cloud/local limits",
+      "owners": [
+        {
+          "path": "service/azure-deployments.ts",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "docs/azure-foundry.md",
+        "server/core/settings.ts",
+        "server/core/providers.ts",
+        "test/core-azure-deployments.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "azure-discovery-stale",
+      "phase": "A1/A2",
+      "status": "pending",
+      "requirement": "Reject stale/in-flight endpoint/resource/subscription results; sanitized errors",
+      "owners": [
+        {
+          "path": "service/azure-deployments.ts",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "docs/azure-foundry.md",
+        "server/core/settings.ts",
+        "server/core/providers.ts",
+        "test/core-azure-deployments.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "azure-settings-surfaces",
+      "phase": "A2",
+      "status": "pending",
+      "requirement": "Desktop/web provider/deployment/auth controls and inherited scoped defaults",
+      "owners": [
+        {
+          "path": "core/settings.js",
+          "existing": true
+        },
+        {
+          "path": "mods/shepherdr-settings/main.js",
+          "existing": true
+        },
+        {
+          "path": "web/src/Settings.tsx",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "docs/azure-foundry.md",
+        "server/core/settings.ts",
+        "server/core/providers.ts",
+        "test/core-azure-deployments.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "azure-new-start",
+      "phase": "A2",
+      "status": "pending",
+      "requirement": "Task/coordinator save-only selector, revision check, preserved holds/manual choice",
+      "owners": [
+        {
+          "path": "core/agents.js",
+          "existing": true
+        },
+        {
+          "path": "web/src/restart.tsx",
+          "existing": true
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/settings.py",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "docs/azure-foundry.md",
+        "server/core/settings.ts",
+        "server/core/providers.ts",
+        "test/core-azure-deployments.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "azure-bound-resume",
+      "phase": "A2/L2",
+      "status": "pending",
+      "requirement": "Recorded binding/native session/hooks; reconstruct Claude env and Codex table",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/providers.py",
+          "existing": false
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/revive.py",
+          "existing": true
+        },
+        {
+          "path": "service/agents.ts",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "docs/azure-foundry.md",
+        "server/core/settings.ts",
+        "server/core/providers.ts",
+        "test/core-azure-deployments.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "selection-effort-fast",
+      "phase": "A2/L2",
+      "status": "pending",
+      "requirement": "Preserve provider/model/effort/Fast/permissions; incompatible settings refuse",
+      "owners": [
+        {
+          "path": "core/agents.js",
+          "existing": true
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/providers.py",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "docs/azure-foundry.md",
+        "server/core/settings.ts",
+        "server/core/providers.ts",
+        "test/core-azure-deployments.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "settings-inheritance",
+      "phase": "A2/Q",
+      "status": "pending",
+      "requirement": "Scope identities/most-specific inheritance, explicit empty versus Reset",
+      "owners": [
+        {
+          "path": "service/settings.ts",
+          "existing": true
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/settings.py",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/settings.ts",
+        "test/core-settings.test.ts",
+        "docs/settings.md"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "ordinary-resume",
+      "phase": "L2",
+      "status": "reuse-unqualified",
+      "requirement": "Native ordinary crash resume, kept terminal and manual resume, one execution",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/revive.py",
+          "existing": true
+        },
+        {
+          "path": "service/watch.ts",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/launches.ts",
+        "server/core/agents.ts",
+        "test/core-launch-admission.test.ts",
+        "test/core-operator.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "missing-history",
+      "phase": "L2",
+      "status": "decision-held",
+      "requirement": "Fresh is new conversation; decide fallback versus hold per genuine missing-history case",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/revive.py",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/launches.ts",
+        "server/core/agents.ts",
+        "test/core-launch-admission.test.ts",
+        "test/core-operator.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "launch-uncertainty",
+      "phase": "L1",
+      "status": "pending",
+      "requirement": "Claim before dispatch; never-submitted distinct from submission-uncertain",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/launch_admission.py",
+          "existing": false
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/launch.py",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/launches.ts",
+        "server/core/agents.ts",
+        "test/core-launch-admission.test.ts",
+        "test/core-operator.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "late-sender-fence",
+      "phase": "L1",
+      "status": "pending",
+      "requirement": "Revoke application sender before recovery; native/core authority gap held",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/launch_admission.py",
+          "existing": false
+        },
+        {
+          "path": "mods/coordinator/restart.sh",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/launches.ts",
+        "server/core/agents.ts",
+        "test/core-launch-admission.test.ts",
+        "test/core-operator.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "one-revival-owner",
+      "phase": "L1/L2",
+      "status": "pending",
+      "requirement": "Native revival through one admission owner, no competing loop",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/revive.py",
+          "existing": true
+        },
+        {
+          "path": "service/watch.ts",
+          "existing": true
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/launch_admission.py",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/launches.ts",
+        "server/core/agents.ts",
+        "test/core-launch-admission.test.ts",
+        "test/core-operator.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "manual-recovery",
+      "phase": "L2/R",
+      "status": "decision-held",
+      "requirement": "Exact identity/revocation and reboot proof differ from ordinary restart; no replay",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/launch_admission.py",
+          "existing": false
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/launches.ts",
+        "server/core/agents.ts",
+        "test/core-launch-admission.test.ts",
+        "test/core-operator.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "delivery-retries",
+      "phase": "L2",
+      "status": "pending",
+      "requirement": "Exact turn/effect receipt, queued/provider retries respect uncertain holds",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/tick.py",
+          "existing": true
+        },
+        {
+          "path": "service/chats.ts",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/launches.ts",
+        "server/core/agents.ts",
+        "test/core-launch-admission.test.ts",
+        "test/core-operator.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "task-lifecycle-holds",
+      "phase": "L2",
+      "status": "pending",
+      "requirement": "Task/approval/queue holds and current descendant cleanup ownership",
+      "owners": [
+        {
+          "path": "mods/tasks/bin/herdr_task/commands.py",
+          "existing": true
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/tick.py",
+          "existing": true
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/queues.py",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/task-processes.ts",
+        "server/core/pilot-lifecycle.ts",
+        "test/core-task-processes.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "screen-reconnect",
+      "phase": "L2",
+      "status": "reuse-unqualified",
+      "requirement": "Current screen/terminal choices and native reconnect exclude stale identities",
+      "owners": [
+        {
+          "path": "service/hub.ts",
+          "existing": true
+        },
+        {
+          "path": "core/screens.js",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/session.ts",
+        "server/core/screens.ts",
+        "test/core-screens.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "protected-update",
+      "phase": "R",
+      "status": "decision-held",
+      "requirement": "No live/unconfirmed workers or pending effects at cutover; preserve operational hold",
+      "owners": [
+        {
+          "path": "bin/shepherdr",
+          "existing": true
+        },
+        {
+          "path": "service/main.ts",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "server/core/protected-update.ts",
+        "test/core-protected-update.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "plugin-state-compatibility",
+      "phase": "Q/R",
+      "status": "pending",
+      "requirement": "Registry/last-good failure isolation, outbox/drafts/labels/state formats",
+      "owners": [
+        {
+          "path": "web/src/kernel.ts",
+          "existing": true
+        },
+        {
+          "path": "web/src/outbox.ts",
+          "existing": true
+        },
+        {
+          "path": "lib/addons.json",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "docs/plugins.md",
+        "test/core-plugins.test.ts",
+        "test/core-plugin-production.test.ts"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "fork-ci-obligations",
+      "phase": "Q",
+      "status": "pending",
+      "requirement": "Port legacy Foundry/core/public regressions and sensitivity proofs; no silent discharge",
+      "owners": [
+        {
+          "path": ".github/workflows/check.yml",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        ".github/workflows/foundry.yml",
+        ".github/workflows/core-rewrite.yml"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    },
+    {
+      "id": "matching-state-rollback",
+      "phase": "R",
+      "status": "decision-held",
+      "requirement": "Exact executable/core/state pairing; no automatic 2.x carryover or lost claims",
+      "owners": [
+        {
+          "path": "docs/upgrading.md",
+          "existing": true
+        },
+        {
+          "path": "service/store.ts",
+          "existing": true
+        },
+        {
+          "path": "mods/tasks/bin/herdr_task/store.py",
+          "existing": true
+        }
+      ],
+      "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
+      "source_paths": [
+        "docs/core/cutover.md",
+        "docs/azure-foundry.md",
+        "docs/core/launch-recovery.md"
+      ],
+      "evidence": "source-inspected; native qualification pending"
+    }
+  ],
+  "inventory": "upstream-v3.1.3-files.json",
+  "source_claim": "native foundation only; no required fork port is implemented or runtime-qualified",
+  "azure_cli_design": {
+    "skill": "my-second-brain-playground:cli-design",
+    "route": "maintain/extend existing-project",
+    "profile": "complex",
+    "owner_resolution": "each harness resolves its own active installed owner; no install/refresh",
+    "compatibility": "native Python CLI and current output/exit/serialization; Contract Core 2.0, LogTape and command discovery adoption unapproved"
+  }
+}

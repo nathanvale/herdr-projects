@@ -1,3 +1,6 @@
+> Historical 2.x contract reference from fixed F/P. Old implementation paths refer
+> to those Git trees, not this native foundation. See the [migration contract](migration/upstream-v3.1.3.md).
+
 # Bitbucket authentication and execution design
 
 This is the FORG-2 implementation design. The helper below is proposed code, not an installed capability.

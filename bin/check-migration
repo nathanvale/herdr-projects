@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Validate the S0 source contract without starting or installing anything."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parent.parent
+INPUTS = {
+    'F': '4f0236f03a88c5e9fa344475d90d3a20ef418481',
+    'U': 'dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc',
+    'P': '074dec5ea0bf0a057f520fa50497bf9e1b696ad9',
+    'B': 'de8e17957efb4aa016d7e4d652f397aaa95f0880',
+}
+REQUIRED = frozenset('''github-defaults forge-identity bitbucket-credentials
+bitbucket-reads bitbucket-publication bitbucket-current-fields bitbucket-push-facts
+bitbucket-uncertainty bitbucket-two-machine bitbucket-merge-refusal public-cli-outcomes
+approval-exact-head request-replay azure-personal azure-claude-entra azure-claude-key
+azure-claude-token azure-codex-key azure-credential-custody azure-discovery
+azure-discovery-scope azure-discovery-stale azure-settings-surfaces azure-new-start
+azure-bound-resume selection-effort-fast settings-inheritance ordinary-resume
+missing-history launch-uncertainty late-sender-fence one-revival-owner manual-recovery
+delivery-retries task-lifecycle-holds screen-reconnect protected-update
+plugin-state-compatibility fork-ci-obligations matching-state-rollback'''.split())
+OVERRIDES = {'AGENTS.md', 'docs/develop.md', '.github/workflows/check.yml'}
+
+
+def git(*args):
+    result = subprocess.run(['git', '-C', str(ROOT), *args], capture_output=True)
+    if result.returncode:
+        raise ValueError('Required fixed Git object unavailable; Root must provide F/U/P/B history for CI')
+    return result.stdout
+
+
+def validate_contract(contract):
+    if contract.get('schema') != 1 or contract.get('inputs') != INPUTS:
+        raise ValueError('Fixed inputs or contract schema changed')
+    if (contract.get('phase'), contract.get('architecture'), contract.get('candidate_readiness')) != (
+            'S0', 'full-upstream-3.x', 'blocked'):
+        raise ValueError('S0 must remain a blocked full-upstream source checkpoint')
+    rows = contract.get('requirements', [])
+    if len(rows) != len(REQUIRED) or {row.get('id') for row in rows} != REQUIRED:
+        raise ValueError('Required behavior inventory is incomplete or duplicated')
+    for row in rows:
+        if row.get('status') not in {'pending', 'reuse-unqualified', 'decision-held'}:
+            raise ValueError('S0 cannot claim a required port is qualified')
+        if not all(row.get(key) for key in ('phase', 'requirement', 'owners', 'source_paths', 'evidence')):
+            raise ValueError('Requirement lacks owner, proof source or disposition')
+        if row.get('port_source') != INPUTS['P']:
+            raise ValueError('Required port source changed')
+
+
+def validate_inventory(inventory):
+    if inventory.get('schema') != 1 or inventory.get('inputs') != INPUTS:
+        raise ValueError('File inventory inputs or schema changed')
+    rows = inventory.get('files', [])
+    actual = {(row['range'], row['path'], row['change']) for row in rows}
+    expected = set()
+    for label, before, after in [('fork', INPUTS['B'], INPUTS['F']), ('pr3', INPUTS['F'], INPUTS['P'])]:
+        for line in git('diff', '--no-renames', '--name-status', before, after).decode().splitlines():
+            status, path = line.split('\t')
+            expected.add((label, path, status))
+    if len(actual) != len(rows) or actual != expected:
+        raise ValueError('File dispositions do not cover every B..F and F..P path')
+    for row in rows:
+        if not row.get('disposition') or not row.get('phase') or row.get('parity') != 'not-qualified':
+            raise ValueError('File disposition or pending proof obligation missing')
+        endpoints = (INPUTS['B'], INPUTS['F']) if row['range'] == 'fork' else (INPUTS['F'], INPUTS['P'])
+        for side, commit in zip(('before', 'after'), endpoints):
+            snapshot = row.get(side)
+            absent = side == 'before' and row['change'] == 'A' or side == 'after' and row['change'] == 'D'
+            if absent:
+                if snapshot is not None:
+                    raise ValueError('Unexpected snapshot for absent source path')
+                continue
+            data = git('show', commit + ':' + row['path'])
+            blob = git('rev-parse', commit + ':' + row['path']).decode().strip()
+            if not snapshot or snapshot.get('commit') != commit or snapshot.get('git_blob') != blob:
+                raise ValueError('Original source provenance changed')
+            if snapshot.get('sha256') != hashlib.sha256(data).hexdigest():
+                raise ValueError('Original source hash changed')
+    return len(rows)
+
+
+def validate_foundation():
+    files = git('ls-tree', '-r', INPUTS['U']).decode().splitlines()
+    for line in files:
+        metadata, path = line.split('\t')
+        if path in OVERRIDES:
+            continue
+        mode, kind, blob = metadata.split()
+        if kind != 'blob':
+            raise ValueError('Unexpected upstream tree entry')
+        target = ROOT / path
+        if not target.is_file() or target.read_bytes() != git('cat-file', 'blob', blob):
+            raise ValueError('Native foundation differs from exact U at ' + path)
+        if bool(target.stat().st_mode & 0o111) != (mode == '100755'):
+            raise ValueError('Native executable mode differs at ' + path)
+    for folder in ('server', 'helper'):
+        if any(path.is_file() for path in (ROOT / folder).rglob('*')):
+            raise ValueError('Legacy server/helper owner was reintroduced')
+    expected_hc = {line.split('\t')[1] for line in files if '\tservice/hc/' in line}
+    actual_hc = {path.relative_to(ROOT).as_posix() for path in (ROOT / 'service/hc').rglob('*') if path.is_file()}
+    if actual_hc != expected_hc:
+        raise ValueError('Old product modules were relocated into native core transport')
+    return len(files)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--manifest', type=Path, default=ROOT / 'docs/migration/upstream-v3.1.3.json')
+    parser.add_argument('--inventory', type=Path, default=ROOT / 'docs/migration/upstream-v3.1.3-files.json')
+    parser.add_argument('--require-ready', action='store_true', help='refuse a source-only checkpoint as a deployable candidate')
+    args = parser.parse_args()
+    try:
+        contract = json.loads(args.manifest.read_text())
+        inventory = json.loads(args.inventory.read_text())
+        validate_contract(contract)
+        count = validate_inventory(inventory)
+        native = validate_foundation()
+    except (ValueError, KeyError, TypeError, OSError) as error:
+        print(json.dumps({'source_validation': 'failed', 'candidate_readiness': 'blocked', 'error': str(error)}))
+        return 1
+    print(json.dumps({'source_validation': 'passed', 'candidate_readiness': 'blocked',
+                      'requirements': len(REQUIRED), 'file_dispositions': count, 'native_files': native}))
+    if args.require_ready:
+        print('S0 is source-only. Complete required ports, Root CI and native qualification before candidate readiness.', file=sys.stderr)
+        return 3
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

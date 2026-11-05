@@ -1,3 +1,6 @@
+> Historical 2.x contract reference from fixed F/P. Old implementation paths refer
+> to those Git trees, not this native foundation. See the [migration contract](migration/upstream-v3.1.3.md).
+
 # Forge adapter reference
 
 This page describes the FORG-1 candidate and the requirements for its Bitbucket extension.
@@ -13,12 +16,12 @@ The [glossary](../GLOSSARY.md) defines the shared vocabulary. The [review map](f
 
 | Owner | Responsibility |
 | --- | --- |
-| [CoreForge](../server/core/forge/index.ts) | Resolve repository identity and select an adapter. |
-| [RepositoryForge](../server/core/forge/types.ts) | Define the shared task-facing operations and results. |
-| [identity.ts](../server/core/forge/identity.ts) | Compare written and effective origins, repository identity, and saved PR identity. |
-| [GitHubForge](../server/core/forge/github.ts) | Interpret GitHub PRs, checks, comments, and base health through the existing gh transport. |
-| [CoreGit](../server/core/git.ts) | Own local Git operations and the existing execution route. |
-| [CoreTasks](../server/core/tasks.ts) | Own task approval, state transitions, and task records. |
+| [CoreForge](https://github.com/nathanvale/herdr-projects/blob/074dec5ea0bf0a057f520fa50497bf9e1b696ad9/server/core/forge/index.ts) | Resolve repository identity and select an adapter. |
+| [RepositoryForge](https://github.com/nathanvale/herdr-projects/blob/074dec5ea0bf0a057f520fa50497bf9e1b696ad9/server/core/forge/types.ts) | Define the shared task-facing operations and results. |
+| [identity.ts](https://github.com/nathanvale/herdr-projects/blob/074dec5ea0bf0a057f520fa50497bf9e1b696ad9/server/core/forge/identity.ts) | Compare written and effective origins, repository identity, and saved PR identity. |
+| [GitHubForge](https://github.com/nathanvale/herdr-projects/blob/074dec5ea0bf0a057f520fa50497bf9e1b696ad9/server/core/forge/github.ts) | Interpret GitHub PRs, checks, comments, and base health through the existing gh transport. |
+| [CoreGit](https://github.com/nathanvale/herdr-projects/blob/074dec5ea0bf0a057f520fa50497bf9e1b696ad9/server/core/git.ts) | Own local Git operations and the existing execution route. |
+| [CoreTasks](https://github.com/nathanvale/herdr-projects/blob/074dec5ea0bf0a057f520fa50497bf9e1b696ad9/server/core/tasks.ts) | Own task approval, state transitions, and task records. |
 
 The planned Bitbucket adapter owns HTTP requests and Bitbucket response interpretation.
 Task commands, observers, and worktree presentation consume the shared contract.
@@ -82,7 +85,7 @@ A credential that works for Git still requires REST compatibility and the permis
 
 Shepherdr adds no Bitbucket authentication settings or credential store. The proposed helper uses the execution host's existing Git credential owner.
 Credential values stay out of task records, PR bodies, command arguments, errors, logs, and browser snapshots.
-The existing [secret-access contract](secrets.md) remains authoritative.
+The existing [secret-access contract](https://github.com/nathanvale/herdr-projects/blob/074dec5ea0bf0a057f520fa50497bf9e1b696ad9/docs/secrets.md) remains authoritative.
 Its agent mailbox does not automatically grant a background observer access to credentials.
 
 The extension has no required account, workspace name, 1Password item, or operating-system keychain entry.

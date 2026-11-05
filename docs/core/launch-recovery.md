@@ -1,3 +1,6 @@
+> Historical 2.x contract reference from fixed F/P. Old implementation paths refer
+> to those Git trees, not this native foundation. See the [migration contract](../migration/upstream-v3.1.3.md).
+
 # Proposed human operator recovery
 
 This candidate is not an activated recovery and grants no host-reboot authority.

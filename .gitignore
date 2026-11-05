@@ -1,8 +1,8 @@
+lib/.last/
+__pycache__/
+*.pyc
+gpui-kit.d.ts
+jsconfig.json
 node_modules/
-dist/
-.releases/
-generated/
-.env
-*.log
-user-plugins/
-user-plugins.json
+web/dist/
+web/generated/

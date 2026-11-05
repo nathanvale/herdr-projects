@@ -1,73 +1,61 @@
-# Settings
+# Settings: Everywhere and a space's own
 
-- Settings (sidebar, or `,` on a desktop) holds the few app settings, in two groups. What agents are told: How tasks
-  work, only words in each new brief's Settings block (review, the Reviewer a brief suggests, Must fix, Review rounds,
-  merge), each row offering its exact line under Brief wording. How Shepherdr runs: the agent, model and effort tasks and
-  coordinators start with (model:
-  an id or alias, or default for the CLI's own; effort: default, lowest, low, medium, high, xhigh or max, each CLI
-  taking it its own way) and tasks' backup agent, when Done tasks archive themselves, Autopilot's heartbeat (its trigger) and checklist, the time zone of every schedule, each machine's limits, the idle browser, Notifications and Voice. Notifications gathers scoped delivery rules and device enrolment; device delivery is Everywhere. Space menus still offer Notify. Its
-  defaults are set Everywhere, for a machine or for a space (`shepherdr set <key> <value> [--machine | --space NAME]`, from any machine);
-  the most specific one set wins. Settings always opens on Everywhere, whichever space it came from. Editing above the content names the scope; its searchable hierarchy handles many machines and spaces, and each row on Everywhere offers **For this space only** for the space it came from, or says that space sets its own. Values set here are highlighted, with their inherited value, source and Reset beside them. And, kept on each device, its Appearance: System (the device's own light
-  or dark), Light or Dark, set before the first paint, with the browser's bar and artifacts following it. A phone
-  lists the sections in groups, as iOS's Settings does, and opens one over the list; a wider screen keeps the list
-  down its side.
-- Reviewer and Backup default to a CLI that is installed and signed in, checked on each machine with the CLI's own
-  status command every 15 minutes: the other CLI than the task agent's where it works. A reviewer falls back on the task
-  agent's CLI. A backup doesn't, because a task never fails over to the CLI it runs on, so with no other CLI Backup is
-  off and says so. A saved choice stays as it is, and warns where that CLI is missing or signed out: on its row, and
-  How tasks work repeats a backup's. A machine not checked yet (it just connected, or the check can't run there)
-  keeps the other CLI, unverified, until one succeeds, and its row says so if the check failed.
-- Secrets (How Shepherdr runs) holds the keys, tokens and passwords agents use, by name: add, replace and remove them
-  in masked boxes, Everywhere (or tick For this space only), for a machine or for a space; the most specific one wins. An agent that needs one asks
-  with `shepherdr secret ask NAME --why "…"`: its chat shows a masked box, and the agent is told by name once it is
-  kept. Agents run commands with them (`shepherdr secret run NAME -- <command>`, which masks them in what the command prints) or write them to a file git ignores
-  (`shepherdr secret env NAME --file .env`), and never see them in a chat, a terminal or a log. All of them are kept
-  in one file on the main machine, readable by you only (`~/.shepherdr/vault.json`); a value goes to another machine
-  only when an authenticated agent there uses one, over its SSH link. Agent credentials bind access to that agent’s
-  own space and machine; loopback or a forwarded socket alone grants nothing. See [agent secret access](secrets.md)
-  for provisioning and the upgrade steps for already-running agents.
+Every setting has a value for **Everywhere**, the default. A setting that makes sense per space can also be set for
+one **space**: the space's own wins there, and a setting the space doesn't set is inherited from Everywhere. Reset
+drops the space's own, and it inherits again. A few settings are one for every space, or one per machine.
 
-- Interactive task, coordinator and backup chat choices require both runtime log discovery and a chat reader.
-  Settings and Restart offer Claude Code and Codex; other herdr CLIs are refused before a chat launch because
-  their replies cannot be shown. Existing saved choices are kept, but an unsupported choice must be changed before
-  launching again. Headless reviewer choices are separate; this does not add or prove support for other reviewers.
+## Where you set them
 
-## Private instructions
+- **Settings, the level switch.** At the top of each page a space can set its own of (Agents, Tasks, Autopilot,
+  Notify, Secrets): *Applies to: Everywhere ⌄*. The picker lists Everywhere, then every space by machine (a Find box
+  once there are many). Pages that are one for every space (Machines, Window, Web) say so instead.
+- **A space's menu › Space settings…** opens Settings on that space, in the window and on the web.
+- **Under each row, in a space:** *Inherited from Everywhere*, or *Set for this space · Reset*. On Everywhere, a row
+  that some spaces set their own of says *2 spaces set their own*, which lists them (each opens that space's).
+- **The header's Autopilot switch** turns Autopilot on or off in its space; *Write a heartbeat* opens that space's
+  Autopilot page.
 
-Settings → Private instructions has three small text fields: Coordinators, Task agents and Reviewers. Each uses the
-existing Everywhere / machine / space picker and Reset. For each role separately, the most specific value set wins:
-space > machine > Everywhere > empty. Values are not concatenated across scopes. Save an empty value to suppress
-inherited rules for that role; Reset restores inheritance. Backup agents use Task agents' rules. Home coordinators
-use their home space's settings, then the machine's and Everywhere's.
+## The audit
 
-These are personal rules, stored with every other setting in the main machine's `~/.shepherdr/state.sqlite` (or
-`SHEPHERDR_HOME`), outside the shared repo. Every scope's value stays there; another machine gets a role's effective
-rules only in the launch of an agent it runs. No repository `AGENTS.md`, `CLAUDE.md`, override file or worktree copy is
-created or changed. Keep passwords, tokens and keys in **Secrets**, never here: this text is visible in settings,
-agent prompts and session history. Agents must never copy it into git, task briefs, proof reports or GitHub.
+| Page | Setting | Level | Why |
+|---|---|---|---|
+| Agents | Assistant (CLI, model, effort, fast, permissions) | Everywhere, space | A repo may want a stronger model or another CLI |
+| Agents | Workers | Everywhere, space | The same: what a task in this space runs on |
+| Agents | Reviewer | Everywhere, space | The same |
+| Agents | Backup agent | Everywhere, space | A space whose work shouldn't move to the other CLI |
+| Agents | Instructions (assistant.md, worker.md, reviewer.md) | Everywhere only | Repo rules belong in the repo's AGENTS.md or CLAUDE.md, which every agent there reads |
+| Tasks | Merge, Review, Must fix, Proof | Everywhere, space | How much care a repo needs differs |
+| Tasks | Tasks at once | Everywhere, space | It counts per folder already |
+| Tasks | Archive Done after | Everywhere, space | Some repos keep done work in view longer |
+| Tasks | Worktrees | Everywhere, space | A folder that isn't a repo, or one that can't take worktrees |
+| Tasks | Base branch | Space only | A branch only means something in one repo |
+| Tasks | Run automations | Everywhere, space | Pause one repo's automations |
+| Tasks | When a task starts / finishes | Everywhere, space | Setup and cleanup steps are a repo's |
+| Autopilot | Heartbeat, Schedule, Events | Everywhere, space | Each space works toward its own goal, at its own pace |
+| Autopilot | On or off | Space only | The header's switch: Everywhere never turns a space on |
+| Notify | All / Needs me / Off | Everywhere, space | A busy space can be quiet |
+| Secrets | A secret | Everywhere, machine, space | A key for one repo, or one machine's own |
+| Machines | When new tasks wait (memory, CPU, disk), low priority, memory cap per worker | All machines, machine | About a machine's hardware, not a space's work |
+| Machines | Home Assistant | Machine only | One per machine |
+| Window | Tabs, sidebar, counts, filters, subagents, Assistant in new spaces | Everywhere only | How the screen looks; the last is about spaces not made yet |
+| Window | Add-ons | Everywhere only | Which mods run: the window's, for every space |
+| Web | Serve from, link | Everywhere only | One web app for every machine |
 
-Private rules supplement repository/team rules. Explicit human instructions and the task brief take precedence over
-private rules. A conflict with team rules must be surfaced to the human, not silently resolved by replacing them.
-Shepherdr's normal role prompt and skills still apply.
+**No Machine level for the rest.** A space already lives on one machine, so a space's own covers "this machine's
+repos" without a third layer, and one less layer keeps "where does this value come from" one line long. What a machine
+genuinely differs in (its hardware, its home space, a key only it has) is already on Machines and Secrets. Agent and
+task values a machine set before (the old machine scope) still apply there until Reset, and say so on Machines.
 
-A new launch snapshots the role's current effective instructions. Claude Code gets them in its appended prompt file,
-Codex as its developer instructions. Saving does not interrupt, restart or update an
-already-running agent. Start a new agent or explicitly restart it to deliver changes. A resumed session gets the
-current snapshot the same way; it says the new private snapshot replaces the previous one, including when empty. This delivers words, not proof that a model read or obeyed them; old session history is still present.
+## Where they're kept, and how they travel
 
-Reviewers are started by task agents, not by a separate settings service. A task launch includes a clearly marked
-reviewer-only snapshot and tells the task agent to pass that snapshot, privacy/precedence rules and repository rules
-to every headless or subagent reviewer, without applying reviewer rules to itself or passing task-only private rules.
-Changes to reviewer rules therefore need a new task agent or an explicit restart of the existing task agent too.
-
-The CLI uses the same fields, for example:
-
-```sh
-shepherdr set task.instructions "Keep replies short." --space my-space
-shepherdr set coordinator.instructions "Ask before adding tasks." --machine
-shepherdr set reviewer.instructions "Pay extra attention to data loss."
-shepherdr unset task.instructions --space my-space
-```
-
-Text is limited to 16,000 characters per field. These settings are not part of the saved task brief or its Settings
-block, and are not per-task `task add --set` options.
+- `~/.herdr/shepherdr.json`: `everywhere` and `spaces[<space id>]` (another machine's space as `<machine>/<id>`), each
+  with `coordinator`, `worker`, `reviewer`, `backup`, `tasks`, `automations` and `autopilot`
+  (`{ every, events, heartbeat }`). The window pushes each machine its share (Everywhere's and its spaces' by their
+  ids there), and when the web app is served from another machine its service keeps the file in step with that host
+  (`service/sync.ts`). So a space on any machine, and the web on the Mac mini, see the same values.
+- Notify is in the shared document (`notify`), kept in step the same way.
+- herdr-task reads the effective value: `settings_for()` for agents and tasks (the Settings block every brief ends
+  with names who set each line), `autopilot.resolve()` for Autopilot (`herdr-task autopilot show` lists which parts are
+  the space's own). Autopilot's schedule and events from before Settings kept them (`~/.herdr/tasks/.autopilot.json`
+  `everywhere`) and its heartbeat file (`~/.config/herdr-core/autopilot/everywhere.md`) are what Everywhere inherits
+  until it's set.

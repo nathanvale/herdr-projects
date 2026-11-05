@@ -2,6 +2,9 @@
 status: proposed
 ---
 
+> Historical 2.x contract reference from fixed F/P. Old implementation paths refer
+> to those Git trees, not this native foundation. See the [migration contract](../migration/upstream-v3.1.3.md).
+
 # Settle uncertain local execution across an operator-observed host reboot
 
 ## Context and Problem
