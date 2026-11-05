@@ -75,7 +75,7 @@ export class CoreFailedStarts {
   /** A read must not classify a replacement, re-used terminal or shutdown. */
   private current(agent: CoreAgent, terminal: CoreTerminal) {
     const current = this.source.agents.get(agent.chat), observed = current && this.source.agents.terminal(current)
-    if (this.source.quiescing || !this.source.connected() || !this.source.machineConnected(agent.machine) ||
+    if (this.source.launchRecovery.held(agent.chat) || this.source.quiescing || !this.source.connected() || !this.source.machineConnected(agent.machine) ||
       current?.launch !== agent.launch || current.grant !== agent.grant || current.state !== 'starting' ||
       observed?.state !== 'finished' || current.pid !== undefined && current.pid !== observed.pid || observed.address !== terminal.address || observed.pid !== terminal.pid || observed.created_ms !== terminal.created_ms) return
     return current
@@ -84,6 +84,8 @@ export class CoreFailedStarts {
     try { return screenText((await this.source.core.call<{ text: string }>('terminal.read', { terminal: terminal.address })).text) } catch { return '' }
   }
   private async fresh(agent: CoreAgent) {
+    if (this.source.launchRecovery.held(agent.chat)) return
+    if (agent.recoveredFrom) return this.fail(agent, 'The recovered native session could not be found. Its identity and work were kept; no fresh session was started. Inspect the retained conversation before deciding how to continue.')
     const { agents, tasks } = this.source, task = tasks.forChat(agent.chat)
     const message = this.source.store.get<ResumeStart>('resume-start', agent.launch)?.message ?? ''
     let started = true

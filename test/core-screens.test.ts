@@ -356,3 +356,19 @@ test('after a card, a screen with no choices to read is still one, for the termi
   expect(open()).toMatchObject({ choices: [], terminal: true })
   await expect(source.act({ type: 'answer', chat: 'space', question: open().id, choice: 0 })).rejects.toThrow('answers')
 })
+
+for (const duringRead of [false, true]) test(`boot recovery screen choice is refused${duringRead ? ' after its read' : ' while held'}`, async () => {
+  await settle()
+  const card = open(), hold = () => source.store.set('launch-recovery-hold', 'space', 'held-launch')
+  if (duringRead) {
+    const call = source.core.call
+    source.core.call = (async (...args: Parameters<typeof call>) => {
+      const result = await call(...args)
+      if (args[0] === 'terminal.read') hold()
+      return result
+    }) as typeof call
+  } else hold()
+  await expect(source.act({ type: 'answer', chat: 'space', question: card.id, choice: 1 })).rejects.toThrow('held')
+  expect(keys).toEqual([])
+  expect(open()).toEqual(card)
+})

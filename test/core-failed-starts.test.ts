@@ -60,6 +60,23 @@ for (const [name, words, kind] of [['Claude Code', CLAUDE, 'claude'], ['Codex', 
   })
 }
 
+for (const role of ['coordinator', 'task'] as const) test(`a recovered ${role} never becomes a fresh session when native resume is missing`, async () => {
+  const chat = role === 'task' ? 'EX-1/Agent' : 'space'
+  const retained: CoreAgent = { ...agent, chat, role, kind: 'codex', model: 'gpt-6.1-sol', effort: 'high', speed: 'fast', recoveredFrom: 'original-recovery-launch', provider: { route: 'azure-foundry', fingerprint: 'retained-provider' } }
+  source.store.delete('agent', 'space'); source.store.set('agent', chat, retained)
+  if (role === 'task') source.store.set('task', 'EX-1', { id: 'EX-1', chat, place: 'space', machine: 'machine', workflow: 'working', review: {} })
+  source.store.set('resume-start', 'one', { chat, launch: 'one', message: 'Do not replay this instruction' } satisfies ResumeStart)
+  screen = CODEX
+  await settle(); await settle()
+  const reader = new CoreStore(home)
+  try {
+    expect(reader.get('agent', chat)).toEqual({ ...retained, state: 'idle' })
+    expect(reader.get('pending-send', 'session-gone-one')).toBeUndefined()
+    expect(reader.all<Message>(`message:${chat}`).map(row => row.text)).toEqual(['Codex couldn’t start. The recovered native session could not be found. Its identity and work were kept; no fresh session was started. Inspect the retained conversation before deciding how to continue.'])
+  } finally { reader.close() }
+  expect(launches).toEqual([])
+})
+
 test('with no room to start anew, what it had to say waits for that start', async () => {
   source.health.room = () => 'No room yet'
   source.store.set('agent', 'EX-1/Agent', { ...agent, chat: 'EX-1/Agent', role: 'task' })
@@ -274,5 +291,25 @@ for (const action of ['closed', 'archived', 'closed-during-read'] as const) test
   await settle()
   expect(source.agents.get(f.chat)).toMatchObject({ state: 'idle', launch: 'one' })
   expect(source.store.get(`message:${f.chat}`, 'start-failed-one')).toBeUndefined()
+  expect(launches).toEqual([])
+})
+
+for (const role of ['coordinator', 'task'] as const) for (const duringRead of [false, true]) test(`boot recovery held ${role} preserves a missing native session${duringRead ? ' across screen read' : ''}`, async () => {
+  const chat = role === 'task' ? 'EX-1/Agent' : 'space'
+  const retained: CoreAgent = { ...agent, chat, role, kind: 'codex', model: 'team-codex', effort: 'high', speed: 'fast', provider: { route: 'azure-foundry', fingerprint: 'retained-provider' } }
+  source.store.delete('agent', 'space'); source.store.set('agent', chat, retained)
+  if (role === 'task') source.store.set('task', 'EX-1', { id: 'EX-1', chat, place: 'space', machine: 'machine', workflow: 'working', review: {} })
+  source.store.set('resume-start', 'one', { chat, launch: 'one', message: 'Retained instruction' } satisfies ResumeStart)
+  const hold = () => source.store.set('launch-recovery-hold', 'space', 'coordinator-launch')
+  if (duringRead) source.core.call = (async () => { hold(); return { text: CODEX } }) as typeof source.core.call
+  else { screen = CODEX; hold() }
+  await settle(); await settle()
+  const reader = new CoreStore(home)
+  try {
+    expect(reader.get('agent', chat)).toEqual(retained)
+    expect(reader.get('resume-start', 'one')).toEqual({ chat, launch: 'one', message: 'Retained instruction' })
+    expect(reader.all('pending-send')).toEqual([])
+    expect(reader.all(`message:${chat}`)).toEqual([])
+  } finally { reader.close() }
   expect(launches).toEqual([])
 })

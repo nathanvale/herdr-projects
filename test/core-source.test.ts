@@ -386,3 +386,53 @@ test('before an agent starts its chat says what Settings will use, and a task\'s
     expect(source.chat('DEMO-1/Reviewer')?.agent).toMatchObject({ kind: 'claude', model: 'small', effort: 'low' })
   } finally { source.stop(); source.mailbox.close(); source.store.close(); rmSync(home, { recursive: true, force: true }) }
 })
+
+for (const chat of ['DEMO-1/Agent', 'DEMO-1/Reviewer-1']) test(`boot recovery coordinator hold keeps ${chat} delivery queued`, async () => {
+  const f = deliveryFixture()
+  try {
+    f.source.store.set('launch-recovery-hold', f.task.place, 'held-launch')
+    await f.source.act({ type: 'send', chat, text: 'Retain this instruction', cid: 'held-descendant' })
+    await Bun.sleep(0)
+    expect(f.sent).toEqual([])
+    expect(f.source.store.get('pending-send', 'held-descendant')).toMatchObject({ chat, text: 'Retain this instruction', state: 'queued' })
+    expect(f.source.store.get(`message:${chat}`, 'held-descendant')).toMatchObject({ waiting: true })
+  } finally { await f.close() }
+})
+
+for (const input of ['keys', 'text'] as const) test(`boot recovery direct ${input} refuses a held task terminal`, async () => {
+  const f = deliveryFixture(), effects: string[] = []
+  try {
+    f.source.core.call = (async (method: string) => { effects.push(method); return {} }) as typeof f.source.core.call
+    f.source.core.attach = async () => { effects.push('attach'); return { input: () => effects.push('input'), resize() {}, close: () => effects.push('close') } }
+    f.source.store.set('launch-recovery-hold', f.task.place, 'held-launch')
+    const action = input === 'keys' ? { type: 'keys' as const, chat: f.task.chat, keys: ['enter'] } : { type: 'text' as const, chat: f.task.chat, text: 'do work' }
+    await expect(f.source.act(action)).rejects.toThrow('held')
+    expect(effects).toEqual([])
+  } finally { await f.close() }
+})
+
+test('boot recovery direct text rechecks a hold after attaching and closes the unused stream', async () => {
+  const f = deliveryFixture(), effects: string[] = []
+  try {
+    f.source.core.attach = async () => {
+      effects.push('attach'); f.source.store.set('launch-recovery-hold', f.task.place, 'held-launch')
+      return { input: () => effects.push('input'), resize() {}, close: () => effects.push('close') }
+    }
+    await expect(f.source.act({ type: 'text', chat: f.task.chat, text: 'do work' })).rejects.toThrow('held')
+    expect(effects).toEqual(['attach', 'close'])
+  } finally { await f.close() }
+})
+
+test('boot recovery coordinator hold arriving after one delivery retains the next queued message', async () => {
+  const f = deliveryFixture(), send = f.source.agents.send
+  try {
+    f.source.agents.send = async (chat, text) => {
+      await send(chat, text)
+      f.source.store.set('launch-recovery-hold', f.task.place, 'held-launch')
+    }
+    for (const id of ['first', 'second']) f.source.store.set('pending-send', id, { id, chat: f.task.chat, text: id, state: 'queued' })
+    f.source.retry(f.task.chat); await Bun.sleep(0)
+    expect(f.sent).toEqual([{ chat: f.task.chat, text: 'first' }])
+    expect(f.source.store.get('pending-send', 'second')).toEqual({ id: 'second', chat: f.task.chat, text: 'second', state: 'queued' })
+  } finally { await f.close() }
+})

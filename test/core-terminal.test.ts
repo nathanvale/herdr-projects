@@ -7,11 +7,12 @@ function setup() {
   const input: string[] = [], calls: string[] = [], sent: unknown[] = []
   const sinks: { data(bytes: Buffer): void; close(reason: unknown): void }[] = []
   const changes = new Set<() => void>()
-  let closed = 0, detach = 0, current = agent
-  const source = { agents: { get: () => current, terminal: () => term }, core: {
+  let closed = 0, detach = 0, current = agent, held = false, holdOnAttach = false
+  const source = { launchRecovery: { held: () => held }, agents: { get: () => current, terminal: () => term }, core: {
     onChange(fn: () => void) { changes.add(fn); return () => { changes.delete(fn) } },
     attach: async (_terminal: string, sink: { data(bytes: Buffer): void; close(reason: unknown): void }, cols: number, rows: number, options?: { observe?: boolean }) => {
       const kind = options?.observe ? 'watch' : 'attach'
+      if (!options?.observe && holdOnAttach) held = true
       calls.push(`${kind} ${cols} ${rows}`); sinks.push(sink); sink.data(Buffer.from(`paint ${cols}`))
       return { input: (bytes: Uint8Array) => input.push(Buffer.from(bytes).toString()), resize: (c: number, r: number) => calls.push(`resize ${c} ${r}`), close: () => { detach++; calls.push(`close ${kind}`) } }
     }, call: async (method: string) => { calls.push(method) },
@@ -21,7 +22,7 @@ function setup() {
   const settle = async () => { for (let i = 0; i < 40; i++) await Promise.resolve() }
   const said = () => sent.map(data => typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString())
   const move = (cols: number, rows: number) => { term.cols = cols; term.rows = rows; for (const fn of [...changes]) fn() }
-  return { bridge, send, settle, input, calls, said, sinks, move, changes, replace: () => { current = { launch: 'two' } }, closed: () => closed, detach: () => detach }
+  return { hold: () => { held = true }, holdOnAttach: () => { holdOnAttach = true }, bridge, send, settle, input, calls, said, sinks, move, changes, replace: () => { current = { launch: 'two' } }, closed: () => closed, detach: () => detach }
 }
 
 test('a browser only watches, at the terminal\'s own size, told before the first paint', async () => {
@@ -88,4 +89,23 @@ test('a replaced launch cannot receive old browser input', async () => {
 test('oversized input closes rather than buffering', async () => {
   const b = setup(); b.send({ type: 'text', id: 1, text: 'x'.repeat(33_000) }); await b.settle()
   expect(b.input).toEqual([]); expect(b.closed()).toBe(1)
+})
+
+for (const type of ['text', 'keys'] as const) test(`boot recovery browser ${type} refuses a held terminal but watching remains available`, async () => {
+  const x = setup()
+  x.hold(); x.send({ type: 'open', id: 1 }); await x.settle()
+  expect(x.said()).toContain('paint 200'); expect(x.closed()).toBe(0)
+  x.send({ type, id: 2, text: 'do work', keys: ['enter'] }); await x.settle()
+  expect(x.input).toEqual([])
+  expect(x.calls).toEqual(['watch 200 120', 'close watch'])
+  expect(x.closed()).toBe(1)
+})
+
+test('boot recovery browser text rechecks the hold after attaching before writing bytes', async () => {
+  const x = setup()
+  x.send({ type: 'open', id: 1 }); await x.settle()
+  x.holdOnAttach(); x.send({ type: 'text', id: 2, text: 'do work' }); await x.settle()
+  expect(x.input).toEqual([])
+  expect(x.calls).toEqual(['watch 200 120', 'attach 200 120', 'close attach', 'close watch'])
+  expect(x.closed()).toBe(1)
 })
