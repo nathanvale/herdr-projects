@@ -369,6 +369,9 @@ for (const entry of ['send', 'start'] as const) test(`boot recovery implicit tas
 for (const entry of ['launch', 'restart'] as const) test(`boot recovery explicit task ${entry} still refuses a different Azure deployment`, () => recoveryFixture(async f => {
   await f.request('arm'); f.boot.value = { ...f.boot.value, boot: nextBoot }
   await f.request('settle'); await f.request('resume', ['--cancel-queued'])
+  f.source.store.set('models', `${f.space.machine}:codex`, {
+    models: [{ id: 'different-deployment', label: 'Different deployment', efforts: ['high'] }], efforts: ['high'],
+  })
   const effects: string[] = []
   f.source.tasks.git.ensureWorktree = async () => { effects.push('checkout'); return false }
   f.source.browsers.close = async () => { effects.push('browser') }
