@@ -127,6 +127,8 @@ describe("private HTTPS across a real TLS listener", () => {
     chmodSync(keyFile, 0o644);
     try { await expect(servePrivateDomain(config, () => state, handlers)).rejects.toThrow("private key"); }
     finally { chmodSync(keyFile, 0o600); }
+    await expect(servePrivateDomain(config, () => state, handlers)).rejects.toThrow("Private HTTPS could not start on its configured address and port.");
+    expect(await call()).toBe(200); // The original listener survives an occupied-port refusal.
   });
 });
 

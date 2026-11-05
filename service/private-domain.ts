@@ -93,7 +93,7 @@ export async function servePrivateDomain<T>(config: PrivateDomain, current: () =
     }
     return result;
   };
-  return Bun.serve<T>({
+  try { return Bun.serve<T>({
     hostname: config.bind,
     port: Number(new URL(config.origin).port || 443),
     tls,
@@ -116,5 +116,5 @@ export async function servePrivateDomain<T>(config: PrivateDomain, current: () =
       return handlers.fetch(req, server, pass);
     },
     websocket: handlers.websocket,
-  });
+  }); } catch { throw new Error("Private HTTPS could not start on its configured address and port."); }
 }
