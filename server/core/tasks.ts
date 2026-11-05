@@ -109,7 +109,7 @@ export class CoreTasks {
     this.git = new CoreGit(source.files, (repo, additional) => repositories.context(repo, additional), (machine, provision) => source.agents.browserRuntime(machine, provision))
     this.forge = new CoreForge(this.git, { files: source.files, store: source.store,
       contained: repo => !!repositories.context(repo), runtime: machine => source.agents.browserRuntime(machine),
-      binding: machine => source.forgeExecutionBinding(machine) })
+      binding: machine => source.forgeExecutionBinding(machine), ownership: machine => source.forgeExecutionOwner(machine) })
   }
   /** Internal product transaction gate; callbacks never come from network input. */
   async change<T>(id: string, perform: () => Promise<T>): Promise<T> {

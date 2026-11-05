@@ -16,12 +16,26 @@ export interface BitbucketExecution {
   runtime: (machine: string) => Promise<{ bun: string; root: string }>
   /** Synchronous core epoch/machine binding. Disconnected or unknown machines refuse. */
   binding: (machine: string) => string
+  ownership: (machine: string) => string
 }
-interface Admission { binding: string; on?: string; validate?: () => void }
+interface Admission { binding: string; ownership: string; on?: string; validate?: () => void }
 interface PublicationRecord {
   id: string; task: string; machine: string; repository: ForgeRepository; branch: string; base: string; head: string
   folder: string; origins: BitbucketContext['origins']; credential: BitbucketContext['credential']; saved?: ForgePrRecord; state: 'uncertain' | 'confirmed'; pr?: ForgePrRecord
-  binding?: string; on?: string
+  binding?: string; ownership?: string; on?: string
+}
+// Native older records captured [core id, epoch, machine]. Translate only
+// that known representation; malformed or foreign legacy bindings stay held.
+function legacyOwnership(binding: string) {
+  try {
+    const value = JSON.parse(binding)
+    if (Array.isArray(value) && value.length === 3 && typeof value[0] === 'string' && Number.isSafeInteger(value[1])) {
+      const remote = value[2]
+      if (remote === null) return JSON.stringify([value[0], null])
+      if (remote && typeof remote.id === 'string' && typeof remote.name === 'string') return JSON.stringify([value[0], { id: remote.id, name: remote.name, host: remote.host, session: remote.session }])
+    }
+  } catch {}
+  return binding
 }
 const messages = {
   'invalid-request': 'Bitbucket refused an unsupported operation or credential context',
@@ -53,8 +67,8 @@ export class BitbucketForge implements RepositoryForge {
   }
   private async admission(validate?: () => void): Promise<Admission> {
     this.regular(); validate?.()
-    const binding = this.host.binding(this.repo.machine), on = await this.host.files.route(this.repo.machine)
-    const admission = { binding, on, validate }; this.validate(admission)
+    const binding = this.host.binding(this.repo.machine), ownership = this.host.ownership(this.repo.machine), on = await this.host.files.route(this.repo.machine)
+    const admission = { binding, ownership, on, validate }; this.validate(admission)
     return admission
   }
   private async request(operation: BitbucketOperation, beforeDispatch?: () => void, validate?: () => void) {
@@ -115,7 +129,8 @@ export class BitbucketForge implements RepositoryForge {
   }
   private owns(record: PublicationRecord, input: ForgePublication, admission: Admission) {
     const sameOwner = record.task === input.owner!.task && record.machine === this.repo.machine && record.folder === this.repo.folder
-    const sameRoute = (record.binding === undefined || record.binding === admission.binding) && (record.on === undefined || record.on === admission.on)
+    const owner = record.ownership ?? (record.binding === undefined ? undefined : legacyOwnership(record.binding))
+    const sameRoute = (owner === undefined || owner === admission.ownership) && (record.on === undefined || record.on === admission.on)
     const sameContext = JSON.stringify(record.origins) === JSON.stringify(this.context.origins) && JSON.stringify(record.credential) === JSON.stringify(this.context.credential)
     return sameOwner && sameRoute && sameContext
   }
@@ -151,7 +166,7 @@ export class BitbucketForge implements RepositoryForge {
     let pr: ForgePullRequest | undefined = await this.find(input.branch, input.base)
     if (pr) { this.confirm(input, pr); return pr }
     if (input.saved || this.record(input)) throw new Refusal(messages['uncertain-write'])
-    const record: PublicationRecord = { id: randomUUID(), task: input.owner.task, machine: this.repo.machine, binding: this.active.binding, on: this.active.on, repository: this.identity, branch: input.branch, base: input.base, head: input.head, folder: this.repo.folder, origins: this.context.origins, credential: this.context.credential, saved: input.saved, state: 'uncertain' }
+    const record: PublicationRecord = { id: randomUUID(), task: input.owner.task, machine: this.repo.machine, binding: this.active.binding, ownership: this.active.ownership, on: this.active.on, repository: this.identity, branch: input.branch, base: input.base, head: input.head, folder: this.repo.folder, origins: this.context.origins, credential: this.context.credential, saved: input.saved, state: 'uncertain' }
     let dispatched = false
     try {
       const result = await this.request({ kind: 'create', branch: input.branch, base: input.base, head: input.head, title: input.title, body: input.body }, () => {

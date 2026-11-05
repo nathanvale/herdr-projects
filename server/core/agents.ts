@@ -44,7 +44,7 @@ export class CoreAgents {
     profile: (machine: string) => { session?: string | null; version?: string } = () => ({})) {
     this.launches = new CoreLaunches(store)
     this.files = new CoreFiles(core, route)
-    this.remotes = new CoreRemotes(this.files, installation.id, profile)
+    this.remotes = new CoreRemotes(this.files, installation.id, profile, store)
   }
   settings?: CoreSettings
   stopping = () => false

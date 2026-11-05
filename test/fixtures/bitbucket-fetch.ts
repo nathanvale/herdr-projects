@@ -54,8 +54,8 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     if (state.statusEndless) { const next = new URL(url); next.searchParams.set('page', String(Number(url.searchParams.get('page') ?? 1) + 1)); return reply({ values: [], next: next.href }) }
     if (state.statusNext && !url.searchParams.has('page')) return reply({ values: state.checks ?? [], next: state.statusNext === 'same' ? url.href : state.statusNext === 'second' ? url.href + '&page=2' : state.statusNext })
     if (state.statusMissing) return reply({ unrelated: [] })
-    const rows = url.searchParams.has('page') ? state.secondChecks ?? [] : state.checks ?? [{ key: 'build', name: 'Build', state: 'SUCCESSFUL', url: 'https://ci.example.invalid/build/9', commit: { hash: commit } }]
-    return reply({ values: rows })
+    const rows = url.searchParams.has('page') ? state.secondChecks ?? [] : state.checks ?? [{ type: 'build', key: 'build', name: 'Build', state: 'SUCCESSFUL', url: 'https://ci.example.invalid/build/9', links: { commit: { href: `https://api.bitbucket.org${root}/commit/${commit}` } } }]
+    return reply({ values: rows, ...state.statusPage })
   }
   throw Error('Unexpected fixture endpoint')
 }) as typeof fetch

@@ -126,6 +126,11 @@ class BitbucketHttp {
       visited.add(target)
       const page = object(await this.request(target))
       if (!Array.isArray(page.values) || page.values.length > 100 || page.next !== undefined && (typeof page.next !== 'string' || !page.next)) fail('malformed-response')
+      for (const name of ['page', 'pagelen']) if (page[name] !== undefined && (!Number.isSafeInteger(page[name]) || page[name] < 1)) fail('incomplete-read')
+      if (page.previous !== undefined) {
+        if (typeof page.previous !== 'string') fail('malformed-response')
+        this.target(page.previous, url)
+      }
       if (page.size !== undefined) {
         if (!Number.isSafeInteger(page.size) || page.size < 0 || page.size > LIMIT.rows || size !== undefined && size !== page.size) fail('incomplete-read')
         size = page.size
@@ -149,18 +154,41 @@ class BitbucketHttp {
     if (pr.identity.number !== number) fail('identity-changed')
     return pr
   }
+  private statusLink(value: unknown, resource: string) {
+    const link = object(value)
+    if (Object.keys(link).some(key => !['href', 'name'].includes(key)) || link.name !== undefined && typeof link.name !== 'string') fail('malformed-response')
+    // Link fields are optional in the official schema. A supplied href must
+    // agree with the exact commit resource; it is never followed for evidence.
+    if (link.href !== undefined && (typeof link.href !== 'string' || this.target(link.href, resource) !== resource)) fail('malformed-response')
+  }
+  private optionalStatus(row: Record<string, any>, head: string) {
+    for (const name of ['name', 'refname', 'url', 'description']) if (row[name] !== undefined && typeof row[name] !== 'string') fail('malformed-response')
+    for (const name of ['created_on', 'updated_on']) if (row[name] !== undefined && (typeof row[name] !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(row[name]) || !Number.isFinite(Date.parse(row[name])))) fail('malformed-response')
+    if (row.links !== undefined) {
+      const links = object(row.links), commit = `${this.root}/commit/${head}`
+      if (Object.keys(links).some(key => !['self', 'commit'].includes(key))) fail('malformed-response')
+      if (links.commit !== undefined) this.statusLink(links.commit, commit)
+      if (links.self !== undefined) this.statusLink(links.self, `${commit}/statuses/build/${encodeURIComponent(row.key)}`)
+    }
+  }
+  private statusUrl(value: unknown) {
+    // CI targets may belong to a vendor; expose only credential-free HTTPS.
+    if (typeof value !== 'string' || value.includes(this.token) || value.includes(encodeURIComponent(this.token))) return
+    try { const target = new URL(value); if (target.protocol === 'https:' && !target.username && !target.password) return target.href } catch {}
+  }
+  private status(value: unknown, head: string, keys: Set<string>) {
+    const row = object(value)
+    // commitstatus inherits required type from object through allOf. There is
+    // no inline commit.hash, and name/links are optional in that contract.
+    if (typeof row.type !== 'string' || typeof row.key !== 'string' || !row.key || keys.has(row.key) || !['SUCCESSFUL', 'FAILED', 'INPROGRESS', 'STOPPED'].includes(row.state)) fail('malformed-response')
+    this.optionalStatus(row, head); keys.add(row.key)
+    const url = this.statusUrl(row.url)
+    return { name: this.clean(row.name ?? row.key), state: row.state === 'SUCCESSFUL' ? 'pass' as const : row.state === 'INPROGRESS' ? 'pending' as const : 'fail' as const, ...(url ? { url } : {}) }
+  }
   private async checks(head: string): Promise<ForgeChecks> {
     try {
       const rows = await this.pages(`${this.root}/commit/${head}/statuses?pagelen=100`), keys = new Set<string>()
-      const items = rows.map(value => {
-        const row = object(value)
-        if (typeof row.key !== 'string' || !row.key || keys.has(row.key) || typeof row.name !== 'string' || !['SUCCESSFUL', 'FAILED', 'INPROGRESS', 'STOPPED'].includes(row.state) || object(row.commit).hash !== head) fail('malformed-response')
-        keys.add(row.key)
-        // Status targets can belong to a CI host; expose only plain HTTPS links, never credentials.
-        let url: string | undefined
-        if (typeof row.url === 'string' && !row.url.includes(this.token) && !row.url.includes(encodeURIComponent(this.token))) { try { const target = new URL(row.url); if (target.protocol === 'https:' && !target.username && !target.password) url = target.href } catch {} }
-        return { name: this.clean(row.name), state: row.state === 'SUCCESSFUL' ? 'pass' as const : row.state === 'INPROGRESS' ? 'pending' as const : 'fail' as const, ...(url ? { url } : {}) }
-      })
+      const items = rows.map(value => this.status(value, head, keys))
       const failed = items.filter(item => item.state === 'fail'), running = items.filter(item => item.state === 'pending')
       return { head, complete: true, items, failures: failed, green: items.length > 0 && !failed.length && !running.length,
         summary: { state: !items.length ? 'none' : failed.length ? 'failed' : running.length ? 'running' : 'passed', text: !items.length ? 'None reported yet' : `${failed.length} failed, ${running.length} running, ${items.length - failed.length - running.length} passed` } }

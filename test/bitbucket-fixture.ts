@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { CoreTasks, type CoreTask } from '../server/core/tasks.ts'
 import { CoreStore } from '../server/core/store.ts'
 import { CoreFiles } from '../server/core/files.ts'
-import type { CoreSource } from '../server/core/source.ts'
+import { CoreSource } from '../server/core/source.ts'
 import type { CoreSession } from '../server/core/session.ts'
 import type { Grant } from '../server/core/mailbox.ts'
 import type { Message } from '../shared/types.ts'
@@ -22,7 +22,7 @@ export interface BitbucketFixture {
   git: (folder: string, ...args: string[]) => Promise<string>
   reopen: () => void
   secondMachine: () => Promise<{ task: CoreTask; grant: Grant }>
-  route: { epoch: number; on?: string; disconnected: boolean; before?: () => Promise<void> }
+  route: { epoch: number; on?: string; host?: string; disconnected: boolean; before?: () => Promise<void> }
 }
 
 /** One sealed fake provider and Git credential owner; all processes use synthetic authority. */
@@ -67,9 +67,9 @@ export async function withBitbucket(run: (fixture: BitbucketFixture) => Promise<
   store.set('task', task.id, task)
   const grant = { id: 'fixture-grant', session: 'fixture-launch', chat: 'space', machine: task.machine, actions: [] } as unknown as Grant
   const grants = new Map([[grant.chat, grant]])
-  const route: BitbucketFixture['route'] = { epoch: 1, on: remote ? 'fixture-remote' : undefined, disconnected: false }
+  const route: BitbucketFixture['route'] = { epoch: 1, on: remote ? 'fixture-remote' : undefined, host: 'fixture-host', disconnected: false }
   const calls: BitbucketFixture['calls'] = [], outputs: string[] = []
-  const core = { current: { connected: true, epoch: 1, terminals: new Map() }, call: async (method: string, params: Record<string, any>) => {
+  const core = { current: { get connected() { return !route.disconnected }, get epoch() { return route.epoch }, terminals: new Map() }, call: async (method: string, params: Record<string, any>) => {
     if (method !== 'machine.exec') return {}
     const argv: string[] = params.argv
     let actual = [...argv]
@@ -94,8 +94,10 @@ export async function withBitbucket(run: (fixture: BitbucketFixture) => Promise<
   } } as unknown as CoreSession
   const on = (machine: string) => machine === 'second-machine' ? 'fixture-second-remote' : route.on
   const files = new CoreFiles(core, async machine => { await route.before?.(); if (route.disconnected) throw Error('Fixture disconnected'); return on(machine) })
-  const source = { store, files, core, config: { home: store.home }, connected: () => true, machineConnected: () => !route.disconnected,
-    forgeExecutionBinding: (machine: string) => { if (route.disconnected) throw Error('Fixture disconnected'); return JSON.stringify([route.epoch, on(machine)]) },
+  const source = { store, files, core, local: { id: 'local-machine' }, config: { home: store.home }, connected: () => !route.disconnected,
+    get machines() { return [{ id: 'remote-machine', name: route.on, host: route.host, state: route.disconnected ? 'disconnected' : 'connected' }, { id: 'second-machine', name: 'fixture-second-remote', host: 'second-host', state: 'connected' }] },
+    machineConnected: CoreSource.prototype.machineConnected,
+    forgeExecutionBinding: CoreSource.prototype.forgeExecutionBinding, forgeExecutionOwner: CoreSource.prototype.forgeExecutionOwner,
     agents: { all: () => [], get: (chat: string) => { const owned = grants.get(chat); return owned ? { chat, launch: owned.session, grant: owned.id, role: 'coordinator', machine: owned.machine, space: task.place, kind: 'codex' } : undefined },
       terminal: () => undefined, browserRuntime: async () => ({ bun: process.execPath, root: join(import.meta.dir, '..') }) },
     settings: { get: () => 'off' }, space: () => ({ id: 'space', name: 'Fixture', machine: task.machine, folder: repo, mode: 'regular', base: 'main' }),

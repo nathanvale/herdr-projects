@@ -283,10 +283,10 @@ test('Bitbucket checks retain an exact commit and distinguish missing pending fa
   const forge = await f.tasks.forge.require({ machine: f.task.machine, folder: f.folder })
   const cases = [
     { checks: [], state: 'none', complete: true, green: false, count: 0 },
-    { checks: [{ key: 'build', name: 'Build', state: 'INPROGRESS', commit: { hash: f.head } }], state: 'running', complete: true, green: false, count: 1 },
-    { checks: [{ key: 'build', name: 'Build', state: 'FAILED', commit: { hash: f.head } }], state: 'failed', complete: true, green: false, count: 1 },
-    { checks: [{ key: 'build', name: 'Build', state: 'SUCCESSFUL', commit: { hash: f.head } }], state: 'passed', complete: true, green: true, count: 1 },
-    { checks: [{ key: 'build', name: 'Build', state: 'SUCCESSFUL', commit: { hash: 'b'.repeat(40) } }], state: 'unknown', complete: false, green: false, count: 0 },
+    { checks: [{ type: 'build', key: 'build', name: 'Build', state: 'INPROGRESS', links: { commit: { href: `https://api.bitbucket.org/2.0/repositories/space/sample/commit/${f.head}` } } }], state: 'running', complete: true, green: false, count: 1 },
+    { checks: [{ type: 'build', key: 'build', name: 'Build', state: 'FAILED', links: { commit: { href: `https://api.bitbucket.org/2.0/repositories/space/sample/commit/${f.head}` } } }], state: 'failed', complete: true, green: false, count: 1 },
+    { checks: [{ type: 'build', key: 'build', name: 'Build', state: 'SUCCESSFUL', links: { commit: { href: `https://api.bitbucket.org/2.0/repositories/space/sample/commit/${f.head}` } } }], state: 'passed', complete: true, green: true, count: 1 },
+    { checks: [{ type: 'build', key: 'build', name: 'Build', state: 'SUCCESSFUL', links: { commit: { href: `https://api.bitbucket.org/2.0/repositories/space/sample/commit/${'b'.repeat(40)}` } } }], state: 'unknown', complete: false, green: false, count: 0 },
   ]
   for (const row of cases) {
     f.update({ checks: row.checks })
@@ -302,7 +302,7 @@ test('Bitbucket complete check pagination includes a later failed check; foreign
   await withBitbucket(async f => {
     await f.tasks.pr(f.grant, f.task.id)
     const forge = await f.tasks.forge.require({ machine: f.task.machine, folder: f.folder })
-    f.update({ statusNext: 'second', checks: [{ key: 'build', name: 'Build', state: 'SUCCESSFUL', commit: { hash: f.head } }], secondChecks: [{ key: 'lint', name: 'Lint', state: 'FAILED', commit: { hash: f.head } }] })
+    f.update({ statusNext: 'second', checks: [{ type: 'build', key: 'build', name: 'Build', state: 'SUCCESSFUL', links: { commit: { href: `https://api.bitbucket.org/2.0/repositories/space/sample/commit/${f.head}` } } }], secondChecks: [{ type: 'build', key: 'lint', name: 'Lint', state: 'FAILED', links: { commit: { href: `https://api.bitbucket.org/2.0/repositories/space/sample/commit/${f.head}` } } }] })
     const complete = await forge.read('work/two')
     expect(complete.checks).toMatchObject({ complete: true, green: false, summary: { state: 'failed' } })
     expect(complete.checks?.items.map(item => ({ name: item.name, state: item.state }))).toEqual([{ name: 'Build', state: 'pass' }, { name: 'Lint', state: 'fail' }])
@@ -473,3 +473,114 @@ test('Bitbucket public native merge refusal preserves task readiness without a l
   expect(f.tasks.get(f.task.id)?.workflow).toBe('ready')
   expect(f.requests()).toHaveLength(requests)
 }))
+
+test('Bitbucket public official real and minimal status responses bind checks and readiness to the requested commit', async () => {
+  for (const shape of ['real', 'minimal', 'optional-links']) await withBitbucket(async f => {
+    await f.tasks.pr(f.grant, f.task.id)
+    // Independent literals from the combined official schema, not the parser.
+    const status = shape === 'real'
+      ? { type: 'build', key: 'vendor-build', state: 'SUCCESSFUL', name: 'Official build', description: 'Passed', refname: 'work/two', created_on: '2026-11-05T01:00:00Z', updated_on: '2026-11-05T01:00:01+00:00', url: 'https://ci.example.invalid/official/1', links: { commit: { href: `https://api.bitbucket.org/2.0/repositories/space/sample/commit/${f.head}` }, self: { href: `https://api.bitbucket.org/2.0/repositories/space/sample/commit/${f.head}/statuses/build/vendor-build` } } }
+      : { type: 'build', key: 'vendor-minimal', state: 'SUCCESSFUL', ...(shape === 'optional-links' ? { links: { commit: { name: 'Commit' }, self: {} } } : {}) }
+    f.update({ checks: [status], ...(shape === 'real' ? { statusPage: { size: 1, page: 1, pagelen: 100 } } : {}) })
+    const pr = await (await f.tasks.forge.require({ machine: f.task.machine, folder: f.folder })).read('work/two', true, expectedPr)
+    expect(pr.checks).toMatchObject({ head: f.head, complete: true, green: true, summary: { state: 'passed' } })
+    expect(pr.checks?.items).toEqual(shape === 'real' ? [{ name: 'Official build', state: 'pass', url: 'https://ci.example.invalid/official/1' }] : [{ name: 'vendor-minimal', state: 'pass' }])
+    expect(f.requests().filter(request => request.url.includes('/statuses')).map(request => new URL(request.url).pathname)).toEqual([`/2.0/repositories/space/sample/commit/${f.head}/statuses`])
+    await f.tasks.ready(f.grant, f.task.id, 'Official candidate')
+    expect(f.tasks.get(f.task.id)).toMatchObject({ workflow: 'ready', readyHead: f.head, readyPr: expectedPr })
+    const ready = f.tasks.get(f.task.id)!
+    expect(f.source.store.get<Message>(`message:${f.task.chat}`, ready.mergeQuestion!)?.question?.evidence?.checks).toMatchObject({ state: 'passed' })
+    expect(f.state().prepares).toBe(1)
+  })
+})
+
+test('Bitbucket public malformed status fields and mismatched or foreign commit links refuse readiness', async () => {
+  const invalid = [
+    { key: 'build', state: 'SUCCESSFUL' }, { type: 'build', state: 'SUCCESSFUL' }, { type: 'build', key: 'build' },
+    { type: 7 }, { name: 7 }, { url: 7 }, { created_on: 'not-a-date' }, { links: null },
+    { links: { commit: { href: 7 } } }, { links: { commit: { href: 'not-a-uri' } } },
+    { links: { commit: { href: 'https://api.bitbucket.org/2.0/repositories/space/sample/commit/' + 'b'.repeat(40) } } },
+    { links: { commit: { href: 'https://api.bitbucket.org/2.0/repositories/foreign/repo/commit/' + 'b'.repeat(40) } } },
+    { links: { commit: { href: 'https://foreign.invalid/stolen' } } }, { links: { commit: { extra: 'not-in-schema' } } },
+  ]
+  for (const patch of invalid) await withBitbucket(async f => {
+    await f.tasks.pr(f.grant, f.task.id)
+    const status = Object.keys(patch).length > 1 ? patch : { type: 'build', key: 'build', state: 'SUCCESSFUL', ...patch }
+    f.update({ checks: [status] })
+    const pr = await (await f.tasks.forge.require({ machine: f.task.machine, folder: f.folder })).read('work/two', true, expectedPr)
+    expect(pr.checks).toMatchObject({ head: f.head, complete: false, green: false, items: [], summary: { state: 'unknown' } })
+    await expect(f.tasks.ready(f.grant, f.task.id, 'Invalid candidate')).rejects.toThrow('incomplete')
+    expect(f.tasks.get(f.task.id)?.workflow).toBe('working')
+    expect(f.state().prepares).toBe(0)
+    expect(f.requests().every(request => new URL(request.url).origin === 'https://api.bitbucket.org')).toBe(true)
+  })
+}, 30000)
+
+test('Bitbucket public wrong candidate and incomplete pagination refuse readiness while empty evidence stays nongreen', async () => {
+  for (const mode of ['wrong-head', 'pagination', 'truncated', 'empty']) await withBitbucket(async f => {
+    await f.tasks.pr(f.grant, f.task.id)
+    f.update(mode === 'wrong-head' ? { overrideHead: 'b'.repeat(40) } : mode === 'pagination' ? { statusNext: `https://api.bitbucket.org/2.0/repositories/space/sample/commit/${'b'.repeat(40)}/statuses?page=2` } : mode === 'truncated' ? { statusPage: { size: 2, page: 1, pagelen: 100 } } : { checks: [] })
+    if (mode !== 'empty') {
+      await expect(f.tasks.ready(f.grant, f.task.id, 'Invalid evidence')).rejects.toThrow(mode === 'wrong-head' ? 'exact commit' : 'incomplete')
+      expect(f.tasks.get(f.task.id)?.workflow).toBe('working'); expect(f.state().prepares).toBe(0)
+    } else {
+      const pr = await (await f.tasks.forge.require({ machine: f.task.machine, folder: f.folder })).read('work/two', true, expectedPr)
+      expect(pr.checks).toMatchObject({ head: f.head, complete: true, green: false, items: [], summary: { state: 'none' } })
+      await f.tasks.ready(f.grant, f.task.id, 'No checks yet')
+      const ready = f.tasks.get(f.task.id)!
+      expect(f.source.store.get<Message>(`message:${f.task.chat}`, ready.mergeQuestion!)?.question?.evidence?.checks).toMatchObject({ state: 'none' })
+      await f.tasks.answer(ready.mergeQuestion!, 0, f.task.chat)
+      await expect(f.tasks.merge(f.grant, f.task.id)).rejects.toThrow('expected-source-head guarantee')
+    }
+  })
+})
+
+test('Bitbucket public confirmed publication continues across reopened state and a fresh core connection epoch', async () => {
+  for (const remote of [false, true]) await withBitbucket(async f => {
+    expect(await f.tasks.pr(f.grant, f.task.id)).toEqual(expectedPr)
+    const original = f.source.store.all<Record<string, any>>('forge-publication')[0]
+    f.reopen(); f.route.epoch++
+    expect(f.source.core.current.epoch).toBe(2)
+    expect(await f.tasks.pr(f.grant, f.task.id)).toEqual(expectedPr)
+    expect(f.source.store.all('forge-publication')).toEqual([original])
+    expect(f.requests().filter(request => request.method === 'POST')).toHaveLength(1)
+    expect(f.state().creates).toBe(1)
+  }, remote)
+})
+
+test('Bitbucket public uncertain legacy publication remains held then reconciles the original UUID after reconnect', async () => {
+  for (const legacy of [false, true]) await withBitbucket(async f => {
+    f.update({ hidePr: true, loseCreateReply: true })
+    await expect(f.tasks.pr(f.grant, f.task.id)).rejects.toThrow('uncertain')
+    const original = f.source.store.all<Record<string, any>>('forge-publication')[0]
+    if (legacy) {
+      delete original.ownership
+      const key = createHash('sha256').update(JSON.stringify([{ provider: 'bitbucket', host: 'bitbucket.org', repository: 'space/sample' }, 'work/two', 'main'])).digest('hex')
+      f.source.store.set('forge-publication', key, original)
+    }
+    f.reopen(); f.route.epoch++
+    await expect(f.tasks.pr(f.grant, f.task.id)).rejects.toThrow('uncertain')
+    expect(f.source.store.all('forge-publication')).toEqual([original])
+    f.update({ hidePr: false }); f.reopen(); f.route.epoch++
+    expect(f.source.core.current.epoch).toBe(3)
+    expect(await f.tasks.pr(f.grant, f.task.id)).toEqual(expectedPr)
+    expect(f.source.store.all('forge-publication')).toEqual([{ ...original, state: 'confirmed', pr: expectedPr }])
+    expect(f.requests().filter(request => request.method === 'POST')).toHaveLength(1)
+    expect(f.state().creates).toBe(1)
+  }, true)
+})
+
+test('Bitbucket public reopened publication rejects changed host route and credential context without releasing its claim', async () => {
+  for (const change of ['host', 'route', 'account']) await withBitbucket(async f => {
+    f.update({ hidePr: true, loseCreateReply: true })
+    await expect(f.tasks.pr(f.grant, f.task.id)).rejects.toThrow('uncertain')
+    const original = f.source.store.all('forge-publication'), requests = f.requests().length
+    f.reopen(); f.route.epoch++
+    if (change === 'host') f.route.host = 'foreign-host'
+    if (change === 'route') f.route.on = 'foreign-route'
+    if (change === 'account') await f.git(f.repo, 'remote', 'set-url', 'origin', 'https://bob@bitbucket.org/space/sample.git')
+    await expect(f.tasks.pr(f.grant, f.task.id)).rejects.toThrow('credential context')
+    expect(f.source.store.all('forge-publication')).toEqual(original)
+    expect(f.requests()).toHaveLength(requests); expect(f.state().creates).toBe(1)
+  }, true)
+})

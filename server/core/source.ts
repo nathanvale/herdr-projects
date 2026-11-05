@@ -229,6 +229,12 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
     if (!this.machineConnected(machine)) throw new Refusal('This execution machine is not connected through core')
     return JSON.stringify([this.local.id, this.core.current.epoch, machine === this.local.id ? null : this.machines.find(item => item.id === machine)])
   }
+  /** Durable host identity excludes connection generations and liveness. */
+  forgeExecutionOwner(machine: string) {
+    if (!this.machineConnected(machine)) throw new Refusal('This execution machine is not connected through core')
+    const remote = this.machines.find(item => item.id === machine)
+    return JSON.stringify([this.local.id, machine === this.local.id ? null : { id: remote!.id, name: remote!.name, host: remote!.host, session: remote!.session }])
+  }
   spaces() { return this.store.all<CoreSpace>('space').filter(space => !space.removed) }
   space(id: string) { const space = this.store.get<CoreSpace>('space', id); return space?.removed ? undefined : space }
   async refresh() {

@@ -11,6 +11,8 @@ export class CoreGit {
   constructor(private readonly files: CoreFiles,
     private readonly guard?: (repo: RepoLocation, additional?: string[]) => PilotRepositoryContext | undefined,
     private readonly runtime?: (machine: string, provision?: boolean) => Promise<{ bun: string; root: string }>) {}
+  /** Observation retains the checked broker, but can never provision helpers. */
+  observer() { return new CoreGit(this.files, this.guard, this.runtime && (machine => this.runtime!(machine, false))) }
   private async execute(repo: RepoLocation, tool: 'git' | 'gh', args: string[], timeout: number, stdin?: string, additional?: string[], admit?: ExecAdmission, provision = true) {
     const context = this.guard?.(repo, additional)
     if (!context) return this.files.exec(repo.machine, [tool, ...args], repo.folder, stdin === undefined ? undefined : Buffer.from(stdin), timeout, admit)
