@@ -22,6 +22,7 @@ export class CoreProviderRetries {
     this.source.emit('snapshot')
   }
   private eligible(agent: CoreAgent) {
+    if (this.source.launchRecovery.held(agent.chat)) return false
     const task = this.source.tasks.forChat(agent.chat)
     const terminal = this.source.agents.terminal(agent)
     return agent.role !== 'reviewer' && (!task || task.chat === agent.chat && task.workflow === 'working' && !task.archived && !this.source.tasks.busy(task.id)) &&

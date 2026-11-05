@@ -1,4 +1,5 @@
 import type { CoreSource } from './source.ts'
+import { CoreLaunches } from './launches.ts'
 import type { CoreAgent, CoreSpace } from './model.ts'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -121,7 +122,8 @@ export class CorePilotLifecycle {
     if (!this.source.machineConnected(space.machine)) throw Error('Wait for this machine to reconnect')
     const pick = this.source.settings.checkedAgent(place, harness)
     return this.transition(place, async () => {
-      const prepared = await this.source.agents.preflight(space, place, pick.kind, old ? {} : { deployment: this.source.settings.deployment('coordinator', pick.kind, place) })
+      const prepared = await this.source.agents.preflight(space, place, pick.kind, { ...pick, speed: harness.speed, ...(!old ? { deployment: this.source.settings.deployment('coordinator', pick.kind, place) } : {}) })
+      const selected = { ...pick, speed: harness.speed, ...prepared.recovered }
       this.source.agents.admit(prepared)
       if (this.source.quiescing) throw Error('Shepherdr is stopping')
       if (this.source.agents.get(place)?.launch !== old?.launch || this.source.space(place)?.mode !== 'regular') throw Error('Coordinator changed during preflight')
@@ -132,8 +134,8 @@ export class CorePilotLifecycle {
       }
       if (this.source.quiescing) throw Error('Shepherdr is stopping')
       if (this.source.agents.get(place)?.launch !== old?.launch || this.source.space(place)?.mode === 'autopilot') throw Error('A newer coordinator replaced this restart')
-      await this.source.agents.launch(space, place, pick.kind, '', { ...pick, speed: harness.speed, resume: true, prepared })
-      if (save) this.source.settings.saveAgent('coordinator', place, pick)
+      await this.source.agents.launch(space, place, pick.kind, '', { ...selected, resume: true, prepared })
+      if (save) this.source.settings.saveAgent('coordinator', place, selected)
     }).finally(() => this.source.retry(place))
   }
   forgetRegular(place: string, forget: () => void) {
@@ -156,6 +158,7 @@ export class CorePilotLifecycle {
   }
   private async finish(agent: CoreAgent) {
     const terminal = this.source.agents.terminal(agent)
+    if (new CoreLaunches(this.source.store).ended(agent, terminal?.state)) return
     if (!terminal || !this.source.machineConnected(agent.machine)) throw Error('Process cleanup is not confirmed; reconnect core')
     if (agent.pid !== undefined && terminal.pid !== agent.pid) throw Error('Coordinator process identity changed')
     const identity = { address: terminal.address, pid: terminal.pid, created: terminal.created_ms }

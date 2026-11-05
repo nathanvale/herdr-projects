@@ -3,6 +3,7 @@ import type { CoreTask } from './tasks.ts'
 import type { CoreAgent } from './model.ts'
 import type { CoreTerminal } from './protocol.ts'
 import { Refusal } from './client.ts'
+import { CoreLaunches } from './launches.ts'
 
 /** Product-owned roots and their actual core descendants, never names or caller-supplied labels. */
 export class CoreTaskProcesses {
@@ -16,7 +17,9 @@ export class CoreTaskProcesses {
     const current = new Set(this.source.agents.all().filter(agent => agent.chat.startsWith(`${task.id}/`)).map(agent => agent.launch))
     for (const agent of records) {
       const terminal = this.source.agents.terminal(agent)
-      if (!this.source.machineConnected(agent.machine) || !terminal || agent.pid !== undefined && agent.pid !== terminal.pid) return true
+      if (!this.source.machineConnected(agent.machine)) return true
+      if (!terminal && new CoreLaunches(this.source.store).endedExecution(agent)) continue
+      if (!terminal || agent.pid !== undefined && agent.pid !== terminal.pid) return true
       if (!current.has(agent.launch) && terminal.state !== 'finished') return true
       roots.add(terminal.address)
     }
@@ -47,7 +50,9 @@ export class CoreTaskProcesses {
     }
     for (const agent of records) {
       const terminal = this.source.agents.terminal(agent)
-      if (!this.source.machineConnected(agent.machine) || !terminal) throw new Refusal('Task cleanup is unconfirmed; reconnect its machine before closing or deleting its work')
+      if (!this.source.machineConnected(agent.machine)) throw new Refusal('Task cleanup is unconfirmed; reconnect its machine before closing or deleting its work')
+      if (!terminal && new CoreLaunches(this.source.store).endedExecution(agent)) continue
+      if (!terminal) throw new Refusal('Task cleanup is unconfirmed; reconnect its machine before closing or deleting its work')
       if (agent.pid !== undefined && agent.pid !== terminal.pid) throw new Refusal('Task process identity changed; its work was left untouched')
       owned.set(terminal.address, { pid: terminal.pid, created: terminal.created_ms })
     }

@@ -144,3 +144,22 @@ test('native blocked provider failure can hand over, but blocked or incomplete w
   await f.source.providerRetries.tick(4)
   expect(f.backups()).toBe(1)
 }))
+
+for (const scope of ['chat', 'place'] as const) test(`boot recovery ${scope} hold preserves a due provider retry without nudging`, () => fixture(async f => {
+  await f.source.providerRetries.tick(1000)
+  const retained = f.source.store.get('provider-retry', f.agent.chat)
+  expect(retained).toMatchObject({ tries: 1, due: 61000 })
+  f.source.store.set('launch-recovery-hold', scope === 'chat' ? f.agent.chat : f.task.place, 'held-launch')
+  await f.source.providerRetries.tick(61000)
+  expect(f.source.store.get('provider-retry', f.agent.chat)).toEqual(retained)
+  expect(f.sent).toEqual([]); expect(f.backups()).toBe(0)
+}))
+
+test('boot recovery coordinator hold prevents provider fallback intent and notification', () => fixture(async f => {
+  f.turn({ complete: true, cut: { kind: 'error', id: 'auth', at: 2, text: 'Signed out', status: 401 } })
+  f.source.store.set('launch-recovery-hold', f.task.place, 'held-launch')
+  await f.source.providerRetries.tick(1)
+  expect(f.source.store.get('provider-retry', f.agent.chat)).toBeUndefined()
+  expect(f.source.store.all(`message:${f.agent.chat}`)).toEqual([])
+  expect(f.sent).toEqual([]); expect(f.backups()).toBe(0)
+}))

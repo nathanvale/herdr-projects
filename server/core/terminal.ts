@@ -36,12 +36,14 @@ export function terminalBridge(source: CoreSource, chat: string, ws: { send(data
     stream = next
   }
   async function type(bytes: Buffer) {
+    if (source.launchRecovery.held(chat)) return fail()
     const { address, cols, rows } = live()!
     if (typist?.cols !== cols || typist.rows !== rows) {
       stopTyping()
       const mine: NonNullable<typeof typist> = { cols, rows, stream: await source.core.attach(address, { data() {}, close() { if (typist === mine) typist = undefined } }, cols, rows) }
       typist = mine
     }
+    if (!valid() || source.launchRecovery.held(chat)) return fail()
     typist.stream.input(bytes)
     clearTimeout(idle); idle = setTimeout(stopTyping, 2000)
   }
@@ -59,6 +61,7 @@ export function terminalBridge(source: CoreSource, chat: string, ws: { send(data
         else if (!opened) return fail()
         else if (message.type === 'text' && typeof message.text === 'string') await type(Buffer.from(message.text))
         else if (message.type === 'keys' && Array.isArray(message.keys) && message.keys.length <= 32 && message.keys.every((key: unknown) => typeof key === 'string' && key.length <= 40)) {
+          if (source.launchRecovery.held(chat)) return fail()
           await source.core.call('terminal.keys', { terminal: terminal.address, keys: message.keys })
         } else if (message.type !== 'resize') return fail() // a tab from before this build still says its size: it moves nothing
         if (!ended) ws.send(JSON.stringify({ type: 'ack', id: message.id }))

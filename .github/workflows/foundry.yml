@@ -364,6 +364,332 @@ jobs:
             exit 1
           fi
           grep -F '(fail) cold hook completion preserves' /tmp/readiness-stop-sensitivity.log
+      - name: Establish passing recovery cases before removing guards
+        run: bun test test/core-operator.test.ts test/core-failed-starts.test.ts test/core-provider-retries.test.ts test/core-screens.test.ts test/core-source.test.ts test/core-terminal.test.ts test/core-task-processes.test.ts --test-name-pattern 'boot recovery'
+      - name: Prove recovery refuses settlement in the same host boot
+        shell: bash
+        run: |
+          cp server/core/launch-recovery.ts /tmp/recovery-boot-original.ts
+          trap 'cp /tmp/recovery-boot-original.ts server/core/launch-recovery.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/launch-recovery.ts')
+          source = path.read_text()
+          before = "if (row.boot === boot.boot) throw Error('The execution host has not rebooted; no recovery state changed')"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, ''))
+          PYCODE
+          if bun test test/core-operator.test.ts --test-name-pattern 'boot recovery arm and same-boot refusal' > /tmp/recovery-boot-sensitivity.log 2>&1; then
+            cat /tmp/recovery-boot-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery arm and same-boot refusal' /tmp/recovery-boot-sensitivity.log
+      - name: Prove recovery rejects a different execution host
+        shell: bash
+        run: |
+          cp server/core/launch-recovery.ts /tmp/recovery-host-original.ts
+          trap 'cp /tmp/recovery-host-original.ts server/core/launch-recovery.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/launch-recovery.ts')
+          source = path.read_text()
+          before = 'row.host !== boot.host || '
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, ''))
+          PYCODE
+          if bun test test/core-operator.test.ts --test-name-pattern 'boot recovery refuses replaced host' > /tmp/recovery-host-sensitivity.log 2>&1; then
+            cat /tmp/recovery-host-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery refuses replaced host' /tmp/recovery-host-sensitivity.log
+      - name: Prove final admission respects an armed recovery hold
+        shell: bash
+        run: |
+          cp server/core/agents.ts /tmp/recovery-hold-original.ts
+          trap 'cp /tmp/recovery-hold-original.ts server/core/agents.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/agents.ts')
+          source = path.read_text()
+          before = 'admit(prepared: PreparedProvider, expectedLaunch = prepared.previous) {\n    this.launches.assertUnheld(prepared.chat)\n    this.launches.assertUnheld(prepared.level)'
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'admit(prepared: PreparedProvider, expectedLaunch = prepared.previous) {'))
+          PYCODE
+          if bun test test/core-operator.test.ts --test-name-pattern 'boot recovery final (task )?admission fences' > /tmp/recovery-hold-sensitivity.log 2>&1; then
+            cat /tmp/recovery-hold-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery final admission fences' /tmp/recovery-hold-sensitivity.log
+          grep -F '(fail) boot recovery final task admission fences' /tmp/recovery-hold-sensitivity.log
+      - name: Prove recovered selection is checked before task effects
+        shell: bash
+        run: |
+          cp server/core/agents.ts /tmp/recovery-selection-original.ts
+          trap 'cp /tmp/recovery-selection-original.ts server/core/agents.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/agents.ts')
+          source = path.read_text()
+          start, end = source.index('  async preflight('), source.index('\n  admit(')
+          before = 'const recovered = this.recoveredSelection(previous, kind, options)'
+          chunk = source[start:end]
+          assert chunk.count(before) == 1
+          path.write_text(source[:start] + chunk.replace(before, 'const recovered = undefined') + source[end:])
+          PYCODE
+          if bun test test/core-operator.test.ts --test-name-pattern 'boot recovery public task Restart refuses changed effort' > /tmp/recovery-selection-sensitivity.log 2>&1; then
+            cat /tmp/recovery-selection-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery public task Restart refuses changed effort' /tmp/recovery-selection-sensitivity.log
+      - name: Prove missing recovered sessions cannot start fresh
+        shell: bash
+        run: |
+          cp server/core/failed-starts.ts /tmp/recovery-session-original.ts
+          trap 'cp /tmp/recovery-session-original.ts server/core/failed-starts.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/failed-starts.ts')
+          source = path.read_text()
+          guards = [line for line in source.splitlines() if line.startswith('    if (agent.recoveredFrom) return this.fail(')]
+          assert len(guards) == 1
+          path.write_text(source.replace(guards[0], ''))
+          PYCODE
+          if bun test test/core-operator.test.ts --test-name-pattern 'boot recovery public continuation with a missing native session' > /tmp/recovery-session-sensitivity.log 2>&1; then
+            cat /tmp/recovery-session-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery public continuation with a missing native session' /tmp/recovery-session-sensitivity.log
+      - name: Prove real operator peer loss revokes recovery admission
+        shell: bash
+        run: |
+          cp server/core/operator.ts /tmp/recovery-peer-original.ts
+          trap 'cp /tmp/recovery-peer-original.ts server/core/operator.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/operator.ts')
+          source = path.read_text()
+          before = "if (framed) { request.abort(Error('Recovery operator peer disconnected before admission')); socket.destroy(); return }"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, 'if (framed) return'))
+          PYCODE
+          if bun test test/core-operator.test.ts --test-name-pattern 'boot recovery real operator peer loss' > /tmp/recovery-peer-sensitivity.log 2>&1; then
+            cat /tmp/recovery-peer-sensitivity.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery real operator peer loss' /tmp/recovery-peer-sensitivity.log
+      - name: Prove coordinator holds fence descendant delivery and retries
+        shell: bash
+        run: |
+          cp server/core/launch-recovery.ts /tmp/recovery-inherited-0.ts
+          trap 'cp /tmp/recovery-inherited-0.ts server/core/launch-recovery.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/launch-recovery.ts')
+          source = path.read_text()
+          before = "return !!store.get('launch-recovery-hold', chat) || !!task &&\n      (!!store.get('launch-recovery-hold', task.chat) || !!store.get('launch-recovery-hold', task.place))"
+          assert source.count(before) == 1
+          source = source.replace(before, "return !!store.get('launch-recovery-hold', chat)")
+          path.write_text(source)
+          PYCODE
+          if bun test test/core-source.test.ts test/core-provider-retries.test.ts --test-name-pattern 'boot recovery (place hold preserves|coordinator hold keeps)' > /tmp/recovery-inherited.log 2>&1; then
+            cat /tmp/recovery-inherited.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery place hold preserves a due provider retry' /tmp/recovery-inherited.log
+          grep -F '(fail) boot recovery coordinator hold keeps DEMO-1/Agent delivery queued' /tmp/recovery-inherited.log
+          grep -F '(fail) boot recovery coordinator hold keeps DEMO-1/Reviewer-1 delivery queued' /tmp/recovery-inherited.log
+      - name: Prove recovery input gates reject instructions before and after awaits
+        shell: bash
+        run: |
+          cp server/core/source.ts /tmp/recovery-input-0.ts
+          cp server/core/terminal.ts /tmp/recovery-input-1.ts
+          cp server/core/screens.ts /tmp/recovery-input-2.ts
+          trap 'cp /tmp/recovery-input-0.ts server/core/source.ts; cp /tmp/recovery-input-1.ts server/core/terminal.ts; cp /tmp/recovery-input-2.ts server/core/screens.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/source.ts')
+          source = path.read_text()
+          before = "\n        if (this.launchRecovery.held(action.chat)) throw new Refusal('This conversation is held for launch recovery')\n"
+          assert source.count(before) == 1
+          source = source.replace(before, '\n')
+          before = "\n          if (this.launchRecovery.held(action.chat)) throw new Refusal('This conversation is held for launch recovery')\n"
+          assert source.count(before) == 1
+          source = source.replace(before, '\n')
+          path.write_text(source)
+          path = Path('server/core/terminal.ts')
+          source = path.read_text()
+          before = '\n    if (source.launchRecovery.held(chat)) return fail()\n'
+          assert source.count(before) == 1
+          source = source.replace(before, '\n')
+          before = '\n    if (!valid() || source.launchRecovery.held(chat)) return fail()\n'
+          assert source.count(before) == 1
+          source = source.replace(before, '\n')
+          before = '\n          if (source.launchRecovery.held(chat)) return fail()\n'
+          assert source.count(before) == 1
+          source = source.replace(before, '\n')
+          path.write_text(source)
+          path = Path('server/core/screens.ts')
+          source = path.read_text()
+          before = "\n    if (this.source.launchRecovery.held(row.chat)) throw new Refusal('This conversation is held for launch recovery')\n"
+          assert source.count(before) == 1
+          source = source.replace(before, '\n')
+          before = "\n      if (this.source.launchRecovery.held(row.chat)) throw new Refusal('This conversation is held for launch recovery')\n"
+          assert source.count(before) == 1
+          source = source.replace(before, '\n')
+          path.write_text(source)
+          PYCODE
+          if bun test test/core-source.test.ts test/core-terminal.test.ts test/core-screens.test.ts --test-name-pattern 'boot recovery (direct|browser|screen choice)' > /tmp/recovery-input.log 2>&1; then
+            cat /tmp/recovery-input.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery direct keys refuses' /tmp/recovery-input.log
+          grep -F '(fail) boot recovery direct text refuses' /tmp/recovery-input.log
+          grep -F '(fail) boot recovery direct text rechecks' /tmp/recovery-input.log
+          grep -F '(fail) boot recovery browser text refuses' /tmp/recovery-input.log
+          grep -F '(fail) boot recovery browser keys refuses' /tmp/recovery-input.log
+          grep -F '(fail) boot recovery browser text rechecks' /tmp/recovery-input.log
+          grep -F '(fail) boot recovery screen choice is refused while held' /tmp/recovery-input.log
+          grep -F '(fail) boot recovery screen choice is refused after its read' /tmp/recovery-input.log
+      - name: Prove held missing-session fallback retains its native binding
+        shell: bash
+        run: |
+          cp server/core/failed-starts.ts /tmp/recovery-held-session-0.ts
+          trap 'cp /tmp/recovery-held-session-0.ts server/core/failed-starts.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/failed-starts.ts')
+          source = path.read_text()
+          before = 'this.source.launchRecovery.held(agent.chat) || '
+          assert source.count(before) == 1
+          source = source.replace(before, '')
+          before = '\n    if (this.source.launchRecovery.held(agent.chat)) return\n'
+          assert source.count(before) == 1
+          source = source.replace(before, '\n')
+          path.write_text(source)
+          PYCODE
+          if bun test test/core-failed-starts.test.ts --test-name-pattern 'boot recovery held coordinator preserves a missing native session across screen read' > /tmp/recovery-held-session.log 2>&1; then
+            cat /tmp/recovery-held-session.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery held coordinator preserves a missing native session across screen read' /tmp/recovery-held-session.log
+      - name: Prove recovery queue disposition includes descendants and late holds
+        shell: bash
+        run: |
+          cp server/core/launch-recovery.ts /tmp/recovery-queues-0.ts
+          cp server/core/source.ts /tmp/recovery-queues-1.ts
+          trap 'cp /tmp/recovery-queues-0.ts server/core/launch-recovery.ts; cp /tmp/recovery-queues-1.ts server/core/source.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/launch-recovery.ts')
+          source = path.read_text()
+          before = '      this.cancelQueued(chat)'
+          assert source.count(before) == 1
+          source = source.replace(before, '      this.source.cancelQueued(chat)')
+          path.write_text(source)
+          path = Path('server/core/source.ts')
+          source = path.read_text()
+          before = '        if (this.quiescing || this.launchRecovery.held(chat)) return'
+          assert source.count(before) == 1
+          source = source.replace(before, '        if (this.quiescing) return')
+          path.write_text(source)
+          PYCODE
+          if bun test test/core-operator.test.ts test/core-source.test.ts --test-name-pattern 'boot recovery coordinator (resume cancels|hold arriving after one delivery)' > /tmp/recovery-queues.log 2>&1; then
+            cat /tmp/recovery-queues.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery coordinator resume cancels owned descendant queues' /tmp/recovery-queues.log
+          grep -F '(fail) boot recovery coordinator hold arriving after one delivery' /tmp/recovery-queues.log
+      - name: Prove historical reboot evidence permits replacement cleanup
+        shell: bash
+        run: |
+          cp server/core/task-processes.ts /tmp/recovery-history-0.ts
+          trap 'cp /tmp/recovery-history-0.ts server/core/task-processes.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/task-processes.ts')
+          source = path.read_text()
+          before = '\n      if (!terminal && new CoreLaunches(this.source.store).endedExecution(agent)) continue\n'
+          assert source.count(before) == 2
+          source = source.replace(before, '\n')
+          path.write_text(source)
+          PYCODE
+          if bun test test/core-operator.test.ts --test-name-pattern 'boot recovery task (stop|close|delete) cleans up after replacing' > /tmp/recovery-history.log 2>&1; then
+            cat /tmp/recovery-history.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery task stop cleans up after replacing' /tmp/recovery-history.log
+          grep -F '(fail) boot recovery task close cleans up after replacing' /tmp/recovery-history.log
+          grep -F '(fail) boot recovery task delete cleans up after replacing' /tmp/recovery-history.log
+      - name: Prove historical cleanup refuses mismatched recovery identities
+        shell: bash
+        run: |
+          cp server/core/launches.ts /tmp/recovery-history-binding-0.ts
+          trap 'cp /tmp/recovery-history-binding-0.ts server/core/launches.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/launches.ts')
+          source = path.read_text()
+          before = 'attempt?.launch === agent.launch && attempt.chat === agent.chat &&'
+          assert source.count(before) == 1
+          source = source.replace(before, '!!attempt &&')
+          before = 'recovery?.launch === agent.launch && recovery.chat === agent.chat && recovery.machine === agent.machine &&'
+          assert source.count(before) == 1
+          source = source.replace(before, '!!recovery &&')
+          path.write_text(source)
+          PYCODE
+          if bun test test/core-task-processes.test.ts --test-name-pattern 'boot recovery cleanup refuses historical (attempt-chat|recovery-machine) proof' > /tmp/recovery-history-binding.log 2>&1; then
+            cat /tmp/recovery-history-binding.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery cleanup refuses historical attempt-chat proof' /tmp/recovery-history-binding.log
+          grep -F '(fail) boot recovery cleanup refuses historical recovery-machine proof' /tmp/recovery-history-binding.log
+      - name: Prove implicit recovery keeps the effective Azure deployment
+        shell: bash
+        run: |
+          cp server/core/tasks.ts /tmp/recovery-effective-model-0.ts
+          trap 'cp /tmp/recovery-effective-model-0.ts server/core/tasks.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/tasks.ts')
+          source = path.read_text()
+          before = 'model ??= recovered ? recovered.model : task.model'
+          assert source.count(before) == 1
+          source = source.replace(before, 'model ??= task.model')
+          path.write_text(source)
+          PYCODE
+          if bun test test/core-operator.test.ts --test-name-pattern 'boot recovery implicit task (send|start) keeps' > /tmp/recovery-effective-model.log 2>&1; then
+            cat /tmp/recovery-effective-model.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery implicit task send keeps the retained Azure deployment' /tmp/recovery-effective-model.log
+          grep -F '(fail) boot recovery implicit task start keeps the retained Azure deployment' /tmp/recovery-effective-model.log
+      - name: Prove task holds precede mutation and asynchronous dispatch
+        shell: bash
+        run: |
+          cp server/core/tasks.ts /tmp/recovery-task-actions-0.ts
+          trap 'cp /tmp/recovery-task-actions-0.ts server/core/tasks.ts' EXIT
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('server/core/tasks.ts')
+          source = path.read_text()
+          before = '\n      this.launches.assertUnheld(task.place)\n'
+          assert source.count(before) == 7
+          source = source.replace(before, '\n')
+          path.write_text(source)
+          PYCODE
+          if bun test test/core-operator.test.ts --test-name-pattern 'boot recovery task (start preserves metadata when place|delivery rechecks|backup rechecks|deliver refuses|fresh refuses|backup refuses)' > /tmp/recovery-task-actions.log 2>&1; then
+            cat /tmp/recovery-task-actions.log
+            exit 1
+          fi
+          grep -F '(fail) boot recovery task start preserves metadata when place is held before' /tmp/recovery-task-actions.log
+          grep -F '(fail) boot recovery task start preserves metadata when place is held during-profile' /tmp/recovery-task-actions.log
+          grep -F '(fail) boot recovery task delivery rechecks a coordinator hold after its asynchronous label' /tmp/recovery-task-actions.log
+          grep -F '(fail) boot recovery task backup rechecks its coordinator hold after reading handover context' /tmp/recovery-task-actions.log
+          grep -F '(fail) boot recovery task deliver refuses a coordinator hold before mutation' /tmp/recovery-task-actions.log
+          grep -F '(fail) boot recovery task fresh refuses a coordinator hold before mutation' /tmp/recovery-task-actions.log
+          grep -F '(fail) boot recovery task backup refuses a coordinator hold before mutation' /tmp/recovery-task-actions.log
+      - name: Restore and recheck the complete recovery baseline
+        run: bun test test/core-operator.test.ts test/core-failed-starts.test.ts test/core-provider-retries.test.ts test/core-screens.test.ts test/core-source.test.ts test/core-terminal.test.ts test/core-task-processes.test.ts --test-name-pattern 'boot recovery'
       - run: bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts test/core-launch-admission.test.ts test/core-client.test.ts test/core-mailbox.test.ts test/core-launcher.test.ts test/core-operator.test.ts test/core-protected-update.test.ts test/core-commands.test.ts test/core-failed-starts.test.ts
       - run: bun x playwright-core install --only-shell chromium
       - run: bun test test/layout-restart.test.ts test/layout-azure-admission.test.ts

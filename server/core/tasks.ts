@@ -1,5 +1,6 @@
 import type { PreparedProvider } from './agents.ts'
 import { age } from '../common/age.ts'
+import { CoreLaunches } from './launches.ts'
 import { findCoreSpace } from './space-names.ts'
 import { CoreError, Refusal } from './client.ts'
 import { createHash, randomUUID } from 'node:crypto'
@@ -98,13 +99,14 @@ const REVIEW_RELAY = 2 * 60000 // A finished reviewer's report reaches the agent
 
 /** Workflow is explicit persisted metadata, mirrored to core labels. It is never inferred from process exit. */
 export class CoreTasks {
+  private readonly launches: CoreLaunches
   readonly git: CoreGit
   readonly forge: CoreForge
   private ticking = false
   private merging = new Set<string>()
   private changing = new Set<string>()
   private drains = new Set<() => void>()
-  constructor(private readonly source: CoreSource) { this.git = new CoreGit(source.files, (repo, additional) => new CorePilotRepositories(source.store).context(repo, additional), machine => source.agents.browserRuntime(machine)); this.forge = new CoreForge(this.git) }
+  constructor(private readonly source: CoreSource) { this.launches = new CoreLaunches(source.store); this.git = new CoreGit(source.files, (repo, additional) => new CorePilotRepositories(source.store).context(repo, additional), machine => source.agents.browserRuntime(machine)); this.forge = new CoreForge(this.git) }
   /** Internal product transaction gate; callbacks never come from network input. */
   async change<T>(id: string, perform: () => Promise<T>): Promise<T> {
     if (this.source.quiescing) throw new Refusal('Shepherdr is stopping; retry after it restarts')
@@ -219,7 +221,7 @@ export class CoreTasks {
       return task
     })
   }
-  async launch(task: CoreTask, message?: string, model = task.model, effort = task.effort) { return this.change(task.id, () => this.launchNow(task, message, model, effort)) }
+  async launch(task: CoreTask, message?: string, model?: string, effort?: string) { return this.change(task.id, () => this.launchNow(task, message, model, effort)) }
   /** Explicit coordinator start. A stopped run never silently becomes an unrestricted worker. */
   async start(grant: Grant, id: string, message = 'Continue the agreed brief. Preserve existing work.') {
     return this.change(id, async () => {
@@ -232,11 +234,15 @@ export class CoreTasks {
       if (!this.source.machineConnected(task.machine)) throw new Refusal('Wait for the task’s machine to reconnect')
       const run = caller.pilot && this.source.pilots.policy.actor(caller.pilot.run, this.source.pilots.actor(caller))
       if (run && (run.state !== 'on' || run.place !== task.place || run.machine !== task.machine)) throw new Refusal('This run cannot start that task')
+      this.launches.assertUnheld(task.chat)
+      this.launches.assertUnheld(task.place)
       await this.profile(task, run || undefined)
+      this.launches.assertUnheld(task.chat)
+      this.launches.assertUnheld(task.place)
       if (caller.pilot) this.source.pilots.policy.actor(caller.pilot.run, this.source.pilots.actor(caller))
       if (!this.source.space(task.place) || this.source.places?.removing(task.place)) throw new Refusal('Task space is missing or being removed')
       const prior = this.source.agents.get(task.chat)
-      if (prior && !this.source.agents.terminal(prior)) throw new Refusal('Previous task start is unconfirmed; reconnect before starting it again')
+      if (prior && !this.source.agents.terminal(prior) && !this.launches.ended(prior)) throw new Refusal('Previous task start is unconfirmed; reconnect before starting it again')
       task.after = taskDependencies(this.all(), task, task.after ?? [], machine => this.source.machineName(machine))
       task.workflow = task.after.some(id => !['merged', 'closed'].includes(this.get(id)?.workflow || '')) ? 'queued' : 'working'
       delete task.startError; delete task.readyHead; delete task.approvedHead; delete task.mergeQuestion
@@ -275,7 +281,10 @@ export class CoreTasks {
     }
   }
   private async finishForRestart(agent: import('./model.ts').CoreAgent) {
+    this.launches.assertUnheld(agent.chat)
+    this.launches.assertUnheld(agent.space)
     const terminal = this.source.agents.terminal(agent)
+    if (this.launches.ended(agent, terminal?.state)) return
     if (!this.source.machineConnected(agent.machine) || !terminal) throw new Refusal('Reconnect before restarting; the old task process is unconfirmed')
     if (agent.pid !== undefined && agent.pid !== terminal.pid) throw new Refusal('Task process identity changed; restart was refused')
     const identity = { address: terminal.address, pid: terminal.pid, created: terminal.created_ms }
@@ -298,6 +307,8 @@ export class CoreTasks {
     return this.change(id, async () => {
       const task = this.get(id), agent = task && this.source.agents.get(task.chat)
       if (!task || !agent || agent.launch !== launch || agent.role !== 'task' || task.workflow !== 'working' || task.archived || task.pilot || agent.pilot || task.providerTakeover) return false
+      this.launches.assertUnheld(task.chat)
+      this.launches.assertUnheld(task.place)
       const choice = this.source.settings.backupFor(task.place, agent.kind), kind = choice?.kind
       if (!choice || !kind || kind === agent.kind || this.source.openPermissions(agent).length || this.source.questions.open(task.chat).length || this.source.secrets.open(task.chat).length) return false
       const location = { machine: task.machine, folder: task.folder }
@@ -307,6 +318,8 @@ export class CoreTasks {
       const chat = this.source.logs.messages(task.chat).filter(message => message.text).slice(-12).map(message => `${message.who}: ${message.text}`).join('\n\n').slice(-12000)
       const current = this.source.agents.get(task.chat), backup = this.source.settings.backupFor(task.place, agent.kind)
       if (current?.launch !== launch || !backup || backup.kind !== kind || backup.model !== choice.model || backup.effort !== choice.effort || this.source.openPermissions(agent).length) return false
+      this.launches.assertUnheld(task.chat)
+      this.launches.assertUnheld(task.place)
       const handover = `<restart>Provider backup: ${kind} takes over from ${agent.kind}: ${reason}. Continue only the existing agreed task in the same worktree and branch. Preserve all committed and uncommitted work. The following is context, not new authorization.\nCommits:\n${commits.slice(-8000) || 'none'}\nUncommitted changes:\n${changes.slice(-8000) || 'none'}\nRecent chat:\n${chat || 'none'}</restart>`
       task.providerTakeover = { from: agent.kind, to: kind, why: reason, at: Date.now(), launch, state: 'starting', handover }; this.save(task)
       try {
@@ -343,8 +356,10 @@ export class CoreTasks {
   private mergeAsked(task: CoreTask, human: boolean) { return !!task.mergeQuestion && (task.approvedHead ? !human : !!this.source.store.get('merge-question', task.mergeQuestion)) }
   async deliver(id: string, chat: string, message: string, internal = false, human = false, delivery?: string) {
     return this.change(id, async () => {
+      this.launches.assertUnheld(chat)
       const task = this.get(id)
       if (!task) throw new Refusal('This task was removed; nothing was sent')
+      this.launches.assertUnheld(task.place)
       if (['merged', 'closed'].includes(task.workflow)) throw new Refusal('This task is Done; ask its coordinator for follow-up work')
       const agent = this.source.agents.get(chat)
       if (this.forChat(chat)?.id !== id) throw new Refusal('This chat does not belong to that task')
@@ -356,8 +371,10 @@ export class CoreTasks {
         if (task.workflow === 'queued' && task.capacity && !(task.after ?? []).some(id => !['merged', 'closed'].includes(this.get(id)?.workflow || ''))) task.workflow = 'working'
         delete task.capacity; this.save(task); await this.label(task)
       }
+      this.launches.assertUnheld(chat)
+      this.launches.assertUnheld(task.place)
       if (agent && this.source.agents.terminal(agent)?.state === 'live') await this.source.agents.send(chat, message)
-      else if (chat === task.chat) { await this.launchNow(task, message, task.model, task.effort, undefined, false, undefined, delivery); if (this.get(task.id)?.capacity) throw new CoreError('busy', 'This task is queued until its machine has room') }
+      else if (chat === task.chat) { await this.launchNow(task, message, undefined, undefined, undefined, false, undefined, delivery); if (this.get(task.id)?.capacity) throw new CoreError('busy', 'This task is queued until its machine has room') }
       else throw new Refusal('This reviewer has finished; request a fresh review')
     })
   }
@@ -371,7 +388,9 @@ export class CoreTasks {
     if (prepared.provider.binding.route !== worker.provider.binding.route) throw new Refusal('Worker and coordinator provider routes differ')
     return { pick, prepared }
   }
-  private async launchNow(task: CoreTask, message?: string, model = task.model, effort = task.effort, prepared?: PreparedProvider, create = false, coordinator?: Awaited<ReturnType<CoreTasks['prepareCoordinator']>>, delivery?: string) {
+  private async launchNow(task: CoreTask, message?: string, model?: string, effort?: string, prepared?: PreparedProvider, create = false, coordinator?: Awaited<ReturnType<CoreTasks['prepareCoordinator']>>, delivery?: string) {
+    this.launches.assertUnheld(task.chat)
+    this.launches.assertUnheld(task.place)
     const handover = task.providerTakeover?.handover
     if (handover && message !== handover) message = handover + (message ? `\n\n${message}` : '')
     task = this.get(task.id) || (() => { throw new Refusal('No such task') })()
@@ -379,8 +398,12 @@ export class CoreTasks {
     if (!space || this.source.places?.removing(space.id)) throw new Refusal('Task space is missing or being removed')
     if (['merged', 'closed'].includes(task.workflow)) throw new Refusal('This task is Done; ask its coordinator for follow-up work')
     const prior = this.source.agents.get(task.chat)
-    if (prior && !this.source.agents.terminal(prior)) throw new Refusal('Previous task start is unconfirmed; reconnect before reopening its checkout')
+    if (prior && !this.source.agents.terminal(prior) && !this.launches.ended(prior)) throw new Refusal('Previous task start is unconfirmed; reconnect before reopening its checkout')
     if (prior && this.source.agents.terminal(prior)?.state === 'live') throw new Refusal('This task agent is already running')
+    const recovered = prior && this.launches.ended(prior, this.source.agents.terminal(prior)?.state) ? prior : undefined
+    model ??= recovered ? recovered.model : task.model
+    effort ??= recovered ? recovered.effort : task.effort
+    const speed = recovered ? recovered.speed : task.speed
     const capacity = (task.workflow !== 'todo' || task.pilot) && this.source.health?.room(task.machine, task.id)
     if (capacity) { if (task.workflow !== 'todo') task.workflow = 'queued'; task.capacity = capacity; if (task.providerTakeover?.state === 'starting') task.providerTakeover.state = 'queued'; this.save(task); if (!create) return }
     if (!capacity && task.capacity) { if (!(task.after ?? []).some(id => !['merged', 'closed'].includes(this.get(id)?.workflow || ''))) task.workflow = 'working'; delete task.capacity }
@@ -394,7 +417,7 @@ export class CoreTasks {
     if (pilot && (parent?.pilot?.run !== pilot.id || this.source.agents.terminal(parent)?.state !== 'live')) parent = undefined
     const needsParent = !pilot && (!parent || this.source.agents.terminal(parent)?.state !== 'live')
     // Validate both routes before checkout, browser or coordinator effects.
-    prepared ??= await this.source.agents.preflight(space, task.chat, task.kind, { deployment: task.deployment, parent: needsParent ? undefined : parent, pilot })
+    prepared ??= await this.source.agents.preflight(space, task.chat, task.kind, { model, effort, speed, deployment: task.deployment, parent: needsParent ? undefined : parent, pilot })
     if (needsParent) coordinator ??= await this.prepareCoordinator(space, parent, prepared)
     const admit = () => {
       if (this.source.agents.get(space.id)?.launch !== parentLaunch) throw new Refusal('Parent identity changed during task admission')
@@ -438,7 +461,7 @@ export class CoreTasks {
     const role = readFileSync(join(import.meta.dir, '../../skill/shepherdr-agent/SKILL.md'), 'utf8')
     const instructions = `${role}\n\nYou are ${task.id} in standalone Shepherdr on core. Use the launch-provisioned authenticated shepherdr command. ${pilot ? 'Your Git metadata is read-only: use shepherdr checkpoint MESSAGE to commit, and shepherdr review TASK for a fresh managed reviewer. Use the product broker for managed agents and messages; no core socket or outside helper is available.' : 'Use hc for child agents, messages and waits.'} Do not use legacy helpers, SSH workers, a web URL or screen scraping. Your branch is ${task.branch}; stay in this worktree.\n`
     const prompt = `${task.desc}\n\n${wait}\n\nSettings:\n- Agent: ${task.kind}${task.model ? `, model ${task.model}` : ''}${task.effort ? `, effort ${task.effort}` : ''}\n- Review: ${task.review.on ? 'on' : 'off'}\n- Reviewer: ${task.review.kind}${task.reviewerModel ? `, model ${task.reviewerModel}` : ''}${task.reviewerEffort ? `, effort ${task.reviewerEffort}` : ''}\n- Must fix: ${task.review.mustFix}\n- Review rounds: ${task.review.rounds}\n- Merge: ${mergeWords(task.mergePolicy)}\n${Object.keys(task.overrides ?? {}).length ? `Set by the coordinator for this task: ${Object.entries(task.overrides!).map(([key, value]) => `${key}=${value}`).join(', ')}\n` : ''}${message ? `\n<go>${message}</go>` : ''}`
-    const launched = await this.source.agents.launch(space, task.chat, task.kind, prompt, { prepared, delivery, deployment: task.deployment, role: 'task', parent, folder: task.folder, task: task.id, instructions, model, effort, speed: task.speed, resume: !pilot && !prior?.pilot, message: message ?? '', pilot: pilot ? { run: pilot.id, hosts: pilot.config.hosts, deadline: pilot.config.runtime ? pilot.started + pilot.config.runtime : undefined, repo: task.repo } : undefined })
+    const launched = await this.source.agents.launch(space, task.chat, task.kind, prompt, { prepared, delivery, deployment: task.deployment, role: 'task', parent, folder: task.folder, task: task.id, instructions, model, effort, speed, resume: !pilot && !prior?.pilot, message: message ?? '', pilot: pilot ? { run: pilot.id, hosts: pilot.config.hosts, deadline: pilot.config.runtime ? pilot.started + pilot.config.runtime : undefined, repo: task.repo } : undefined })
     if (pilot) this.source.pilots.policy.bind(pilot.id, { chat: launched.chat, launch: launched.launch, role: 'task', task: task.id })
     await this.label(task)
     const takeover = task.providerTakeover
@@ -455,6 +478,8 @@ export class CoreTasks {
     return this.change(id, async () => {
       const task = this.get(id), agent = task && this.source.agents.get(task.chat)
       if (!task || agent?.launch !== launch) return false
+      this.launches.assertUnheld(task.chat)
+      this.launches.assertUnheld(task.place)
       this.source.agents.update(agent, { session: undefined })
       await this.launchNow(task, task.workflow === 'working' || message ? `${FRESH_SESSION} ${message || 'Continue your agreed task.'}` : undefined)
       return this.source.agents.get(task.chat)?.launch !== launch
@@ -723,7 +748,7 @@ export class CoreTasks {
           onWords: agent?.kind ?? task.kind, want: azure ? this.source.agents.selection(task.chat) ?? { kind: task.kind, model: task.model, effort: task.effort, deployment: task.deployment ?? this.source.settings.deployment('task', task.kind, task.place) } : this.source.settings.agent('task', task.place), working: agent?.state === 'working',
           clis: azure ? this.source.settings.selectionClis('task', task.place) : this.source.settings.clis(task.place) } }
       }
-      case 'restart':
+      case 'restart': {
         if (['merged', 'closed'].includes(task.workflow)) throw new Refusal('This task is Done; ask its coordinator for follow-up work')
         if (action.kind && action.kind !== 'claude' && action.kind !== 'codex') throw new Refusal('Choose Claude Code or Codex')
         const current = this.source.pilots.policy.current(task.place)
@@ -735,7 +760,8 @@ export class CoreTasks {
         const space = this.source.space(task.place)
         if (!space) throw new Refusal('Task space is missing')
         const parent = this.source.agents.get(task.place)
-        const prepared = await this.source.agents.preflight(space, task.chat, choice.kind, { deployment: task.deployment, parent: parent && this.source.agents.terminal(parent)?.state === 'live' ? parent : undefined, pilot: profile })
+        const prepared = await this.source.agents.preflight(space, task.chat, choice.kind, { ...choice, speed, deployment: task.deployment, parent: parent && this.source.agents.terminal(parent)?.state === 'live' ? parent : undefined, pilot: profile })
+        const selected = { ...choice, speed, ...prepared.recovered }
         const coordinator = !profile && (!parent || this.source.agents.terminal(parent)?.state !== 'live')
           ? await this.prepareCoordinator(space, parent, prepared) : undefined
         if (this.source.agents.get(space.id)?.launch !== parent?.launch) throw new Refusal('Parent identity changed during task admission')
@@ -745,11 +771,14 @@ export class CoreTasks {
         if (agent) await this.finishForRestart(agent)
         await this.profile(task, profile)
         await this.source.browsers?.close(task.id)
-        task.kind = choice.kind; task.model = choice.model; task.effort = choice.effort; task.speed = speed
+        this.launches.assertUnheld(task.chat)
+        this.launches.assertUnheld(task.place)
+        task.kind = selected.kind; task.model = selected.model; task.effort = selected.effort; task.speed = selected.speed
         delete task.startError; this.save(task)
         await this.launchNow(task, task.workflow === 'working' ? 'Continue your agreed task. Preserve existing work.' : undefined, task.model, task.effort, prepared, false, coordinator)
-        if (action.save && !this.get(task.id)?.capacity) this.source.settings.saveAgent('task', task.place, choice)
+        if (action.save && !this.get(task.id)?.capacity) this.source.settings.saveAgent('task', task.place, selected)
         return { ok: true }
+      }
       case 'close': return this.closeNow(task, !!action.force)
       case 'delete': return this.removeNow(task, !!action.force)
       default: throw new Refusal('Unsupported task action')
@@ -935,6 +964,9 @@ export class CoreTasks {
     try {
       this.autoArchive()
       for (const task of this.all()) {
+        const retained = this.source.agents.get(task.chat), coordinator = this.source.agents.get(task.place)
+        if (this.launches.held(task.chat) || this.launches.held(task.place) ||
+          retained && this.launches.ended(retained, this.source.agents.terminal(retained)?.state) || coordinator && this.launches.ended(coordinator, this.source.agents.terminal(coordinator)?.state)) continue
         if (this.changing.has(task.id) || this.merging.has(task.id)) continue
         if (task.cleanupPending && ['merged', 'closed'].includes(task.workflow)) { await this.cleanupFinished(task); continue }
         if (task.reviewChat && !task.reviewTurn) {
