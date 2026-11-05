@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { CoreFiles } from '../server/core/files.ts'
@@ -375,6 +375,7 @@ test('Bitbucket helper ignores hostile project dotenv and Bun preload configurat
   writeFileSync(join(f.folder, '.env'), `BUN_OPTIONS=--preload=${attack}\nBITBUCKET_FIXTURE_STATE=/foreign\n`)
   expect(await f.tasks.pr(f.grant, f.task.id)).toEqual(expectedPr)
   expect(existsSync(marker)).toBe(false)
+  expect(f.gitStartups()).toEqual([{ cwd: realpathSync(join(f.root, 'user')), gitCwd: realpathSync(f.folder) }])
   expect(f.state().creates).toBe(1)
 }))
 
@@ -466,7 +467,9 @@ test('Bitbucket public native merge refusal preserves task readiness without a l
   await f.tasks.pr(f.grant, f.task.id); await f.tasks.ready(f.grant, f.task.id, 'Ready candidate')
   await f.tasks.answer(f.tasks.get(f.task.id)!.mergeQuestion!, 0, f.task.chat)
   const requests = f.requests().length
-  await expect(f.tasks.merge(f.grant, f.task.id)).rejects.toThrow('no merge or lifecycle transition')
+  const merge = f.tasks.merge(f.grant, f.task.id)
+  await expect(merge).rejects.toThrow('expected-source-head guarantee')
+  await expect(merge).rejects.toThrow('no merge or lifecycle transition')
   expect(f.tasks.get(f.task.id)?.workflow).toBe('ready')
   expect(f.requests()).toHaveLength(requests)
 }))

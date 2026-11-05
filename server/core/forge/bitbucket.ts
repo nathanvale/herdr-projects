@@ -180,7 +180,7 @@ export class BitbucketForge implements RepositoryForge {
     const result = await this.request({ kind: 'prepare', number: pr.identity.number, head: pr.head, branch: pr.source, base: pr.base, body }, undefined, validate)
     this.matches(this.checked(result.pr, pr.identity), { branch: pr.source, base: pr.base, head: pr.head, title: '', body })
   }
-  async integrate(): Promise<never> { throw new Refusal('Native Bitbucket merge cannot enforce the approved source head; no merge request was sent') }
+  async integrate(): Promise<never> { throw new Refusal('Native Bitbucket merge lacks an expected-source-head guarantee and cannot enforce the approved source head; no merge request was sent') }
   async comments(): Promise<never> { throw new Refusal('Bitbucket feedback is outside this publication/checks increment') }
   async observeBase(): Promise<never> { throw new Refusal('Bitbucket base health is outside this publication/checks increment') }
   async presentation(branch: string, saved?: ForgePrRecord) {

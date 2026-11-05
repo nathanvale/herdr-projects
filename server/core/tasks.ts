@@ -590,7 +590,7 @@ export class CoreTasks {
       if (task.pr && !forge) throw new Refusal('The saved pull request no longer has its forge origin')
       if (task.mergePolicy === 'checks' && !forge) throw new Refusal('This merge requires verified GitHub checks; the repository has no GitHub remote')
       if (forge) {
-        if (forge.identity.provider === 'bitbucket') throw new Refusal('Native Bitbucket merge cannot enforce the approved source head; no merge or lifecycle transition was requested')
+        if (forge.identity.provider === 'bitbucket') throw new Refusal('Native Bitbucket merge lacks an expected-source-head guarantee and cannot enforce the approved source head; no merge or lifecycle transition was requested')
         const pr = await forge.read(task.branch, true, task.pr)
         if (pr.head !== head || pr.source !== task.branch || pr.base !== task.base) throw new Refusal('The pull request head or base differs from the approved task')
         if (pr.state !== 'MERGED') {

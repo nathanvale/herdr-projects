@@ -18,6 +18,7 @@ export interface BitbucketFixture {
   state: () => Record<string, any>
   requests: () => { url: string; method: string; authorization: string; body?: unknown }[]
   gitTransports: () => { url: string; repository: string; username: string }[]
+  gitStartups: () => { cwd: string; gitCwd: string }[]
   git: (folder: string, ...args: string[]) => Promise<string>
   reopen: () => void
   secondMachine: () => Promise<{ task: CoreTask; grant: Grant }>
@@ -28,8 +29,8 @@ export interface BitbucketFixture {
 export async function withBitbucket(run: (fixture: BitbucketFixture) => Promise<void>, remote = false) {
   const root = mkdtempSync(join(tmpdir(), 'shep-bb-')), repo = join(root, 'repo'), folder = join(root, 'worktree'), bare = join(root, 'remote.git')
   const foreignBare = join(root, 'foreign.git')
-  const statePath = join(root, 'provider.json'), requestsPath = join(root, 'requests.jsonl'), gitTransportsPath = join(root, 'git-transports.jsonl')
-  mkdirSync(join(root, 'user')); writeFileSync(requestsPath, ''); writeFileSync(gitTransportsPath, '')
+  const statePath = join(root, 'provider.json'), requestsPath = join(root, 'requests.jsonl'), gitTransportsPath = join(root, 'git-transports.jsonl'), gitStartupsPath = join(root, 'git-startups.jsonl')
+  mkdirSync(join(root, 'user')); writeFileSync(requestsPath, ''); writeFileSync(gitTransportsPath, ''); writeFileSync(gitStartupsPath, '')
   // Deliberately do not inherit real mailbox, provider, Git or cloud credentials.
   const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: join(root, 'user'), XDG_CONFIG_HOME: join(root, 'user'), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
     GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.invalid', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.invalid', BITBUCKET_FIXTURE_STATE: statePath }
@@ -38,7 +39,10 @@ export async function withBitbucket(run: (fixture: BitbucketFixture) => Promise<
   env.BITBUCKET_FIXTURE_GIT_EXEC_PATH = (await runChild(['git', '--exec-path'], { env })).toString().trim()
   env.GIT_EXEC_PATH = executables
   const quote = (text: string) => `'${text.replaceAll("'", "'\"'\"'")}'`
-  writeFileSync(join(executables, 'git-remote-https'), `#!/bin/sh\nexec ${quote(process.execPath)} --no-env-file ${quote(join(import.meta.dir, 'fixtures/bitbucket-git-remote.ts'))} "$@"\n`, { mode: 0o700 })
+  // The synthetic HTTPS transport is Bun, unlike the native Git HTTPS helper.
+  // Start it outside the project so project bunfig/preloads cannot execute.
+  // Preserve the Git caller's cwd separately for its credential lookup.
+  writeFileSync(join(executables, 'git-remote-https'), `#!/bin/sh\nBITBUCKET_FIXTURE_GIT_CWD="$(pwd -P)"\nexport BITBUCKET_FIXTURE_GIT_CWD\ncd ${quote(join(root, 'user'))} || exit 1\nexec ${quote(process.execPath)} --no-env-file ${quote(join(import.meta.dir, 'fixtures/bitbucket-git-remote.ts'))} "$@"\n`, { mode: 0o700 })
   await runChild(['git', 'init', '--initial-branch=main', repo], { env })
   await runChild(['git', 'init', '--bare', '--initial-branch=main', bare], { env })
   await runChild(['git', 'init', '--bare', '--initial-branch=main', foreignBare], { env })
@@ -50,7 +54,7 @@ export async function withBitbucket(run: (fixture: BitbucketFixture) => Promise<
   const head = await git(folder, 'rev-parse', 'HEAD')
   await git(repo, 'remote', 'add', 'origin', 'https://alice@bitbucket.org/space/sample.git')
   await git(repo, 'update-ref', 'refs/remotes/origin/main', 'main')
-  writeFileSync(statePath, JSON.stringify({ bare, foreignBare, requests: requestsPath, gitTransports: gitTransportsPath, token: 'SYNTHETIC_TOKEN_ALICE_123', creates: 0, prepares: 0 }))
+  writeFileSync(statePath, JSON.stringify({ bare, foreignBare, requests: requestsPath, gitTransports: gitTransportsPath, gitStartups: gitStartupsPath, token: 'SYNTHETIC_TOKEN_ALICE_123', creates: 0, prepares: 0 }))
   const credentialHelper = join(root, 'credential.ts')
   writeFileSync(credentialHelper, `import{readFileSync,appendFileSync}from'node:fs';const s=JSON.parse(readFileSync(process.env.BITBUCKET_FIXTURE_STATE,'utf8'));const t=await Bun.stdin.text();appendFileSync(${JSON.stringify(join(root, 'credential-lookups'))},t);if(s.missingCredential)process.exit(1);if(s.malformedCredential){console.log('authtype=basic\\ncredential=unsupported');process.exit(0)}const user=t.match(/^username=(.+)$/m)?.[1]||'alice';console.error('private diagnostic '+s.token);console.log('protocol=https\\nhost=bitbucket.org\\nusername='+user+'\\npassword='+(user==='alice'?s.token:'SYNTHETIC_TOKEN_BOB_456'))`)
   await git(repo, 'config', 'credential.helper', '')
@@ -102,6 +106,7 @@ export async function withBitbucket(run: (fixture: BitbucketFixture) => Promise<
     state: () => JSON.parse(readFileSync(statePath, 'utf8')), update: patch => writeFileSync(statePath, JSON.stringify({ ...fixture.state(), ...patch })),
     requests: () => readFileSync(requestsPath, 'utf8').split('\n').filter(Boolean).map(row => JSON.parse(row)),
     gitTransports: () => readFileSync(gitTransportsPath, 'utf8').split('\n').filter(Boolean).map(row => JSON.parse(row)),
+    gitStartups: () => readFileSync(gitStartupsPath, 'utf8').split('\n').filter(Boolean).map(row => JSON.parse(row)),
     reopen: () => { store.close(); store = new CoreStore(join(root, 'home')); Object.assign(source, { store }); tasks = new CoreTasks(source) },
     secondMachine: async () => {
       const checkout = join(root, 'second-checkout')
