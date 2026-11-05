@@ -10,7 +10,7 @@ import type { Gate } from "./auth.ts";
 const root = mkdtempSync(join(tmpdir(), "shepherdr-private-domain-"));
 const modeFile = join(root, "identity.json");
 const certFile = join(root, "cert.pem"), keyFile = join(root, "key.pem");
-const state: Gate = { owner: "owner@example.test", dns: "device.tailnet.ts.net", port: 7788, token: "test-local-token" };
+const state: Gate = { owner: "owner@example.test", dns: "device.tailnet.example", port: 7788, token: "test-local-token" };
 let server: Awaited<ReturnType<typeof servePrivateDomain<{ who: string }>>>;
 let config: PrivateDomain;
 let reached = 0;

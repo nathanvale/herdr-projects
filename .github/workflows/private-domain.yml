@@ -36,6 +36,6 @@ jobs:
           set -e
           cat /tmp/private-domain-negative.log
           test "$status" -ne 0
-          rg '1 fail' /tmp/private-domain-negative.log
+          grep -E '^[[:space:]]*1 fail$' /tmp/private-domain-negative.log
           cp /tmp/private-domain-auth-original.ts service/auth.ts
           bun test service/private-domain.test.ts
