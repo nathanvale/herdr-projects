@@ -1,146 +1,38 @@
-# The whole check (types, every test with the browser ones, the build) on GitHub's runners, on every pull request to
-# main and every push to main (a merge): the full suite runs here, not on the machine the agents work on (AGENTS.md). A
-# task waits for its pull request's run before it merges, and Shepherdr tells the coordinator when main goes red. A
-# branch with no pull request can still be checked by hand: gh workflow run check.yml --ref <branch>.
-#
-# Lean, as GitHub bills each job by the minute, rounded up: the types and the build share one job, and the tests run
-# split over three runners (bun test --shard, balanced by each file's time on the last run), which also note which
-# lines of the screen each browser test runs. Whatever doesn't change between runs comes from the cache.
-name: Check
-
+name: FORG-2 bounded evidence
 on:
-  # no paths-ignore here: a docs-only pull request must report a check too, or it could never merge
-  pull_request:
-    branches: [main, foundry-base]
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
   workflow_dispatch:
-
-concurrency:
-  # refs/pull/<n>/merge on a pull request, refs/heads/main on a merge: each only ever cancels its own older run
-  group: check-${{ github.ref }}
-  # a newer push makes an older run moot: its verdict covers the older commits too
-  cancel-in-progress: true
-
+permissions:
+  contents: read
 env:
-  # tests that make commits need someone to make them, whatever HOME they run with
   GIT_AUTHOR_NAME: CI
   GIT_AUTHOR_EMAIL: ci@localhost
   GIT_COMMITTER_NAME: CI
   GIT_COMMITTER_EMAIL: ci@localhost
-  # each file's time on the last run, which balances the shards (scripts/test.ts keeps it there)
-  TIMINGS: node_modules/.cache/shepherdr-test/timings.json
-
 jobs:
-  types:
-    name: types and build
+  controls:
+    name: controls batch ${{ matrix.batch }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.2
-      - uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
-      - run: bun run typecheck
-      - run: bun run build
-      # Restore once. Independently restored moving caches can assign a file to
-      # no shard (or several) when another shard/run publishes newer timings.
-      - uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.TIMINGS }}
-          key: test-timings-${{ github.run_id }}
-          restore-keys: test-timings-
-      - name: Freeze the timing input for every shard
-        run: |
-          if [ -f "$TIMINGS" ]; then
-            tar -cf "$RUNNER_TEMP/test-timings.tar" "$TIMINGS"
-          else
-            tar -cf "$RUNNER_TEMP/test-timings.tar" --files-from /dev/null
-          fi
-      - uses: actions/upload-artifact@v4
-        with:
-          name: test-timings-input
-          path: ${{ runner.temp }}/test-timings.tar
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 30
-
-  test:
-    name: test (${{ matrix.shard }}/3)
-    needs: types
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
-      # every shard finishes, so one run shows every failure
       fail-fast: false
+      max-parallel: 3
       matrix:
-        shard: [1, 2, 3]
+        batch: [0, 1, 2]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
-      - uses: actions/cache@v4
+      # The definition checkout is the protected authoring owner (manifest '.').
+      # Each tested candidate is a separate standalone clone under RUNNER_TEMP.
+      - run: python3 .github/forg2-proof/run-batch.py '${{ matrix.batch }}'
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
-      # Real Autopilot namespace enforcement tests use fake agents and no provider credentials.
-      - run: sudo apt-get update -qq && sudo apt-get install -y bubblewrap
-      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      # Tests supply private SSH profiles and a fake transport. Do not inherit a
-      # hosted runner's ProxyCommand; production must continue refusing it.
-      - name: Isolate system SSH configuration for transport fixtures
-        run: sudo install -m 644 /dev/null /etc/ssh/ssh_config
-      # Chromium's headless shell for playwright-core, at the version it wants (the runner has the libraries it needs),
-      # and WebKit, Safari's engine, for an iPhone's tests (layout-iphone.test.ts), with the libraries it needs
-      - id: playwright
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-shell-webkit-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-      - if: steps.playwright.outputs.cache-hit != 'true'
-        run: bun x playwright-core install --only-shell chromium && bun x playwright-core install webkit
-      - run: bun x playwright-core install-deps webkit
-      # the screen the browser tests open (test/web.ts), built from these files: a build of other files is left unused
-      - uses: actions/cache@v4
-        with:
-          path: node_modules/.cache/shepherdr-test/dist-*
-          key: screen-maps-${{ hashFiles('index.html', 'vite.config.ts', 'tsconfig.json', 'package.json', 'bun.lock', 'plugins.json', 'src/**', 'plugins/**', 'shared/**', 'public/**') }}
-      # Failed-shard retries also reuse this run's frozen input.
-      - uses: actions/download-artifact@v4
-        with:
-          name: test-timings-input
-          path: ${{ runner.temp }}
-      - name: Use the shared timing input
-        run: |
-          sha256sum "$RUNNER_TEMP/test-timings.tar"
-          tar -xf "$RUNNER_TEMP/test-timings.tar"
-      # Which lines of the screen each of this shard's browser tests runs, for the test runs on the agents' machine: a
-      # change to the screen there runs only the browser tests that reach it (test/screen-map.ts puts the shards' maps
-      # of main's newest green run together)
-      - run: bun run test --shard=${{ matrix.shard }}/3 --map=screen-map.json
-      - if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: screen-map-${{ matrix.shard }}
-          path: screen-map.json
-          if-no-files-found: ignore
-          retention-days: 30
-      # only a help: it never fails the check
-      - if: always()
-        uses: actions/cache/save@v4
-        continue-on-error: true
-        with:
-          path: ${{ env.TIMINGS }}
-          key: test-timings-${{ github.run_id }}-${{ matrix.shard }}
+          name: forg2-controls-${{ matrix.batch }}
+          path: ${{ runner.temp }}/forg2-controls-${{ matrix.batch }}/
+          if-no-files-found: error
+          retention-days: 14

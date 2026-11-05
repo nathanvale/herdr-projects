@@ -1,0 +1,283 @@
+{
+  "task": "FORG-2",
+  "head": "f6964953fd12ec44de0599c8a193301032b31ddd",
+  "tree": "7f6c770219e7bbef6562feb3ce414eae52a856f7",
+  "parent": "d83ca8fe47f524c28d7d7d59d9971cc3a27e28e1",
+  "branch": "work/2-bitbucket-prs-and-checks",
+  "worker_checkout": "/Users/server/.local/state/shepherdr-forge-work/20261104/app/worktrees/forge-adapters/work-2-bitbucket-prs-and-checks",
+  "native_session": "01a1a5f6-6707-7391-885e-7de63d7df11d",
+  "state": "CLEAN_LOCAL_COMMITTED_STOP_FOR_ROOT_REVIEW",
+  "authorized_repair": "Truthful post-effect reporting and typed mailbox uncertainty; actual synthetic authenticated native CLI process regressions only.",
+  "native_route": "Reuse unchanged coordinator-verified retained Azure gpt-6.1-sol High Fast/priority receipts; fallback off; no discovery/settings/runtime changes.",
+  "scoped_files": [
+    "server/core/client.ts",
+    "server/core/forge/bitbucket.ts",
+    "server/core/forge/types.ts",
+    "server/core/mailbox.ts",
+    "server/core/tasks.ts",
+    "test/bitbucket-cli-fixture.ts",
+    "test/bitbucket-fixture.ts",
+    "test/core-bitbucket-cli.test.ts",
+    "test/core-bitbucket.test.ts",
+    "test/core-client.test.ts",
+    "test/core-mailbox.test.ts",
+    "test/core-wire.ts",
+    "test/mailbox-documents.ts"
+  ],
+  "source_files": {
+    "helper/core-bitbucket-git.ts": "33459469a98bf07b009bf4b66af152e120265b8546a8b1adc4d8addcfbcf9963",
+    "helper/core-bitbucket.ts": "6e04ed2180b776dc09db1f10d8df0fa1c3dfc79f4daf525a57c8b2562e2f87ee",
+    "helper/core-cli.ts": "c236d41af7e1f405137eac76a50c2f76fb6edc30d296317071a0ed44e61f5dad",
+    "helper/core-secret.ts": "ec286b4953c2bf79ca6adbc0cc65e591b4866c76a4a97e4e45a0a9326ddf9aa2",
+    "server/core/agents.ts": "f2c3a2f2718d425cfbd4423cb8697c9a0150d3673eee78220b78b713fb85921f",
+    "server/core/client.ts": "b8d3579fdb44d20497b067e9ff5bca4f4c312894aaa3337f648a49cfb23fcb96",
+    "server/core/envelope.ts": "b07b8f9ab9c6265c298551c1742b6509cb0be20a141a65049cbb5ca01b473b50",
+    "server/core/files.ts": "0c4a6481b5b5f2964ee0c8b9af554f941fa4bf11585096e3085fa799d8fd6115",
+    "server/core/forge/bitbucket-http.ts": "47cba322f9a85d32ab218c6b12fdffdd03bd044fc95bc1b1a3142a2ea65ea579",
+    "server/core/forge/bitbucket-protocol.ts": "699ac919fc93d7b459fe0840a0a41d9f1603026c56c19c9015600cb84ef8eb4e",
+    "server/core/forge/bitbucket.ts": "bdf2173f77ec70420066d85d902bfb19fe5952b29ecf8267effcc811675ca9b8",
+    "server/core/forge/index.ts": "1ba0e149561cedda6768ebfdc1192be8726b1913719bd0396fc8de891e58098b",
+    "server/core/forge/types.ts": "d28a37503b70d9a2ddfa90893796ee57edd69f1aedb16e20459d6d6b83ecb2cb",
+    "server/core/git.ts": "52b7ba6e568d7b26bf5b2d5dc20e43a29e3a857abb88d30a3c5434159ad4b65b",
+    "server/core/github.ts": "4c2da0c773ce474247a2f0064a56fb98eab45d0869416c037681b7ab456337bd",
+    "server/core/home.ts": "32c70444008cf6741b1b026c3202d02931eac467fdcb1a8a3f44daedc7103c41",
+    "server/core/mailbox.ts": "90dec6b5e35ad8e44c03b32537ea364247a5c5ca54a3717aa34afd065f9b1b19",
+    "server/core/protocol.ts": "99649db2294c397a0ac8d9761769112365cf1683a855ff7cd87df76617296757",
+    "server/core/remote.ts": "f08c97a3341f4c24f9f0a81b50c9cf90f5b0cecedbf0a9e89185766aa0173ddd",
+    "server/core/request.ts": "eec89f3ba53b7961f3778b14a8ac90f203723594239486a6146dccfad11b66c7",
+    "server/core/source.ts": "0d43fab0732d4b772b73fb37b977b13faf1646e4ef75de2c28ca181e86cfb1ea",
+    "server/core/tasks.ts": "9087fffa9006a7b8613da360bdce12bd58a085143efafe6be26a8e94635b4539",
+    "test/bitbucket-cli-fixture.ts": "01da569100acf7fb293382c6c273610bc6eda752ef289aa5926c25833a597e1c",
+    "test/bitbucket-fixture.ts": "d05689af78df17e0d3e2daccdba0edfafc9a98ede9aeda85339a45472951d7c8",
+    "test/core-bitbucket-cli.test.ts": "20767a680c3b74a44d28660f6e93aaa61132ddaad046dba0433021455af93a90",
+    "test/core-bitbucket-contracts.test.ts": "06f601f2fc078db345c497f0ea60edd95359d475a86b477c2924f7381e86284f",
+    "test/core-bitbucket-preflight.test.ts": "1319597e04848312f5add6d964c99766f1ff483c99acb82c87b3856bcd9162e2",
+    "test/core-bitbucket.test.ts": "9eb162e54efb84ca3d5a220626805b62e2ae9d86d318ffcdb019c4feaaba0026",
+    "test/core-client.test.ts": "1628c0ce3d18999ae0b72a68eb6bfe9cd01c2e4df14437617f26255928b81285",
+    "test/core-forge-observer.test.ts": "06a27656b0f0260d4ac5fb09ec11fdae70e87ec4e8f4d86862ca3846a0fc745f",
+    "test/core-mailbox.test.ts": "53e64238962377b341ffecb834ca8884cdc5376f1bdb836fe837fad1c0efe862",
+    "test/core-wire.ts": "71c72f9b4f7582b0db3fdb3b1d789c650b743cf72d85d836d30eea1867603b05",
+    "test/core-worktree.test.ts": "493a2403a09ee2756f961d9de83df27dea202cdf91772677d3fd4cb866bb1d17",
+    "test/fixtures/bitbucket-credential-fill.ts": "56ce1a4b02a7609f83acc8dce71e359394218cc117541b90c724c4b527215eae",
+    "test/fixtures/bitbucket-fetch.ts": "e5ab9a119e885a484c4cdd1eaa09dc1497b7dbe26a61e19075407abd517dea05",
+    "test/fixtures/bitbucket-git-remote.ts": "6b07ad9299ae8ccce73a4f83e51d0fb277b5c0ae0307f05f6fc1e8bf9b7b16ee",
+    "test/mailbox-documents.ts": "850e5c4bc504ef32a01f6da13a6bd3d5c405a8c9e4e6dc2448f50378058030ae"
+  },
+  "protected_docs": {
+    "AGENTS.md": "bb05c92727cc18d5d561285aba39d4cb156a4b991c5d6ece0820dc447c0ad393",
+    "CODING_STANDARDS.md": "e8fc7979e76d3b6e6fa5a7bbc7106089363e4cfe6a1d056d70654fe8e0e5e2a9",
+    "GLOSSARY.md": "51e9e82930ae4cc4f75884daabaf05cb6b142cf9155852861b0f9d1cda23e887",
+    "docs/adr/0002-bitbucket-rest-transport.md": "60c04496329bca0778f42f1c1450cd80172893c279a4de47e28340c4128ffe8c",
+    "docs/agents/README.md": "b772eb96d605d586ffb2ab95b6b7b9f5984b7c7ec1058cab14e6ced10339b351",
+    "docs/agents/domain.md": "44a33c5d4ddf3c0a068e5dd763187ea51077eb1f33244186bfcad8f741fbbb04",
+    "docs/agents/issue-tracker.md": "683714bee9347354f0fa1f9758a014fcf310ec9e99faaaa3cdb94cfcdc43270a",
+    "docs/agents/triage-labels.md": "5c7b1088421cf32e7bc2520dea730ce5f7a70efd3005b9b609cd9ac3d8a71d32",
+    "docs/develop.md": "e57967a4ab57ee00e82ea7410e360a460bb4fdbdbce137a79d582f80eedd6a99",
+    "docs/forge-adapter-reference.md": "6199395e81de1630bacd9e285617bcf775b167b15bba4c78e63bc31b133714ca",
+    "docs/forge-adapters.md": "94d51d7f9a3d909cb747aa9eaf5f887de8e4d3bf0658a33ef0d806548cfd5748",
+    "docs/forge-bitbucket-transport.md": "e972a043d24428b6a1ecb6ab96f76e5e0c4248412c1311de5395e753c7b9e972",
+    "docs/forge-review-map.md": "1faab3acdc501cc89b8e1086a5c463c77dd43044f8d79db577e9414a96a937fa"
+  },
+  "protected_docs_status": "All13 exact bytes/hash unchanged vs d83 parent",
+  "typecheck": {
+    "command": [
+      "bun",
+      "run",
+      "typecheck"
+    ],
+    "cwd": "/Users/server/.local/state/shepherdr-forge-work/20261104/app/worktrees/forge-adapters/work-2-bitbucket-prs-and-checks",
+    "parent": "d83ca8fe47f524c28d7d7d59d9971cc3a27e28e1",
+    "candidate_tree": "7f6c770219e7bbef6562feb3ce414eae52a856f7",
+    "started_utc": "2026-11-05T05:08:28.705080+00:00",
+    "finished_utc": "2026-11-05T05:08:32.399895+00:00",
+    "exit_code": 0,
+    "checked_scoped_files": {
+      "server/core/client.ts": "b8d3579fdb44d20497b067e9ff5bca4f4c312894aaa3337f648a49cfb23fcb96",
+      "server/core/forge/bitbucket.ts": "bdf2173f77ec70420066d85d902bfb19fe5952b29ecf8267effcc811675ca9b8",
+      "server/core/forge/types.ts": "d28a37503b70d9a2ddfa90893796ee57edd69f1aedb16e20459d6d6b83ecb2cb",
+      "server/core/mailbox.ts": "90dec6b5e35ad8e44c03b32537ea364247a5c5ca54a3717aa34afd065f9b1b19",
+      "server/core/tasks.ts": "9087fffa9006a7b8613da360bdce12bd58a085143efafe6be26a8e94635b4539",
+      "test/bitbucket-cli-fixture.ts": "01da569100acf7fb293382c6c273610bc6eda752ef289aa5926c25833a597e1c",
+      "test/bitbucket-fixture.ts": "d05689af78df17e0d3e2daccdba0edfafc9a98ede9aeda85339a45472951d7c8",
+      "test/core-bitbucket-cli.test.ts": "20767a680c3b74a44d28660f6e93aaa61132ddaad046dba0433021455af93a90",
+      "test/core-bitbucket.test.ts": "9eb162e54efb84ca3d5a220626805b62e2ae9d86d318ffcdb019c4feaaba0026",
+      "test/core-client.test.ts": "1628c0ce3d18999ae0b72a68eb6bfe9cd01c2e4df14437617f26255928b81285",
+      "test/core-mailbox.test.ts": "53e64238962377b341ffecb834ca8884cdc5376f1bdb836fe837fad1c0efe862",
+      "test/core-wire.ts": "71c72f9b4f7582b0db3fdb3b1d789c650b743cf72d85d836d30eea1867603b05",
+      "test/mailbox-documents.ts": "850e5c4bc504ef32a01f6da13a6bd3d5c405a8c9e4e6dc2448f50378058030ae"
+    },
+    "log_sha256": "8a0d508b353756f7b2ea348dd7c2285dc2829d087361a52e5362d49e5ab0a519",
+    "tests_process_build_browser_controls": "UNRUN locally",
+    "final_changes": "Existing delayed-create truthful after-dispatch oracle and trailing blank line removed from extracted Documents fixture. Prior PASS/initial TS2322 receipts retained."
+  },
+  "public_regressions": [
+    {
+      "file": "test/core-bitbucket-cli.test.ts",
+      "test_target": "core-bitbucket-cli",
+      "selector": "^Bitbucket\\ native\\ CLI\\ authenticated\\ mailbox\\ preflight\\ refusal\\ has\\ no\\ effects$",
+      "expected_test_count": 1,
+      "layer": "actual helper/core-cli.ts process -> synthetic framed Unix core -> authenticated durable Mailbox -> real CoreTasks.cli/pr -> synthetic Git/provider fixture processes",
+      "execution": "AUTHORED_UNRUN"
+    },
+    {
+      "file": "test/core-bitbucket-cli.test.ts",
+      "test_target": "core-bitbucket-cli",
+      "selector": "^Bitbucket\\ native\\ CLI\\ authenticated\\ mailbox\\ publication\\ preserves\\ approved\\ output\\ and\\ exit$",
+      "expected_test_count": 1,
+      "layer": "actual helper/core-cli.ts process -> synthetic framed Unix core -> authenticated durable Mailbox -> real CoreTasks.cli/pr -> synthetic Git/provider fixture processes",
+      "execution": "AUTHORED_UNRUN"
+    },
+    {
+      "file": "test/core-bitbucket-cli.test.ts",
+      "test_target": "core-bitbucket-cli",
+      "selector": "^Bitbucket\\ native\\ CLI\\ reports\\ route\\ or\\ task\\ changes\\ after\\ actual\\ push\\ truthfully$",
+      "expected_test_count": 1,
+      "layer": "actual helper/core-cli.ts process -> synthetic framed Unix core -> authenticated durable Mailbox -> real CoreTasks.cli/pr -> synthetic Git/provider fixture processes",
+      "execution": "AUTHORED_UNRUN"
+    },
+    {
+      "file": "test/core-bitbucket-cli.test.ts",
+      "test_target": "core-bitbucket-cli",
+      "selector": "^Bitbucket\\ native\\ CLI\\ binding\\ change\\ after\\ provider\\ create\\ retains\\ typed\\ uncertainty\\ and\\ metadata$",
+      "expected_test_count": 1,
+      "layer": "actual helper/core-cli.ts process -> synthetic framed Unix core -> authenticated durable Mailbox -> real CoreTasks.cli/pr -> synthetic Git/provider fixture processes",
+      "execution": "AUTHORED_UNRUN"
+    },
+    {
+      "file": "test/core-bitbucket-cli.test.ts",
+      "test_target": "core-bitbucket-cli",
+      "selector": "^Bitbucket\\ native\\ CLI\\ unknown\\ publication\\ stays\\ typed\\ and\\ original\\ claim\\ survives\\ reopened\\ empty\\ lookup$",
+      "expected_test_count": 1,
+      "layer": "actual helper/core-cli.ts process -> synthetic framed Unix core -> authenticated durable Mailbox -> real CoreTasks.cli/pr -> synthetic Git/provider fixture processes",
+      "execution": "AUTHORED_UNRUN"
+    },
+    {
+      "file": "test/core-bitbucket-cli.test.ts",
+      "test_target": "core-bitbucket-cli",
+      "selector": "^Bitbucket\\ native\\ CLI\\ recovers\\ authenticated\\ journal\\ response\\ without\\ redispatch$",
+      "expected_test_count": 1,
+      "layer": "actual helper/core-cli.ts process -> synthetic framed Unix core -> authenticated durable Mailbox -> real CoreTasks.cli/pr -> synthetic Git/provider fixture processes",
+      "execution": "AUTHORED_UNRUN"
+    }
+  ],
+  "process_fixture": {
+    "entrypoint": "helper/core-cli.ts subprocess",
+    "authenticated_owner": "real durable Mailbox with fresh synthetic server-issued CLI grant; actual CoreTasks.cli/pr",
+    "transport": "test-owned framed Unix core/document peer; reuse existing wire/document fixtures",
+    "response_oracle": "independent AES-GCM/hash decoder, explicit test-owned output/exit/error/identity literals",
+    "git_provider": "existing synthetic host subprocess owners and real disposable bare Git refs; no real authority",
+    "persistence": "actual CoreStore and Mailbox SQLite reopened; original operation UUID/head/journal replay asserted",
+    "execution": "UNRUN"
+  },
+  "negative_controls": [
+    {
+      "id": "native-cli-route-post-effect-truth",
+      "test_target": "core-bitbucket",
+      "selector": "^Bitbucket\\ native\\ CLI\\ reports\\ route\\ or\\ task\\ changes\\ after\\ actual\\ push\\ truthfully$",
+      "expected_test_count": 1,
+      "mutations": [
+        {
+          "file": "server/core/forge/bitbucket.ts",
+          "find": "      ? 'The task execution route changed after an admitted operation was dispatched. Check the recorded push and original pull request outcome before continuing; no further Bitbucket action is permitted by this call'",
+          "replace": "      ? 'The task execution route changed before Bitbucket dispatch; nothing was submitted by this call'",
+          "sha256": "bdf2173f77ec70420066d85d902bfb19fe5952b29ecf8267effcc811675ca9b8"
+        }
+      ],
+      "claim": "Restore only false post-effect route wording. Native stderr/decrypted error literal and no-nothing-submitted oracle fail after actual admitted bare-ref push; guards, typed flag and current pushedHead remain enabled.",
+      "state": "PROPOSED_UNRUN_NEW_HEAD",
+      "protocol": "Root runs separately in a standalone disposable CI clone pinned to this head/tree; inspect actual discovery and count1, intended assertion failure and collateral errors. Child and pending publication settle before teardown. Restore exact candidate bytes in finally and run GREEN. Never run on worker/live candidate."
+    },
+    {
+      "id": "native-cli-task-post-effect-truth",
+      "test_target": "core-bitbucket",
+      "selector": "^Bitbucket\\ native\\ CLI\\ binding\\ change\\ after\\ provider\\ create\\ retains\\ typed\\ uncertainty\\ and\\ metadata$",
+      "expected_test_count": 1,
+      "mutations": [
+        {
+          "file": "server/core/tasks.ts",
+          "find": "        ? 'The task changed after an admitted operation was dispatched. Check the recorded push and original pull request outcome before continuing; no further forge action is permitted by this call'",
+          "replace": "        ? 'The task changed before forge dispatch; nothing was submitted by this call'",
+          "sha256": "9087fffa9006a7b8613da360bdce12bd58a085143efafe6be26a8e94635b4539"
+        }
+      ],
+      "claim": "Restore only false post-effect task wording. After actual create plus metadata change, native stderr/decrypted literal and no-nothing-submitted oracle fail; original uncertain UUID/head and no rollback remain defended.",
+      "state": "PROPOSED_UNRUN_NEW_HEAD",
+      "protocol": "Root runs separately in a standalone disposable CI clone pinned to this head/tree; inspect actual discovery and count1, intended assertion failure and collateral errors. Child and pending publication settle before teardown. Restore exact candidate bytes in finally and run GREEN. Never run on worker/live candidate."
+    },
+    {
+      "id": "native-cli-mailbox-typed-uncertainty",
+      "test_target": "core-bitbucket",
+      "selector": "^Bitbucket\\ native\\ CLI\\ unknown\\ publication\\ stays\\ typed\\ and\\ original\\ claim\\ survives\\ reopened\\ empty\\ lookup$",
+      "expected_test_count": 1,
+      "mutations": [
+        {
+          "file": "server/core/mailbox.ts",
+          "find": "{ ok: false, error: error.message, ...(error.uncertain ? { uncertain: true } : {}) }",
+          "replace": "{ ok: false, error: error.message }",
+          "sha256": "90dec6b5e35ad8e44c03b32537ea364247a5c5ca54a3717aa34afd065f9b1b19"
+        }
+      ],
+      "claim": "Drop only typed uncertainty from deliberate Refusal. Existing safe stderr/exit stay identical; independently decrypted uncertain:true assertion must fail for lost create reply plus hidden lookup. No fresh POST or claim clearing is introduced.",
+      "state": "PROPOSED_UNRUN_NEW_HEAD",
+      "protocol": "Root runs separately in a standalone disposable CI clone pinned to this head/tree; inspect actual discovery and count1, intended assertion failure and collateral errors. Child and pending publication settle before teardown. Restore exact candidate bytes in finally and run GREEN. Never run on worker/live candidate."
+    }
+  ],
+  "controls": {
+    "new": 3,
+    "state": "PROPOSED_UNRUN_NEW_HEAD",
+    "anchors": "Each new source anchor unique and SHA256-bound; selectors each statically one declaration. Actual discovery/sensitivity UNRUN.",
+    "historical_41": "Retained as parent-only evidence/proposals; no full rebind/retest, per coordinator instruction.",
+    "driver": "Parent ci-control.py reused unchanged; fixed core-bitbucket target includes new CLI tests; standalone disposable CI clone, separate overlapping controls, exact-byte restore before GREEN."
+  },
+  "parent_evidence": {
+    "head": "d83ca8fe47f524c28d7d7d59d9971cc3a27e28e1",
+    "manifest_path": "/Users/server/.local/state/shepherdr-forge-work/20261104/checkpoints/FORG-2/d83ca8fe47f524c28d7d7d59d9971cc3a27e28e1/manifest.json",
+    "manifest_sha256": "e1bddc5a8d510f06a26044f472c0737f9d91c75bfc90f4e7b6fd92d829aeb5d8",
+    "controls_path": "/Users/server/.local/state/shepherdr-forge-work/20261104/checkpoints/FORG-2/d83ca8fe47f524c28d7d7d59d9971cc3a27e28e1/controls.json",
+    "controls_sha256": "6aad802924d77038aa4370b116934d803b442e2a6628d506e306bbd3544df5dc",
+    "controls_count": 41,
+    "status": "PARENT_ONLY, not qualified for new head; Root chooses directly affected guards only.",
+    "publication": "Coordinator brief says native saved pushedHead/PR3 reconciliation complete; worker performed no new publication or reconciliation."
+  },
+  "design_tradeoff": {
+    "minimal": "Optional internal reporting phase composed through existing common caller admission and default-false typed Refusal; mailbox preserves its existing uncertainty arm.",
+    "flexible": "Generic error/result/envelope/catalogue migration exceeds scope and breaks compatibility unnecessarily.",
+    "common_caller": "Adapter owns provider uncertainty; CoreTasks owns task freshness/confirmed fact attribution; Mailbox owns authenticated journal/response. No duplicate CLI/provider state machine.",
+    "compatibility": "Existing no-arg callbacks remain valid; success/error stdout/stderr/exits and mail response schema retained."
+  },
+  "proposed_disposition": {
+    "FIX1": "SOURCE_REPAIRED; after-dispatch text never pretends prior admitted push/create did not occur; phase carries through final guards without relaxing authority. Fresh executed proof pending.",
+    "FIX2": "SOURCE_REPAIRED; typed uncertain Refusal survives existing mailbox response arm; unknown claims remain held and no new POST is authorized by empty lookup. Fresh executed proof pending."
+  },
+  "criteria": {
+    "SFA-01": "Qualified PR identity/output is asserted through actual CLI process; fresh execution pending.",
+    "SFA-03": "Lost-reply original UUID/head and journal response recovery tested through persisted reopen without second POST; execution pending.",
+    "SFA-04": "Check interpretation unchanged; no fresh qualification claimed.",
+    "SFA-08": "Admission/route/containment final guards and both current-record saves retained; after-effect changes report truthfully.",
+    "SFA-09": "No added command/HTTP/auth/settings capability; existing checked GitHub/Enterprise transport and contained refusal preserved."
+  },
+  "proof_gaps": [
+    "Fresh exact-head independent Root/Monash review and full CI pending.",
+    "Six actual CLI process regressions, three new controls and directly affected historical guards UNRUN; static counts/anchors do not prove executed discovery or sensitivity.",
+    "Native execution-host credential/auth/scopes/runtime/hooks/private Bitbucket compatibility UNQUALIFIED.",
+    "Synthetic protocol/fixture processes do not prove installed core/private provider acceptance.",
+    "Existing provider GET/PUT concurrent-update limitation unchanged.",
+    "No publication/lifecycle/downstream/native-private/deploy/recovery/Azure action; worker stops."
+  ],
+  "next_owner": "Coordinator/Root: exact candidate review, fresh CI/new controls/affected guards, separate existing Sol reviewer. Worker stopped; no publication/review start.",
+  "artifacts": {
+    "ci-control.py": "0d8aacd36e0bd920e9bdf0160fb9d3525691644502ccb4b7c5a820e5bdaa2fab",
+    "controls.json": "475c54740384738dcc997fb497a84ab8275911a6dff7a69a7b382d407a79e90d",
+    "evidence.md": "6303d5246e169e758a2a55e425804d7a8d3deed06175e34ada48bc82a6382c43",
+    "focused.diff": "ba8143bf42761698601e8d6b1a11454d2c6677cebb5027519e4289c8df0aa4da",
+    "public-seams.json": "2180308ac27fcba99c775a86251577e731eafee072d35941d1821061248109cb",
+    "typecheck-initial-failed-receipt.json": "4d21ff2a9bdc1e472795b1bcd899da7059270beeee2204eb6837b9114663e175",
+    "typecheck-initial-failed.log": "397e5036964797d5d9040628af315c68458bd73917bf51459b32ae1075f57d8a",
+    "typecheck-receipt.json": "f092daf34421a8096c1ddb0d053dc41e0d4e5997e6b30db0300c5b51262e1f36",
+    "typecheck-staged-125e9-pass-receipt.json": "a87f569db8439cd2170b437df1ba8028c013b1652f0c1b0c947ba2f0b012fc75",
+    "typecheck-staged-125e9-pass.log": "8a0d508b353756f7b2ea348dd7c2285dc2829d087361a52e5362d49e5ab0a519",
+    "typecheck-staged-83e98-pass-receipt.json": "31682aa7fb55435fe6377111db2739626a6d307457ba45a3262d45d6b9e7ab07",
+    "typecheck-staged-83e98-pass.log": "8a0d508b353756f7b2ea348dd7c2285dc2829d087361a52e5362d49e5ab0a519",
+    "typecheck.log": "8a0d508b353756f7b2ea348dd7c2285dc2829d087361a52e5362d49e5ab0a519"
+  }
+}
