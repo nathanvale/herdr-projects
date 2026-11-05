@@ -153,7 +153,7 @@ test('Bitbucket public two-machine race keeps one repository source destination 
   expect(f.requests().filter(request => request.method === 'POST')).toHaveLength(1)
   const original = f.source.store.all<Record<string, any>>('forge-publication')
   expect(original).toHaveLength(1)
-  expect(original[0]).toMatchObject({ task: 'DEMO-2', machine: 'local-machine', binding: '[1,null]', state: 'confirmed', pr: expectedPr })
+  expect(original[0]).toMatchObject({ task: 'DEMO-2', machine: 'local-machine', binding: '["local-machine",1,null]', ownership: '["local-machine",null]', state: 'confirmed', pr: expectedPr })
   f.reopen()
   await expect(f.tasks.pr(second.grant, second.task.id)).rejects.toThrow('another task')
   expect(f.source.store.all<Record<string, any>>('forge-publication')[0].id).toBe(original[0].id)
