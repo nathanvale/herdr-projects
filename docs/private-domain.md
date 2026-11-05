@@ -6,8 +6,9 @@ local token access retain their defaults. No Cloudflare Tunnel, Funnel, public
 listener, header rewriting or shared bearer token is involved.
 
 The listener uses the service's existing request and WebSocket handlers. It
-admits only devices owned by the same Tailscale login as the serving machine.
-Tagged devices have no human-owner grant and are refused. This is device-owner
+admits only devices owned by the same Tailscale login as the serving machine,
+or the one login explicitly configured for a pinned tagged server. Tagged
+client devices have no human-owner grant and are refused. This is device-owner
 authentication, as with native Tailscale Serve; it does not identify the person
 or local OS account using an admitted device.
 
@@ -33,7 +34,8 @@ installed `tailscale` command. Other fields are rejected.
 
 Before listening, the module requires a running, online, untagged local node
 owned by the service's Tailscale login and containing the configured bind
-address. Wildcard and loopback configuration is refused. The certificate must
+address. An explicitly pinned tagged server is the exception described below.
+Wildcard and loopback configuration is refused. The certificate must
 be current, match the DNS name and match the key. Key permissions must exclude
 group and other access. Certificate/private-key contents are never settings or
 command arguments. Errors omit CLI output and certificate contents.
@@ -65,6 +67,33 @@ the custom URL. A configuration syntax error stops startup before app state
 initialization. Native Settings > Web and notification links continue to show
 the original Tailscale route; `/api/me` on the custom listener reports its own
 link.
+
+## Tagged servers
+
+A server with Tailscale tags has a tag identity instead of a human owner.
+To serve from it without changing its network identity, add an explicit grant:
+
+```json
+{
+  "taggedServer": {
+    "nodeId": "your-server-stable-node-id",
+    "allowedLogin": "owner@example.com"
+  }
+}
+```
+
+Add this object to the existing configuration. Obtain `nodeId` from `Self.ID`
+in the server's `tailscale status --json`, and `allowedLogin` from the intended
+user's Tailscale login. Both values are required. The actual local node must
+remain tagged, online, on the configured address and match that exact node ID.
+A different node or removal of its tags refuses startup or subsequent requests.
+
+This grant applies only to the private listener. It does not change native
+Serve, local-token access, Tailscale ACLs, tags or other applications. Requests
+still need an exact untagged socket peer whose verified login matches
+`allowedLogin`; a tag or forged identity header never grants client access.
+Removing `taggedServer` restores the untagged-server default. Moving to another
+tagged server requires a deliberate new node pin.
 
 ## DNS and port ownership
 

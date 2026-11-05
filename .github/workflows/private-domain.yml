@@ -39,3 +39,25 @@ jobs:
           grep -E '^[[:space:]]*1 fail$' /tmp/private-domain-negative.log
           cp /tmp/private-domain-auth-original.ts service/auth.ts
           bun test service/private-domain.test.ts
+      - name: Tagged-server pin sensitivity, then restore
+        shell: bash
+        run: |
+          cp service/private-domain.ts /tmp/private-domain-original.ts
+          trap 'cp /tmp/private-domain-original.ts service/private-domain.ts' EXIT
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('service/private-domain.ts')
+          s = p.read_text()
+          guard = 'self.ID === config.taggedServer.nodeId'
+          assert s.count(guard) == 1
+          p.write_text(s.replace(guard, 'true'))
+          PY
+          set +e
+          bun test service/private-domain.test.ts -t 'tagged server pin is rechecked' > /tmp/private-domain-pin-negative.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/private-domain-pin-negative.log
+          test "$status" -ne 0
+          grep -E '^[[:space:]]*1 fail$' /tmp/private-domain-pin-negative.log
+          cp /tmp/private-domain-original.ts service/private-domain.ts
+          bun test service/private-domain.test.ts

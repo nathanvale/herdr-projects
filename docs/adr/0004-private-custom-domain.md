@@ -31,10 +31,14 @@ domain, preserving owner-only access and the existing runtime/hostname owner.
 Use a private TLS listener authenticated by the local daemon's `whois` result
 for the actual socket peer. Both transports call the same application handlers.
 Caller headers cannot activate the additional gate path. Bind only a validated
-local Tailscale address. Fail closed on identity uncertainty. Tagged devices
-cannot claim human ownership.
+local Tailscale address. Fail closed on identity uncertainty. Tagged client
+devices cannot claim human ownership. A tagged serving node requires an
+explicit stable-node pin and one allowed human login, checked on every request.
+The override is local to this private listener; native gates retain their owner.
 
-The user approved implementing and proving this scope. This record remains
+The user approved implementing and proving this scope, including the explicit
+tagged-server grant needed to host it on the existing server without retagging.
+This record remains
 proposed for maintainer review; it does not approve deployment or DNS cutover.
 
 ## Consequences

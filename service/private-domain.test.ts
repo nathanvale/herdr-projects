@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
 import { request } from "node:https";
-import { readPrivateDomain, servePrivateDomain, type PrivateDomain } from "./private-domain.ts";
+import { readPrivateDomain, servePrivateDomain, type PrivateDomain, type Admitted } from "./private-domain.ts";
 import type { Gate } from "./auth.ts";
 
 const root = mkdtempSync(join(tmpdir(), "shepherdr-private-domain-"));
@@ -14,18 +14,38 @@ const state: Gate = { owner: "owner@example.test", dns: "device.tailnet.example"
 let server: Awaited<ReturnType<typeof servePrivateDomain<{ who: string }>>>;
 let config: PrivateDomain;
 let reached = 0;
+const handlers = {
+  fetch(req: Request, srv: Bun.Server<{ who: string }>, pass: Admitted) {
+    reached++;
+    if (new URL(req.url).pathname.endsWith("/ws")) {
+      return srv.upgrade(req, { data: { who: pass.who } }) ? undefined : new Response("upgrade failed", { status: 400 });
+    }
+    return Response.json({ who: pass.who });
+  },
+  websocket: { message() {} },
+};
+
+async function freePort() {
+  const listener = createServer();
+  await new Promise<void>((r) => listener.listen(0, "127.0.0.1", r));
+  const address = listener.address();
+  if (!address || typeof address === "string") throw new Error("No test port.");
+  await new Promise<void>((r, j) => listener.close((e) => e ? j(e) : r()));
+  return address.port;
+}
 
 function identity(change: Record<string, unknown> = {}) {
   writeFileSync(modeFile, JSON.stringify({ login: "owner@example.test", addresses: ["127.0.0.1/32"], ...change }));
 }
 
 // Connect to a real loopback TLS socket with a test-owned CA and DNS server name. Only Tailscale's CLI is a fixture.
-function call(method = "GET", headers: Record<string, string> = {}, upgrade = false): Promise<number> {
+function call(method = "GET", headers: Record<string, string> = {}, upgrade = false,
+  target = { server, config }): Promise<number> {
   return new Promise((resolve, reject) => {
     const req = request({
-      hostname: "127.0.0.1", port: server.port, servername: "app.example.test", ca: readFileSync(certFile),
+      hostname: "127.0.0.1", port: target.server.port, servername: "app.example.test", ca: readFileSync(certFile),
       path: upgrade ? "/shepherdr/api/ws" : "/shepherdr/api/proof", method,
-      headers: { host: new URL(config.origin).host, ...headers },
+      headers: { host: new URL(target.config.origin).host, ...headers },
     }, (res) => { res.resume(); res.on("end", () => resolve(res.statusCode!)); });
     req.on("upgrade", (res, socket) => { socket.destroy(); resolve(res.statusCode!); });
     req.on("error", reject);
@@ -45,8 +65,8 @@ import { readFileSync } from 'node:fs';
 const m = JSON.parse(readFileSync(${JSON.stringify(modeFile)}, 'utf8'));
 if (process.argv[2] === 'status') console.log(JSON.stringify({
   BackendState: m.stopped ? 'Stopped' : 'Running',
-  Self: { Online: true, UserID: 1, TailscaleIPs: ['127.0.0.1'], Tags: [] },
-  User: { '1': { LoginName: 'owner@example.test' } }
+  Self: { ID: m.serverId ?? 'node-fixture', Online: true, UserID: 1, TailscaleIPs: ['127.0.0.1'], Tags: m.serverTagged ? ['tag:server'] : [] },
+  User: { '1': { LoginName: m.serverLogin ?? 'owner@example.test' } }
 }));
 else {
   if (m.failure) process.exit(1);
@@ -54,23 +74,50 @@ else {
 }
 `, { mode: 0o700 });
   identity();
-  const listener = createServer();
-  await new Promise<void>((r) => listener.listen(0, "127.0.0.1", r));
-  const address = listener.address();
-  if (!address || typeof address === "string") throw new Error("No test port.");
-  const port = address.port;
-  await new Promise<void>((r, j) => listener.close((e) => e ? j(e) : r()));
+  const port = await freePort();
   config = { origin: `https://app.example.test:${port}`, bind: "127.0.0.1", certificate: certFile, key: keyFile, tailscale: command };
   // Loopback stands in for an OS-owned Tailscale interface only in this composition; the public config parser refuses it.
-  server = await servePrivateDomain<{ who: string }>(config, () => state, {
-    fetch(req, srv, pass) {
-      reached++;
-      if (new URL(req.url).pathname.endsWith("/ws")) {
-        return srv.upgrade(req, { data: { who: pass.who } }) ? undefined : new Response("upgrade failed", { status: 400 });
-      }
-      return Response.json({ who: pass.who });
-    },
-    websocket: { message() {} },
+  server = await servePrivateDomain<{ who: string }>(config, () => state, handlers);
+});
+
+describe("explicitly pinned tagged server", () => {
+  let target: { server: typeof server; config: PrivateDomain };
+  const taggedIdentity = (change: Record<string, unknown> = {}) => identity({
+    serverTagged: true, serverLogin: "server.tailnet.example", ...change,
+  });
+  beforeAll(async () => {
+    taggedIdentity(); state.owner = "server.tailnet.example";
+    const taggedConfig = { ...config, origin: `https://app.example.test:${await freePort()}`,
+      taggedServer: { nodeId: "node-fixture", allowedLogin: "owner@example.test" } };
+    target = { config: taggedConfig, server: await servePrivateDomain(taggedConfig, () => state, handlers) };
+  });
+  afterAll(async () => {
+    if (target) await target.server.stop(true);
+    state.owner = "owner@example.test"; identity();
+  });
+  test("the pinned tagged server admits its explicit human login but never tagged clients or another user", async () => {
+    taggedIdentity();
+    await expect(servePrivateDomain({ ...target.config, taggedServer: undefined }, () => state, handlers)).rejects.toThrow("exact local address");
+    await expect(servePrivateDomain({ ...target.config, taggedServer: { nodeId: "wrong-node", allowedLogin: "owner@example.test" } }, () => state, handlers)).rejects.toThrow("exact local address");
+    expect(await call("GET", {}, false, target)).toBe(200);
+    expect(await call("POST", { origin: target.config.origin, "x-shepherdr": "1" }, false, target)).toBe(200);
+    const headers = { connection: "Upgrade", upgrade: "websocket", "sec-websocket-version": "13", "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", origin: target.config.origin };
+    expect(await call("GET", headers, true, target)).toBe(101);
+    const before = reached;
+    taggedIdentity({ tagged: true }); expect(await call("GET", {}, false, target)).toBe(403);
+    taggedIdentity({ login: "other@example.test" });
+    expect(await call("GET", { "tailscale-user-login": "owner@example.test", authorization: "Bearer test-local-token" }, false, target)).toBe(403);
+    taggedIdentity();
+    expect(await call("POST", { origin: "https://other.example.test", "x-shepherdr": "1" }, false, target)).toBe(403);
+    expect(reached).toBe(before);
+  });
+  test("the tagged server pin is rechecked for every request", async () => {
+    taggedIdentity(); expect(await call("GET", {}, false, target)).toBe(200);
+    const before = reached;
+    taggedIdentity({ serverId: "replaced-node" }); expect(await call("GET", {}, false, target)).toBe(503);
+    taggedIdentity({ serverTagged: false }); expect(await call("GET", {}, false, target)).toBe(503);
+    expect(reached).toBe(before);
+    taggedIdentity(); expect(await call("GET", {}, false, target)).toBe(200);
   });
 });
 afterAll(async () => { if (server) await server.stop(true); rmSync(root, { recursive: true, force: true }); });
@@ -137,11 +184,16 @@ test("configuration is opt-in and rejects unsafe or ambiguous origins", () => {
   const file = join(root, "config.json");
   const good = { origin: "https://app.example.test", bind: "100.64.0.1", certificate: certFile, key: keyFile };
   writeFileSync(file, JSON.stringify(good)); expect(readPrivateDomain(file)).toEqual(good);
+  const tagged = { ...good, taggedServer: { nodeId: "node-fixture", allowedLogin: "owner@example.test" } };
+  writeFileSync(file, JSON.stringify(tagged)); expect(readPrivateDomain(file)).toEqual(tagged);
   for (const change of [
     { origin: "http://app.example.test" }, { origin: "https://owner:password@app.example.test" },
     { origin: "https://app.example.test/path" }, { origin: "https://app.example.test?token=hidden" },
     { origin: "https://app.example.test:0" }, { origin: "https://app.example.test." },
     { bind: "0.0.0.0" }, { bind: "127.0.0.1" }, { bypass: true },
+    { taggedServer: null }, { taggedServer: { nodeId: "node-fixture" } },
+    { taggedServer: { nodeId: "node-fixture", allowedLogin: "tag:server" } },
+    { taggedServer: { nodeId: "node-fixture", allowedLogin: "owner@example.test", bypass: true } },
   ]) {
     writeFileSync(file, JSON.stringify({ ...good, ...change })); expect(() => readPrivateDomain(file)).toThrow();
   }

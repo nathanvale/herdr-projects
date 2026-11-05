@@ -4,7 +4,10 @@ import { isIP } from "node:net";
 import { createPrivateKey, X509Certificate } from "node:crypto";
 import { gate, type Gate, type Pass } from "./auth.ts";
 
-export type PrivateDomain = { origin: string; bind: string; certificate: string; key: string; tailscale?: string };
+export type PrivateDomain = {
+  origin: string; bind: string; certificate: string; key: string; tailscale?: string;
+  taggedServer?: { nodeId: string; allowedLogin: string };
+};
 export type Admitted = Extract<Pass, { ok: true }>;
 export type PrivateHandlers<T> = {
   fetch(req: Request, server: Bun.Server<T>, admitted: Admitted): Response | undefined | Promise<Response | undefined>;
@@ -17,7 +20,7 @@ export function readPrivateDomain(file: string | undefined): PrivateDomain | nul
   let value: any;
   try { value = JSON.parse(readFileSync(file, "utf8")); } catch { throw new Error("Private HTTPS configuration cannot be read."); }
   if (!value || typeof value !== "object" || Array.isArray(value) ||
-      Object.keys(value).some((k) => !["origin", "bind", "certificate", "key", "tailscale"].includes(k))) {
+      Object.keys(value).some((k) => !["origin", "bind", "certificate", "key", "tailscale", "taggedServer"].includes(k))) {
     throw new Error("Private HTTPS configuration has unknown fields.");
   }
   for (const k of ["origin", "bind", "certificate", "key"]) {
@@ -36,6 +39,16 @@ export function readPrivateDomain(file: string | undefined): PrivateDomain | nul
   }
   if (value.tailscale !== undefined && (typeof value.tailscale !== "string" || !value.tailscale)) {
     throw new Error("Private HTTPS tailscale must be an executable name or path.");
+  }
+  if (value.taggedServer !== undefined) {
+    const server = value.taggedServer;
+    if (!server || typeof server !== "object" || Array.isArray(server) ||
+        Object.keys(server).some((k) => !["nodeId", "allowedLogin"].includes(k)) ||
+        typeof server.nodeId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(server.nodeId) ||
+        typeof server.allowedLogin !== "string" || !/^[^\s\x00-\x1f\x7f]{1,320}$/.test(server.allowedLogin) ||
+        server.allowedLogin.startsWith("tag:")) {
+      throw new Error("Private HTTPS taggedServer requires a pinned nodeId and one exact allowedLogin.");
+    }
   }
   return { ...value, origin: url.origin };
 }
@@ -58,7 +71,9 @@ function localOwner(status: any, config: PrivateDomain, owner: string | null): b
   const user = status?.User?.[String(self?.UserID)];
   return !!owner && status?.BackendState === "Running" && self?.Online === true &&
     Array.isArray(self?.TailscaleIPs) && self.TailscaleIPs.includes(config.bind) &&
-    !(self.Tags?.length) && user?.LoginName === owner;
+    user?.LoginName === owner && (config.taggedServer
+      ? !!self.Tags?.length && self.ID === config.taggedServer.nodeId
+      : !self.Tags?.length);
 }
 
 function certificate(config: PrivateDomain) {
@@ -111,7 +126,10 @@ export async function servePrivateDomain<T>(config: PrivateDomain, current: () =
       const login = exact && !(peer?.Node?.Tags?.length) ? peer?.UserProfile?.LoginName : null;
       const path = new URL(req.url).pathname;
       const socket = ["ws", "terminal", "browser", "voice"].some((p) => path === `/api/${p}` || path === `/shepherdr/api/${p}`);
-      const pass = gate(req, current(), socket, false, { origin: config.origin, login: typeof login === "string" ? login : null });
+      // A tagged server has no human owner. Its explicit grant applies only to this
+      // listener, after the local node pin; native Serve and loopback gates are unchanged.
+      const access = { ...current(), owner: config.taggedServer?.allowedLogin ?? owner };
+      const pass = gate(req, access, socket, false, { origin: config.origin, login: typeof login === "string" ? login : null });
       if (!pass.ok) return new Response(pass.why, { status: pass.status, headers: { "cache-control": "no-store" } });
       return handlers.fetch(req, server, pass);
     },
