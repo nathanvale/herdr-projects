@@ -1,5 +1,6 @@
 import type { CoreAgent } from './model.ts'
 import type { CoreStore } from './store.ts'
+import type { LaunchRecovery } from './launch-recovery.ts'
 
 export interface LaunchAttempt {
   launch: string; chat: string; at: number
@@ -15,8 +16,13 @@ export class CoreLaunches {
   held(chat: string) { return !!this.store.get('launch-recovery-hold', chat) }
   assertUnheld(chat: string) { if (this.held(chat)) throw Error('This conversation is held for explicit host-reboot recovery') }
   ended(agent: CoreAgent, terminalState?: string) {
-    return terminalState !== 'live' && this.get(agent.launch)?.state === 'execution-ended-after-host-reboot' &&
-      this.store.get<{ phase: string }>('launch-recovery', agent.launch)?.phase === 'resumed' && this.store.get<CoreAgent>('agent', agent.chat)?.launch === agent.launch
+    return this.endedExecution(agent, terminalState) && this.store.get<CoreAgent>('agent', agent.chat)?.launch === agent.launch
+  }
+  /** Exact reboot proof also survives replacement of the conversation's current launch. */
+  endedExecution(agent: CoreAgent, terminalState?: string) {
+    const attempt = this.get(agent.launch), recovery = this.store.get<LaunchRecovery>('launch-recovery', agent.launch)
+    return terminalState !== 'live' && attempt?.launch === agent.launch && attempt.chat === agent.chat && attempt.state === 'execution-ended-after-host-reboot' &&
+      recovery?.launch === agent.launch && recovery.chat === agent.chat && recovery.machine === agent.machine && recovery.phase === 'resumed'
   }
   claim(chat: string, launch: string, previous?: CoreAgent) {
     this.assertUnheld(chat)

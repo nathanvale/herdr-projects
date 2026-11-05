@@ -36,17 +36,23 @@ const originalBoot = '11111111-1111-4111-8111-111111111111'
 const nextBoot = '22222222-2222-4222-8222-222222222222'
 type BootProbe = { value: HostBoot; before?: () => Promise<void> }
 
-async function recoveryFixture(work: (f: Awaited<ReturnType<typeof recoverySetup>>) => Promise<void>, role: 'coordinator' | 'task' = 'coordinator') {
+function recoveryTask(space: CoreSpace, id = 'EX-1'): CoreTask {
+  return { id, chat: `${id}/Agent`, name: 'Retained task', desc: 'Preserve the existing work', place: space.id, machine: space.machine,
+      folder: '/retained-worktree', repo: space.folder, branch: 'work/retained', base: 'main', kind: 'codex', workflow: 'todo', status: 'todo', state: 'To do',
+      mergePolicy: 'ask', review: { on: false, kind: 'codex', rounds: 3, mustFix: 'major' }, model: 'gpt-6.1-sol', effort: 'high', speed: 'fast', age: 'now', created: '2026-11-05', on: 'test' }
+}
+
+async function recoveryFixture(work: (f: Awaited<ReturnType<typeof recoverySetup>>) => Promise<void>, role: 'coordinator' | 'task' = 'coordinator', deployment = 'gpt-6.1-sol') {
   const home = mkdtempSync(join(tmpdir(), 'shep-boot-')), boot = { value: { host: 'a'.repeat(64), boot: originalBoot } }
-  const f = await recoverySetup(home, boot, role)
+  const f = await recoverySetup(home, boot, role, false, deployment)
   try { await work(f) } finally { await f.close(); rmSync(home, { recursive: true, force: true }) }
 }
-async function recoverySetup(home: string, boot: BootProbe, role: 'coordinator' | 'task', reopen = false) {
+async function recoverySetup(home: string, boot: BootProbe, role: 'coordinator' | 'task', reopen = false, deployment = 'gpt-6.1-sol') {
   const source = new CoreSource({ home, port: 0, session: 'test', socket: '/unused', binary: 'hc', plugins: false }, async () => { await boot.before?.(); return boot.value })
   const space: CoreSpace = { id: 'space', machine: source.localMachineId(), name: 'Example', folder: '/retained-repo', base: 'main', prefix: 'EX', mode: 'regular', added: 1 }
   const chat = role === 'task' ? 'EX-1/Agent' : space.id
   const calls: { method: string; params: Record<string, unknown> }[] = []
-  let fail = false
+  let fail = false, terminalSequence = 0
   source.route = async () => undefined
   source.core.current.connected = true
   source.tasks.git.ensureWorktree = async () => false // Actual checkout preservation is owned by core-tasks.
@@ -62,7 +68,8 @@ async function recoverySetup(home: string, boot: BootProbe, role: 'coordinator' 
     calls.push({ method, params })
     if (method === 'terminal.run') {
       if (fail) throw new CoreError('spawn_failed', 'cannot start codex: Device not configured (os error 6)')
-      const terminal = { address: `t${calls.length}`, pid: calls.length, state: 'live', labels: params.labels, created_ms: calls.length } as CoreTerminal
+      const sequence = ++terminalSequence
+      const terminal = { address: `t${sequence}`, pid: sequence, state: 'live', labels: params.labels, created_ms: sequence } as CoreTerminal
       ;(source.core.current.terminals as Map<string, CoreTerminal>).set(terminal.address, terminal)
       return terminal as T
     }
@@ -72,11 +79,9 @@ async function recoverySetup(home: string, boot: BootProbe, role: 'coordinator' 
   if (!reopen) {
     source.store.set('space', space.id, space)
     source.store.set('health-sample', space.machine, { at: Date.now(), cores: 8, load: 1, memTotal: 1000, memUsed: 400, disks: [], gpus: [] })
-    if (role === 'task') source.store.set('task', 'EX-1', { id: 'EX-1', chat, name: 'Retained task', desc: 'Preserve the existing work', place: space.id, machine: space.machine,
-      folder: '/retained-worktree', repo: space.folder, branch: 'work/retained', base: 'main', kind: 'codex', workflow: 'todo', status: 'todo', state: 'To do',
-      mergePolicy: 'ask', review: { on: false, kind: 'codex', rounds: 3, mustFix: 'major' }, model: 'gpt-6.1-sol', effort: 'high', speed: 'fast', age: 'now', created: '2026-11-05', on: 'test' } satisfies CoreTask)
+    if (role === 'task') source.store.set('task', 'EX-1', recoveryTask(space))
     source.settings.set('provider.route', 'Azure Foundry'); source.settings.set('coordinator.agent', 'Codex')
-    source.settings.set('azure.codexEndpoint', 'https://example.openai.azure.com/openai/v1'); source.settings.set('azure.codexDeployment', 'gpt-6.1-sol')
+    source.settings.set('azure.codexEndpoint', 'https://example.openai.azure.com/openai/v1'); source.settings.set('azure.codexDeployment', deployment)
     const before = await source.agents.launch(space, chat, 'codex', 'Initial test turn', { role, model: 'gpt-6.1-sol', effort: 'high', speed: 'fast' })
     source.agents.update(before, { session: '33333333-3333-4333-8333-333333333333', transcript: '/retained-native-session.jsonl' })
     source.agents.terminal(before)!.state = 'finished'; fail = true
@@ -339,3 +344,153 @@ test('boot recovery human executable routes to private operator and exposes no H
     expect(f.read('launch-recovery', f.launch)).toBeUndefined()
   } finally { app.stop(true) }
 }))
+
+
+for (const entry of ['send', 'start'] as const) test(`boot recovery implicit task ${entry} keeps the retained Azure deployment`, () => recoveryFixture(async f => {
+  expect(f.read<CoreTask>('task', 'EX-1')?.model).toBe('gpt-6.1-sol')
+  expect(f.agent.model).toBe('team-codex')
+  const task = f.source.tasks.get('EX-1')!
+  f.source.store.set('task', task.id, { ...task, effort: 'low', speed: 'normal' })
+  await f.request('arm'); f.boot.value = { ...f.boot.value, boot: nextBoot }
+  await f.request('settle'); await f.request('resume', ['--cancel-queued'])
+  const coordinator = await f.source.agents.launch(f.space, f.space.id, 'codex', 'Wait for the human', { model: 'gpt-6.1-sol', effort: 'high' })
+  const grant = f.source.mailbox.active().find(row => row.session === coordinator.launch)!
+  f.calls.length = 0
+  if (entry === 'start') expect((await f.source.tasks.cli(grant, ['task', 'start', 'EX-1', 'Fresh instruction'])).code).toBe(0)
+  else await f.source.tasks.deliver('EX-1', f.chat, 'Fresh instruction', false, true)
+  const runs = f.calls.filter(call => call.method === 'terminal.run')
+  expect(runs).toHaveLength(1)
+  expect(runs[0]!.params.argv).toContain('33333333-3333-4333-8333-333333333333')
+  expect(f.read('agent', f.chat)).toMatchObject({ recoveredFrom: f.launch, model: 'team-codex', effort: 'high', speed: 'fast', session: f.agent.session, provider: f.agent.provider })
+  expect(f.read('task', 'EX-1')).toMatchObject({ model: 'gpt-6.1-sol', folder: '/retained-worktree', branch: 'work/retained' })
+  expect(f.read('pending-send', 'submitted')).toMatchObject({ state: 'uncertain' })
+}, 'task', 'team-codex'))
+
+for (const entry of ['launch', 'restart'] as const) test(`boot recovery explicit task ${entry} still refuses a different Azure deployment`, () => recoveryFixture(async f => {
+  await f.request('arm'); f.boot.value = { ...f.boot.value, boot: nextBoot }
+  await f.request('settle'); await f.request('resume', ['--cancel-queued'])
+  const effects: string[] = []
+  f.source.tasks.git.ensureWorktree = async () => { effects.push('checkout'); return false }
+  f.source.browsers.close = async () => { effects.push('browser') }
+  const attempt = entry === 'launch'
+    ? f.source.tasks.launch(f.source.tasks.get('EX-1')!, 'Explicit change', 'different-deployment')
+    : f.source.act({ type: 'restart', chat: f.chat, kind: 'codex', model: 'different-deployment' })
+  await expect(attempt).rejects.toThrow('first recovered continuation')
+  expect(f.read('agent', f.chat)).toMatchObject({ launch: f.launch, model: 'team-codex', session: f.agent.session })
+  expect(effects).toEqual([]); expect(f.calls).toEqual([])
+}, 'task', 'team-codex'))
+
+for (const scope of ['chat', 'place'] as const) for (const timing of ['before', 'during-profile'] as const) test(`boot recovery task start preserves metadata when ${scope} is held ${timing}`, () => recoveryFixture(async f => {
+  // A confirmed finished task passes the old-process gate. Without the hold
+  // checks, start clears retained metadata before launchNow finally refuses.
+  const previous = [...f.source.core.current.terminals.values()][0]!
+  const finished: CoreTerminal = { ...previous, address: 'late-finished-task', pid: 99, created_ms: 99, state: 'finished', labels: { ...previous.labels, 'shepherdr.launch': f.launch } }
+  ;(f.source.core.current.terminals as Map<string, CoreTerminal>).set(finished.address, finished)
+  f.source.agents.reconcile()
+  const coordinator = await f.source.agents.launch(f.space, f.space.id, 'codex', 'Wait', { model: 'gpt-6.1-sol', effort: 'high' })
+  const grant = f.source.mailbox.active().find(row => row.session === coordinator.launch)!
+  const task = f.source.tasks.get('EX-1')!
+  f.source.store.set('task', task.id, { ...task, startError: 'Retain error', readyHead: 'retained-head', approvedHead: 'approved-head', mergeQuestion: 'retained-question' })
+  const held = scope === 'chat' ? f.chat : f.space.id
+  if (timing === 'before') f.source.store.set('launch-recovery-hold', held, f.launch)
+  const before = f.read('task', task.id), agent = f.read('agent', f.chat)
+  f.calls.length = 0
+  const starting = f.source.tasks.start(grant, task.id)
+  // profile is async even when no access-profile change is needed. Publish the
+  // hold at its await boundary, before start can mutate workflow metadata.
+  if (timing === 'during-profile') f.source.store.set('launch-recovery-hold', held, f.launch)
+  await expect(starting).rejects.toThrow('held')
+  expect(f.read('task', task.id)).toEqual(before); expect(f.read('agent', f.chat)).toEqual(agent)
+  expect(f.calls).toEqual([])
+}, 'task'))
+
+for (const entry of ['deliver', 'fresh', 'backup'] as const) test(`boot recovery task ${entry} refuses a coordinator hold before mutation`, () => recoveryFixture(async f => {
+  const task = f.source.tasks.get('EX-1')!
+  f.source.store.set('task', task.id, { ...task, workflow: entry === 'backup' ? 'working' : 'todo' })
+  f.source.store.set('launch-recovery-hold', f.space.id, f.launch)
+  const before = f.rows()
+  const action = entry === 'deliver' ? f.source.tasks.deliver(task.id, f.chat, 'Do not send')
+    : entry === 'fresh' ? f.source.tasks.startFresh(task.id, f.launch, 'Do not erase the session')
+    : f.source.tasks.providerFallback(task.id, f.launch, 'Do not switch provider')
+  await expect(action).rejects.toThrow('held')
+  expect(f.rows()).toEqual(before); expect(f.calls).toEqual([])
+}, 'task'))
+
+for (const entry of ['stop', 'close', 'delete'] as const) test(`boot recovery task ${entry} cleans up after replacing the terminal-less recovered launch`, () => recoveryFixture(async f => {
+  await f.request('arm'); f.boot.value = { ...f.boot.value, boot: nextBoot }
+  await f.request('settle'); await f.request('resume', ['--cancel-queued'])
+  await f.source.act({ type: 'restart', chat: f.chat, kind: 'codex', model: 'gpt-6.1-sol', effort: 'high', speed: 'fast' })
+  const replacement = f.source.agents.get(f.chat)!, terminal = f.source.agents.terminal(replacement)!
+  const call = f.source.core.call.bind(f.source.core), killed: string[] = []
+  f.source.core.call = async <T>(method: string, params: Record<string, unknown> = {}) => {
+    if (method === 'terminal.kill') { killed.push(String(params.terminal)); f.source.core.current.terminals.get(String(params.terminal))!.state = 'finished'; return {} as T }
+    return call<T>(method, params)
+  }
+  f.source.tasks.git.run = async () => '' // This regression proves lifecycle cleanup; checkout preservation has its own suite.
+  await f.source.act({ type: entry, chat: f.chat })
+  expect(killed).toEqual([terminal.address]); expect(terminal.state).toBe('finished')
+  if (entry === 'delete') expect(f.read('task', 'EX-1')).toBeUndefined()
+  else expect(f.read('task', 'EX-1')).toMatchObject({ workflow: entry === 'stop' ? 'todo' : 'closed' })
+  expect(f.read('launch-attempt', f.launch)).toMatchObject({ chat: f.chat, launch: f.launch, state: 'execution-ended-after-host-reboot' })
+}, 'task'))
+
+test('boot recovery coordinator resume cancels owned descendant queues and preserves uncertain and unrelated work', () => recoveryFixture(async f => {
+  const task = { ...recoveryTask(f.space), reviewChat: 'custom-review' }, unrelated = recoveryTask({ ...f.space, id: 'other-space' }, 'EX-10')
+  f.source.store.set('task', task.id, task); f.source.store.set('task', unrelated.id, unrelated)
+  const cancelled = [task.chat, task.reviewChat, `${task.id}/Reviewer-2`, `${task.id}/Child`, `${task.id}/Child/Nested`]
+  for (const [index, chat] of cancelled.entries()) f.source.store.set('pending-send', `descendant-${index}`, { id: `descendant-${index}`, chat, text: 'Old queued work', state: 'queued' } satisfies PendingSend)
+  const uncertain: PendingSend = { id: 'child-uncertain', chat: `${task.id}/Child`, text: 'Unknown submission', state: 'uncertain', submission: { launch: 'child-launch', promptHash: 'child-hash' } }
+  const outside: PendingSend = { id: 'outside', chat: `${unrelated.id}/Child`, text: 'Unrelated work', state: 'queued' }
+  f.source.store.set('pending-send', uncertain.id, uncertain); f.source.store.set('pending-send', outside.id, outside)
+  await f.request('arm'); f.boot.value = { ...f.boot.value, boot: nextBoot }
+  await f.request('settle')
+  expect((await f.request('resume', ['--cancel-queued'])).code).toBe(0)
+  expect(cancelled).toHaveLength(5)
+  for (const [index, chat] of cancelled.entries()) {
+    expect(f.read('pending-send', `descendant-${index}`)).toMatchObject({ chat, state: 'cancelled' })
+    expect(f.read(`message:${chat}`, `cancelled-descendant-${index}`)).toMatchObject({ text: 'Stopped before your saved message was sent.' })
+  }
+  expect(f.read('pending-send', 'queued')).toMatchObject({ state: 'cancelled' })
+  expect(f.read('pending-send', uncertain.id)).toEqual(uncertain); expect(f.read('pending-send', outside.id)).toEqual(outside)
+  expect(f.read('pending-send', 'submitted')).toMatchObject({ state: 'uncertain' })
+  expect(f.read('launch-recovery-hold', f.chat)).toBeUndefined(); expect(f.calls).toEqual([])
+}))
+
+
+test('boot recovery final task admission fences a newly held coordinator place', () => recoveryFixture(async f => {
+  const task = recoveryTask(f.space)
+  f.source.store.set('task', task.id, task)
+  const prepared = await f.source.agents.preflight(f.space, task.chat, 'codex', { model: task.model, effort: task.effort })
+  expect((await f.request('arm')).code).toBe(0)
+  const before = f.rows()
+  expect(() => f.source.agents.admit(prepared)).toThrow('held')
+  expect(f.rows()).toEqual(before); expect(f.calls).toEqual([])
+}))
+
+test('boot recovery task delivery rechecks a coordinator hold after its asynchronous label', () => recoveryFixture(async f => {
+  await f.request('arm'); f.boot.value = { ...f.boot.value, boot: nextBoot }
+  await f.request('settle'); await f.request('resume', ['--cancel-queued'])
+  await f.source.act({ type: 'restart', chat: f.chat, kind: 'codex', model: 'gpt-6.1-sol', effort: 'high', speed: 'fast' })
+  f.source.agents.update(f.source.agents.get(f.chat)!, { state: 'idle' })
+  const call = f.source.core.call.bind(f.source.core)
+  f.source.core.call = async <T>(method: string, params: Record<string, unknown> = {}) => {
+    if (method === 'terminal.label') f.source.store.set('launch-recovery-hold', f.space.id, f.launch)
+    return call<T>(method, params)
+  }
+  f.calls.length = 0
+  await expect(f.source.tasks.deliver('EX-1', f.chat, 'Do not dispatch after the hold', false, true)).rejects.toThrow('held')
+  expect(f.calls.filter(call => call.method === 'terminal.send' || call.method === 'terminal.run')).toEqual([])
+  expect(f.read('agent', f.chat)).toMatchObject({ session: f.agent.session, model: f.agent.model })
+}, 'task'))
+
+
+test('boot recovery task backup rechecks its coordinator hold after reading handover context', () => recoveryFixture(async f => {
+  const task = f.source.tasks.get('EX-1')!
+  f.source.store.set('task', task.id, { ...task, workflow: 'working' })
+  f.source.settings.backupFor = () => ({ kind: 'claude', model: undefined, effort: undefined })
+  f.source.tasks.git.run = async () => { f.source.store.set('launch-recovery-hold', f.space.id, f.launch); return '' }
+  const before = f.read('task', task.id), agent = f.read('agent', f.chat)
+  await expect(f.source.tasks.providerFallback(task.id, f.launch, 'Provider unavailable')).rejects.toThrow('held')
+  expect(f.read('task', task.id)).toEqual(before); expect(f.read('agent', f.chat)).toEqual(agent)
+  expect(f.calls).toEqual([])
+}, 'task'))

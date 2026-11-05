@@ -176,6 +176,7 @@ export class CoreAgents {
 
   admit(prepared: PreparedProvider, expectedLaunch = prepared.previous) {
     this.launches.assertUnheld(prepared.chat)
+    this.launches.assertUnheld(prepared.level)
     if (prepared.recovered) this.recoveredSelection(this.get(prepared.chat), prepared.kind, prepared.recovered)
     if (this.stopping()) throw Error('Shepherdr is stopping')
     if (prepared.revision !== this.configurationRevision(prepared.chat, prepared.level)) throw Error('Selection changed before launch; fresh validation is required')

@@ -31,7 +31,24 @@ export interface LaunchRecovery {
 /** Human operator only. A reboot proves execution ended, never that its past effects did not happen. */
 export class CoreLaunchRecovery {
   constructor(private readonly source: CoreSource, private readonly observe: HostBootReader = readHostBoot) {}
-  held(chat: string) { return !!this.source.store.get('launch-recovery-hold', chat) }
+  private task(chat: string) {
+    return this.source.tasks.forChat(chat) ?? this.source.tasks.all().find(task => task.reviewChat === chat || chat.startsWith(`${task.id}/`))
+  }
+  /** A task's worker, reviewer and descendant inputs share its coordinator's recovery hold. */
+  held(chat: string) {
+    const task = this.task(chat), store = this.source.store
+    return !!store.get('launch-recovery-hold', chat) || !!task &&
+      (!!store.get('launch-recovery-hold', task.chat) || !!store.get('launch-recovery-hold', task.place))
+  }
+  private cancelQueued(chat: string) {
+    const candidates = new Set([chat, ...this.source.tasks.all().map(task => task.chat), ...this.source.agents.all().map(agent => agent.chat),
+      ...this.source.store.all<{ chat: string }>('pending-send').map(item => item.chat),
+      ...this.source.store.all<{ chat: string }>('provider-retry').map(item => item.chat)])
+    for (const candidate of candidates) {
+      const task = this.task(candidate)
+      if (candidate === chat || task?.place === chat || task?.chat === chat) this.source.cancelQueued(candidate)
+    }
+  }
   private identity(chat: string) {
     const agent = this.source.agents.get(chat), task = this.source.tasks.forChat(chat)
     if (!agent) throw Error('No retained agent for this exact conversation')
@@ -93,7 +110,7 @@ export class CoreLaunchRecovery {
       if (row.phase !== 'settled' || attempt.state !== 'execution-ended-after-host-reboot' || row.boot === boot.boot) throw Error('Settle this exact launch after a host reboot before resuming')
       // Explicit disposition covers all queued work now, but never the uncertain submission.
       currentRequest()
-      this.source.cancelQueued(chat)
+      this.cancelQueued(chat)
       store.delete('launch-claim', chat); store.delete('launch-recovery-hold', chat)
       store.set('launch-recovery', launch, { ...row, phase: 'resumed', resumedAt: Date.now() })
       this.source.post(chat, { id: `recovery-${launch}`, who: 'agent', text: 'Host reboot ended the old execution. Earlier submitted work remains unconfirmed. Queued messages were cancelled; send a fresh instruction or restart explicitly.', at: Date.now() })

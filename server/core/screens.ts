@@ -105,6 +105,7 @@ export class CoreScreens {
   async answer(action: Extract<Action, { type: 'answer' }>): Promise<boolean> {
     const row = this.source.store.get<ScreenCard>('screen-card', action.question)
     if (!row) return false
+    if (this.source.launchRecovery.held(row.chat)) throw new Refusal('This conversation is held for launch recovery')
     if (row.chat !== action.chat || row.state !== 'open' || !this.waiting(row)) throw new Refusal('This screen is no longer waiting for an answer')
     if (!Number.isInteger(action.choice) || !row.question.choices[action.choice]) throw new Refusal('Choose one of the card’s answers')
     if (this.pressing.has(row.id)) return true
@@ -114,6 +115,7 @@ export class CoreScreens {
       const read = await this.read(this.source.agents.get(row.chat)!)
       const screen = read && readScreen(read.text, read.terminal.cols)
       if (!read || !screen || screenText(read.text) !== row.all || JSON.stringify(screen.choices) !== JSON.stringify(row.question.choices)) throw new Refusal('That screen has changed, so nothing was pressed')
+      if (this.source.launchRecovery.held(row.chat)) throw new Refusal('This conversation is held for launch recovery')
       await this.source.core.call('terminal.keys', { terminal: read.terminal.address, keys: pressKeys(screen.at, action.choice) })
       row.state = 'answered'; row.at = Date.now(); row.question.sent = action.choice
       this.settle(row, row.question.choices[action.choice].label, 'Answered')

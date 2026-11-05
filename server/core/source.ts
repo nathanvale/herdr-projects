@@ -585,12 +585,16 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
         }
         this.settings.set(action.key, action.value, action.place || 'all'); return {}
       case 'keys': case 'text': {
+        if (this.launchRecovery.held(action.chat)) throw new Refusal('This conversation is held for launch recovery')
         const agent = this.agents.get(action.chat)
         const terminal = agent && this.agents.terminal(agent)
         if (!terminal || terminal.state !== 'live') throw new Error('This terminal is stopped')
         if (action.type === 'keys') return this.core.call('terminal.keys', { terminal: terminal.address, keys: action.keys })
         const stream = await this.core.attach(terminal.address, { data() {}, close() {} }, terminal.cols, terminal.rows)
-        stream.input(Buffer.from(action.text)); stream.close(); return {}
+        try {
+          if (this.launchRecovery.held(action.chat)) throw new Refusal('This conversation is held for launch recovery')
+          stream.input(Buffer.from(action.text)); return {}
+        } finally { stream.close() }
       }
       case 'read': if (this.unread.mark(action.chats)) this.emit('snapshot'); return {}
       case 'space-remove': return this.places.remove(action.place)
@@ -666,7 +670,7 @@ export class CoreSource extends Emitter<SourceEvents> implements Source {
     try {
       const pending = this.store.all<PendingSend>('pending-send').filter(item => item.chat === chat && item.state === 'queued')
       for (let item of pending) {
-        if (this.quiescing) return
+        if (this.quiescing || this.launchRecovery.held(chat)) return
         if (item.id.startsWith('provider-retry-') && !this.store.get('pending-send', item.id)) continue
         const task = this.tasks.forChat(chat)
         const space = this.space(chat) || task && this.space(task.place)
