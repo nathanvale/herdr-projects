@@ -56,7 +56,7 @@
       "phase": "S1",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "104a0d67f907d4f26dc62ded57780e4e060a3b7b",
-      "sha256": "366a9a82fef770c7b2242c69b52c5a3a6b776595ccffe06eb6b0ab6a443ec860"
+      "sha256": "35907685dd4dd82888d02ac63c0d0ce7b702d33798eb3ee899cd56d51403bf6f"
     }
   ],
   "requirements": [

@@ -569,8 +569,10 @@ class BackToWork(unittest.TestCase):
         """Accept with GitHub giving these pull request views and merge results in turn."""
         views, merges = list(views), list(merges)
         done = []
+        # Only `gh pr merge` answers from `merges`; any other gh call (adopting one) goes to the gh already faked.
+        others = self.github.gh
         patches = [(self.commands, "pr_view", lambda t: views.pop(0)),
-                   (self.github, "gh", lambda *a, **k: merges.pop(0)),
+                   (self.github, "gh", lambda *a, **k: merges.pop(0) if a[:2] == ("pr", "merge") else others(*a, **k)),
                    (self.commands, "watch_main", lambda *a: None), (self.commands, "update_main", lambda *a: None),
                    (self.commands, "finish", lambda s, t, even_if_busy=False: (t.update(state="done"), done.append(t["id"])))]
         for mod, name, value in patches:
