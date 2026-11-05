@@ -3,22 +3,54 @@ import { createHash } from 'node:crypto'
 import type { PilotRepositoryContext } from './pilot-repositories.ts'
 import { Refusal } from './client.ts'
 import type { CoreFiles } from './files.ts'
+import type { ExecAdmission } from './files.ts'
+import type { BitbucketGitOperation, BitbucketGitRequest } from '../../helper/core-bitbucket-git.ts'
 
 export interface RepoLocation { machine: string; folder: string }
 export class CoreGit {
   constructor(private readonly files: CoreFiles,
     private readonly guard?: (repo: RepoLocation, additional?: string[]) => PilotRepositoryContext | undefined,
-    private readonly runtime?: (machine: string) => Promise<{ bun: string; root: string }>) {}
-  private async execute(repo: RepoLocation, tool: 'git' | 'gh', args: string[], timeout: number, stdin?: string, additional?: string[]) {
+    private readonly runtime?: (machine: string, provision?: boolean) => Promise<{ bun: string; root: string }>) {}
+  /** Observation retains the checked broker, but can never provision helpers. */
+  observer() { return new CoreGit(this.files, this.guard, this.runtime && (machine => this.runtime!(machine, false))) }
+  private async execute(repo: RepoLocation, tool: 'git' | 'gh', args: string[], timeout: number, stdin?: string, additional?: string[], admit?: ExecAdmission, provision = true) {
     const context = this.guard?.(repo, additional)
-    if (!context) return this.files.exec(repo.machine, [tool, ...args], repo.folder, stdin === undefined ? undefined : Buffer.from(stdin), timeout)
+    if (!context) return this.files.exec(repo.machine, [tool, ...args], repo.folder, stdin === undefined ? undefined : Buffer.from(stdin), timeout, admit)
+    if (admit) throw new Refusal('Contained repository ownership changed before publication; nothing was provisioned or pushed')
     if (!this.runtime) throw Error('Checked repository runtime is unavailable')
-    const runtime = await this.runtime(repo.machine)
+    const runtime = await this.runtime(repo.machine, provision)
     return this.files.exec(repo.machine, [runtime.bun, join(runtime.root, 'helper/core-pilot-git.ts')], undefined,
       Buffer.from(JSON.stringify({ ...context, cwd: repo.folder, tool, args, stdin, timeout: timeout * 1000 })), timeout + 10)
   }
   async run(repo: RepoLocation, args: string[], timeout = 30, stdin?: string, additional?: string[]) { return (await this.execute(repo, 'git', args, timeout, stdin, additional)).toString('utf8').trim() }
+  /** Origin admission must not provision a new checked runtime before provider selection. */
+  async origin(repo: RepoLocation, args: string[]) {
+    if (!this.guard?.(repo)) return this.run(repo, args)
+    return (await this.execute(repo, 'git', args, 30, undefined, undefined, undefined, false)).toString('utf8').trim()
+  }
   async ghRun(repo: RepoLocation, args: string[], timeout = 60, stdin?: string) { return (await this.execute(repo, 'gh', args, timeout, stdin)).toString('utf8').trim() }
+  private async frozen(repo: RepoLocation, destination: string, operation: BitbucketGitOperation, admit: () => void) {
+    const validate = () => {
+      if (this.guard?.(repo)) throw new Refusal('Contained repository ownership changed before publication; nothing was provisioned or pushed')
+      admit()
+    }
+    validate()
+    if (!this.runtime) throw new Refusal('The admitted Git transport runtime is unavailable')
+    const runtime = await this.runtime(repo.machine, false)
+    validate()
+    const input: BitbucketGitRequest = { folder: repo.folder, destination, operation }
+    const output = await this.files.exec(repo.machine, [runtime.bun, '--no-env-file', join(runtime.root, 'helper/core-bitbucket-git.ts')], join(runtime.root, 'helper'),
+      Buffer.from(JSON.stringify(input)), 120, validate)
+    let reply: { ok: boolean; observed?: string }
+    if (output.length > 4096) throw new Refusal('The admitted Git transport did not return a bounded response')
+    try { reply = JSON.parse(output.toString('utf8')) } catch { throw new Refusal('The admitted Git transport did not return a complete response') }
+    if (!reply || reply.ok !== true || typeof reply.observed !== 'string' || Object.keys(reply).some(key => !['ok', 'observed'].includes(key))) throw new Refusal('Git did not confirm the operation on the admitted destination')
+    if (operation.kind === 'push' && reply.observed !== operation.head) throw new Refusal('Git did not confirm the admitted candidate')
+    if (operation.kind === 'observe') validate()
+    // A completed admitted push is a fact even after connection freshness
+    // changes. Its caller records that fact before admitting any next effect.
+    return reply.observed
+  }
   async head(repo: RepoLocation, ref = 'HEAD') { return this.run(repo, ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`]) }
   async branchHead(repo: RepoLocation, branch: string) {
     const ref = `refs/heads/${branch}`
@@ -58,18 +90,24 @@ export class CoreGit {
     else await this.addWorktree(repo, folder, branch, base)
     return true
   }
-  async pushTaskBranch(repo: RepoLocation, branch: string, expected?: string) {
+  async pushTaskBranch(repo: RepoLocation, branch: string, expected?: string, admit?: () => void, candidate?: string, destination = 'origin') {
     if (!/^[A-Za-z0-9][A-Za-z0-9/_.-]*$/.test(branch) || branch.includes('..') || expected !== undefined && !/^[a-f0-9]{40,64}$/.test(expected)) throw Error('Invalid saved task branch identity')
     const ref = `refs/heads/${branch}`
     if (await this.run(repo, ['symbolic-ref', '--quiet', 'HEAD']) !== ref) throw Error('The task branch is not checked out; nothing was pushed')
     const head = await this.head(repo, ref)
     if (!/^[a-f0-9]{40,64}$/.test(head)) throw Error('Git did not return a task commit identity')
+    if (candidate && head !== candidate) throw new Refusal('The task candidate changed during publication preflight; nothing was pushed')
     try {
-      await this.run(repo, ['push', `--force-with-lease=${ref}:${expected ?? ''}`, 'origin', `${head}:${ref}`], 90)
+      const args = ['push', `--force-with-lease=${ref}:${expected ?? ''}`, destination, `${head}:${ref}`]
+      if (admit) await this.frozen(repo, destination, { kind: 'push', branch, head, expected }, admit)
+      else await this.run(repo, args, 90)
     } catch (error) {
       // A lost response is not a reason to blindly repeat a force push. Confirm the exact remote commit.
       let remote: string
-      try { remote = await this.run(repo, ['ls-remote', '--heads', 'origin', ref], 60) } catch { throw error }
+      try {
+        const args = ['ls-remote', '--heads', destination, ref]
+        remote = admit ? await this.frozen(repo, destination, { kind: 'observe', branch }, admit) : await this.run(repo, args, 60)
+      } catch { throw error }
       if (remote !== `${head}\t${ref}`) throw error
     }
     return head

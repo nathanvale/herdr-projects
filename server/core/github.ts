@@ -59,7 +59,7 @@ export class CoreGitHub {
     if (!this.current(space) || !this.wanted(space, now)) return
     const id = this.key(space), old = this.source.store.get<MainWatch>('github-main', id), next: MainWatch = { ...old, id, checked: now }
     try {
-      const repo = { machine: space.machine, folder: space.folder }, forge = await this.source.tasks.forge.repository(repo)
+      const repo = { machine: space.machine, folder: space.folder }, forge = await this.source.tasks.forge.repository(repo, true)
       if (!this.current(space)) return
       if (!forge) { delete next.error; this.source.store.set('github-main', id, next); return }
       const { selected, context } = await forge.observeBase(space.base, old ?? {})

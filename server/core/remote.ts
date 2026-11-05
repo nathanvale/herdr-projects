@@ -3,18 +3,21 @@ import { join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { CORE_MINIMUM, coreVersionAccepted } from './protocol.ts'
 import type { CoreFiles } from './files.ts'
+import type { CoreStore } from './store.ts'
 import { CORE_ENVIRONMENT, type CoreEnvironment, type CoreEndpoint } from './client.ts'
 
 export interface RemoteRuntime { root: string; home: string; bun: string; hc: string; path: string; session?: string; socket?: string; environment?: CoreEnvironment; endpoint: CoreEndpoint; browser: string }
 export const PARTS = ['helper/core-worktree-includes.ts', 'helper/core-worktree-move.ts', 'helper/core-cli.ts', 'helper/core-hook.ts', 'helper/core-review.ts', 'helper/core-secret.ts', 'helper/core-browser.ts', 'helper/core-browser-session.ts', 'server/browser-pick.ts', 'shared/browser.ts', 'server/core/browser-protocol.ts', 'server/core/home.ts', 'server/core/client.ts', 'server/core/protocol.ts', 'server/core/envelope.ts', 'server/core/mailbox.ts', 'server/core/store.ts', 'server/core/request.ts']
 PARTS.push(...['artifact', 'inventory', 'native', 'path', 'ssh', 'git', 'backend', 'bootstrap', 'capture', 'cli', 'gateway', 'home', 'hook', 'launch', 'proxy', 'records', 'runtime', 'sandbox', 'tls'].map(name => `helper/core-pilot-${name}.ts`))
+PARTS.push('helper/core-bitbucket.ts', 'helper/core-bitbucket-git.ts', 'server/core/forge/bitbucket-protocol.ts', 'server/core/forge/bitbucket-http.ts')
 const quote = (text: string) => `'${text.replace(/'/g, `'"'"'`)}'`
 
 /** Provision only private agent helper files through core exec. No SSH client, listener, worker or service. */
 export class CoreRemotes {
   private preparing = new Map<string, Promise<RemoteRuntime>>()
+  private ready = new Map<string, RemoteRuntime>()
   constructor(private readonly files: CoreFiles, private readonly installation: string,
-    private readonly profile: (machine: string) => { session?: string | null; version?: string }) {}
+    private readonly profile: (machine: string) => { session?: string | null; version?: string }, private readonly store?: CoreStore) {}
   async bun(machine: string) {
     const find = `command -v bun || { test -x "$HOME/.bun/bin/bun" && printf '%s\\n' "$HOME/.bun/bin/bun"; }`
     const bun = (await this.files.exec(machine, ['sh', '-c', find])).toString('utf8').trim()
@@ -26,7 +29,31 @@ export class CoreRemotes {
     if (running) return running
     const promise = this.prepareNow(machine)
     this.preparing.set(machine, promise)
-    try { return await promise } finally { this.preparing.delete(machine) }
+    try {
+      const runtime = await promise; this.ready.set(machine, runtime)
+      this.store?.set('checked-runtime', machine, { machine, installation: this.installation, root: runtime.root })
+      return runtime
+    } finally { this.preparing.delete(machine) }
+  }
+  /** Read-only origin admission can use an existing immutable checked bundle, never create one. */
+  async existingChecked(machine: string, roots: string[]): Promise<{ root: string; bun: string }> {
+    const ready = this.ready.get(machine)
+    if (ready) return ready
+    const retained = this.store?.get<{ machine: string; installation: string; root: string }>('checked-runtime', machine)
+    if (retained && (retained.machine !== machine || retained.installation !== this.installation || typeof retained.root !== 'string')) throw Error('Existing checked runtime ownership differs; nothing was provisioned')
+    const root = retained?.root ?? roots.find(path => path.includes(`/.local/share/shepherdr-agents/${this.installation}/`) && /^[a-f0-9]{24}$/.test(path.split('/').at(-1) ?? ''))
+    const bun = await this.bun(machine)
+    const source = join(import.meta.dir, '../..')
+    const names = ['helper/core-pilot-git.ts', 'helper/core-pilot-path.ts', 'helper/core-pilot-sandbox.ts']
+    const expected = Object.fromEntries(names.map(path => [path, readFileSync(join(source, path), 'utf8')]))
+    // Read only the current installation's private host directory. Cold starts
+    // can discover pre-existing bundles even after all agent rows are gone.
+    // A retained record must validate itself; it cannot fall back to another root.
+    const script = `const f=require('node:fs'),p=require('node:path'),o=require('node:os'),x=JSON.parse(await Bun.stdin.text());const base=p.join(f.realpathSync(o.homedir()),'.local/share/shepherdr-agents',x.installation);const privateDir=d=>{const s=f.lstatSync(d);if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==process.getuid()||(s.mode&0o077)||f.realpathSync(d)!==d)throw Error('Existing checked Git root differs')};const valid=root=>{if(p.dirname(root)!==base||! /^[a-f0-9]{24}$/.test(p.basename(root)))throw Error('Existing checked runtime path differs');privateDir(root);for(const[n,t]of Object.entries(x.expected)){const q=p.join(root,n),s=f.lstatSync(q);if(!s.isFile()||s.isSymbolicLink()||s.uid!==process.getuid()||s.nlink!==1||(s.mode&0o077)||f.realpathSync(p.dirname(q))!==p.dirname(q)||f.readFileSync(q,'utf8')!==t)throw Error('Existing checked Git bundle differs; nothing was provisioned')}return root};let root=x.root;if(root)root=valid(root);else{if(f.existsSync(base)){privateDir(base);const names=f.readdirSync(base);if(names.length>128)throw Error('Too many checked runtime candidates');for(const name of names.sort().reverse()){if(!/^[a-f0-9]{24}$/.test(name))continue;try{root=valid(p.join(base,name));break}catch{}}}if(!root)throw Error('An already provisioned checked Git runtime is required; nothing was provisioned')}console.log(JSON.stringify({root}))`
+    const result = JSON.parse((await this.files.exec(machine, [bun, '--no-env-file', '-e', script], undefined, Buffer.from(JSON.stringify({ root, installation: this.installation, expected })))).toString('utf8')) as { root: string }
+    if (typeof result.root !== 'string' || !result.root.startsWith('/') || !result.root.endsWith(`/.local/share/shepherdr-agents/${this.installation}/${result.root.split('/').at(-1)}`) || !/^[a-f0-9]{24}$/.test(result.root.split('/').at(-1) ?? '')) throw Error('Existing checked runtime response differs')
+    this.store?.set('checked-runtime', machine, { machine, installation: this.installation, root: result.root })
+    return { root: result.root, bun }
   }
   private async prepareNow(machine: string): Promise<RemoteRuntime> {
     const profile = this.profile(machine)

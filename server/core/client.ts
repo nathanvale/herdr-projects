@@ -12,7 +12,7 @@ export class CoreNotSubmitted extends CoreError {}
 
 /** Deliberate product refusal whose message is safe for the owning agent/human to read. */
 export class Refusal extends Error {
-  constructor(message: string) { super(message); this.name = 'Refusal' }
+  constructor(message: string, readonly uncertain = false) { super(message); this.name = 'Refusal' }
 }
 
 type Pending = { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }
