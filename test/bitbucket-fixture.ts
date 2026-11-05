@@ -92,6 +92,8 @@ export async function withBitbucket(run: (fixture: BitbucketFixture) => Promise<
     if (operation) outputs.push(stdout.toString())
     await route.after?.(operation?.kind)
     const state = JSON.parse(readFileSync(statePath, 'utf8'))
+    // A bounded malformed core reply AFTER real Git produced the actual head.
+    if (argv[0] === 'git' && argv[1] === 'rev-parse' && argv.at(-1) === 'HEAD^{commit}' && state.malformedHeadReply) return { stdout: Buffer.from('not-a-commit\n').toString('base64'), stderr: '', code: 0, timed_out: false, truncated: false }
     if (operation?.kind === 'push' && state.wrongPushReceipt) return { stdout: Buffer.from(JSON.stringify({ ok: true, observed: '0'.repeat(40) })).toString('base64'), stderr: '', code: 0, timed_out: false, truncated: false }
     if ((operation?.kind === 'push' || argv[0] === 'git' && argv[1] === 'push') && state.losePushReply) {
       if (state.rewriteAfterPush) await git(repo, 'config', `url.${foreignBare}.insteadOf`, 'https://alice@bitbucket.org/space/sample.git')

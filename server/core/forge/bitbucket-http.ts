@@ -1,4 +1,4 @@
-import { BITBUCKET_LIMITS as LIMIT, bitbucketBranch, bitbucketCommit, bitbucketCredential, bitbucketRepository } from './bitbucket-protocol.ts'
+import { BITBUCKET_LIMITS as LIMIT, bitbucketBranch, bitbucketCommit, parseBitbucketRequest } from './bitbucket-protocol.ts'
 import type { BitbucketContext, BitbucketFailure, BitbucketOperation, BitbucketReply, BitbucketRequest } from './bitbucket-protocol.ts'
 import type { ForgeChecks, ForgePullRequest } from './types.ts'
 
@@ -7,26 +7,6 @@ class TransportFailure extends Error {
 }
 const fail: (category: BitbucketFailure) => never = category => { throw new TransportFailure(category) }
 const object = (value: unknown): Record<string, any> => { if (!value || typeof value !== 'object' || Array.isArray(value)) fail('malformed-response'); return value as Record<string, any> }
-function fields(value: Record<string, unknown>, names: string[]) { if (Object.keys(value).some(key => !names.includes(key))) fail('invalid-request') }
-function parseRequest(value: unknown): BitbucketRequest {
-  const row = object(value); fields(row, ['version', 'context', 'operation'])
-  const context = object(row.context), origins = object(context.origins), credential = object(context.credential), operation = object(row.operation)
-  fields(context, ['repository', 'folder', 'origins', 'credential']); fields(origins, ['used', 'written', 'push']); fields(credential, ['host', 'path', 'username'])
-  if (row.version !== 1 || !bitbucketRepository(context.repository) || typeof context.folder !== 'string' || !context.folder.startsWith('/') || context.folder.length > 4096 || /[\r\n\0]/.test(context.folder) || Object.values(origins).some(value => typeof value !== 'string' || value.length > 4096)) fail('invalid-request')
-  let expected: unknown
-  try { expected = bitbucketCredential(origins as BitbucketContext['origins'], context.repository) } catch { fail('invalid-request') }
-  const lookup = expected as BitbucketContext['credential']
-  if (lookup.host !== credential.host || lookup.path !== credential.path || lookup.username !== credential.username) fail('invalid-request')
-  const names: Record<string, string[]> = { probe: ['branch', 'base'], read: ['number', 'checks'], find: ['branch', 'base', 'checks'], create: ['branch', 'base', 'head', 'title', 'body'], prepare: ['number', 'branch', 'base', 'head', 'body'] }
-  if (!Object.hasOwn(names, operation.kind)) fail('invalid-request')
-  fields(operation, ['kind', ...names[operation.kind]])
-  for (const key of ['branch', 'base']) if (names[operation.kind].includes(key) && !(key === 'base' && operation.kind === 'find' && operation.base === undefined) && !bitbucketBranch(operation[key])) fail('invalid-request')
-  if (names[operation.kind].includes('number') && (!Number.isSafeInteger(operation.number) || operation.number < 1)) fail('invalid-request')
-  if (names[operation.kind].includes('head') && !bitbucketCommit(operation.head)) fail('invalid-request')
-  if (names[operation.kind].includes('checks') && typeof operation.checks !== 'boolean') fail('invalid-request')
-  for (const key of ['title', 'body']) if (names[operation.kind].includes(key) && (typeof operation[key] !== 'string' || operation[key].length > (key === 'title' ? 512 : 32000))) fail('invalid-request')
-  return row as BitbucketRequest
-}
 
 async function bounded(stream: ReadableStream<Uint8Array> | null, limit: number): Promise<string> {
   if (!stream) return ''
@@ -271,7 +251,9 @@ class BitbucketHttp {
 /** Fixed-operation host seam. Failure categories contain no provider or credential text. */
 export async function runBitbucket(value: unknown): Promise<BitbucketReply> {
   try {
-    const request = parseRequest(value), token = await credential(request.context)
+    let request: BitbucketRequest
+    try { request = parseBitbucketRequest(value) } catch { fail('invalid-request') }
+    const token = await credential(request.context)
     const result = await new BitbucketHttp(request.context, token).perform(request.operation)
     if (JSON.stringify(result).includes(token)) fail('malformed-response')
     return { ok: true, result }

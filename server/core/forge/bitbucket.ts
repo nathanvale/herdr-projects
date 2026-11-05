@@ -4,7 +4,7 @@ import { CoreNotSubmitted, Refusal } from '../client.ts'
 import type { CoreFiles } from '../files.ts'
 import type { RepoLocation } from '../git.ts'
 import type { CoreStore } from '../store.ts'
-import { bitbucketCredential } from './bitbucket-protocol.ts'
+import { bitbucketCredential, parseBitbucketRequest } from './bitbucket-protocol.ts'
 import type { BitbucketContext, BitbucketOperation, BitbucketReply } from './bitbucket-protocol.ts'
 import type { ForgePublication, ForgePullRequest, ForgePrRecord, ForgeRepository, RepositoryForge } from './types.ts'
 import { samePr } from './identity.ts'
@@ -143,8 +143,16 @@ export class BitbucketForge implements RepositoryForge {
     const record = this.record(input)
     if (record) this.host.store.set('forge-publication', this.recordKey(input, record), { ...record, state: 'confirmed', pr: pr.identity })
   }
+  private creation(input: ForgePublication): BitbucketOperation {
+    return { kind: 'create', branch: input.branch, base: input.base, head: input.head, title: input.title, body: input.body }
+  }
+  private preflight(input: ForgePublication) {
+    try { parseBitbucketRequest({ version: 1, context: this.context, operation: this.creation(input) }) }
+    catch { throw new Refusal('Bitbucket publication payload failed preflight; correct the task title, brief or source/destination identity within the supported bounds. Nothing was pushed or submitted by this call') }
+  }
   async publishing<T>(input: ForgePublication, perform: (admit: () => void, destination: string) => Promise<T>) {
     if (!input.owner) throw new Refusal('Bitbucket publication requires task-owned admission')
+    this.regular(); this.preflight(input)
     const key = this.key(input)
     if (this.publishingKeys.has(key)) throw new Refusal('Another task is publishing this Bitbucket source and destination; retry after it finishes')
     this.publishingKeys.add(key)
@@ -169,7 +177,7 @@ export class BitbucketForge implements RepositoryForge {
     const record: PublicationRecord = { id: randomUUID(), task: input.owner.task, machine: this.repo.machine, binding: this.active.binding, ownership: this.active.ownership, on: this.active.on, repository: this.identity, branch: input.branch, base: input.base, head: input.head, folder: this.repo.folder, origins: this.context.origins, credential: this.context.credential, saved: input.saved, state: 'uncertain' }
     let dispatched = false
     try {
-      const result = await this.request({ kind: 'create', branch: input.branch, base: input.base, head: input.head, title: input.title, body: input.body }, () => {
+      const result = await this.request(this.creation(input), () => {
         this.host.store.db.transaction(() => {
           if (this.record(input)) throw new Refusal(messages['uncertain-write'])
           this.host.store.set('forge-publication', this.key(input), record); dispatched = true
