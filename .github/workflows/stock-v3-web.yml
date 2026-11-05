@@ -1,0 +1,40 @@
+name: Stock v3.1.3 web assets
+
+on:
+  push:
+    branches: [build/stock-v3.1.3-web]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun web/build-plugins.ts
+      - run: bun run typecheck
+      - run: bun test service core web
+      - run: bun run build
+      - name: Record exact source and asset hashes
+        run: |
+          test "$(git rev-parse HEAD)" = dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc
+          printf '%s\n' '{"source":"dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc","version":"3.1.3","bun":"1.4.2"}' > BUILD-METADATA.json
+          find web/dist -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stock-v3.1.3-web
+          path: |
+            web/dist/
+            BUILD-METADATA.json
+            SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
