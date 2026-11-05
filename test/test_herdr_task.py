@@ -475,9 +475,10 @@ class BackToWork(unittest.TestCase):
         sys.path.insert(0, BIN)
         import herdr_task.agents as agents
         import herdr_task.commands as commands
+        import herdr_task.github as github
         import herdr_task.news as news
         import herdr_task.tick as tick
-        self.agents, self.commands, self.news, self.tick, self.mock = agents, commands, news, tick, mock
+        self.agents, self.commands, self.github, self.news, self.tick, self.mock = agents, commands, github, news, tick, mock
         with open(os.path.join(ROOT, "core", "back-to-work.cases.json")) as f:
             self.cases = json.load(f)
 
@@ -485,7 +486,7 @@ class BackToWork(unittest.TestCase):
             raise AssertionError("ran a program")
         self.live = []  # the task's agents now (hc records)
         self.store = Store([])
-        for mod, name, value in ((commands, "run", never), (commands, "git", never), (commands, "gh", never),
+        for mod, name, value in ((commands, "run", never), (commands, "git", never), (github, "gh", never),
                                  (commands, "open_store", lambda args, write=True: self.store),
                                  (commands, "view", lambda s, t, live=None: dict(t)), (commands, "say", lambda *a: None),
                                  (commands, "live_agents", lambda key: self.live), (commands, "detail", lambda k: k),
@@ -569,7 +570,7 @@ class BackToWork(unittest.TestCase):
         views, merges = list(views), list(merges)
         done = []
         patches = [(self.commands, "pr_view", lambda t: views.pop(0)),
-                   (self.commands, "gh", lambda *a, **k: merges.pop(0)),
+                   (self.github, "gh", lambda *a, **k: merges.pop(0)),
                    (self.commands, "watch_main", lambda *a: None), (self.commands, "update_main", lambda *a: None),
                    (self.commands, "finish", lambda s, t, even_if_busy=False: (t.update(state="done"), done.append(t["id"])))]
         for mod, name, value in patches:
@@ -656,7 +657,7 @@ class BackToWork(unittest.TestCase):
         t = self.ready(mode="worktree", worktree="/w", branch="b",
                        attention="Couldn't open a pull request: a pull request for branch \"b\" already exists")
         self.merging([{"state": "MERGED", "mergeCommit": {"oid": "f00"}}], [])
-        with self.mock.patch.object(self.commands, "github", lambda s: "o/r"):
+        with self.mock.patch.object(self.commands, "repository", lambda s: {"provider": "github", "repo": "o/r"}):
             self.commands.cmd_accept(self.args())
         self.assertEqual((t["state"], t["pr"]["number"]), ("done", 599))
         self.assertNotIn("attention", t)

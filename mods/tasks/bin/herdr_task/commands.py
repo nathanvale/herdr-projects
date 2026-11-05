@@ -19,7 +19,10 @@ from .agents import (
     agent_running, busy_again, detail, fit, LINE_MAX, live_agents, ready_turns, STATUSES, SUMMARY_MAX, WORKING_AGAIN,
 )
 from .sessions import refresh_sessions
-from .github import finish, gh, github, merged_here, own_work, pr_adopt, pr_open, pr_pending, pr_problem, pr_view, update_main, watch_main
+from .github import finish, merged_here, own_work, update_main, watch_main
+from .forge import (
+    integrate, pr_adopt, pr_is_merged, pr_merge_commit, pr_open, pr_pending, pr_problem, pr_view, repository,
+)
 from .launch import (
     base_ref, brief, caller_labels, caller_space, current_base, default_space, folder_for, handoff, launch, name_tabs,
     own_path, parent_for, resume_argv, retag_tabs, tab_title, task_tabs,
@@ -549,10 +552,10 @@ def finalize(s, t):
         # Nothing to merge: it waits in Ready for the person's Accept, whatever the merge setting.
         t.pop("auto_merge", None)
         return msg + " The person accepts it in the Tasks panel."
-    repo = github(s) if wt and os.path.isdir(wt) else None
-    if repo:
+    where = repository(s) if wt and os.path.isdir(wt) else None
+    if where:
         try:
-            pr = pr_open(s, t, repo, t.get("summary"))
+            pr = pr_open(s, t, where, t.get("summary"))
             pr["checked"] = 0
             msg = f"{s.ref(t)} is ready: pull request #{pr['number']}, {pr['url']}."
         except Fail as e:
@@ -819,30 +822,29 @@ MERGE_FAILED = "GitHub didn't merge it"  # a merge that failed: never in the way
 def merge_now(s, t):
     """Merges the task's pull request on GitHub (squash) and tidies up here. Returns why it
     couldn't, or None when it's merged (and the task done)."""
-    n, repo = str(t["pr"]["number"]), t["pr"]["repo"]
+    n = str(t["pr"]["number"])
     v = pr_view(t)
     s.dirty = True
     if not v:
         return f"Couldn't reach pull request #{n} on GitHub."
-    if v.get("state") != "MERGED":
+    if not pr_is_merged(v):
         problem = pr_problem(v)
         if problem:
             t["attention"] = problem
             return problem
         if pr_pending(v):
             return "Checks are still running."
-        ok, _, err = gh("pr", "merge", n, "--repo", repo, "--squash", "--delete-branch",
-                        "--match-head-commit", v.get("headRefOid") or "")
+        ok, err = integrate(t, v)
         # A one-off GitHub error can come after the merge went through: asked again.
         again = None if ok else pr_view(t)
-        if not ok and (again or {}).get("state") == "MERGED":
+        if not ok and again and pr_is_merged(again):
             v = again
         elif not ok:
             t["attention"] = f"{MERGE_FAILED}: {err}"
             # The next tick reads the pull request at once (merged by hand meanwhile: done).
             t["pr"]["checked"] = 0
             return t["attention"]
-    watch_main(s, t, ((v.get("mergeCommit") or {}).get("oid")) if v.get("state") == "MERGED" else None)
+    watch_main(s, t, pr_merge_commit(v) if pr_is_merged(v) else None)
     update_main(s, t)
     t["merged"] = True
     finish(s, t, even_if_busy=True)
@@ -919,7 +921,7 @@ def cmd_accept(args):
             back = back_to_work(s, t, "its agent is at work again")
         # One its agent opened itself, which ready couldn't open again ("already exists"): adopted.
         elif (not t.get("pr") and "already exists" in (t.get("attention") or "")
-              and (repo := github(s)) and pr_adopt(t, repo)):
+              and (where := repository(s)) and pr_adopt(t, where)):
             t.pop("attention", None)
             s.dirty = True
         # A pull request's problems are read fresh (merge_now()): one fixed since, or a merge that

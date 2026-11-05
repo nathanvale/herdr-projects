@@ -1,7 +1,9 @@
-"""GitHub and merging: pull requests, checks, and finishing a merged task."""
+"""GitHub and merging: pull requests, checks, and finishing a merged task. The pull request part is
+GitHub's forge adapter (forge.py reaches it); merging here and finishing stay with local Git."""
 
 import json
 import os
+import re
 import shutil
 
 from .base import Fail, GH, git, now, run, STORE
@@ -92,13 +94,48 @@ BAD = {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP
 PENDING = {"QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED", "EXPECTED"}
 
 
+NAME = "GitHub"
+
+
 def pr_view(task):
     pr = task["pr"]
-    ok, out, _ = gh("pr", "view", str(pr["number"]), "--repo", pr["repo"], "--json", "state,mergeable,headRefOid,statusCheckRollup,mergeCommit")
+    ok, out, _ = gh("pr", "view", str(pr["number"]), "--repo", pr["repo"], "--json", "state,mergeable,headRefOid,statusCheckRollup,mergeCommit,url")
     try:
         return json.loads(out) if ok else None
     except ValueError:
         return None
+
+
+def pr_identity(v):
+    """Which pull request GitHub answered for, from its link: {provider, host, repo, number, url};
+    None when it gave none."""
+    url = str(v.get("url") or "")
+    m = re.fullmatch(r"https?://([^/]+)/([^/]+/[^/]+)/pull/(\d+)/?", url)
+    return {"provider": "github", "host": m.group(1).lower(), "repo": m.group(2), "number": int(m.group(3)), "url": url} if m else None
+
+
+def pr_is_merged(v):
+    return v.get("state") == "MERGED"
+
+
+def pr_merge_commit(v):
+    return (v.get("mergeCommit") or {}).get("oid")
+
+
+def pr_merge(pr, v):
+    """Squash-merges it on GitHub, only at the head commit this view read: (ok, why not)."""
+    ok, _, err = gh("pr", "merge", str(pr["number"]), "--repo", pr["repo"], "--squash", "--delete-branch",
+                    "--match-head-commit", v.get("headRefOid") or "")
+    return ok, err
+
+
+def pr_checks(v):
+    """Its checks as facts: {failed: [names], running, total}; the Accept card says them."""
+    rows = v.get("statusCheckRollup") or []
+    word = lambda c: (c.get("conclusion") or c.get("state") or "").upper()
+    return {"failed": [c.get("name") or c.get("context") or "a check" for c in rows if word(c) in BAD],
+            "running": sum(1 for c in rows if (c.get("status") or c.get("state") or "").upper() in PENDING and not c.get("conclusion")),
+            "total": len(rows)}
 
 
 def pr_problem(v):

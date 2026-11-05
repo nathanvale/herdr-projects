@@ -1,9 +1,9 @@
 # Full 3.x source migration
 
-S0 is a source-only foundation. Required Bitbucket, Azure and lifecycle ports are
-pending. This checkpoint is not deployable or ready for application use. Check's
-`candidate-readiness` job intentionally refuses it even when native source checks
-pass. Imported installer/service code is source input, not authority to run it.
+S0 is a source-only foundation; S1 adds the forge prefactor on it. Required Bitbucket,
+Azure and lifecycle ports are pending. This checkpoint is not deployable or ready for
+application use. Check's `candidate-readiness` job intentionally refuses it even when
+native source checks pass. Imported installer/service code is source input, not authority to run it.
 
 ## Inputs and source ownership
 
@@ -44,6 +44,32 @@ owners, not implemented interfaces.
 | L2 | A2, L1 | Native revive/watch/manual restart through that owner; independent qualification and conditional retirement. |
 | Q | B2, A2, L2 | Exact candidate CI/public process proof; all required ports and old proof obligations resolved. |
 | R | Q, human state choices | Separately admitted rehearsal and matching executable/state rollback. |
+
+### S1 forge checkpoint
+
+`bin/check-migration` names each phase's admitted owner paths; the manifest's
+`source_deltas` pins each one's content hash and exact-U blob. Every other U path
+remains byte-identical. A phase cannot widen its owners, drift its content or
+roll back over its changes.
+
+- `T/forge.py` is the single route from commands, tick and the Accept card to a
+  task's pull request. `T/github.py` remains the GitHub adapter and transport.
+  Local Git, task state, approval and cleanup keep their owners.
+- An unqualified saved record is GitHub's. The GitHub adapter still writes that
+  legacy shape; no record is qualified on read or write.
+- A record naming a provider without an adapter is refused before any forge call.
+  A read whose link, host, repository or number differs from the saved record is
+  refused before merge, comment or completion. This includes a renamed or
+  transferred repository, as P requires.
+- Publication refuses before pushing when the saved record belongs to another
+  provider or repository than the folder's discovered one.
+- Regression: `test/test_forge.py` runs public `herdr-task merge` as a CI-only
+  process over a real repository, a recording `gh` and a reopened task list. Only
+  `merge` avoids `hc`, which the guard refuses in a throwaway HOME. Existing
+  `test_herdr_task.py` assertions are unchanged; three patch points moved to the seam.
+- Remaining for B1/B2: read-only presentation in `service/worktree.ts` and
+  `mods/task-pr/main.js` still sends saved `repo` to `gh`; GitHub news (`T/ghnews.py`)
+  stays GitHub-only; host-qualified GitHub transport is not added.
 
 ### Bitbucket contract
 
@@ -142,7 +168,8 @@ inventory. Q must port or explicitly reconcile every obligation. Default native
 tests do not establish fork parity. Old optional production-plugin proof is not
 silently considered covered by default tests.
 
-Root runs `python3 bin/check-migration`, the new five public-CLI checkpoint tests
+Root runs `python3 bin/check-migration`, its public-CLI checkpoint tests
+(`test/test_migration.py`), the S1 forge process tests (`test/test_forge.py`)
 and every native Check command. CI owns frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.

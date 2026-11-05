@@ -12,6 +12,8 @@ before it:
   sessions     Agent sessions: the Claude Code or Codex session a task's agent runs, so it can
                resume.
   github       GitHub and merging: pull requests, checks, and finishing a merged task.
+  forge        The forge: the one way commands, the tick and the Accept card reach a task's
+               pull request, whichever provider hosts it (GitHub: github).
   launch       Starting agents: their argv, labels, brief, tab and coordinator.
   takeover     The backup agent: a task whose CLI can't go on is taken over, once, by the other
                CLI; and which CLIs each machine has installed and signed in.

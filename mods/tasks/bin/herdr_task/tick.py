@@ -13,7 +13,8 @@ from .settings import machine_name, worker_argv
 from .agents import agent_log, agent_running, busy_again, detail, held_ask, live_agents, status_word, task_status
 from .provider import NUDGE, provider_cut, provider_error, PROVIDER_WAITS
 from .sessions import refresh_sessions, session_of
-from .github import finish, merged_here, pr_pending, pr_problem, pr_view, watch_main
+from .github import finish, merged_here, watch_main
+from .forge import pr_is_merged, pr_merge_commit, pr_pending, pr_problem, pr_view
 from .launch import default_space
 from .store import locate, read_list, Store, store_files
 from .queues import machine_hold, refresh_ext, running_count, set_hold, waiting_ext, waiting_for
@@ -46,11 +47,11 @@ def facts(s, t, report):
         v = pr_view(t)
         if not v:
             return
-        if v.get("state") == "MERGED":
+        if pr_is_merged(v):
             if at_work(s, t):
                 return
             t["merged"] = True
-            watch_main(s, t, (v.get("mergeCommit") or {}).get("oid"))
+            watch_main(s, t, pr_merge_commit(v))
             finish(s, t)
             report["done"].append(t["id"])
             return
