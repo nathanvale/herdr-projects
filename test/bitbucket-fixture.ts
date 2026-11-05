@@ -22,6 +22,7 @@ export interface BitbucketFixture {
   git: (folder: string, ...args: string[]) => Promise<string>
   reopen: () => void
   secondMachine: () => Promise<{ task: CoreTask; grant: Grant }>
+  authorize: (grant: Grant) => void
   route: { epoch: number; on?: string; host?: string; disconnected: boolean; before?: () => Promise<void>; after?: (operation?: string) => Promise<void> }
 }
 
@@ -116,6 +117,7 @@ export async function withBitbucket(run: (fixture: BitbucketFixture) => Promise<
     taskRow: () => {}, saveAndDeliver: (_chat: string, _id: string, _text: string, save: () => void) => save() } as unknown as CoreSource
   let tasks = new CoreTasks(source)
   const fixture: BitbucketFixture = { get tasks() { return tasks }, source, task, grant, root, repo, folder, bare, foreignBare, head, calls, outputs, route, git,
+    authorize: owned => { grants.set(owned.chat, owned) },
     state: () => JSON.parse(readFileSync(statePath, 'utf8')), update: patch => writeFileSync(statePath, JSON.stringify({ ...fixture.state(), ...patch })),
     requests: () => readFileSync(requestsPath, 'utf8').split('\n').filter(Boolean).map(row => JSON.parse(row)),
     gitTransports: () => readFileSync(gitTransportsPath, 'utf8').split('\n').filter(Boolean).map(row => JSON.parse(row)),

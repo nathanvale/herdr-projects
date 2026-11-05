@@ -199,7 +199,7 @@ export class Mailbox {
       // Commit the claim BEFORE effects. A crash cannot silently re-execute a merge or permission answer.
       this.db.query('INSERT INTO requests(grant_id,id,hash) VALUES(?,?,?)').run(grant.id, id, hash)
       try { result = { ok: true, value: await this.dispatch(grant, request, id) } }
-      catch (error) { result = error instanceof Refusal ? { ok: false, error: error.message } : { ok: false, uncertain: true, error: 'The action failed. Check its outcome before trying again.' } }
+      catch (error) { result = error instanceof Refusal ? { ok: false, error: error.message, ...(error.uncertain ? { uncertain: true } : {}) } : { ok: false, uncertain: true, error: 'The action failed. Check its outcome before trying again.' } }
     }
     if (this.closed) return
     const response = seal(grant.credential, `${id}:${hash}`, 'response', result)

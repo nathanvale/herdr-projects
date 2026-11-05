@@ -7,13 +7,8 @@ import { CoreClient, CoreNotSubmitted, type CoreError } from '../server/core/cli
 import { coreVersionAccepted } from '../server/core/protocol.ts'
 import { CoreSession } from '../server/core/session.ts'
 
-const methods = ['terminal.run', 'terminal.list', 'terminal.get', 'terminal.label', 'terminal.attach', 'terminal.send', 'terminal.wait', 'terminal.read', 'terminal.keys', 'terminal.interrupt', 'terminal.kill', 'events.subscribe', 'doc.get', 'doc.set', 'file.read', 'file.write', 'machine.exec', 'machine.list', 'server.status']
-function frame(channel: number, body: string | Buffer, kind = 0) {
-  const bytes = Buffer.from(body)
-  const header = Buffer.alloc(9)
-  header.writeUInt32LE(channel); header[4] = kind; header.writeUInt32LE(bytes.length, 5)
-  return Buffer.concat([header, bytes])
-}
+import { methods, frame } from './core-wire.ts'
+
 type Call = { id: number; method: string; params: Record<string, unknown> }
 const NO_REPLY = Symbol('no reply')
 

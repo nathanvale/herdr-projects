@@ -420,7 +420,7 @@ test('Bitbucket create admission rejects a changed task or replaced core route a
     if (change === 'task') f.source.store.set('task', f.task.id, { ...f.tasks.get(f.task.id), base: 'foreign' })
     else { f.route.on = 'replacement'; f.route.epoch++ }
     release()
-    await expect(pending).rejects.toThrow('changed before')
+    await expect(pending).rejects.toThrow('changed after an admitted operation was dispatched')
     expect(f.state().creates).toBe(0)
     expect(f.requests().filter(request => request.method !== 'GET')).toHaveLength(0)
     expect(f.source.store.all('forge-publication')).toHaveLength(0)

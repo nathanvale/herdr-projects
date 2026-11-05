@@ -143,9 +143,13 @@ export class CoreTasks {
   private forgeAdmission(grant: Grant, task: CoreTask) {
     const binding = (row: CoreTask) => JSON.stringify([row.id, row.place, row.machine, row.repo, row.folder, row.branch, row.base, row.pr, row.pilot, row.workflow, row.name, row.desc, row.said])
     const expected = binding(task)
-    return () => {
+    let dispatched = false
+    return (afterDispatch = false) => {
+      dispatched ||= afterDispatch
       const current = this.get(task.id)
-      if (this.source.quiescing || !current || binding(current) !== expected) throw new Refusal('The task changed before forge dispatch; nothing was submitted by this call')
+      if (this.source.quiescing || !current || binding(current) !== expected) throw new Refusal(dispatched
+        ? 'The task changed after an admitted operation was dispatched. Check the recorded push and original pull request outcome before continuing; no further forge action is permitted by this call'
+        : 'The task changed before forge dispatch; nothing was submitted by this call', dispatched)
       this.assert(grant, current)
     }
   }
@@ -705,14 +709,14 @@ export class CoreTasks {
     const expectedOwner = ownership(task), expectedPush = task.pushedHead
     const currentFor = (head: string) => {
       const current = this.get(id)
-      if (!current || ownership(current) !== expectedOwner || current.pushedHead !== expectedPush && current.pushedHead !== head) throw new Refusal('The task changed after the admitted push; its receipt cannot update this owner')
+      if (!current || ownership(current) !== expectedOwner || current.pushedHead !== expectedPush && current.pushedHead !== head) throw new Refusal('The task changed after the admitted push; its receipt cannot update this owner', true)
       this.assert(grant, current)
       return current
     }
     const forge = await this.forge.require(repo)
     const input = { branch: task.branch, base: task.base, title: `${task.id}: ${task.name}`, body: task.said || task.desc || task.name,
       head: await this.git.head(repo), saved: task.pr, owner: { task: task.id, validate: this.forgeAdmission(grant, task) } }
-    const publish = async (admit?: () => void, destination?: string) => {
+    const publish = async (admit?: (afterDispatch?: boolean) => void, destination?: string) => {
       if (task.pr) {
         const saved = await forge.read(task.branch, false, task.pr)
         if (saved.source !== task.branch || saved.base !== task.base || saved.state !== 'OPEN') throw new Refusal('The saved pull request no longer matches this task; nothing was pushed')
@@ -721,10 +725,10 @@ export class CoreTasks {
       // A validated completed effect belongs to the current matching owner,
       // even when freshness now forbids the next dispatch. Never save `task`.
       const pushed = currentFor(head); pushed.pushedHead = head; this.save(pushed)
-      admit?.()
+      admit?.(true)
       input.head = head
       const pr = await forge.publish(input)
-      admit?.()
+      admit?.(true)
       const published = currentFor(head); published.pr ??= pr.identity; this.save(published)
       return published.pr
     }
