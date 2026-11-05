@@ -84,7 +84,7 @@ async function frozen(input: BitbucketGitRequest) {
     const op = input.operation, ref = `refs/heads/${op.branch}`
     if (op.kind === 'push') {
       await execute(['push', `--force-with-lease=${ref}:${op.expected ?? ''}`, input.destination, `${op.head}:${ref}`], input.folder, env, 4096, 90000)
-      return ''
+      return op.head
     }
     const observed = (await execute(['ls-remote', '--heads', input.destination, ref], input.folder, env, 4096, 60000)).trimEnd()
     if (observed && !new RegExp(`^[a-f0-9]{40}\\t${ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`).test(observed)) throw Error('remote identity')

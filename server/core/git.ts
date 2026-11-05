@@ -41,10 +41,14 @@ export class CoreGit {
     const input: BitbucketGitRequest = { folder: repo.folder, destination, operation }
     const output = await this.files.exec(repo.machine, [runtime.bun, '--no-env-file', join(runtime.root, 'helper/core-bitbucket-git.ts')], join(runtime.root, 'helper'),
       Buffer.from(JSON.stringify(input)), 120, validate)
-    validate()
     let reply: { ok: boolean; observed?: string }
+    if (output.length > 4096) throw new Refusal('The admitted Git transport did not return a bounded response')
     try { reply = JSON.parse(output.toString('utf8')) } catch { throw new Refusal('The admitted Git transport did not return a complete response') }
-    if (reply.ok !== true || typeof reply.observed !== 'string') throw new Refusal('Git did not confirm the operation on the admitted destination')
+    if (!reply || reply.ok !== true || typeof reply.observed !== 'string' || Object.keys(reply).some(key => !['ok', 'observed'].includes(key))) throw new Refusal('Git did not confirm the operation on the admitted destination')
+    if (operation.kind === 'push' && reply.observed !== operation.head) throw new Refusal('Git did not confirm the admitted candidate')
+    if (operation.kind === 'observe') validate()
+    // A completed admitted push is a fact even after connection freshness
+    // changes. Its caller records that fact before admitting any next effect.
     return reply.observed
   }
   async head(repo: RepoLocation, ref = 'HEAD') { return this.run(repo, ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`]) }

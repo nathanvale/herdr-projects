@@ -22,7 +22,7 @@ export interface BitbucketFixture {
   git: (folder: string, ...args: string[]) => Promise<string>
   reopen: () => void
   secondMachine: () => Promise<{ task: CoreTask; grant: Grant }>
-  route: { epoch: number; on?: string; host?: string; disconnected: boolean; before?: () => Promise<void> }
+  route: { epoch: number; on?: string; host?: string; disconnected: boolean; before?: () => Promise<void>; after?: (operation?: string) => Promise<void> }
 }
 
 /** One sealed fake provider and Git credential owner; all processes use synthetic authority. */
@@ -39,6 +39,13 @@ export async function withBitbucket(run: (fixture: BitbucketFixture) => Promise<
   env.BITBUCKET_FIXTURE_GIT_EXEC_PATH = (await runChild(['git', '--exec-path'], { env })).toString().trim()
   env.GIT_EXEC_PATH = executables
   const quote = (text: string) => `'${text.replaceAll("'", "'\"'\"'")}'`
+  const realGit = Bun.which('git')!
+  env.BITBUCKET_FIXTURE_REAL_GIT = realGit
+  const bin = join(root, 'bin'); mkdirSync(bin)
+  // All routing/push/config commands still run real Git unchanged. Only fill
+  // replies can be decorated AFTER real fill, to model malformed Git output.
+  writeFileSync(join(bin, 'git'), `#!/bin/sh\nif [ "$1" = credential ] && [ "$2" = fill ]; then\nBITBUCKET_FIXTURE_GIT_CWD="$(pwd -P)"\nexport BITBUCKET_FIXTURE_GIT_CWD\ncd ${quote(join(root, 'user'))} || exit 1\nexec ${quote(process.execPath)} --no-env-file ${quote(join(import.meta.dir, 'fixtures/bitbucket-credential-fill.ts'))}\nfi\nexec ${quote(realGit)} "$@"\n`, { mode: 0o700 })
+  env.PATH = `${bin}:${env.PATH}`
   // The synthetic HTTPS transport is Bun, unlike the native Git HTTPS helper.
   // Start it outside the project so project bunfig/preloads cannot execute.
   // Preserve the Git caller's cwd separately for its credential lookup.
@@ -56,7 +63,7 @@ export async function withBitbucket(run: (fixture: BitbucketFixture) => Promise<
   await git(repo, 'update-ref', 'refs/remotes/origin/main', 'main')
   writeFileSync(statePath, JSON.stringify({ bare, foreignBare, requests: requestsPath, gitTransports: gitTransportsPath, gitStartups: gitStartupsPath, token: 'SYNTHETIC_TOKEN_ALICE_123', creates: 0, prepares: 0 }))
   const credentialHelper = join(root, 'credential.ts')
-  writeFileSync(credentialHelper, `import{readFileSync,appendFileSync}from'node:fs';const s=JSON.parse(readFileSync(process.env.BITBUCKET_FIXTURE_STATE,'utf8'));const t=await Bun.stdin.text();appendFileSync(${JSON.stringify(join(root, 'credential-lookups'))},t);if(s.missingCredential)process.exit(1);if(s.malformedCredential){console.log('authtype=basic\\ncredential=unsupported');process.exit(0)}const user=t.match(/^username=(.+)$/m)?.[1]||'alice';console.error('private diagnostic '+s.token);console.log('protocol=https\\nhost=bitbucket.org\\nusername='+user+'\\npassword='+(user==='alice'?s.token:'SYNTHETIC_TOKEN_BOB_456'))`)
+  writeFileSync(credentialHelper, `import{readFileSync,appendFileSync}from'node:fs';const s=JSON.parse(readFileSync(process.env.BITBUCKET_FIXTURE_STATE,'utf8'));const t=await Bun.stdin.text();appendFileSync(${JSON.stringify(join(root, 'credential-lookups'))},t);if(s.missingCredential)process.exit(1);if(s.malformedCredential){console.log('authtype=basic\\ncredential=unsupported');process.exit(0)}const user=t.match(/^username=(.+)$/m)?.[1]||'alice';console.error('private diagnostic '+s.token);console.log('protocol=https\\nhost=bitbucket.org\\nusername='+user+'\\npassword='+(user==='alice'?s.token:'SYNTHETIC_TOKEN_BOB_456'));for(const [k,v]of Object.entries(s.credentialMetadata||{}))console.log(k+'='+v)`)
   await git(repo, 'config', 'credential.helper', '')
   await git(repo, 'config', '--add', 'credential.helper', `!cd ${quote(join(root, 'user'))} && ${quote(process.execPath)} --no-env-file ${quote(credentialHelper)}`)
   await git(repo, 'config', 'credential.useHttpPath', 'true')
@@ -83,7 +90,9 @@ export async function withBitbucket(run: (fixture: BitbucketFixture) => Promise<
     }
     const stdout = await runChild(actual, { cwd: params.cwd, input, env })
     if (operation) outputs.push(stdout.toString())
+    await route.after?.(operation?.kind)
     const state = JSON.parse(readFileSync(statePath, 'utf8'))
+    if (operation?.kind === 'push' && state.wrongPushReceipt) return { stdout: Buffer.from(JSON.stringify({ ok: true, observed: '0'.repeat(40) })).toString('base64'), stderr: '', code: 0, timed_out: false, truncated: false }
     if ((operation?.kind === 'push' || argv[0] === 'git' && argv[1] === 'push') && state.losePushReply) {
       if (state.rewriteAfterPush) await git(repo, 'config', `url.${foreignBare}.insteadOf`, 'https://alice@bitbucket.org/space/sample.git')
       else await git(repo, 'remote', 'set-url', 'origin', 'https://alice@bitbucket.org/other/foreign.git')

@@ -701,6 +701,14 @@ export class CoreTasks {
     if (!task) throw new Refusal('No such task')
     this.assert(grant, task)
     const repo = { machine: task.machine, folder: task.folder }
+    const ownership = (row: CoreTask) => JSON.stringify([row.id, row.place, row.chat, row.machine, row.repo, row.folder, row.branch, row.base, row.kind, row.pilot, row.created, row.workflow, row.pr])
+    const expectedOwner = ownership(task), expectedPush = task.pushedHead
+    const currentFor = (head: string) => {
+      const current = this.get(id)
+      if (!current || ownership(current) !== expectedOwner || current.pushedHead !== expectedPush && current.pushedHead !== head) throw new Refusal('The task changed after the admitted push; its receipt cannot update this owner')
+      this.assert(grant, current)
+      return current
+    }
     const forge = await this.forge.require(repo)
     const input = { branch: task.branch, base: task.base, title: `${task.id}: ${task.name}`, body: task.said || task.desc || task.name,
       head: await this.git.head(repo), saved: task.pr, owner: { task: task.id, validate: this.forgeAdmission(grant, task) } }
@@ -709,12 +717,16 @@ export class CoreTasks {
         const saved = await forge.read(task.branch, false, task.pr)
         if (saved.source !== task.branch || saved.base !== task.base || saved.state !== 'OPEN') throw new Refusal('The saved pull request no longer matches this task; nothing was pushed')
       }
-      task.pushedHead = await this.git.pushTaskBranch(repo, task.branch, task.pushedHead, admit, forge.publishing ? input.head : undefined, destination)
-      admit?.(); this.save(task)
-      input.head = task.pushedHead
+      const head = await this.git.pushTaskBranch(repo, task.branch, expectedPush, admit, forge.publishing ? input.head : undefined, destination)
+      // A validated completed effect belongs to the current matching owner,
+      // even when freshness now forbids the next dispatch. Never save `task`.
+      const pushed = currentFor(head); pushed.pushedHead = head; this.save(pushed)
+      admit?.()
+      input.head = head
       const pr = await forge.publish(input)
-      admit?.(); task.pr ??= pr.identity; this.save(task)
-      return task.pr
+      admit?.()
+      const published = currentFor(head); published.pr ??= pr.identity; this.save(published)
+      return published.pr
     }
     return forge.publishing ? forge.publishing(input, publish) : publish()
   }

@@ -64,10 +64,16 @@ async function credential(context: BitbucketContext) {
   const rows = text.split('\n'), values = new Map<string, string>()
   for (const row of rows) {
     const index = row.indexOf('=')
-    if (index <= 0 || values.has(row.slice(0, index))) fail('missing-credentials')
-    values.set(row.slice(0, index), row.slice(index + 1))
+    if (index <= 0) fail('missing-credentials')
+    const key = row.slice(0, index)
+    // We requested ordinary username/password, not negotiated authentication.
+    if (['authtype', 'credential', 'ephemeral', 'continue', 'capability[]', 'state[]', 'url'].includes(key)) fail('missing-credentials')
+    // Expiry, confidential refresh tokens and unknown metadata stay private and
+    // are discarded. Only identity/password fields enter the selected result.
+    if (!['protocol', 'host', 'path', 'username', 'password'].includes(key)) continue
+    if (values.has(key)) fail('missing-credentials')
+    values.set(key, row.slice(index + 1))
   }
-  if ([...values.keys()].some(key => !['protocol', 'host', 'path', 'username', 'password'].includes(key))) fail('missing-credentials')
   const token = values.get('password'), user = values.get('username')
   if (!token || !/^[\x21-\x7e]{1,8192}$/.test(token) || !user || lookup.username && user !== lookup.username || values.get('protocol') !== 'https' || values.get('host') !== 'bitbucket.org' || values.has('path') && values.get('path') !== lookup.path) fail('missing-credentials')
   return token
@@ -150,9 +156,29 @@ class BitbucketHttp {
     return prs
   }
   private async read(number: number) {
-    const pr = this.pr(await this.request(`${this.root}/pullrequests/${number}`))
+    return (await this.snapshot(number)).pr
+  }
+  private async snapshot(number: number) {
+    const row = object(await this.request(`${this.root}/pullrequests/${number}`)), pr = this.pr(row)
     if (pr.identity.number !== number) fail('identity-changed')
-    return pr
+    return { row, pr }
+  }
+  private reviewers(value: unknown) {
+    if (!Array.isArray(value) || value.length > 100) fail('malformed-response')
+    const ids = new Set<string>()
+    return value.map(value => {
+      const user = object(value), uuid = user.uuid, account = user.account_id
+      if (uuid !== undefined && (typeof uuid !== 'string' || !/^(?:\{[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(uuid))) fail('malformed-response')
+      if (account !== undefined && (typeof account !== 'string' || !/^[A-Za-z0-9:_-]{1,128}$/.test(account))) fail('malformed-response')
+      if (uuid === undefined && account === undefined) fail('malformed-response')
+      for (const id of [uuid, account].filter(value => value !== undefined)) { if (ids.has(id)) fail('malformed-response'); ids.add(id) }
+      return uuid !== undefined ? { uuid } : { account_id: account }
+    })
+  }
+  private preserved(row: Record<string, unknown>, pr: ForgePullRequest) {
+    if (typeof row.title !== 'string' || !row.title || row.title.length > 512 || this.clean(row.title) !== row.title || typeof row.close_source_branch !== 'boolean') fail('malformed-response')
+    return { title: row.title, reviewers: this.reviewers(row.reviewers), close_source_branch: row.close_source_branch,
+      destination: { branch: { name: pr.base }, repository: { full_name: this.context.repository } } }
   }
   private statusLink(value: unknown, resource: string) {
     const link = object(value)
@@ -232,10 +258,12 @@ class BitbucketHttp {
       if (!pr.draft) fail('uncertain-write')
       return { pr }
     }
-    const current = await this.read(operation.number); this.matches(current, operation)
-    const pr = this.pr(await this.request(`${this.root}/pullrequests/${operation.number}`, 'PUT', { description: operation.body, draft: false }))
+    const current = await this.snapshot(operation.number); this.matches(current.pr, operation)
+    const preserved = this.preserved(current.row, current.pr)
+    const response = object(await this.request(`${this.root}/pullrequests/${operation.number}`, 'PUT', { ...preserved, description: operation.body, draft: false })), pr = this.pr(response)
     this.matches(pr, operation)
     if (pr.draft || pr.identity.number !== operation.number) fail('uncertain-write')
+    try { if (JSON.stringify(this.preserved(response, pr)) !== JSON.stringify(preserved)) fail('uncertain-write') } catch { fail('uncertain-write') }
     return { pr }
   }
 }

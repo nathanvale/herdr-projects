@@ -118,7 +118,8 @@ test('Bitbucket public draft publication and readiness preserve independently ex
   await f.tasks.ready(f.grant, f.task.id, '  Ready candidate  ', 'Build passed')
   const puts = f.requests().filter(request => request.method === 'PUT')
   expect(puts).toHaveLength(1)
-  expect(puts[0].body).toEqual({ description: 'Ready candidate\n\nFacts: Build passed', draft: false })
+  expect(puts[0].body).toEqual({ title: 'DEMO-2: Bitbucket candidate', reviewers: [], close_source_branch: false,
+    destination: { branch: { name: 'main' }, repository: { full_name: 'space/sample' } }, description: 'Ready candidate\n\nFacts: Build passed', draft: false })
   expect(f.state().pr).toMatchObject({ draft: false, close_source_branch: false, description: 'Ready candidate\n\nFacts: Build passed' })
   expect(await f.git(f.repo, '--git-dir', f.bare, 'rev-parse', 'refs/heads/work/two')).toBe(f.head)
   f.reopen()

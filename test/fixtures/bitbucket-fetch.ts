@@ -26,7 +26,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
       // Independent provider contract, with live Git evidence for the candidate.
       if (body?.source?.repository?.full_name !== 'space/sample' || body?.destination?.repository?.full_name !== 'space/sample' || body?.source?.branch?.name !== 'work/two' || body?.destination?.branch?.name !== 'main' || body?.source?.commit?.hash !== head('work/two')) return reply({}, 400)
       state.creates++
-      state.pr = { id: 37, title: state.providerTitle ?? body.title, description: body.description, state: 'OPEN', draft: body.draft ?? false, close_source_branch: body.close_source_branch ?? true,
+      state.pr = { id: 37, title: state.providerTitle ?? body.title, reviewers: [], description: body.description, state: 'OPEN', draft: body.draft ?? false, close_source_branch: body.close_source_branch ?? true,
         source: { repository: repo, branch: { name: body.source.branch.name }, commit: { hash: head('work/two') } },
         destination: { repository: repo, branch: { name: 'main' } }, links: { html: { href: 'https://bitbucket.org/space/sample/pull-requests/37' } } }
       writeFileSync(statePath, JSON.stringify(state))
@@ -40,7 +40,15 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     // Mimic the provider's live source branch rather than echoing caller input.
     state.pr.source.commit.hash = state.overrideHead ?? head('work/two')
     if (method === 'PUT') {
+      // Independent legacy PUT omission oracle: title is required; omitted
+      // reviewers/retention drop/reset, while omitted destination is retained.
+      if (typeof body?.title !== 'string' || !body.title) return reply({}, 400)
+      if (body.destination && (body.destination.repository?.full_name !== 'space/sample' || body.destination.branch?.name !== state.pr.destination.branch.name)) return reply({}, 400)
       state.prepares++
+      state.pr.title = body.title
+      state.pr.reviewers = body.reviewers ?? []
+      state.pr.close_source_branch = body.close_source_branch ?? false
+      if (body.destination) state.pr.destination = { repository: repo, branch: { name: body.destination.branch.name } }
       if (body && 'draft' in body) state.pr.draft = body.draft
       if (body && 'description' in body) state.pr.description = body.description
       writeFileSync(statePath, JSON.stringify(state))
