@@ -1,0 +1,22 @@
+{
+  "revisions": {
+    "base": "8237f81c7b61684d167784415d48b259850afced",
+    "candidate": "16604cae5cf6a9eee43a7cca53901d59b285a2ec"
+  },
+  "unchanged_inputs": {
+    "test/layout-restart.test.ts": "993279d92b276c593f9b73cc5e90dd3c5b836c3793d8ddf83800356d1e802d15",
+    "test/layout-tasks.test.ts": "68f36cfa41543a1e9f72393f39b48c41b551200b560d354743acc95f210f1856",
+    "test/layout-sending.test.ts": "cdcadf0f801be4c5f657b75aa78f1ec7cc074d41f299d1f99a429d0f94e73bc4",
+    "test/layout-settings.test.ts": "a77b82c69c86636d4d89349b56eeb9f033a39fb5ce347d6f00dd937bbba6b719",
+    "test/layout-search.test.ts": "72d4708f1626cf64d5279c55ca4df69e504b27e1b6e1e44eeb2adda023c6fc80",
+    "test/layout-split.test.ts": "c81ef13494df4989f4450eeafd7cb67ede39a2b0721428051151271435482b94",
+    "test/layout-sections.test.ts": "31f3bf8c89acb1e894567d035e6c503ce8a4741ebd60f946d8cc9b7a8136521f",
+    "test/layout.ts": "a1cde971dde4cbf623259a4203a162ab4e4a70e91fed4673a0297e44549cb3eb",
+    "scripts/test.ts": "2715707a52d4a726ace1cd7370ca15f86061ca0e939d3d63cd35f07c702252fb",
+    "plugins/chat/client.tsx": "38f4a09f8dddcbf00a7b3a0bcf2456568ed8f648a928cebd2d513ed4c290f9bf"
+  },
+  "max_observations_per_revision": 3,
+  "expected_tests_per_observation": 68,
+  "expected_files": 7,
+  "purpose": "Characterize the unchanged swipe failure under the failed seven-file workload; never qualify by rerunning to green."
+}

@@ -1,4 +1,4 @@
-name: FORG-2 bounded evidence
+name: FORG-2 shared swipe diagnosis
 on:
   workflow_dispatch:
 permissions:
@@ -9,30 +9,41 @@ env:
   GIT_COMMITTER_NAME: CI
   GIT_COMMITTER_EMAIL: ci@localhost
 jobs:
-  controls:
-    name: controls batch ${{ matrix.batch }}
+  observe:
+    name: unchanged seven-file workload (${{ matrix.revision }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 12
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 2
       matrix:
-        batch: [0, 1, 2, 3]
+        include:
+          - revision: base
+            sha: 8237f81c7b61684d167784415d48b259850afced
+          - revision: candidate
+            sha: 16604cae5cf6a9eee43a7cca53901d59b285a2ec
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          path: definition
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.sha }}
+          path: candidate
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
-      # The definition checkout is the protected authoring owner (manifest '.').
-      # Each tested candidate is a separate standalone clone under RUNNER_TEMP.
-      - run: python3 .github/forg2-proof/run-batch.py '${{ matrix.batch }}'
+      - run: bun install --frozen-lockfile
+        working-directory: candidate
+      - run: bun x playwright-core install --only-shell chromium
+        working-directory: candidate
+      - run: python3 definition/.github/forg2-proof/ui-repro.py '${{ matrix.revision }}'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: forg2-controls-${{ matrix.batch }}
-          path: ${{ runner.temp }}/forg2-controls-${{ matrix.batch }}/
+          name: swipe-workload-${{ matrix.revision }}
+          path: ${{ runner.temp }}/swipe-workload-${{ matrix.revision }}/
           if-no-files-found: error
           retention-days: 14
