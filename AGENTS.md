@@ -1,6 +1,5 @@
 # Working on Shepherdr
 
-- Before work, read `$HOME/code/dotfiles/config/agents/global.md`.
 - Code changes or review: read [CODING_STANDARDS.md](CODING_STANDARDS.md).
 - Upstream migration or candidate readiness: read the [migration contract](docs/migration/upstream-v3.1.3.md).
 - Architecture, development and CI: read [docs/develop.md](docs/develop.md).
