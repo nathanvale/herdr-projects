@@ -106,6 +106,8 @@ Refused before any effect:
   first `=`), in the `-c key=value`, `-ckey=value`, `-c=key=value`, `--config key=value` and
   `--config=key=value` forms.
 - A Claude Code `--settings` file path, an attached `--settings=`, or more than one `--settings`.
+- A Claude Code `--settings` with no value after it: the last word, or the last before a bare
+  `--`.
 - An inline `--settings` whose `env` names the plan's own credential variable. The refusal names
   the variable and never its value.
 
@@ -120,8 +122,10 @@ A bare `--` is read differently for each CLI:
   refuses. The `--` may be another option's value (`--append-system-prompt -- --settings file`),
   and then that word is a real option that could override the plan's routing or carry a
   credential. Which way Claude Code's parser reads it is not confirmed, so the argv is refused
-  under both readings and no word of it is repeated. Any other word after the `--` stays an
-  operand and plans normally, with the plan's own `--settings` before the `--`.
+  under both readings and no word of it is repeated. Any other word after the `--` is left as
+  it is and plans normally, with the plan's own `--settings` before the `--`. If the `--` is
+  another option's value, such a word is a real option and passes unexamined, as any option
+  before the `--` does, so the `--` opens nothing new.
 
 A backup the provider holds is not spent. Its reason line says "backup held" and then the
 refusal's own words, as far as the one line holds them.
@@ -184,8 +188,6 @@ Known limits of this slice:
 - Model selection reads every argv word up to a bare `--`, without either CLI's option table.
   - A word that is really another option's value (`--append-system-prompt --model`, say) is read
     as a selection.
-  - A `--settings` given last before a bare `--` takes the `--` as its value and is refused as a
-    file path.
   - A flag given after a Codex subcommand (`codex exec -m value`) is read as a selection too, and
     rewritten in place.
   - With no selection, the flag is added right after the program name, so before any subcommand.

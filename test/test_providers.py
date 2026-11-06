@@ -544,7 +544,7 @@ class LaunchPlans(unittest.TestCase):
             with self.subTest(codex=operands):
                 out = self.planned(f, "--argv", json.dumps(["codex", "--no-daemon", "--", *operands]))
                 self.assertEqual(out["argv"], ["codex", *out["args"], "-m", "code-deployment", "--no-daemon", "--", *operands])
-        # Claude Code: any other word after the "--" stays an operand, and the plan's own
+        # Claude Code: any other word after the "--" is left as it is, and the plan's own
         # --settings goes before the "--".
         operands = ["fix the tests", "--settings-note"]
         argv = self.planned(f, "--argv", json.dumps(["claude", "--effort", "high", "--", *operands]))["argv"]
@@ -577,6 +577,7 @@ class LaunchPlans(unittest.TestCase):
         f = Fixture(self)
         f.provider({"route": "azure-foundry", **CLAUDE, **CODEX})
         own = "remove the argv's own provider"
+        needs = "--settings needs its inline JSON value right after it. Nothing was started."
         for argv, words in ((["codex", "-c", 'model_provider="azure"'], own),
                             # Codex trims an override's key, and takes it attached to -c or --config too.
                             (["codex", "-c", ' model_provider = "azure"'], own),
@@ -592,6 +593,10 @@ class LaunchPlans(unittest.TestCase):
                             (["claude", "--settings", "/somewhere/settings.json", "--", "x"], "must be inline JSON, not a file"),
                             (["claude", "--settings=/somewhere/settings.json", "--", "x"], "as a separate JSON word"),
                             (["claude", "--settings", "/somewhere/settings.json"], "must be inline JSON, not a file"),
+                            # A --settings with nothing after it, at the end or before a bare "--".
+                            (["claude", "--settings"], needs),
+                            (["claude", "--effort", "high", "--settings"], needs),
+                            (["claude", "--settings", "--", "x"], needs),
                             (["claude", "--settings=/somewhere/settings.json"], "as a separate JSON word")):
             with self.subTest(argv=argv):
                 self.assertIn(words, f.no_plan("--argv", json.dumps(argv)))

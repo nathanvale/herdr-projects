@@ -80,6 +80,7 @@ NO_INLINE_CREDENTIAL = ("On Azure Foundry, {} comes from the execution host's en
                         "remove it there. Nothing was started.")
 NO_OPTION_AFTER_DASHES = ("On Azure Foundry, Claude Code's argv can't carry --settings or --model after a bare \"--\": there it "
                           "can't be told from an option. Remove it, or give it before the \"--\". Nothing was started.")
+NO_SETTINGS_VALUE = "On Azure Foundry, Claude Code's --settings needs its inline JSON value right after it. Nothing was started."
 HELD = ("Azure Foundry is set for {}, and its launch plan is valid, but this version only plans it: starting or resuming an "
         "agent on Azure waits for launch admission and bound resume (still pending). Nothing was started or changed. "
         "`herdr-task provider plan --agent {}` shows the plan; set Provider to Personal to start on the CLI's own sign-in.")
@@ -197,8 +198,8 @@ def launch_plan(kind, binding):
     return plan
 
 
-# Where an argv's options end: at its first bare "--" (the words from it on are the CLI's
-# operands, never options), else at its end.
+# Where an argv's options are taken to end: at its first bare "--", else at its end. For Codex
+# the words from it on are operands; for Claude Code that isn't certain (compose guards it).
 def options_end(argv):
     return argv.index("--", 1) if "--" in argv[1:] else len(argv)
 
@@ -209,8 +210,8 @@ def with_model(argv, flags, flag, model):
     is a flag and the word after it, `--flag=value`, or a one-letter flag with its value attached
     (`-mvalue`, `-m=value`: kept as the flag and the model, two words). A flag with no value of
     its own (it is the last option, or the next word is another option) takes the model and the
-    next word stays. Words from a bare "--" on are the CLI's operands, not options: left as they
-    are."""
+    next word stays. Words from a bare "--" on are left as they are: Codex's operands, and for
+    Claude Code what compose() guards."""
     words = list(argv)
     end = options_end(words)
     out, i, found = words[:1], 1, False
@@ -264,20 +265,23 @@ def compose(plan, argv):
     if plan["agent"] == "claude":
         out = with_model(argv, ("--model",), "--model", plan["deployment"])
         end = options_end(out)
-        # A bare "--" may be another option's value, and then a --settings or --model after it
-        # is a real option that could reroute the launch or carry a credential; read as one when
-        # it is an operand, it would stand in for the plan's own. Neither reading is safe: refused,
-        # and no word of the argv is repeated.
+        # A bare "--" may end the options or be another option's value: which, for Claude Code,
+        # isn't known. As a value, a --settings or --model after it is a real option that could
+        # reroute the launch or carry a credential; as the end, reading that word as an option
+        # would stand in for the plan's own. Neither is safe: refused, no argv word repeated.
         if any(a in ("--settings", "--model") or a.startswith(("--settings=", "--model=")) for a in out[end:]):
             raise Fail(NO_OPTION_AFTER_DASHES)
-        # Only the options below: any other word from the "--" on is left as an operand, and the
-        # plan's own --settings goes in front.
+        # Any other word from the "--" on is left as it is, unexamined as an option before the
+        # "--" is, and the plan's own --settings goes in front.
         if any(a.startswith("--settings=") for a in out[1:end]):
             raise Fail("On Azure Foundry, give Claude Code's --settings as a separate JSON word. Nothing was started.")
         if out[1:end].count("--settings") > 1:
             raise Fail("On Azure Foundry, give Claude Code one --settings word. Nothing was started.")
-        if "--settings" in out[1:min(end, len(out) - 1)]:
+        if "--settings" in out[1:end]:
             i = out.index("--settings", 1)
+            # The last option, with nothing after it before the "--" or the end: no value to read.
+            if i + 1 >= end:
+                raise Fail(NO_SETTINGS_VALUE)
             try:
                 cur = json.loads(out[i + 1])
             except ValueError:
