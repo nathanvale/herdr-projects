@@ -58,9 +58,13 @@ because the admitted paths then differ from exact U. Candidate readiness stays b
 
 - `T/github.py` owns adoption (`adopt_existing()`), reached by `herdr-task adopt`.
   Base equivalence is proved from commits: the task's start commit is the one merge
-  base of its tip and the pull request's base commit. S1 moves this behind the forge.
-- A repo with a GitHub remote refuses while gh can't answer, gh not installed
-  included, and never reaches a local merge. A repo with none keeps its local path.
+  base of its tip and the commit GitHub's base branch holds now, read through gh, and
+  the recorded base is in that commit. Accept rechecks an adopted pull request's base
+  and head. S1 moves this behind the forge.
+- Only gh's own word that a repo's remotes aren't on GitHub is a saved no. Any other
+  gh failure in a repo with a remote refuses and never reaches a local merge. A repo
+  with no remotes keeps its local path and forgets a saved name. gh not installed
+  refuses for a recognised GitHub remote; whether that holds is an open human decision.
 - Credential custody is unchanged: [Pull requests and credentials](../install.md#pull-requests-and-credentials).
 - This phase, A1 and S1 each add one row to `PHASES` and their rows to `source_deltas`.
   They merge into one table, and whichever merges second re-pins every path they share.
