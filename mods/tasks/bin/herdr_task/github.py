@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 from urllib.parse import quote
 
 from .base import Fail, GH, git, now, run, STORE
@@ -18,17 +19,30 @@ NOT_GITHUB = "none of the git remotes configured for this repository point to a 
 
 
 def gh(*args, cwd=None):
-    # gh not installed (or not on this caller's PATH, as a background service's): it doesn't work here, said plainly
+    # gh not installed (or not on this caller's PATH, as a background service's) is GH_MISSING, and
+    # means only that: the default gh, with nothing of that name on PATH. FileNotFoundError alone
+    # doesn't say so, as a folder that's gone and a wrapper's missing interpreter raise it too. Any
+    # other that can't run, HERDR_TASK_GH above all, is gh failing: github() never takes that for a no.
     try:
         r = run([GH, *args], cwd=cwd or STORE)
-    except OSError:
-        return False, "", GH_MISSING
+    except OSError as e:
+        missing = isinstance(e, FileNotFoundError) and not os.environ.get("HERDR_TASK_GH") and not shutil.which(GH)
+        return False, "", GH_MISSING if missing else f"{GH} can't run here: {e}"
     return r.returncode == 0, r.stdout.strip(), (r.stderr or r.stdout).strip()
 
 
 HANDOFF = "say why in your chat and end your turn."
 GH_ACCESS = "gh's own access (gh auth status; HERDR_TASK_GH names the gh command to run)"
 STAYS = "The task stays as it was"
+NO_PR = "Couldn't open a pull request"
+NO_PUSH = "git couldn't push"
+SECOND_PR = "A branch gets no second pull request"
+NO_ASK = "Couldn't ask for the merge"
+# How attention left by publishing starts (a reviewer's refused pass keeps its words, whatever
+# cmd_review() does to STAYS, and finalize() keeps a failed ask) when adoption answers it: the pull
+# request exists, GitHub holds this tip, its base is proved and it merges on Accept. "Couldn't push"
+# is an older version's words. Never gh's failures: gh answering adopt repairs no one else's access.
+ADOPTION_ANSWERS = (NO_PR, NO_PUSH, "Couldn't push", SECOND_PR, NO_ASK)
 
 
 def plain(err):
@@ -59,7 +73,7 @@ def push_problem(wt, branch, remote, there, err):
     """git couldn't push, in git's own words, since a refused sign-in, a moved branch and a rule on
     the remote all end here. there: what GitHub holds for the branch. The one cause checked here is
     a lease refused on this clone's tracking ref, which a branch published without a push leaves behind."""
-    said = f"git couldn't push {branch} to {remote}: {plain(err)}. {STAYS}."
+    said = f"{NO_PUSH} {branch} to {remote}: {plain(err)}. {STAYS}."
     tracked = git(wt, "rev-parse", "--verify", "--quiet", f"refs/remotes/{remote}/{branch}")[1]
     if there and tracked != there:
         said += (f" This clone's tracking ref {remote}/{branch} is at {tracked[:7] or 'nothing'} and GitHub has {there[:7]}, so "
@@ -93,7 +107,7 @@ def github(s):
     name saved for these same remotes (one saved before hashes were kept counts as that), as gh may
     have lost that host's sign-in. Every other failure refuses (GhFailed), saving nothing: signed
     out, no network, or a host only gh can place. gh not installed refuses for a github.com remote
-    or a saved name, and is taken as a no otherwise."""
+    or a saved name, and is taken as a no otherwise; a gh that is there and can't run isn't that (gh())."""
     if s.loc["kind"] != "repo":
         return None
     g, urls = s.data.get("github") or {}, remote_urls(s.loc["folder"])
@@ -145,16 +159,18 @@ def branch_commit(repo, branch):
 
 def publish(s, task, repo):
     """The task's branch on its remote: pushed, unless GitHub already holds exactly its tip, so a
-    published branch needs no git credentials."""
+    published branch needs no git credentials. The branch goes by its full name: a bare one reads a
+    tag of that name first, and git push refuses it."""
     wt, br = task["worktree"], task["branch"]
-    ok, tip, err = git(wt, "rev-parse", "--verify", br)
+    head = f"refs/heads/{br}"
+    ok, tip, err = git(wt, "rev-parse", "--verify", head)
     if not ok or not tip:
         raise Caused("git", f"Couldn't read {br} here: {plain(err)}")
     there = branch_commit(repo, br)
     if there == tip:
         return
     remote = remote_of(s.loc["folder"])
-    ok, _, err = git(wt, "push", "--force-with-lease", "-u", remote, br)
+    ok, _, err = git(wt, "push", "--force-with-lease", "-u", remote, f"{head}:{head}")
     if not ok:
         raise Caused("git", push_problem(wt, br, remote, there, err))
 
@@ -173,7 +189,8 @@ def pr_open(s, task, repo, summary=None):
             raise GhFailed(f"read pull request #{pr['number']}", err or "no answer")
         if state == "MERGED" and pr.get("adopted"):
             raise Fail(f"Pull request #{pr['number']}, adopted for {s.ref(task)}, already merged, so there is nothing to publish. "
-                       "The tick finishes the task by itself: end your turn.")
+                       f"The tick finishes the task if that was into {task.get('base') or 'main'}, and holds it for the "
+                       "person if it wasn't: end your turn.")
         if state != "OPEN" and pr.get("adopted"):
             raise Fail(f"Pull request #{pr['number']}, adopted for {s.ref(task)}, is {state.lower()}, and adoption never opens "
                        f"another. Whether to reopen it is the person's call: {HANDOFF}")
@@ -196,7 +213,7 @@ def pr_open(s, task, repo, summary=None):
     ok, out, err = gh("pr", "create", "--repo", repo, "--head", br, "--base", task.get("base") or "main",
                       "--title", f"{s.ref(task)} {task['title']}", "--body", body)
     if not ok or not out:
-        raise Caused("gh", f"Couldn't open a pull request: {plain(err)}. {STAYS}: {HANDOFF}")
+        raise Caused("gh", f"{NO_PR}: {plain(err)}. {STAYS}: {HANDOFF}")
     url = out.split()[-1]
     task["pr"] = {"number": int(url.rstrip("/").split("/")[-1]), "url": url, "repo": repo}
     return task["pr"]
@@ -225,7 +242,7 @@ def no_other_base(s, task, repo):
     base, prs = task.get("base") or "main", open_prs(task, repo)
     if prs and not any(p["baseRefName"] == base for p in prs):
         n, other = prs[0]["number"], prs[0]["baseRefName"]
-        raise Fail(f"Pull request #{n} is open for {task['branch']} into {other}, not {base}, and a branch gets no second one. "
+        raise Fail(f"{SECOND_PR}: #{n} is open for {task['branch']} into {other}, not {base}. "
                    f"`herdr-task adopt {s.ref(task)} --pr {n}` records it once its base is proved. {STAYS}: {HANDOFF}")
 
 
@@ -234,7 +251,7 @@ def pr_adopt(task, repo):
     task; None when there is none (SHEP-13: ready failed with "already exists"). Only one from this
     repo (open_prs()), into the task's base, at the branch's tip here."""
     base, prs = task.get("base") or "main", open_prs(task, repo)
-    tip_ok, tip, _ = git(task["worktree"], "rev-parse", task["branch"])
+    tip_ok, tip, _ = git(task["worktree"], "rev-parse", "--verify", "--quiet", f"refs/heads/{task['branch']}")
     found = next((p for p in prs if p["baseRefName"] == base and tip_ok and tip and p.get("headRefOid") == tip), None)
     if found:
         task["pr"] = {"number": found["number"], "url": found["url"], "repo": repo}
@@ -344,9 +361,9 @@ def adopt_existing(s, task, given):
     if old != base:
         task["adopted_from"] = {"base": old, "at": now(), "pr": number}
         task["base"], task["base_set"], task["base_by"] = base, True, "pull-request"
-    # Adoption decides no merge: a merge the tick would start, or ready's old complaint, goes with it.
+    # Adoption decides no merge: a merge the tick would start, or a refusal it answers, goes with it.
     task.pop("auto_merge", None)
-    if (task.get("attention") or "").startswith(("Couldn't open a pull request", "Couldn't push")):
+    if (task.get("attention") or "").startswith(ADOPTION_ANSWERS):
         task.pop("attention")
     s.dirty = True
     return True
@@ -394,17 +411,19 @@ def pr_pending(v):
 
 
 def update_main(s, task):
-    """After a merge on GitHub: the base branch here catches up when it's checked out and clean."""
+    """After a merge on GitHub: the base branch here catches up when it's checked out and clean.
+    Named in full wherever a commit lands on it: a same-named tag there, or a tag here called
+    remote/base, would otherwise move it to that tag's commit."""
     main, base = s.loc["folder"], task.get("base") or "main"
-    remote = remote_of(main)
+    remote, head = remote_of(main), f"refs/heads/{base}"
     git(main, "fetch", remote, base)
-    ok, cur, _ = git(main, "symbolic-ref", "--short", "HEAD")
-    if ok and cur == base and not git(main, "status", "--porcelain", "--untracked-files=no")[1]:
-        git(main, "merge", "--ff-only", f"{remote}/{base}")
-    elif not (ok and cur == base):
+    ok, cur, _ = git(main, "symbolic-ref", "HEAD")
+    if ok and cur == head and not git(main, "status", "--porcelain", "--untracked-files=no")[1]:
+        git(main, "merge", "--ff-only", f"refs/remotes/{remote}/{base}")
+    elif not (ok and cur == head):
         # A base not checked out here (a task's own --base): its branch fast-forwards (git refuses
         # anything else, and a branch checked out in another worktree).
-        git(main, "fetch", remote, f"{base}:{base}")
+        git(main, "fetch", remote, f"{head}:{head}")
 
 
 MAIN_WATCH_MS = 3 * 3600000  # how long main is watched after a task merges through its pull request
@@ -424,10 +443,17 @@ def watch_main(s, task, sha=None):
     s.dirty = True
 
 
+def local_base(base):
+    """A task's base here by its full name, as a tag of the same name reads first; a commit stays
+    one (a folder on no branch: current_base())."""
+    return base if OID.fullmatch(base) else f"refs/heads/{base}"
+
+
 def base_commit(main, base):
     """A task's base as it can be read here: its branch, else its remote's copy (a target this clone
     never checked out, as an adopted pull request's can be)."""
-    return base if git(main, "rev-parse", "--verify", "--quiet", base)[0] else f"refs/remotes/{remote_of(main)}/{base}"
+    ref = local_base(base)
+    return ref if git(main, "rev-parse", "--verify", "--quiet", ref)[0] else f"refs/remotes/{remote_of(main)}/{base}"
 
 
 def merged_here(s, task):
@@ -449,7 +475,7 @@ def own_work(s, task):
     ok, tip, _ = git(main, "rev-parse", "--verify", "--quiet", f"refs/heads/{br}")
     tip = tip if ok and tip else task.get("head")
     if tip and tip != start and tip != task.get("own") and not any(
-            git(main, "merge-base", "--is-ancestor", tip, ref)[0] for ref in (base, f"refs/remotes/{remote_of(main)}/{base}")):
+            git(main, "merge-base", "--is-ancestor", tip, ref)[0] for ref in (local_base(base), f"refs/remotes/{remote_of(main)}/{base}")):
         task["own"] = tip
         s.dirty = True
     return task.get("own")

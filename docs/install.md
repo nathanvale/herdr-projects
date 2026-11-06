@@ -29,7 +29,9 @@ saved repo name.
   for either.
 - Any other failure of `gh` in a repo with a remote (signed out, no network) makes `ready` and Accept refuse and leave the
   task as it was, as does `gh` not installed or not on the caller's `PATH` when a remote is recognisably GitHub's. They
-  never merge locally instead, because nobody can then say whether a pull request exists.
+  never merge locally instead, because nobody can then say whether a pull request exists. Only the default `gh`, with
+  nothing of that name on `PATH`, counts as not installed: a `gh` that can't run, or a `HERDR_TASK_GH` that can't run or
+  doesn't exist, is that other failure, whatever the remote.
 - An alias or Enterprise repo `gh` has never confirmed, with `gh` not knowing that host, takes `gh`'s no and merges
   locally: `gh` can't tell it from a host that isn't GitHub. A repo `gh` has confirmed keeps refusing.
 - A branch GitHub already holds at exactly its commit isn't pushed, so publishing it needs only `gh`'s access.
@@ -38,8 +40,10 @@ saved repo name.
   request must be this repo's own and open, for the task's branch, at exactly its tip. The task's start commit must be
   the one merge base of that tip and the commit GitHub's base branch holds now, and the recorded base's commit must be
   in that commit too. The task's base then becomes the pull request's, the old one is kept as `adopted_from`, and it
-  merges only on the person's Accept, which refuses if the pull request's base or head has moved since. The base commit
-  must be in this clone: a `git fetch` first, if adopt asks for it, is the one step that uses git's own access.
+  merges only on the person's Accept, which refuses if the pull request's base or head has moved since. If it merges
+  into any other branch anyway, the task isn't finished: Accept and the tick hold it, its worktree and branch stay, and
+  `herdr-task done <task>` is the person's way out. The base commit must be in this clone: a `git fetch` first, if adopt
+  asks for it, is the one step that uses git's own access.
 - `ready` opens no second pull request for a branch. When the branch's open pull requests all target another base, it
   refuses before pushing and names the `adopt` command to run.
 

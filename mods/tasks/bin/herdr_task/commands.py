@@ -21,8 +21,8 @@ from .agents import (
 )
 from .sessions import refresh_sessions
 from .github import (
-    adopt_existing, base_commit, finish, gh, GH_ACCESS, GhFailed, github, merged_here, no_local_merge, own_work, plain, pr_adopt,
-    pr_open, pr_pending, pr_problem, pr_read, pr_view, STAYS, update_main, watch_main,
+    adopt_existing, base_commit, finish, gh, GH_ACCESS, GhFailed, github, local_base, merged_here, NO_ASK, no_local_merge, own_work,
+    plain, pr_adopt, pr_open, pr_pending, pr_problem, pr_read, pr_view, STAYS, update_main, watch_main,
 )
 from .launch import (
     base_ref, brief, caller_labels, caller_space, current_base, default_space, folder_for, handoff, launch, name_tabs,
@@ -598,7 +598,7 @@ def finalize(s, t):
             t["merge_requested"] = now()
             return msg + " Settings say merge it right away: the next message says how."
         except Fail as e:
-            t["attention"] = f"Couldn't ask for the merge: {e}"
+            t["attention"] = f"{NO_ASK}: {e}"
     else:
         t.pop("auto_merge", None)
     return msg + " The person accepts it in the Tasks panel, which merges it."
@@ -872,9 +872,28 @@ def adopted_moved(s, t, v):
     return None
 
 
+def merged_elsewhere(s, t, v):
+    """Why a merged pull request doesn't finish its task, for the person; None when it does, hasn't
+    merged, or wasn't adopted. An adopted one finishes only on a merge into the task's base, the one
+    adoption verified, as finishing takes the worktree and branch. GitHub keeps a merged pull
+    request's base, so this never goes: the tick and Accept both read it and say the same each time.
+    An answer that doesn't say where holds too, until one does."""
+    if v.get("state") != "MERGED" or not t["pr"].get("adopted"):
+        return None
+    n, ref, base, into = t["pr"]["number"], s.ref(t), t.get("base") or "main", v.get("baseRefName")
+    if into == base:
+        return None
+    said, stays = f"Pull request #{n}, adopted for {ref}, merged", "so the task isn't finished and its worktree and branch stay."
+    if not (into and isinstance(into, str)):
+        return f"{said}, and gh's answer doesn't say into which branch, {stays} The tick looks again, and finishes it if that was {base}."
+    return (f"{said} into {into}, not {base}, {stays} Its base can't be changed back. Once the work is where you want it, "
+            f"`herdr-task done {ref}` marks the task done and leaves the worktree and branch for you to remove.")
+
+
 def merge_now(s, t):
     """Merges the task's pull request on GitHub (squash) and tidies up here. Returns why it
-    couldn't, or None when it's merged (and the task done)."""
+    couldn't, or why one already merged doesn't finish the task (merged_elsewhere()); None when
+    it's merged (and the task done)."""
     n, repo = str(t["pr"]["number"]), t["pr"]["repo"]
     v, why = pr_read(t)
     s.dirty = True
@@ -898,6 +917,10 @@ def merge_now(s, t):
             # The next tick reads the pull request at once (merged by hand meanwhile: done).
             t["pr"]["checked"] = 0
             return t["attention"]
+    held = merged_elsewhere(s, t, v)
+    if held:
+        t["attention"] = held
+        return held
     watch_main(s, t, ((v.get("mergeCommit") or {}).get("oid")) if v.get("state") == "MERGED" else None)
     update_main(s, t)
     t["merged"] = True
@@ -956,16 +979,18 @@ def in_base(s, t):
 def ff_merge(s, t):
     """Lands a task's branch in its base branch here when that is a fast-forward (the base is
     checked out in the main folder and the branch already holds it: exactly the tested work, no
-    new combination). Returns whether it did; git refuses to touch uncommitted files."""
+    new combination). Returns whether it did; git refuses to touch uncommitted files. Both go by
+    their full names, as a same-named tag would otherwise be what lands."""
     main, br, base = s.loc["folder"], t.get("branch"), t.get("base") or "main"
-    ok, cur, _ = git(main, "symbolic-ref", "--short", "HEAD")
-    if not (br and git(main, "merge-base", "--is-ancestor", base, br)[0]):
+    head, target = f"refs/heads/{br}", f"refs/heads/{base}"
+    ok, cur, _ = git(main, "symbolic-ref", "HEAD")
+    if not (br and git(main, "merge-base", "--is-ancestor", local_base(base), head)[0]):
         return False
-    if ok and cur == base:
-        return git(main, "merge", "--ff-only", br)[0]
+    if ok and cur == target:
+        return git(main, "merge", "--ff-only", head)[0]
     # A base not checked out here (a task's own --base): its branch moves forward to the task's
     # (git refuses unless it's a fast-forward, or when another worktree has it checked out).
-    return git(main, "fetch", ".", f"{br}:{base}")[0]
+    return git(main, "fetch", ".", f"{head}:{target}")[0]
 
 
 @for_the_person
@@ -990,7 +1015,7 @@ def cmd_accept(args):
             s.dirty = True
         # A pull request's problems are read fresh (merge_now()): one fixed since, or a merge that
         # failed once, doesn't stand in the way. Without one, only a failed try doesn't.
-        elif t.get("attention") and not t.get("pr") and not t["attention"].startswith(("Couldn't ask for the merge", MERGE_FAILED)):
+        elif t.get("attention") and not t.get("pr") and not t["attention"].startswith((NO_ASK, MERGE_FAILED)):
             raise Fail(f"{s.ref(t)} needs attention first: {t['attention']}")
     if back:
         raise Fail(f"{s.ref(t)} is working again: its agent took up more work after it said ready. Accept it once it says ready again.")
