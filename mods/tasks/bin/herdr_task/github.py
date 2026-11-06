@@ -26,11 +26,18 @@ def gh(*args, cwd=None):
     return r.returncode == 0, r.stdout.strip(), (r.stderr or r.stdout).strip()
 
 
-def gh_problem(doing, err):
-    """gh couldn't answer, for the agent or person who ran this: gh's own access, never git's (push_problem())."""
-    return (f"gh couldn't {doing} ({' '.join(str(err).split())}). The task stays as it was and nothing merged here. gh's own "
-            "access (gh auth status; HERDR_TASK_GH names the gh command to run) is the person's to repair: say why in your "
-            "chat and end your turn.")
+HANDOFF = "say why in your chat and end your turn."
+
+
+class GhFailed(Fail):
+    """gh couldn't answer: gh's own access, never git's (push_problem()). Worded for the agent that
+    ran ready, whose next step is to hand it over; .person is for whoever runs Accept, merge or adopt."""
+
+    def __init__(self, doing, err):
+        said = f"gh couldn't {doing} ({' '.join(str(err).split())}). The task stays as it was and nothing merged here."
+        access = "gh's own access (gh auth status; HERDR_TASK_GH names the gh command to run)"
+        super().__init__(f"{said} {access} is the person's to repair: {HANDOFF}")
+        self.person = f"{said} Repair {access}, then try again."
 
 
 def push_problem(wt, branch, remote, there, err):
@@ -42,10 +49,18 @@ def push_problem(wt, branch, remote, there, err):
     if there and tracked != there:
         said += (f" This clone's tracking ref {remote}/{branch} is at {tracked[:7] or 'nothing'} and GitHub has {there[:7]}, so "
                  "--force-with-lease won't overwrite it: a fetch that shows what is there comes first.")
-    return said + " git push works apart from gh's sign-in, and it's the person's to repair: say why in your chat and end your turn."
+    return said + f" git push works apart from gh's sign-in, and it's the person's to repair: {HANDOFF}"
 
 
-GITHUB_URL = re.compile(r"^(?:[a-z][a-z0-9+.-]*://)?(?:[^@/]+@)?(?:ssh\.)?github\.com[:/]", re.I)
+def host_url(hosts):
+    """A remote URL's host, with or without a scheme and user, and exact: github.com.example.org isn't github.com."""
+    return re.compile(rf"^(?:[a-z][a-z0-9+.-]*://)?(?:[^@/]+@)?(?:{hosts})[:/]", re.I)
+
+
+GITHUB_URL = host_url(r"(?:ssh\.)?github\.com")
+# Public hosts that are their own forges, so never GitHub and never a host gh can sign in to. Any
+# other host could be GitHub Enterprise or an alias for one.
+ELSEWHERE_URL = host_url(r"bitbucket\.org|gitlab\.com|(?:ssh\.)?dev\.azure\.com")
 
 
 def remote_urls(main):
@@ -57,14 +72,17 @@ def remote_urls(main):
 def github(s):
     """The repo on GitHub ("owner/name"), asked again after an hour or once the remotes change (a
     saved answer keeps a hash of them, as a URL can hold a token). None: tasks merge locally. That
-    takes a repo with no remotes, which forgets any saved name, or gh's own word that its remotes
-    aren't on GitHub, which is saved and which a github.com remote overrules. Every other failure
-    refuses (Fail), saving nothing: signed out, no network, or a host only gh can place. gh not
-    installed refuses for a github.com remote or a saved name, and is taken as a no otherwise."""
+    takes a repo with no remotes, or only remotes on another forge (ELSEWHERE_URL): gh isn't asked,
+    and any saved name goes. Or gh's own word that its remotes aren't on GitHub, which is saved. But
+    those words mean only "not a host gh knows": a github.com remote overrules them, and so does a
+    name saved for these same remotes (one saved before hashes were kept counts as that), as gh may
+    have lost that host's sign-in. Every other failure refuses (GhFailed), saving nothing: signed
+    out, no network, or a host only gh can place. gh not installed refuses for a github.com remote
+    or a saved name, and is taken as a no otherwise."""
     if s.loc["kind"] != "repo":
         return None
     g, urls = s.data.get("github") or {}, remote_urls(s.loc["folder"])
-    if not urls:
+    if all(ELSEWHERE_URL.match(url) for url in urls):
         if s.data.pop("github", None) is not None:
             s.dirty = True
         return None
@@ -73,8 +91,11 @@ def github(s):
         return g.get("repo")
     ok, out, err = gh("repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner", cwd=s.loc["folder"])
     named = any(GITHUB_URL.match(url) for url in urls)
-    if not (ok and out) and not (NOT_GITHUB in err and not named) and not (err == GH_MISSING and not named and not g.get("repo")):
-        raise Fail(gh_problem("say which GitHub repository this folder is", err or "no answer"))
+    confirmed = g.get("repo") and g.get("remotes") in (None, mark)
+    said_no = NOT_GITHUB in err and not (named or confirmed)
+    absent = err == GH_MISSING and not (named or g.get("repo"))
+    if not (ok and out) and not said_no and not absent:
+        raise GhFailed("say which GitHub repository this folder is", err or "no answer")
     s.data["github"] = {"repo": out if ok and out else None, "at": now(), "remotes": mark}
     s.dirty = True
     return s.data["github"]["repo"]
@@ -103,7 +124,7 @@ def branch_commit(repo, branch):
     if not ok and "HTTP 404" in err:
         return None
     if not ok or not OID.fullmatch(out):
-        raise Fail(gh_problem(f"read {branch} on GitHub", err or "no answer"))
+        raise GhFailed(f"read {branch} on GitHub", err or "no answer")
     return out
 
 
@@ -133,13 +154,13 @@ def pr_open(s, task, repo, summary=None):
     if pr.get("number"):
         ok, state, err = gh("pr", "view", str(pr["number"]), "--repo", repo, "--json", "state", "-q", ".state")
         if not ok or not state:
-            raise Fail(gh_problem(f"read pull request #{pr['number']}", err or "no answer"))
+            raise GhFailed(f"read pull request #{pr['number']}", err or "no answer")
         if state == "MERGED" and pr.get("adopted"):
             raise Fail(f"Pull request #{pr['number']}, adopted for {s.ref(task)}, already merged, so there is nothing to publish. "
                        "The tick finishes the task by itself: end your turn.")
         if state != "OPEN" and pr.get("adopted"):
             raise Fail(f"Pull request #{pr['number']}, adopted for {s.ref(task)}, is {state.lower()}, and adoption never opens "
-                       "another. Whether to reopen it is the person's call: say why in your chat and end your turn.")
+                       f"another. Whether to reopen it is the person's call: {HANDOFF}")
     publish(s, task, repo)
     if state == "OPEN":
         if summary:
@@ -158,7 +179,8 @@ def pr_open(s, task, repo, summary=None):
                       "--title", f"{s.ref(task)} {task['title']}", "--body", body)
     if not ok or not out:
         raise Fail(f"Couldn't open a pull request: {err}" + (
-            f" When it targets another branch, `herdr-task adopt {s.ref(task)} --pr <number>` records it." if "already exists" in err else ""))
+            f" When it targets another branch, `herdr-task adopt {s.ref(task)} --pr <number>` records it." if "already exists" in err else "")
+            + f" The task stays as it was: {HANDOFF}")
     url = out.split()[-1]
     task["pr"] = {"number": int(url.rstrip("/").split("/")[-1]), "url": url, "repo": repo}
     return task["pr"]
@@ -171,14 +193,14 @@ def pr_adopt(task, repo):
     ok, out, err = gh("pr", "list", "--repo", repo, "--head", task["branch"], "--state", "open",
                       "--json", "number,url,isCrossRepository,baseRefName,headRefOid")
     if not ok:
-        raise Fail(gh_problem(f"list the pull requests for {task['branch']}", err))
+        raise GhFailed(f"list the pull requests for {task['branch']}", err)
     tip_ok, tip, _ = git(task["worktree"], "rev-parse", task["branch"])
     try:
         found = next((p for p in json.loads(out) if not p.get("isCrossRepository")
                       and p.get("baseRefName") == (task.get("base") or "main")
                       and tip_ok and tip and p.get("headRefOid") == tip), None) if out else None
     except (ValueError, TypeError, AttributeError):
-        raise Fail(gh_problem(f"list the pull requests for {task['branch']}", "an answer it couldn't read"))
+        raise GhFailed(f"list the pull requests for {task['branch']}", "an answer it couldn't read")
     if found:
         task["pr"] = {"number": found["number"], "url": found["url"], "repo": repo}
     return task.get("pr") if found else None
@@ -225,14 +247,14 @@ def adopt_existing(s, task, given):
     ok, out, err = gh("pr", "view", str(number), "--repo", repo, "--json",
                       "number,url,state,isCrossRepository,headRefName,headRefOid,baseRefName")
     if not ok:
-        raise Fail(gh_problem(f"read pull request #{number} of {repo}", err))
+        raise GhFailed(f"read pull request #{number} of {repo}", err)
     try:
         p = json.loads(out)
         answered = PR_LINK.fullmatch(p["url"])
         base, state = p["baseRefName"], p["state"]
         cross, head, head_oid = p["isCrossRepository"], p["headRefName"], p["headRefOid"]
     except (ValueError, TypeError, KeyError):
-        raise Fail(gh_problem(f"read pull request #{number} of {repo}", "an answer it couldn't read"))
+        raise GhFailed(f"read pull request #{number} of {repo}", "an answer it couldn't read")
     if not answered or answered.group(1).lower() != repo.lower() or int(answered.group(2)) != number:
         raise Fail(f"GitHub answered #{number} with {p['url']}, not a pull request of {repo}. Check the repository's name and "
                    "the number, then adopt again.")

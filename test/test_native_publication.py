@@ -28,12 +28,16 @@ CI = os.environ.get("CI") == "true"
 ON_CI = unittest.skipUnless(CI, "runs only on CI: herdr-task's commands never run from a test on a person's machine")
 URL = "https://github.com/o/r.git"
 AUTH = "To get started with GitHub CLI, please run:  gh auth login"
-# gh 2.101.0's words, read from a repo with a remote elsewhere.
+# gh 2.101.0's words, read from a repo signed in to github.com with an Enterprise, alias or Bitbucket
+# remote; a github.com remote signed in only to an Enterprise host gets the 401 instead.
 NOT_GITHUB = ("none of the git remotes configured for this repository point to a known GitHub host. "
               "To tell gh about a new GitHub host, please use `gh auth login`")
+SIGNED_IN_ELSEWHERE = "HTTP 401: Requires authentication (https://api.github.com/graphql)"
 ELSEWHERE = "https://bitbucket.org/o/r.git"
 ALIAS = "git@work-alias:o/r.git"
 ENTERPRISE = "https://git.example.com/o/r.git"
+LOOKALIKE = "https://bitbucket.org.example.com/o/r.git"
+HANDOFF = "say why in your chat and end your turn"
 
 FAKE_HC = '''#!/usr/bin/env python3
 import json, os, sys
@@ -88,6 +92,8 @@ elif argv[:2] == ["pr", "list"]:
 elif argv[:2] == ["pr", "view"]:
     show(pr())
 elif argv[:2] == ["pr", "create"]:
+    if st.get("create"):
+        refuse(st["create"])
     print("https://github.com/o/r/pull/9")
 elif argv[:2] == ["pr", "comment"]:
     pr()
@@ -473,7 +479,7 @@ class FailsClosed(unittest.TestCase):
         error = f.no_ready()
         self.assertIn("gh couldn't", error)
         self.assertIn("gh auth login", error)
-        self.assertIn("say why in your chat and end your turn", error)
+        self.assertIn(HANDOFF, error)
         self.assertEqual(f.saved(), before)  # not Ready, no summary, and no answer saved
         self.assertEqual(f.task()["state"], "running")
         self.merged_nothing()
@@ -496,15 +502,21 @@ class FailsClosed(unittest.TestCase):
         f = self.f
         f.seed(state="ready", ready_at=1)
         before = f.saved()
-        self.assertIn("gh couldn't", f.refused("accept", "1", "--folder", f.repo))
+        self.for_the_person(f.refused("accept", "1", "--folder", f.repo))
         self.assertEqual(f.saved(), before)
         self.merged_nothing()
+
+    def for_the_person(self, error):
+        """gh's failure as the person reads it: what to repair, and no turn to end."""
+        self.assertIn("gh couldn't", error)
+        self.assertIn("then try again", error)
+        self.assertNotIn("end your turn", error)
 
     def test_merge_never_asks_for_a_local_one(self):
         f = self.f
         f.seed(state="ready", ready_at=1)
         before = f.saved()
-        self.assertIn("gh couldn't", f.refused("merge", "1", "--folder", f.repo))
+        self.for_the_person(f.refused("merge", "1", "--folder", f.repo))
         self.assertEqual(f.saved(), before)
 
     def test_accept_with_a_recorded_pull_request_waits_for_gh(self):
@@ -524,7 +536,7 @@ class FailsClosed(unittest.TestCase):
     def test_adopt_refuses_too(self):
         f = self.f
         before = f.saved()
-        self.assertIn("gh couldn't", f.refused("adopt", "1", "--folder", f.repo, "--pr", "7"))
+        self.for_the_person(f.refused("adopt", "1", "--folder", f.repo, "--pr", "7"))
         self.assertEqual(f.saved(), before)
 
     def test_gh_not_installed_on_a_github_remote_refuses(self):
@@ -554,7 +566,7 @@ class SeparateFailures(unittest.TestCase):
         self.assertIn("git couldn't push task/1 to origin", error)
         self.assertIn("Permission denied to this identity", error)
         self.assertIn("apart from gh's sign-in", error)
-        self.assertIn("say why in your chat and end your turn", error)
+        self.assertIn(HANDOFF, error)
         self.assertNotIn("gh couldn't", error)
         self.assertNotIn("tracking ref", error)
         self.assertEqual(f.saved(), before)
@@ -701,6 +713,33 @@ class ReadyAfterAdoption(unittest.TestCase):
         self.assertEqual(f.task()["state"], "ready")
         self.assertIn("now targets other", f.task()["attention"])
 
+    def tick(self):
+        """A tick that reads the pull request now: it reads one at most once a minute."""
+        self.f.edit(lambda d: d["tasks"][0]["pr"].update(checked=0))
+        return self.f.ok("tick", "--folder", self.f.repo)
+
+    def test_the_tick_shows_a_move_and_clears_it_once_put_back(self):
+        f = self.f
+        f.ready()
+        for moved, words in (({"baseRefName": "other"}, "now targets other"), ({"headRefOid": f.first}, "isn't what adoption verified")):
+            with self.subTest(words=words):
+                f.github(prs=[f.pr(**moved)])
+                self.assertEqual(self.tick()["attention"], [1])
+                self.assertIn(words, f.task()["attention"])
+                f.github(prs=[f.pr()])
+                self.assertEqual(self.tick()["attention"], [])
+                self.assertNotIn("attention", f.task())
+        self.assertEqual((f.task()["state"], f.calls("pr", "merge")), ("ready", []))
+
+    def test_the_tick_clears_a_refused_accept_once_put_back(self):
+        f = self.f
+        f.ready()
+        f.github(prs=[f.pr(baseRefName="other")])
+        self.refused_accept("now targets other")
+        f.github(prs=[f.pr()])
+        self.tick()
+        self.assertNotIn("attention", f.task())
+
     def test_the_tick_finishes_one_merged_into_its_real_base(self):
         f = self.f
         f.ready()
@@ -738,6 +777,16 @@ class OrdinaryPublication(unittest.TestCase):
         self.assertEqual(f.remote_tip("task/1"), f.tip)
         self.assertEqual(f.calls("pr", "merge"), [])
 
+    def test_a_pull_request_gh_wont_open_hands_over(self):
+        f = Fixture(self)
+        f.github(prs=[], create='a pull request for branch "task/1" into branch "old-base" already exists')
+        before = f.saved()
+        error = f.no_ready()
+        self.assertIn("Couldn't open a pull request", error)
+        self.assertIn("herdr-task adopt", error)
+        self.assertIn(HANDOFF, error)
+        self.assertEqual(f.saved(), before)
+
 
 @ON_CI
 class NoRemotes(unittest.TestCase):
@@ -765,30 +814,66 @@ class OnlyGhsOwnNoIsANo(unittest.TestCase):
         return f
 
     def test_any_other_failure_refuses_for_a_repo_with_a_remote(self):
-        for url, failure in ((ELSEWHERE, AUTH), (ALIAS, AUTH), (ENTERPRISE, AUTH), (ALIAS, "error connecting to api.github.com"),
-                             (ENTERPRISE, "HTTP 503: Service Unavailable")):
-            with self.subTest(url=url, failure=failure):
-                f = self.elsewhere(url, fail=failure)
+        """saved: gh confirmed this repo for these remotes an hour or more ago, so it's asked again."""
+        for url, failure, saved in ((ALIAS, AUTH, False), (ENTERPRISE, AUTH, False), (LOOKALIKE, AUTH, False),
+                                    (ALIAS, "error connecting to api.github.com", False), (URL, SIGNED_IN_ELSEWHERE, False),
+                                    (ENTERPRISE, "HTTP 503: Service Unavailable", False), (ENTERPRISE, NOT_GITHUB, True)):
+            with self.subTest(url=url, failure=failure, saved=saved):
+                f = self.once_on_github(url) if saved else self.elsewhere(url)
+                if saved:
+                    f.edit(lambda d: d["github"].update(at=1))
+                f.github(prs=[], fail=failure)
                 before = f.saved()
                 self.assertIn("gh couldn't", f.no_ready())
                 self.assertEqual(f.saved(), before)
                 f.seed(state="ready", ready_at=1)
                 before = f.saved()
                 self.assertIn("gh couldn't", f.refused("accept", "1", "--folder", f.repo))
-                self.assertEqual((f.saved(), f.rev("main")), (before, f.start))
+                self.assertEqual((f.saved(), f.rev("main"), f.rev("old-base")), (before, f.start, f.start))
+
+    def test_a_name_saved_before_remotes_were_kept_overrules_ghs_no_too(self):
+        f = self.elsewhere(ENTERPRISE, fail=NOT_GITHUB)
+        f.edit(lambda d: d.update(github={"repo": "o/r", "at": 1}))
+        before = f.saved()
+        self.assertIn("gh couldn't", f.no_ready())
+        self.assertEqual(f.saved(), before)
+
+    def test_another_forge_stays_local_with_gh_signed_out_and_never_asks_it(self):
+        for url in (ELSEWHERE, "git@bitbucket.org:o/r.git", "ssh://git@bitbucket.org/o/r.git", "https://gitlab.com/o/r.git",
+                    "https://o@dev.azure.com/o/p/_git/r", "git@ssh.dev.azure.com:v3/o/p/r"):
+            with self.subTest(url=url):
+                f = self.elsewhere(url, fail=AUTH)
+                f.merges_here()
+                self.assertEqual(f.calls(), [])
+
+    def test_github_beside_another_forge_is_still_github(self):
+        f = Fixture(self)
+        f.git(f.repo, "remote", "add", "mirror", ELSEWHERE)
+        f.github(prs=[], fail=AUTH)
+        before = f.saved()
+        self.assertIn("gh couldn't", f.no_ready())
+        self.assertEqual(f.saved(), before)
+        f.github(prs=[])
+        f.ready()
+        self.assertEqual((f.task()["state"], f.task()["pr"]["number"], f.remote_tip("task/1")), ("ready", 9, f.tip))
+
+    def test_an_unknown_host_beside_another_forge_still_refuses(self):
+        f = self.elsewhere(ELSEWHERE, fail=AUTH)
+        f.git(f.repo, "remote", "add", "work", ENTERPRISE)
+        self.assertIn("gh couldn't", f.no_ready())
 
     def test_ghs_own_no_is_saved_and_merges_locally(self):
-        f = self.elsewhere(ELSEWHERE, fail=NOT_GITHUB)
+        f = self.elsewhere(ENTERPRISE, fail=NOT_GITHUB)
         f.merges_here()
         self.assertEqual(json.loads(f.saved())["github"]["repo"], None)
         self.assertEqual(len(f.calls("repo", "view")), 1)  # Accept took the saved answer
         self.assertEqual(f.calls("pr") + f.calls("api"), [])
 
     def test_a_remote_added_since_a_saved_no_is_asked_about(self):
-        f = self.elsewhere(ELSEWHERE, fail=NOT_GITHUB)
+        f = self.elsewhere(ENTERPRISE, fail=NOT_GITHUB)
         f.ready()
         f.seed(state="running")
-        f.git(f.repo, "remote", "add", "work", ENTERPRISE)
+        f.git(f.repo, "remote", "add", "work", ALIAS)
         f.github(prs=[], fail=AUTH)
         self.assertIn("gh couldn't", f.no_ready())
 
@@ -799,9 +884,13 @@ class OnlyGhsOwnNoIsANo(unittest.TestCase):
         self.assertIn("gh couldn't", f.no_ready())
         self.assertEqual(f.saved(), before)
 
-    def once_on_github(self):
-        """A task whose ready saved gh's answer, with no pull request now: the name is what's tested."""
+    def once_on_github(self, url=URL):
+        """A task whose ready saved gh's answer for this remote, with no pull request now: the name
+        is what's tested. Any remote but github.com's reaches the same bare repo."""
         f = Fixture(self)
+        if url != URL:
+            f.git(f.repo, "remote", "set-url", "origin", url)
+            f.git(f.repo, "config", "--add", f"url.{f.bare}.insteadOf", url)
         f.ready()
         self.assertEqual(json.loads(f.saved())["github"]["repo"], "o/r")
         f.edit(lambda d: (d["tasks"][0].pop("pr"), d["tasks"][0].update(state="running")))
@@ -814,9 +903,16 @@ class OnlyGhsOwnNoIsANo(unittest.TestCase):
         f.merges_here("old-base")
         self.assertNotIn("github", json.loads(f.saved()))
 
-    def test_moving_the_remote_off_github_clears_the_saved_name(self):
+    def test_moving_the_remote_to_another_forge_clears_the_saved_name(self):
         f = self.once_on_github()
         f.git(f.repo, "remote", "set-url", "origin", ELSEWHERE)
+        f.github(prs=[], fail=AUTH)
+        f.merges_here("old-base")
+        self.assertNotIn("github", json.loads(f.saved()))
+
+    def test_moving_the_remote_to_a_host_gh_doesnt_know_clears_the_saved_name(self):
+        f = self.once_on_github()
+        f.git(f.repo, "remote", "set-url", "origin", ENTERPRISE)
         f.github(prs=[], fail=NOT_GITHUB)
         f.merges_here("old-base")
         self.assertEqual(json.loads(f.saved())["github"]["repo"], None)
@@ -829,9 +925,11 @@ class OnlyGhsOwnNoIsANo(unittest.TestCase):
         self.assertNotIn("github", json.loads(f.saved()))
 
     def test_gh_not_installed_on_a_remote_elsewhere_stays_local(self):
-        f = self.elsewhere(ELSEWHERE)
-        f.env["HERDR_TASK_GH"] = os.path.join(f.tmp, "no-such-gh")
-        f.merges_here()
+        for url in (ELSEWHERE, ENTERPRISE):
+            with self.subTest(url=url):
+                f = self.elsewhere(url)
+                f.env["HERDR_TASK_GH"] = os.path.join(f.tmp, "no-such-gh")
+                f.merges_here()
 
     def test_gh_not_installed_with_a_saved_name_refuses(self):
         f = self.elsewhere(ALIAS)
@@ -865,6 +963,7 @@ class AWorktreeThatIsGone(unittest.TestCase):
         f = self.gone()
         self.assertIn("is gone", f.refused("review", "1", "--folder", f.repo, "--pass"))
         self.assertEqual((f.task()["state"], f.task()["reviews"][-1]["result"]), ("running", "pass"))
+        self.assertIn("is gone", f.task()["attention"])
         self.assertEqual(f.hc("send", "run"), [])
 
 
@@ -879,6 +978,8 @@ class AReviewersPass(unittest.TestCase):
         t = f.task()
         self.assertEqual((t["state"], t["reviews"][-1]["result"], t["reviews"][-1]["round"]), ("running", "pass", 1))
         self.assertNotIn("review", t)
+        self.assertIn("gh couldn't", t["attention"])  # with its reviewer gone, it waits for the person
+        self.assertEqual(f.ok("show", "1", "--folder", f.repo)["status"], "needs")
         self.assertNotIn("github", json.loads(f.saved()))  # no failed answer rode along
         ends = time.time() + 20  # the reviewer ends a moment after the command returns
         while time.time() < ends and not f.hc("kill"):

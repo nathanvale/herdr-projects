@@ -1,6 +1,7 @@
 """The task commands: add, start, status, ready, accept, merge and the rest."""
 
 import argparse
+import functools
 import json
 import os
 import re
@@ -20,7 +21,7 @@ from .agents import (
 )
 from .sessions import refresh_sessions
 from .github import (
-    adopt_existing, base_commit, finish, gh, github, merged_here, no_local_merge, own_work, pr_adopt, pr_open, pr_pending,
+    adopt_existing, base_commit, finish, gh, GhFailed, github, merged_here, no_local_merge, own_work, pr_adopt, pr_open, pr_pending,
     pr_problem, pr_view, update_main, watch_main,
 )
 from .launch import (
@@ -36,6 +37,18 @@ from .proof import evidence, find_proof
 
 
 # ---- commands -------------------------------------------------------------------------------
+
+def for_the_person(fn):
+    """A command the person (or their Assistant) runs: gh's failure says what to repair, where an
+    agent's ready is told to hand it over."""
+    @functools.wraps(fn)
+    def command(args):
+        try:
+            return fn(args)
+        except GhFailed as e:
+            raise Fail(e.person)
+    return command
+
 
 def cmd_where(args):
     loc = locate(args.folder)
@@ -612,11 +625,12 @@ def cmd_review(args):
         s.dirty = True
         if args.passed:
             # Refused (publication): the round stays recorded and the reviewer still ends, as
-            # finalize() changed nothing; refused after the store is saved.
+            # finalize() changed nothing; with its reviewer gone the refusal waits on the task for
+            # the person. Refused after the store is saved.
             try:
                 msg = f"{s.ref(t)}: review round {n} passed. " + finalize(s, t)
             except Fail as e:
-                refused = str(e)
+                refused = t["attention"] = str(e)
         else:
             last = n >= of
             if t["state"] == "ready":
@@ -835,19 +849,21 @@ def local_merge_msg(s, t):
 
 
 MERGE_FAILED = "GitHub didn't merge it"  # a merge that failed: never in the way of the next try
+MOVED = "Adopted pull request"  # adopted_moved()'s words: the tick clears them once it's put back
 
 
 def adopted_moved(s, t, v):
     """What moved on an adopted pull request since adoption verified it, for the person; None when
     nothing did, or it wasn't adopted. Its base must still be the task's and its head the branch's
-    tip here: what merges is what was verified, not whatever the pull request holds now."""
+    tip here: what merges is what was verified, not whatever the pull request holds now. Accept and
+    the tick both read it, so a move shows at once and goes once it's put back."""
     if not t["pr"].get("adopted"):
         return None
     n, base, tip = t["pr"]["number"], t.get("base") or "main", branch_tip(s, t)
     if v.get("baseRefName") != base:
-        return f"Pull request #{n} now targets {v.get('baseRefName')}, not {base}, which adoption verified. Retarget it to {base}, then accept again."
+        return f"{MOVED} #{n} now targets {v.get('baseRefName')}, not {base}, which adoption verified. Retarget it to {base}, then accept again."
     if v.get("headRefOid") != tip:
-        return (f"Pull request #{n} is at {str(v.get('headRefOid'))[:7]}, and {t.get('branch')} is at {str(tip)[:7]} here, which isn't "
+        return (f"{MOVED} #{n} is at {str(v.get('headRefOid'))[:7]}, and {t.get('branch')} is at {str(tip)[:7]} here, which isn't "
                 "what adoption verified. Bring them to the same commit, then accept again.")
     return None
 
@@ -885,6 +901,7 @@ def merge_now(s, t):
     return None
 
 
+@for_the_person
 def cmd_merge(args):
     error = None
     with open_store(args) as s:
@@ -941,6 +958,7 @@ def ff_merge(s, t):
     return git(main, "fetch", ".", f"{br}:{base}")[0]
 
 
+@for_the_person
 def cmd_accept(args):
     """The person's Accept on a Ready task (the one thing they do in the Tasks panel): Done at
     once when there is nothing to merge, else merged first, as the merge settings say how: a pull
@@ -1010,6 +1028,7 @@ def cmd_accept(args):
     say(args, {**v, "accepted": how, "terminal": sent, "new_agent": started}, text)
 
 
+@for_the_person
 def cmd_adopt(args):
     """Records a pull request that already exists on a started task, by hand: for one whose worktree
     took another base, which ready can't adopt by itself. All the checks are adopt_existing()'s."""

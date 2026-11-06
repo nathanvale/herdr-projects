@@ -17,8 +17,9 @@ place, never overwrites what you made yourself, and keeps a backup of anything i
 ## Pull requests and credentials
 
 In a repo with a GitHub remote, `herdr-task ready` publishes a worktree task and Accept merges it through its pull
-request. A repo with no remotes merges locally. So does one whose remotes `gh` says aren't on GitHub, and one with no
-`gh` installed and no remote recognisably GitHub's.
+request. A repo with no remotes merges locally, and so does one whose remotes are all on Bitbucket Cloud, GitLab.com or
+Azure DevOps, without asking `gh`. So does one `gh` says has no remote on a host it knows, unless `gh` has confirmed that
+repo on GitHub before with the same remotes, and one with no `gh` installed and no remote recognisably GitHub's.
 
 - `gh` and `git push` sign in separately. `gh` reads and opens pull requests. `git push` uses whatever the remote's own
   configuration gives git. A refusal says which of the two failed.
