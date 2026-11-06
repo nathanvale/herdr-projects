@@ -23,7 +23,8 @@ repo on GitHub before with the same remotes, and one with no `gh` installed, no 
 saved repo name.
 
 - `gh` and `git push` sign in separately. `gh` reads and opens pull requests. `git push` uses whatever the remote's own
-  configuration gives git. A refusal says which of the two failed.
+  configuration gives git. A refusal says which of the two failed, and with `--json` its `cause` is `gh` or `git`. Their
+  own words are shown and kept without a URL's user and password.
 - `herdr-task` runs `gh` from `PATH`, or the command named in `HERDR_TASK_GH`. Shepherdr holds no credential of its own
   for either.
 - Any other failure of `gh` in a repo with a remote (signed out, no network) makes `ready` and Accept refuse and leave the
@@ -39,6 +40,8 @@ saved repo name.
   in that commit too. The task's base then becomes the pull request's, the old one is kept as `adopted_from`, and it
   merges only on the person's Accept, which refuses if the pull request's base or head has moved since. The base commit
   must be in this clone: a `git fetch` first, if adopt asks for it, is the one step that uses git's own access.
+- `ready` opens no second pull request for a branch. When the branch's open pull requests all target another base, it
+  refuses before pushing and names the `adopt` command to run.
 
 ## Install
 

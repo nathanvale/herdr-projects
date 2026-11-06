@@ -38,6 +38,8 @@ ALIAS = "git@work-alias:o/r.git"
 ENTERPRISE = "https://git.example.com/o/r.git"
 LOOKALIKE = "https://bitbucket.org.example.com/o/r.git"
 HANDOFF = "say why in your chat and end your turn"
+SECRET = "secret-marker"
+TOKEN_URL = f"https://x-access-token:{SECRET}@github.com/o/r.git"
 
 FAKE_HC = '''#!/usr/bin/env python3
 import json, os, sys
@@ -50,7 +52,8 @@ else:
 '''
 
 # GitHub as gh answers it: repository and pull requests from FAKE_GH_STATE, a branch's commit from
-# the bare remote itself, every call logged. `fail` fails every call, or only those of `fail_on`.
+# the bare remote itself, every call logged. `fail` fails every call, or only those of `fail_on`;
+# `create` and `merge` refuse those two; `answer` is what `pr view` prints instead of a pull request.
 FAKE_GH = '''#!/usr/bin/env python3
 import json, os, subprocess, sys
 path = os.environ["FAKE_GH_STATE"]
@@ -90,7 +93,7 @@ elif argv[:2] == ["pr", "list"]:
     print(json.dumps([{k: p.get(k) for k in fields} for p in st["prs"]
                       if p["state"] == "OPEN" and p["headRefName"] == value("--head")]))
 elif argv[:2] == ["pr", "view"]:
-    show(pr())
+    print(st["answer"]) if "answer" in st else show(pr())
 elif argv[:2] == ["pr", "create"]:
     if st.get("create"):
         refuse(st["create"])
@@ -98,6 +101,8 @@ elif argv[:2] == ["pr", "create"]:
 elif argv[:2] == ["pr", "comment"]:
     pr()
 elif argv[:2] == ["pr", "merge"]:
+    if st.get("merge"):
+        refuse(st["merge"])
     pr().update(state="MERGED", mergeCommit={"oid": "f" * 40})
     with open(path, "w") as f:
         json.dump(st, f)
@@ -182,12 +187,12 @@ class Fixture:
                            capture_output=True, text=True, env=self.env)
         return r.stdout.strip() or None
 
-    def refuse_pushes(self):
+    def refuse_pushes(self, words="Permission denied to this identity"):
         """The remote turns every push away, as a push without the right credentials ends."""
         hook = os.path.join(self.bare, "hooks", "pre-receive")
         os.makedirs(os.path.dirname(hook), exist_ok=True)
         with open(hook, "w") as f:
-            f.write("#!/bin/sh\necho 'Permission denied to this identity' >&2\nexit 1\n")
+            f.write(f"#!/bin/sh\necho '{words}' >&2\nexit 1\n")
         os.chmod(hook, 0o755)
 
     def github(self, **state):
@@ -220,11 +225,14 @@ class Fixture:
         self.test.assertEqual(p.returncode, 0, f"herdr-task {' '.join(args)}: {p.stdout}{p.stderr}")
         return json.loads(p.stdout)
 
-    def refused(self, *args):
-        """A refusal as --json gives it: exit 1, the reason on stdout, nothing on stderr."""
+    def refusal(self, *args):
+        """A refusal as --json gives it: exit 1, its object on stdout, nothing on stderr."""
         p = self.run(*args, "--json")
         self.test.assertEqual((p.returncode, p.stderr), (1, ""), p.stdout)
-        return json.loads(p.stdout)["error"]
+        return json.loads(p.stdout)
+
+    def refused(self, *args):
+        return self.refusal(*args)["error"]
 
     def saved(self):
         with open(self.store) as f:
@@ -368,7 +376,27 @@ class Adoption(unittest.TestCase):
         self.refuses("isn't a started worktree task")
 
     def test_not_a_number_or_a_link(self):
-        self.refuses("give its number or its link", "seven")
+        for given in ("seven", "\u00b2", "\u0663", "1" * 5000, "https://github.com/o/r/pull/" + "1" * 5000):
+            with self.subTest(given=given[:40]):
+                self.refuses("give its number or its link", given)
+        self.assertEqual(self.f.calls("pr", "view"), [])
+
+    def test_an_answer_gh_garbled_refuses(self):
+        for field, value in (("baseRefName", None), ("baseRefName", 7), ("headRefName", None), ("headRefOid", None),
+                             ("state", None), ("isCrossRepository", None), ("url", None)):
+            with self.subTest(field=field, value=value):
+                self.f.github(prs=[self.f.pr(**{field: value})])
+                self.refuses("an answer it couldn't read")
+        for answer in ("not json", "[]", "null", "7", "{}"):
+            with self.subTest(answer=answer):
+                self.f.github(prs=[], answer=answer)
+                self.refuses("an answer it couldn't read")
+
+    def test_a_name_that_isnt_a_branch_refuses(self):
+        for field, name in (("baseRefName", "-x"), ("baseRefName", "a b"), ("baseRefName", ""), ("headRefName", "-x")):
+            with self.subTest(field=field, name=name):
+                self.f.github(prs=[self.f.pr(**{field: name})])
+                self.refuses("isn't a branch name")
 
     def test_an_equivalent_base_is_adopted_and_becomes_the_tasks(self):
         f = self.f
@@ -409,6 +437,7 @@ class Adoption(unittest.TestCase):
         self.assertFalse(f.adopt()["adopted"])
         self.assertEqual(f.saved(), before)
         self.assertEqual(len(f.calls("pr", "view")), 1)
+        self.assertIn("is already recorded", f.run("adopt", "1", "--folder", f.repo, "--pr", "7").stdout)
 
     def test_another_pull_request_is_refused_once_one_is_recorded(self):
         f = self.f
@@ -522,9 +551,21 @@ class FailsClosed(unittest.TestCase):
     def test_accept_with_a_recorded_pull_request_waits_for_gh(self):
         f = self.f
         f.seed(state="ready", ready_at=1, pr={"number": 7, "url": "https://github.com/o/r/pull/7", "repo": "o/r"})
-        self.assertIn("Couldn't reach pull request #7", f.refused("accept", "1", "--folder", f.repo))
+        error = f.refused("accept", "1", "--folder", f.repo)
+        self.assertIn("Couldn't reach pull request #7", error)
+        self.assertIn("gh auth login", error)  # gh's own reason
+        self.assertIn("Nothing merged", error)
+        self.assertIn("then try again", error)
+        self.assertNotIn("end your turn", error)
         self.assertEqual(f.task()["state"], "ready")
         self.merged_nothing()
+
+    def test_the_tick_waits_quietly_for_gh(self):
+        f = self.f
+        f.seed(state="ready", ready_at=1, pr={"number": 7, "url": "https://github.com/o/r/pull/7", "repo": "o/r"})
+        self.assertEqual(f.ok("tick", "--folder", f.repo)["attention"], [])
+        self.assertNotIn("attention", f.task())
+        self.assertEqual(f.task()["state"], "ready")
 
     def test_a_working_gh_with_no_pull_request_still_never_merges_here(self):
         f = self.f
@@ -778,12 +819,16 @@ class OrdinaryPublication(unittest.TestCase):
         self.assertEqual(f.calls("pr", "merge"), [])
 
     def test_a_pull_request_gh_wont_open_hands_over(self):
+        """One into its own base that GitHub still shows at an older commit: gh's own words, and adopt
+        wouldn't take it either, so none is named."""
         f = Fixture(self)
-        f.github(prs=[], create='a pull request for branch "task/1" into branch "old-base" already exists')
+        f.github(prs=[f.pr(baseRefName="old-base", headRefOid=f.first)],
+                 create='a pull request for branch "task/1" into branch "old-base" already exists')
         before = f.saved()
         error = f.no_ready()
         self.assertIn("Couldn't open a pull request", error)
-        self.assertIn("herdr-task adopt", error)
+        self.assertIn("already exists", error)
+        self.assertNotIn("herdr-task adopt", error)
         self.assertIn(HANDOFF, error)
         self.assertEqual(f.saved(), before)
 
@@ -931,6 +976,10 @@ class OnlyGhsOwnNoIsANo(unittest.TestCase):
                 f.env["HERDR_TASK_GH"] = os.path.join(f.tmp, "no-such-gh")
                 f.merges_here()
 
+    def test_adopt_after_ghs_no_doesnt_claim_there_is_no_github_remote(self):
+        f = self.elsewhere(ENTERPRISE, fail=NOT_GITHUB)
+        self.assertIn("no remote gh can place on GitHub", f.refused("adopt", "1", "--folder", f.repo, "--pr", "7"))
+
     def test_gh_not_installed_with_a_saved_name_refuses(self):
         f = self.elsewhere(ALIAS)
         f.env["HERDR_TASK_GH"] = os.path.join(f.tmp, "no-such-gh")
@@ -961,9 +1010,12 @@ class AWorktreeThatIsGone(unittest.TestCase):
 
     def test_a_reviewers_pass_is_refused_too(self):
         f = self.gone()
-        self.assertIn("is gone", f.refused("review", "1", "--folder", f.repo, "--pass"))
+        error = f.refused("review", "1", "--folder", f.repo, "--pass")
+        self.assertIn("is gone", error)
+        self.assertIn("Review round 1 is recorded", error)
+        self.assertNotIn("stays as it was", error)
         self.assertEqual((f.task()["state"], f.task()["reviews"][-1]["result"]), ("running", "pass"))
-        self.assertIn("is gone", f.task()["attention"])
+        self.assertEqual(f.task()["attention"], error)
         self.assertEqual(f.hc("send", "run"), [])
 
 
@@ -974,7 +1026,10 @@ class AReviewersPass(unittest.TestCase):
         f.seed(review={"round": 1, "of": 1, "reviewer": "t9"})
         f.github(prs=[], fail=AUTH)
         f.env["HC_TERMINAL_ID"] = "t9"
-        self.assertIn("gh couldn't", f.refused("review", "1", "--folder", f.repo, "--pass"))
+        error = f.refused("review", "1", "--folder", f.repo, "--pass")
+        self.assertIn("gh couldn't", error)
+        self.assertIn("Review round 1 is recorded and nothing merged here", error)
+        self.assertNotIn("stays as it was", error)
         t = f.task()
         self.assertEqual((t["state"], t["reviews"][-1]["result"], t["reviews"][-1]["round"]), ("running", "pass", 1))
         self.assertNotIn("review", t)
@@ -985,6 +1040,15 @@ class AReviewersPass(unittest.TestCase):
         while time.time() < ends and not f.hc("kill"):
             time.sleep(0.2)
         self.assertEqual(f.hc("kill"), [["kill", "t9"]])
+
+    def test_a_refusal_with_nothing_on_the_task_says_the_round_is_recorded_too(self):
+        f = Fixture(self)
+        f.github(prs=[f.pr()])
+        f.adopt()
+        f.github(prs=[f.pr(state="MERGED")])
+        error = f.refused("review", "1", "--folder", f.repo, "--pass")
+        self.assertIn("The tick finishes the task", error)
+        self.assertTrue(error.endswith("Review round 1 is recorded."), error)
 
 
 @ON_CI
@@ -1026,6 +1090,221 @@ class ProofStaysChecked(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertIn("No proof artifact found", p.stdout)
         self.assertEqual(f.task()["state"], "ready")
+
+    def test_json_carries_the_same_warning(self):
+        out = self.f.ready()
+        self.assertIn("No proof artifact found", out["message"])
+        self.assertEqual(out["state"], "ready")
+
+    def test_json_carries_a_proofs_line_too(self):
+        self.artifact(["recipe.json"])
+        out = self.f.ready("--proof", "art-1")
+        self.assertIn("Proof: Proof.", out["message"])
+        self.assertNotIn("No proof artifact found", out["message"])
+
+
+@ON_CI
+class AnOpenPullRequestIntoAnotherBase(unittest.TestCase):
+    """ready refuses and names adopt, with nothing published, whether the recorded base is on GitHub
+    (gh would open a second pull request) or isn't (gh would fail with no way forward)."""
+
+    def refused(self, recorded):
+        f = Fixture(self)
+        f.seed(base=recorded)
+        f.github(prs=[f.pr()])
+        before = f.saved()
+        error = f.no_ready()
+        self.assertEqual(f.saved(), before)
+        self.assertEqual((f.calls("pr", "create"), f.calls("pr", "comment"), f.remote_tip("task/1")), ([], [], None))
+        self.assertIn(f"herdr-task adopt {f.ok('show', '1', '--folder', f.repo)['ref']} --pr 7", error)
+        self.assertIn("into target, not " + recorded, error)
+        self.assertIn(HANDOFF, error)
+        return f
+
+    def test_a_recorded_base_github_has(self):
+        self.assertTrue(self.refused("main").remote_tip("main"))
+
+    def test_a_recorded_base_github_doesnt_have(self):
+        self.assertIsNone(self.refused("old-base").remote_tip("old-base"))
+
+    def test_the_command_it_names_gets_the_task_through(self):
+        f = self.refused("old-base")
+        f.adopt()
+        f.ready()
+        t = f.task()
+        self.assertEqual((t["state"], t["pr"]["number"], t["base"], f.calls("pr", "create")), ("ready", 7, "target", []))
+
+    def test_one_into_its_own_base_is_kept_beside_it(self):
+        f = Fixture(self)
+        f.github(prs=[f.pr(), f.pr(number=8, url="https://github.com/o/r/pull/8", baseRefName="old-base")])
+        f.ready()
+        self.assertEqual((f.task()["state"], f.task()["pr"]["number"], f.calls("pr", "create")), ("ready", 8, []))
+
+    def test_a_forks_stays_ignored(self):
+        f = Fixture(self)
+        f.github(prs=[f.pr(isCrossRepository=True)])
+        f.ready()
+        self.assertEqual((f.task()["pr"]["number"], len(f.calls("pr", "create"))), (9, 1))
+
+    def test_accept_goes_on_waiting_for_the_person(self):
+        """Saved by an older version: Accept takes only one into the task's own base."""
+        f = Fixture(self)
+        f.github(prs=[f.pr()])
+        f.seed(state="ready", ready_at=1, attention='Couldn\'t open a pull request: for branch "task/1" already exists')
+        before = f.saved()
+        self.assertIn("needs attention first", f.refused("accept", "1", "--folder", f.repo))
+        self.assertEqual(f.saved(), before)
+        self.assertEqual((f.calls("pr", "create"), f.calls("pr", "merge")), ([], []))
+
+
+@ON_CI
+class TheCause(unittest.TestCase):
+    """--json's one added key says whether gh or git failed, and nothing else gets it."""
+
+    def setUp(self):
+        self.f = Fixture(self)
+
+    def says(self, cause, *args):
+        out = self.f.refusal(*args, "--folder", self.f.repo)
+        self.assertEqual((out.get("cause"), type(out["error"])), (cause, str))
+        return out
+
+    def ready(self):
+        return ("ready", "1", "--summary", "Sign-in works again")
+
+    def recorded(self):
+        self.f.seed(state="ready", ready_at=1, pr={"number": 7, "url": "https://github.com/o/r/pull/7", "repo": "o/r"})
+
+    def test_a_gh_failure_is_ghs(self):
+        self.f.github(prs=[], fail=AUTH)
+        self.assertEqual(set(self.says("gh", *self.ready())), {"error", "cause"})
+
+    def test_a_refused_push_is_gits(self):
+        self.f.github(prs=[])
+        self.f.refuse_pushes()
+        self.assertEqual(set(self.says("git", *self.ready())), {"error", "cause"})
+
+    def test_a_pull_request_gh_wont_open_is_ghs(self):
+        self.f.github(prs=[], create="HTTP 422: Validation Failed")
+        self.says("gh", *self.ready())
+
+    def test_the_persons_wording_keeps_it(self):
+        self.f.seed(state="ready", ready_at=1)
+        self.f.github(prs=[], fail=AUTH)
+        self.assertIn("then try again", self.says("gh", "accept", "1")["error"])
+
+    def test_a_reviewers_pass_keeps_it(self):
+        self.f.github(prs=[], fail=AUTH)
+        self.says("gh", "review", "1", "--pass")
+
+    def test_a_pull_request_gh_cant_read_at_accept(self):
+        self.recorded()
+        self.f.github(prs=[], fail=AUTH)
+        self.says("gh", "accept", "1")
+
+    def test_a_merge_gh_refused(self):
+        self.recorded()
+        self.f.github(prs=[self.f.pr()], merge="GraphQL: Something went wrong")
+        self.says("gh", "accept", "1")
+
+    def test_any_other_refusal_keeps_its_old_shape(self):
+        self.f.github(prs=[self.f.pr()])
+        self.assertEqual(set(self.says(None, "adopt", "1", "--pr", "seven")), {"error"})
+        self.recorded()
+        self.f.github(prs=[self.f.pr(state="CLOSED")])
+        self.says(None, "accept", "1")
+
+
+@ON_CI
+class NoCredentialIsShownOrKept(unittest.TestCase):
+    """gh's or git's words holding a remote URL with a token: the URL stays, its user and password go,
+    in what's said and in what's saved."""
+
+    def setUp(self):
+        self.f = Fixture(self)
+
+    def clean(self, error):
+        self.assertIn("https://github.com/o/r.git", error)
+        self.assertNotIn(SECRET, error)
+        self.assertNotIn("x-access-token", error)
+        self.assertNotIn(SECRET, self.f.saved())
+
+    def recorded(self):
+        self.f.seed(state="ready", ready_at=1, pr={"number": 7, "url": "https://github.com/o/r/pull/7", "repo": "o/r"})
+
+    def test_ghs_words(self):
+        self.f.github(prs=[], fail=f"fatal: unable to access '{TOKEN_URL}/': 403")
+        self.clean(self.f.no_ready())
+
+    def test_ghs_words_for_the_person(self):
+        self.f.seed(state="ready", ready_at=1)
+        self.f.github(prs=[], fail=f"fatal: unable to access '{TOKEN_URL}/': 403")
+        self.clean(self.f.refused("accept", "1", "--folder", self.f.repo))
+
+    def test_gits_words(self):
+        self.f.github(prs=[])
+        self.f.refuse_pushes(f"denied for {TOKEN_URL}")
+        self.clean(self.f.no_ready())
+
+    def test_a_pull_request_gh_wont_open(self):
+        self.f.github(prs=[], create=f"HTTP 403 for {TOKEN_URL}")
+        self.clean(self.f.no_ready())
+
+    def test_what_a_reviewers_pass_keeps(self):
+        self.f.github(prs=[], fail=f"fatal: unable to access '{TOKEN_URL}/': 403")
+        self.clean(self.f.refused("review", "1", "--folder", self.f.repo, "--pass"))
+        self.clean(self.f.task()["attention"])
+
+    def test_a_pull_request_gh_cant_read(self):
+        self.recorded()
+        self.f.github(prs=[], fail=f"fatal: unable to access '{TOKEN_URL}/': 403")
+        self.clean(self.f.refused("accept", "1", "--folder", self.f.repo))
+
+    def test_what_a_refused_merge_keeps(self):
+        self.recorded()
+        self.f.github(prs=[self.f.pr()], merge=f"HTTP 403 for {TOKEN_URL}")
+        self.clean(self.f.refused("accept", "1", "--folder", self.f.repo))
+        self.clean(self.f.task()["attention"])
+
+
+@ON_CI
+class TheCommandLine(unittest.TestCase):
+    def setUp(self):
+        self.f = Fixture(self)
+
+    def help(self, *args):
+        p = self.f.run(*args, "--help")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return " ".join(p.stdout.split())
+
+    def test_adopt_help_says_what_it_needs_and_shows_how(self):
+        said = self.help("adopt")
+        for words in ("--pr", "started task", "open pull request for its branch", "at exactly its tip", "one merge base",
+                      "Never creates, pushes or merges", "herdr-task adopt HAT-4 --pr 123"):
+            self.assertIn(words, said)
+
+    def test_the_route_to_gh_can_be_found(self):
+        self.assertIn("HERDR_TASK_GH", self.help())
+
+    def test_merge_help_says_what_it_does(self):
+        said = self.help()
+        self.assertIn("its agent is asked to merge it here", said)
+        self.assertNotIn("ask the task's agent to merge it", said)
+
+    def test_adopt_without_a_pull_request_is_a_usage_error(self):
+        f = self.f
+        before, asked = f.saved(), f.calls()
+        p = f.run("adopt", "1", "--folder", f.repo)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("--pr", p.stderr)
+        self.assertEqual((f.saved(), f.calls()), (before, asked))
+
+    def test_a_refusal_without_json_goes_to_stderr(self):
+        f = self.f
+        p = f.run("adopt", "1", "--folder", f.repo, "--pr", "seven")
+        self.assertEqual((p.returncode, p.stdout), (1, ""))
+        self.assertTrue(p.stderr.startswith("herdr-task: "), p.stderr)
+        self.assertIn("give its number or its link", p.stderr)
 
 
 if __name__ == "__main__":

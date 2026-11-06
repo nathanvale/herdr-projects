@@ -27,24 +27,39 @@ def gh(*args, cwd=None):
 
 
 HANDOFF = "say why in your chat and end your turn."
+GH_ACCESS = "gh's own access (gh auth status; HERDR_TASK_GH names the gh command to run)"
+STAYS = "The task stays as it was"
 
 
-class GhFailed(Fail):
+def plain(err):
+    """gh's or git's own words on one line, as output and a saved task hold them: a URL's user and
+    password go, as a remote URL can carry a token."""
+    return re.sub(r"\b([a-z][a-z0-9+.-]*://)[^/\s]*@", r"\1", " ".join(str(err).split()), flags=re.I)
+
+
+class Caused(Fail):
+    """A refusal gh or git caused, whose access differs: --json says which (cause)."""
+
+    def __init__(self, cause, words):
+        super().__init__(words)
+        self.cause = cause
+
+
+class GhFailed(Caused):
     """gh couldn't answer: gh's own access, never git's (push_problem()). Worded for the agent that
     ran ready, whose next step is to hand it over; .person is for whoever runs Accept, merge or adopt."""
 
     def __init__(self, doing, err):
-        said = f"gh couldn't {doing} ({' '.join(str(err).split())}). The task stays as it was and nothing merged here."
-        access = "gh's own access (gh auth status; HERDR_TASK_GH names the gh command to run)"
-        super().__init__(f"{said} {access} is the person's to repair: {HANDOFF}")
-        self.person = f"{said} Repair {access}, then try again."
+        said = f"gh couldn't {doing} ({plain(err)}). {STAYS} and nothing merged here."
+        super().__init__("gh", f"{said} {GH_ACCESS} is the person's to repair: {HANDOFF}")
+        self.person = f"{said} Repair {GH_ACCESS}, then try again."
 
 
 def push_problem(wt, branch, remote, there, err):
     """git couldn't push, in git's own words, since a refused sign-in, a moved branch and a rule on
     the remote all end here. there: what GitHub holds for the branch. The one cause checked here is
     a lease refused on this clone's tracking ref, which a branch published without a push leaves behind."""
-    said = f"git couldn't push {branch} to {remote}: {' '.join(str(err).split())}. The task stays as it was."
+    said = f"git couldn't push {branch} to {remote}: {plain(err)}. {STAYS}."
     tracked = git(wt, "rev-parse", "--verify", "--quiet", f"refs/remotes/{remote}/{branch}")[1]
     if there and tracked != there:
         said += (f" This clone's tracking ref {remote}/{branch} is at {tracked[:7] or 'nothing'} and GitHub has {there[:7]}, so "
@@ -134,21 +149,22 @@ def publish(s, task, repo):
     wt, br = task["worktree"], task["branch"]
     ok, tip, err = git(wt, "rev-parse", "--verify", br)
     if not ok or not tip:
-        raise Fail(f"Couldn't read {br} here: {err}")
+        raise Caused("git", f"Couldn't read {br} here: {plain(err)}")
     there = branch_commit(repo, br)
     if there == tip:
         return
     remote = remote_of(s.loc["folder"])
     ok, _, err = git(wt, "push", "--force-with-lease", "-u", remote, br)
     if not ok:
-        raise Fail(push_problem(wt, br, remote, there, err))
+        raise Caused("git", push_problem(wt, br, remote, there, err))
 
 
 def pr_open(s, task, repo, summary=None):
     """Publishes the task's branch and opens its pull request (or keeps the open one, also one
     opened by hand or by its agent for the branch: SHEP-13's "already exists"). Refuses (Fail) when
     gh or git can't: a saved pull request gh can't read is never replaced by a new one, and one
-    adopted (adopt_existing()) is never replaced at all."""
+    adopted (adopt_existing()) is never replaced at all. Nor does a branch whose open pull request
+    targets another base get a second one (no_other_base())."""
     br, pr = task["branch"], task.get("pr") or {}
     state = None
     if pr.get("number"):
@@ -161,6 +177,8 @@ def pr_open(s, task, repo, summary=None):
         if state != "OPEN" and pr.get("adopted"):
             raise Fail(f"Pull request #{pr['number']}, adopted for {s.ref(task)}, is {state.lower()}, and adoption never opens "
                        f"another. Whether to reopen it is the person's call: {HANDOFF}")
+    if state != "OPEN":
+        no_other_base(s, task, repo)
     publish(s, task, repo)
     if state == "OPEN":
         if summary:
@@ -178,35 +196,54 @@ def pr_open(s, task, repo, summary=None):
     ok, out, err = gh("pr", "create", "--repo", repo, "--head", br, "--base", task.get("base") or "main",
                       "--title", f"{s.ref(task)} {task['title']}", "--body", body)
     if not ok or not out:
-        raise Fail(f"Couldn't open a pull request: {err}" + (
-            f" When it targets another branch, `herdr-task adopt {s.ref(task)} --pr <number>` records it." if "already exists" in err else "")
-            + f" The task stays as it was: {HANDOFF}")
+        raise Caused("gh", f"Couldn't open a pull request: {plain(err)}. {STAYS}: {HANDOFF}")
     url = out.split()[-1]
     task["pr"] = {"number": int(url.rstrip("/").split("/")[-1]), "url": url, "repo": repo}
     return task["pr"]
 
 
-def pr_adopt(task, repo):
-    """The open pull request for the task's branch, opened by hand or by its agent, recorded on the
-    task; None when there is none (SHEP-13: ready failed with "already exists"). Only one from this
-    repo (never a fork's branch of the same name), into the task's base, at the branch's tip here."""
+def open_prs(task, repo):
+    """This repo's open pull requests for the task's branch, never a fork's branch of the same name."""
+    doing = f"list the pull requests for {task['branch']}"
     ok, out, err = gh("pr", "list", "--repo", repo, "--head", task["branch"], "--state", "open",
                       "--json", "number,url,isCrossRepository,baseRefName,headRefOid")
     if not ok:
-        raise GhFailed(f"list the pull requests for {task['branch']}", err)
-    tip_ok, tip, _ = git(task["worktree"], "rev-parse", task["branch"])
+        raise GhFailed(doing, err)
     try:
-        found = next((p for p in json.loads(out) if not p.get("isCrossRepository")
-                      and p.get("baseRefName") == (task.get("base") or "main")
-                      and tip_ok and tip and p.get("headRefOid") == tip), None) if out else None
-    except (ValueError, TypeError, AttributeError):
-        raise GhFailed(f"list the pull requests for {task['branch']}", "an answer it couldn't read")
+        prs = [p for p in json.loads(out) if not p["isCrossRepository"]] if out else []
+        if all(isinstance(p["number"], int) and isinstance(p["url"], str) and isinstance(p["baseRefName"], str) for p in prs):
+            return prs
+    except (ValueError, TypeError, KeyError):
+        pass
+    raise GhFailed(doing, "an answer it couldn't read")
+
+
+def no_other_base(s, task, repo):
+    """Refuses (Fail), before anything is published, a branch whose open pull requests all target
+    another base: gh would open a second one, or fail with no way forward. adopt can record it, once
+    the commits prove its base. One into the task's own base goes on to pr_adopt()."""
+    base, prs = task.get("base") or "main", open_prs(task, repo)
+    if prs and not any(p["baseRefName"] == base for p in prs):
+        n, other = prs[0]["number"], prs[0]["baseRefName"]
+        raise Fail(f"Pull request #{n} is open for {task['branch']} into {other}, not {base}, and a branch gets no second one. "
+                   f"`herdr-task adopt {s.ref(task)} --pr {n}` records it once its base is proved. {STAYS}: {HANDOFF}")
+
+
+def pr_adopt(task, repo):
+    """The open pull request for the task's branch, opened by hand or by its agent, recorded on the
+    task; None when there is none (SHEP-13: ready failed with "already exists"). Only one from this
+    repo (open_prs()), into the task's base, at the branch's tip here."""
+    base, prs = task.get("base") or "main", open_prs(task, repo)
+    tip_ok, tip, _ = git(task["worktree"], "rev-parse", task["branch"])
+    found = next((p for p in prs if p["baseRefName"] == base and tip_ok and tip and p.get("headRefOid") == tip), None)
     if found:
         task["pr"] = {"number": found["number"], "url": found["url"], "repo": repo}
     return task.get("pr") if found else None
 
 
-PR_LINK = re.compile(r"https://[^/]+/([^/]+/[^/]+)/pull/([0-9]+)/?")
+PR_NUMBER = r"[0-9]{1,18}"  # ASCII digits only: "²" passes isdigit(), and int() refuses it
+PR_LINK = re.compile(rf"https://[^/]+/([^/]+/[^/]+)/pull/({PR_NUMBER})/?")
+BRANCH = re.compile(r"[\w./@+-]+")  # as launch.base_ref(), which imports from here
 
 
 def adopt_existing(s, task, given):
@@ -230,10 +267,10 @@ def adopt_existing(s, task, given):
                    "commit recorded. Start it, or reopen it.")
     repo = github(s)
     if not repo:
-        raise Fail(f"{main} has no GitHub remote, so there is no pull request to adopt.")
+        raise Fail(f"{main} has no remote gh can place on GitHub, so there is no pull request to adopt.")
     link = PR_LINK.fullmatch(given.strip())
     word = link.group(2) if link else given.strip().lstrip("#")
-    if not word.isdigit():
+    if not re.fullmatch(PR_NUMBER, word):
         raise Fail(f"{given!r} isn't a pull request: give its number or its link.")
     number = int(word)
     if link and link.group(1).lower() != repo.lower():
@@ -253,8 +290,14 @@ def adopt_existing(s, task, given):
         answered = PR_LINK.fullmatch(p["url"])
         base, state = p["baseRefName"], p["state"]
         cross, head, head_oid = p["isCrossRepository"], p["headRefName"], p["headRefOid"]
+        if not isinstance(cross, bool) or not all(isinstance(x, str) for x in (base, state, head, head_oid)):
+            raise ValueError
     except (ValueError, TypeError, KeyError):
         raise GhFailed(f"read pull request #{number} of {repo}", "an answer it couldn't read")
+    for name in (head, base):
+        if not BRANCH.fullmatch(name) or name.startswith("-"):
+            raise Fail(f"GitHub answered #{number} with the branch {name!r}, which isn't a branch name herdr-task takes. "
+                       "Nothing was adopted.")
     if not answered or answered.group(1).lower() != repo.lower() or int(answered.group(2)) != number:
         raise Fail(f"GitHub answered #{number} with {p['url']}, not a pull request of {repo}. Check the repository's name and "
                    "the number, then adopt again.")
@@ -263,12 +306,12 @@ def adopt_existing(s, task, given):
     if head != br:
         raise Fail(f"Pull request #{number} is for branch {head}, and {ref} works on {br}. Adopt the one for {br}.")
     if state != "OPEN":
-        raise Fail(f"Pull request #{number} is {str(state).lower()}, not open. Reopen it on GitHub, then adopt again.")
+        raise Fail(f"Pull request #{number} is {state.lower()}, not open. Reopen it on GitHub, then adopt again.")
     ok, tip, _ = git(main, "rev-parse", "--verify", "--quiet", f"refs/heads/{br}")
     if not ok or not tip:
         raise Fail(f"Branch {br} isn't here to compare. Restore it, then adopt again.")
     if head_oid != tip:
-        raise Fail(f"Pull request #{number} is at {str(head_oid)[:7]}, and {br} is at {tip[:7]} here. Bring them to the same "
+        raise Fail(f"Pull request #{number} is at {head_oid[:7]}, and {br} is at {tip[:7]} here. Bring them to the same "
                    "commit, then adopt again.")
     if tip == start:
         raise Fail(f"{br} has no commits of its own past its start, so there is nothing for #{number} to carry. Commit the "
@@ -313,13 +356,22 @@ BAD = {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP
 PENDING = {"QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED", "EXPECTED"}
 
 
-def pr_view(task):
+def pr_read(task):
+    """A pull request as gh answers it, and why not: (its view, None), or (None, gh's reason)."""
     pr = task["pr"]
-    ok, out, _ = gh("pr", "view", str(pr["number"]), "--repo", pr["repo"], "--json", "state,mergeable,headRefOid,baseRefName,statusCheckRollup,mergeCommit")
+    ok, out, err = gh("pr", "view", str(pr["number"]), "--repo", pr["repo"], "--json", "state,mergeable,headRefOid,baseRefName,statusCheckRollup,mergeCommit")
+    if not ok:
+        return None, err or "no answer"
     try:
-        return json.loads(out) if ok else None
+        v = json.loads(out)
     except ValueError:
-        return None
+        v = None
+    return (v, None) if isinstance(v, dict) else (None, "an answer it couldn't read")
+
+
+def pr_view(task):
+    """pr_read()'s view alone, for those that wait quietly for the next look: None when gh can't say."""
+    return pr_read(task)[0]
 
 
 def pr_problem(v):

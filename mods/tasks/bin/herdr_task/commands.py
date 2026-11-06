@@ -21,8 +21,8 @@ from .agents import (
 )
 from .sessions import refresh_sessions
 from .github import (
-    adopt_existing, base_commit, finish, gh, GhFailed, github, merged_here, no_local_merge, own_work, pr_adopt, pr_open, pr_pending,
-    pr_problem, pr_view, update_main, watch_main,
+    adopt_existing, base_commit, finish, gh, GH_ACCESS, GhFailed, github, merged_here, no_local_merge, own_work, plain, pr_adopt,
+    pr_open, pr_pending, pr_problem, pr_read, pr_view, STAYS, update_main, watch_main,
 )
 from .launch import (
     base_ref, brief, caller_labels, caller_space, current_base, default_space, folder_for, handoff, launch, name_tabs,
@@ -46,7 +46,8 @@ def for_the_person(fn):
         try:
             return fn(args)
         except GhFailed as e:
-            raise Fail(e.person)
+            e.args = (e.person,)
+            raise
     return command
 
 
@@ -356,7 +357,7 @@ def cmd_ready(args):
             v = view(s, t)
     if refused:
         raise Fail(refused)
-    say(args, v, msg)
+    say(args, {**v, "message": msg}, msg)
 
 
 REVIEWED = ("report", "pass", "changes")  # a recorded review round (report: the agent's own reviewed)
@@ -558,7 +559,7 @@ def worktree_here(s, t):
     without one gh would never be asked whether the repo merges through a pull request."""
     wt = t.get("worktree")
     if t.get("mode") == "worktree" and wt and not os.path.isdir(wt):
-        raise Fail(f"{s.ref(t)}'s worktree {wt} is gone, so it can't be published or merged. The task stays as it was: say why "
+        raise Fail(f"{s.ref(t)}'s worktree {wt} is gone, so it can't be published or merged. {STAYS}: say why "
                    "in your chat and end your turn.")
 
 
@@ -626,11 +627,13 @@ def cmd_review(args):
         if args.passed:
             # Refused (publication): the round stays recorded and the reviewer still ends, as
             # finalize() changed nothing; with its reviewer gone the refusal waits on the task for
-            # the person. Refused after the store is saved.
+            # the person, saying so. Refused after the store is saved.
             try:
                 msg = f"{s.ref(t)}: review round {n} passed. " + finalize(s, t)
             except Fail as e:
-                refused = t["attention"] = str(e)
+                said = f"Review round {n} is recorded"
+                t["attention"] = str(e).replace(STAYS, said) if STAYS in str(e) else f"{e} {said}."
+                e.args, refused = (t["attention"],), e
         else:
             last = n >= of
             if t["state"] == "ready":
@@ -647,7 +650,7 @@ def cmd_review(args):
         subprocess.Popen(["sh", "-c", 'sleep 4; hc kill "$1" >/dev/null 2>&1; sleep 2; hc rm "$1" >/dev/null 2>&1', "x", me],
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     if refused:
-        raise Fail(refused)
+        raise refused
     say(args, v, msg)
 
 
@@ -849,6 +852,7 @@ def local_merge_msg(s, t):
 
 
 MERGE_FAILED = "GitHub didn't merge it"  # a merge that failed: never in the way of the next try
+UNREACHED = "Couldn't reach pull request"  # merge_now()'s words when gh can't read it
 MOVED = "Adopted pull request"  # adopted_moved()'s words: the tick clears them once it's put back
 
 
@@ -872,10 +876,10 @@ def merge_now(s, t):
     """Merges the task's pull request on GitHub (squash) and tidies up here. Returns why it
     couldn't, or None when it's merged (and the task done)."""
     n, repo = str(t["pr"]["number"]), t["pr"]["repo"]
-    v = pr_view(t)
+    v, why = pr_read(t)
     s.dirty = True
     if not v:
-        return f"Couldn't reach pull request #{n} on GitHub."
+        return f"{UNREACHED} #{n} on GitHub ({plain(why or 'no answer')}). Nothing merged. Repair {GH_ACCESS}, then try again."
     if v.get("state") != "MERGED":
         problem = pr_problem(v) or adopted_moved(s, t, v)
         if problem:
@@ -890,7 +894,7 @@ def merge_now(s, t):
         if not ok and (again or {}).get("state") == "MERGED":
             v = again
         elif not ok:
-            t["attention"] = f"{MERGE_FAILED}: {err}"
+            t["attention"] = f"{MERGE_FAILED}: {plain(err)}"
             # The next tick reads the pull request at once (merged by hand meanwhile: done).
             t["pr"]["checked"] = 0
             return t["attention"]
@@ -899,6 +903,13 @@ def merge_now(s, t):
     t["merged"] = True
     finish(s, t, even_if_busy=True)
     return None
+
+
+def merge_refused(args, v, error):
+    """Accept or merge stopped at merge_now(): why, and with --json whether gh was the cause."""
+    cause = {"cause": "gh"} if error.startswith((UNREACHED, MERGE_FAILED)) else {}
+    say(args, {**v, "error": error, **cause}, None) if args.json else print(f"herdr-task: {error}", file=sys.stderr)
+    sys.exit(1)
 
 
 @for_the_person
@@ -922,8 +933,7 @@ def cmd_merge(args):
             sent, started = tell(s, t, local_merge_msg(s, t), args)
         v = view(s, t)
     if error:
-        say(args, {**v, "error": error}, None) if args.json else print(f"herdr-task: {error}", file=sys.stderr)
-        sys.exit(1)
+        merge_refused(args, v, error)
     text = f"{s.ref(t)}: pull request #{t['pr']['number']} merged; done." if how == "github" else \
         f"{s.ref(t)}: merge asked of {sent}" + (" (a new agent)" if started else "")
     say(args, {**v, "terminal": sent, "new_agent": started, "merged": how == "github"}, text)
@@ -1018,8 +1028,7 @@ def cmd_accept(args):
                 sent, started = tell(s, t, local_merge_msg(s, t), args)
         v = view(s, t)
     if error:
-        say(args, {**v, "error": error}, None) if args.json else print(f"herdr-task: {error}", file=sys.stderr)
-        sys.exit(1)
+        merge_refused(args, v, error)
     text = {"done": f"{s.ref(t)} accepted: done.",
             "merged": f"{s.ref(t)} accepted: merged into {t.get('base') or 'main'}; done.",
             "github": f"{s.ref(t)} accepted: pull request #{(t.get('pr') or {}).get('number')} merged; done.",
@@ -1039,7 +1048,7 @@ def cmd_adopt(args):
     pr, was = v["pr"], (v.get("adopted_from") or {}).get("base")
     moved = f"its base moves from {was} to {v['base']}" if was else f"its base stays {v.get('base')}"
     say(args, {**v, "adopted": adopted}, f"{s.ref(t)}: pull request #{pr['number']} " +
-        (f"adopted; {moved}, and it merges there on the person's Accept. {pr['url']}" if adopted else f"was already adopted. {pr['url']}"))
+        (f"adopted; {moved}, and it merges there on the person's Accept. {pr['url']}" if adopted else f"is already recorded. {pr['url']}"))
 
 
 def cmd_fix(args):
