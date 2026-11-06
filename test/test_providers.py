@@ -59,6 +59,9 @@ PENDING = ["launch admission", "bound resume", "settings and selectors", "native
 # Settings' start limits off: the runner's own load, memory or disk never decides what a tick starts.
 ROOM = {"machine": {"start_load": None, "start_memory": None, "start_disk": None}}
 INLINE = "marker-inline-credential-3b9d"
+# A key pasted into settings as a field's name, not its value.
+PASTED = "sk-marker-pasted-as-a-field-name-4e7a"
+UNKNOWN = "a field it doesn't know"
 
 
 def claude_env(deployment, inherited=None):
@@ -257,7 +260,7 @@ class PersonalPassThrough(unittest.TestCase):
     def test_a_provider_section_that_cannot_be_read_refuses_on_personal_too(self):
         # The section's shape is checked on every route: settings are copied between machines, so a
         # key put there is said and never started past. Its value is never repeated.
-        for section, words in (({"route": "personal", "api_key": "marker-pasted-key-6d21"}, "'api_key'"),
+        for section, words in (({"route": "personal", "api_key": "marker-pasted-key-6d21"}, UNKNOWN),
                                ({"claude_deployment": 7}, "provider claude_deployment isn't text")):
             with self.subTest(section=sorted(section)):
                 f = Fixture(self)
@@ -315,9 +318,37 @@ class AzureRefusesBeforeEffects(unittest.TestCase):
         self.refuse_start({"route": "azure-foundry", **CLAUDE}, "Claude Code and Codex only", agent="pi")
 
     def test_a_credential_put_in_settings_is_refused_and_never_repeated(self):
-        f, why = self.refuse_start({"route": "azure-foundry", **CLAUDE, "api_key": "marker-pasted-key-6d21"}, "'api_key'")
+        f, why = self.refuse_start({"route": "azure-foundry", **CLAUDE, "api_key": "marker-pasted-key-6d21"}, UNKNOWN)
         self.assertIn("Keys and tokens never go in settings", why)
         self.assertNotIn("marker-pasted-key-6d21", f.seen + json.dumps(f.calls()) + f.store_text())
+
+    def test_a_secret_pasted_as_a_field_name_is_never_repeated_or_kept(self):
+        f = Fixture(self)
+        f.provider({"route": "personal"}, also=ROOM)
+        first, second = f.add("--here"), f.add("--here", "--after", "1")
+        self.assertEqual(f.ok("start", str(second), "--folder", f.repo, "--space", "sp1")["queued"], True)
+        f.ok("rm", str(first), "--folder", f.repo)
+        auto = f.ok("auto", "add", "Nightly check", "--folder", f.repo, "--space", "sp1", "--on", "merged", "--here")
+        f.provider({"route": "azure-foundry", **CLAUDE, PASTED: "1"}, also=ROOM)
+        # A start says so, as JSON and as words.
+        self.assertIn(UNKNOWN, f.refused("start", str(second), "--folder", f.repo, "--space", "sp1", "--now"))
+        p = f.run("start", str(second), "--folder", f.repo, "--space", "sp1", "--now")
+        self.assertEqual((p.returncode, p.stdout), (1, ""))
+        self.assertIn(UNKNOWN, p.stderr)
+        # The tick keeps its reason on the queued task.
+        self.assertEqual(f.ok("tick", "--folder", f.repo)["started"], [])
+        self.assertIn(UNKNOWN, f.task(second)["attention"])
+        # An automation's run keeps it on the automation and on its task.
+        out = f.ok("auto", "run-now", str(auto["id"]), "--folder", f.repo)
+        self.assertIn(UNKNOWN, out["last_error"]["message"])
+        self.assertIn(UNKNOWN, out["runs"][-1]["error"])
+        self.assertIn(UNKNOWN, f.task(second + 1)["attention"])
+        self.assertEqual(f.launches(), [])
+        # Nothing said, kept or handed to hc repeats the field's name.
+        for text in (f.seen, json.dumps(f.calls()), f.store_text()):
+            self.assertNotIn(PASTED, text)
+            self.assertNotIn(PASTED[:16], text)  # nor a shortened one
+        f.no_secret()
 
     def test_a_copy_of_the_settings_on_another_machine_never_starts_azure(self):
         self.refuse_start({"route": "azure-foundry", **CLAUDE}, "this machine's are a copy", pushed_from="herdr-app", here="vm")

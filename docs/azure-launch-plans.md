@@ -55,8 +55,9 @@ empty string is that layer's own empty value.
 | `codex_auth` | `api-key` only. |
 | `azure_subscription` | Optional subscription UUID for discovery only. |
 
-Any other field in the section refuses, naming the field and never its value, so a key pasted
-into settings is not read as configuration. A value that is not text refuses too. This shape rule
+Any other field in the section refuses, so a key pasted into settings is not read as
+configuration. The refusal lists the known fields and never repeats the unknown field's name or
+value: either could be the pasted secret, and the reason is kept on a task or an automation. A value that is not text refuses too. This shape rule
 holds on every route, Personal included, because settings are copied between machines. With no
 `provider` section at all, nothing is checked and Personal is exactly as before. A half-filled
 Azure setup under `route: personal` is fine: field values are checked only when a plan needs them.
@@ -64,7 +65,8 @@ Azure setup under `route: personal` is fine: field values are checked only when 
 `herdr-task` has no command that writes this section: provider connection stays a human Settings
 control (A2 adds the controls).
 
-A copy that `herdr-task` pushed to another machine (marked `pushed_from`) refuses an Azure route.
+A copy that the settings window or the service pushed to another machine (marked `pushed_from`)
+refuses an Azure route.
 That is not a full local-only guard. Serve-from sync writes the host machine's file as its own,
 without that mark, so the same route would read as local there. Nothing dispatches in A1, so
 there is no effect yet; binding the execution machine is carried to launch admission (L1).
@@ -142,7 +144,8 @@ An inventory does not prove account identity, inference access, tool support or 
 - L1: one dispatch authority, the execution-machine binding, credential-presence preflight and
   durable uncertainty.
 - A2 and L2: recording a launch's binding and enforcing it on resume and revive.
-- Q: CI on the exact candidate and native qualification of each sign-in route.
+- Q: CI on the exact candidate, native qualification of each sign-in route, and public-process
+  proof of the backup's gate (in-module only today).
 
 Known limits of this slice:
 
@@ -201,9 +204,11 @@ These stand-ins do not prove Azure sign-in, inference, a real launch or the real
 ## Source checkpoint
 
 `bin/check-migration` names the owner paths phase A1 may change and the manifest's
-`source_deltas` pins each one's content hash and exact-U blob. Every other U path stays
-byte-identical, an admitted U path keeps exact U's mode, and a path A1 adds is a plain file.
-Candidate readiness stays blocked: `--require-ready` still exits 3. The mechanism is the one the
+`source_deltas` pins each one's content hash and exact-U blob. The gate proves two things: every
+U path outside that table is byte-identical to U, and each admitted path matches its pin (an
+admitted U path keeps exact U's mode, and an admitted added path is a plain file). The checker,
+the manifest, and added files outside the table (docs, the checkpoint tests) are not pinned by
+it: they rely on review. Candidate readiness stays blocked: `--require-ready` still exits 3. The mechanism is the one the
 S1 branch introduced, so the two phases merge into one table; the hashes of paths both phases
 change (`T/__init__.py`, `T/commands.py`) must be pinned again by whichever merges second.
 

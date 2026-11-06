@@ -72,6 +72,10 @@ NO_CODEX_AUTH = ("Codex on Azure signs in with an API key only (\"api-key\", fro
 NO_KIND = "Azure Foundry is set up for Claude Code and Codex only, not {}. Set Provider to Personal to start it."
 NOT_LOCAL = ("Azure Foundry starts agents only on the machine whose window holds these settings: this machine's are a copy. "
              "Set Provider to Personal for this machine or space.")
+# Never names the field it found: a key pasted in as a field's name would be repeated, and this
+# reason is kept on a task or an automation (a tick's or a run's "Couldn't start").
+NO_FIELD = ("Shepherdr settings' provider section has a field it doesn't know. Its fields are " + ", ".join(FIELDS) + ". "
+            "Keys and tokens never go in settings: remove any other field. Nothing was started.")
 NO_INLINE_CREDENTIAL = ("On Azure Foundry, {} comes from the execution host's environment, never from the argv's --settings: "
                         "remove it there. Nothing was started.")
 HELD = ("Azure Foundry is set for {}, and its launch plan is valid, but this version only plans it: starting or resuming an "
@@ -109,7 +113,7 @@ def clean(field, value):
         if v not in CODEX_AUTH:
             raise Fail(NO_CODEX_AUTH)
     else:
-        raise Fail(f"Shepherdr settings have no provider field {field!r}.")
+        raise Fail(NO_FIELD)
     return v
 
 
@@ -117,8 +121,8 @@ def binding_for(s, space=None):
     """The nonsecret provider binding for this folder's launches: Everywhere's, then this
     machine's, then the space's own "provider" fields; a field a layer leaves out (or null) follows
     the layer above, and "" there is its own empty value. With no route anywhere: Personal.
-    "local" is False for a copy herdr-task pushed to this machine ("pushed_from"). It is not a
-    full local-only guard: a Serve-from host's file is its own, so launch admission (L1) must
+    "local" is False for a copy the settings window or the service pushed to this machine
+    ("pushed_from"). It is not a full local-only guard: a Serve-from host's file is its own, so launch admission (L1) must
     bind the execution machine before any Azure dispatch."""
     out = {f: "" for f in FIELDS}
     for layer in settings_layers(s, space):
@@ -129,8 +133,7 @@ def binding_for(s, space=None):
             raise Fail("Shepherdr settings' provider section isn't readable. Nothing was started; fix it in Settings.")
         for field, value in section.items():
             if field not in FIELDS:
-                raise Fail(f"Shepherdr settings' provider section has a field it doesn't know ({str(field)[:40]!r}). "
-                           "Keys and tokens never go in settings: remove it. Nothing was started.")
+                raise Fail(NO_FIELD)
             if value is None:
                 continue
             if not isinstance(value, str):

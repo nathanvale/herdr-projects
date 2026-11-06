@@ -49,10 +49,11 @@ owners, not implemented interfaces.
 ### A1 provider checkpoint
 
 `bin/check-migration` names each phase's admitted owner paths; the manifest's
-`source_deltas` pins each one's content hash and exact-U blob. Every other U path
-remains byte-identical, an admitted U path keeps exact U's mode and a path a phase
-adds is a plain file. A phase cannot widen its owners, drift its content or roll
-back over its changes. Candidate readiness stays blocked.
+`source_deltas` pins each one's content hash and exact-U blob. The gate proves two
+things: every U path outside that table is byte-identical to U, and each admitted
+path matches its pin (an admitted U path keeps exact U's mode; an admitted added
+path is a plain file). The checker, the manifest and added files outside the table
+are not pinned by it and rely on review. Candidate readiness stays blocked.
 
 - `T/providers.py` owns nonsecret bindings, the four supported launch plans and the
   admission gate. Start, queue, resume, switch, backup, the tick's queue and an
@@ -66,6 +67,7 @@ back over its changes. Candidate readiness stays blocked.
   but a Serve-from host's file is its own.
 - Carried to Q: empty settings `env` values are documented as unset for provider
   selection only; the same treatment of endpoint, credential and model variables is unproved.
+  The backup's gate has in-module proof only; its public-process proof is Q's.
 - Detail, official sources and authored regressions: [Azure launch plans](../azure-launch-plans.md).
 
 ### Bitbucket contract
