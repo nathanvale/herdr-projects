@@ -17,12 +17,26 @@ historical document.
 | Personal (the default) | Unchanged. No provider setting, or `route: personal`, adds nothing to a launch. |
 | `herdr-task provider plan` | Shows the plan for one CLI. Reads no credential, starts nothing, runs no `hc`. |
 | Start, queue, resume, switch or backup under an Azure binding | Refused before any worktree, task state or terminal effect. |
+| The scheduler's tick, for a task queued earlier | Not started. The task stays queued and says "Couldn't start" with the reason. |
+| An automation's run | Its task is added, as for any automation start that fails, and says "Couldn't start". It is not queued or started. |
 | A valid Azure plan | Held: `dispatch: "held"`. Launch admission (L1) and bound resume (A2, L2) are pending. |
 | Discovery | A module with regressions. No Settings control calls it yet (A2). |
-| Assistants (coordinators) | Not gated: their launch path is A2's. Only task agents consult the binding. |
+| Assistants (coordinators) | Not gated in A1. See the A2 prerequisite below. |
 
 Azure dispatch stays off on purpose. A launch record does not yet carry its binding, so a resume
 would follow today's settings and could reroute an existing conversation.
+
+### A2 prerequisite: coordinator launches
+
+Assistant (coordinator) starts and restarts do not go through `herdr-task`'s launch owner. They
+start from `service/actions.ts`, `service/spaces.ts`, `service/agents.ts`, `mods/chat/main.js` and
+`mods/coordinator/restart.sh`, and none of them reads the provider binding. With a hand-written
+Azure route they would start on the CLI's own sign-in, which the contract forbids as a silent
+Personal fallback.
+
+A1 gives no supported way to set the route, so this is recorded and not widened here. It is a hard
+prerequisite for A2: no Settings control, command or selector may set an Azure route until every
+one of those launch sites refuses or plans through the provider owner, with public proof.
 
 ## The binding
 
@@ -42,10 +56,18 @@ empty string is that layer's own empty value.
 | `azure_subscription` | Optional subscription UUID for discovery only. |
 
 Any other field in the section refuses, naming the field and never its value, so a key pasted
-into settings is not read as configuration. `herdr-task` has no command that writes this section:
-provider connection stays a human Settings control (A2 adds the controls). Settings pushed to
-another machine are a copy; an Azure route there refuses, so Azure stays on the machine that owns
-the settings.
+into settings is not read as configuration. A value that is not text refuses too. This shape rule
+holds on every route, Personal included, because settings are copied between machines. With no
+`provider` section at all, nothing is checked and Personal is exactly as before. A half-filled
+Azure setup under `route: personal` is fine: field values are checked only when a plan needs them.
+
+`herdr-task` has no command that writes this section: provider connection stays a human Settings
+control (A2 adds the controls).
+
+A copy that `herdr-task` pushed to another machine (marked `pushed_from`) refuses an Azure route.
+That is not a full local-only guard. Serve-from sync writes the host machine's file as its own,
+without that mark, so the same route would read as local there. Nothing dispatches in A1, so
+there is no effect yet; binding the execution machine is carried to launch admission (L1).
 
 ## Supported combinations
 
@@ -59,10 +81,22 @@ Each row is the official contract for the inspected CLI version. No other combin
 | Codex, API key | `-c model_provider` and one reserved `model_providers.shepherdr_azure_<fingerprint>` table: `base_url`, `env_key`, `wire_api="responses"`, `requires_openai_auth=false`; `-m` set to the deployment | `AZURE_OPENAI_API_KEY`, inherited. |
 
 Claude's plan also sets every competing route and inactive credential variable to an empty
-string, which Claude Code treats as unset. The active credential's variable is left out of the
-plan entirely. Codex with Entra ID or a bearer token refuses: Microsoft's guide says Entra ID is
-not available for Codex. A `--settings` file path, or an argv that names its own Codex provider,
-also refuses.
+string. The official statement is narrower than that use: Claude Code treats an empty settings
+`env` value as unset for provider selection (the `CLAUDE_CODE_USE_*` names). That the endpoint,
+credential and model variables read the same way is the 2.x planner's working assumption, not a
+documented contract; native qualification (Q) has to prove it for each sign-in route. The active
+credential's variable is left out of the plan entirely.
+
+Refused before any effect:
+
+- Codex with Entra ID or a bearer token. Microsoft's guide says Entra ID is not available for Codex.
+- An argv that names its own Codex provider: `--oss`, `--local-provider`, or a `model_provider`
+  or `model_providers` override. The key is read as Codex 0.166.0 reads it (trimmed, up to the
+  first `=`), in the `-c key=value`, `-ckey=value`, `-c=key=value`, `--config key=value` and
+  `--config=key=value` forms.
+- A Claude Code `--settings` file path, an attached `--settings=`, or more than one `--settings`.
+- An inline `--settings` whose `env` names the plan's own credential variable. The refusal names
+  the variable and never its value.
 
 The fingerprint is the SHA-256 of the CLI, endpoint or resource, deployment and sign-in method. It
 uses the same expression as the 2.x planner, so equal configuration gives an equal fingerprint
@@ -71,9 +105,13 @@ change it.
 
 ## Credential custody
 
-`providers.py` never reads an environment value. A plan carries a variable's name only. Values do
-not enter argv, settings, labels, task records or output. The environment-presence preflight from
-2.x is not ported: it belongs with launch admission (L1). Presence would not prove sign-in anyway.
+`providers.py` never reads an environment value. A plan carries a variable's name only, so the
+planner adds no value to argv, settings, labels, task records or output. An argv that carries the
+plan's credential variable itself is refused (above); an inactive credential variable written
+there is blanked. The planner does not scan a person's own argv for other secrets.
+
+The environment-presence preflight from 2.x is not ported: it belongs with launch admission (L1).
+Presence would not prove sign-in anyway.
 
 ## Discovery
 
@@ -98,15 +136,22 @@ An inventory does not prove account identity, inference access, tool support or 
 
 ## Still pending
 
-- A2: Settings controls, per-role deployments, new-start selectors, coordinator launches, and
-  wiring discovery to Refresh and to configuration changes.
-- L1: one dispatch authority, credential-presence preflight and durable uncertainty.
+- A2: coordinator launch sites gated first (the prerequisite above), then Settings controls,
+  per-role deployments, new-start selectors, and wiring discovery to Refresh and to
+  configuration changes.
+- L1: one dispatch authority, the execution-machine binding, credential-presence preflight and
+  durable uncertainty.
 - A2 and L2: recording a launch's binding and enforcing it on resume and revive.
 - Q: CI on the exact candidate and native qualification of each sign-in route.
 
-Known limits of this slice: the `fable` alias is not pinned for Claude Code; revive retypes a
-recorded argv without consulting the binding (no Azure agent can exist yet); discovery assumes the
-service's computer is the local execution host.
+Known limits of this slice:
+
+- The `fable` alias is not pinned for Claude Code.
+- Revive retypes a recorded argv without consulting the binding. No Azure agent can exist yet.
+- Discovery assumes the service's computer is the local execution host. The `az` it runs is the
+  one on the service's `PATH`; there is no setting or variable that chooses another.
+- One start checks admission up to three times (the command, `begin` and `launch`), each before a
+  different effect. L1's single dispatch authority replaces them.
 
 ## Official contracts and versions
 
@@ -139,14 +184,28 @@ That confirms the names exist in that version; it does not qualify their behavio
 Authored, not run locally (repository policy allows only `bun run typecheck`). Root CI runs them.
 
 - `test/test_providers.py`: the public `herdr-task` process with a recording `hc` stand-in.
-  Personal pass-through, refusal before effects for start, queue, resume and switch, the four
-  plans against written-out values, layering, and no credential value anywhere.
+  Personal pass-through, refusal before effects for start, queue, resume, switch, the tick's
+  queue and an automation's run, the four plans against written-out values, self-routing and
+  inline-credential refusals, layering, and no credential value anywhere.
+- The backup's gate is tested in the module only (`takeover()` with its launch replaced).
+  Reaching it through `herdr-task tick` needs a live agent, its session log and a provider cut,
+  which the recording `hc` does not model.
 - `service/azure-deployments.test.ts`: the discovery class against a stand-in `az` process.
   Filters for both CLIs, subscription pinning, scope, memory-only state, stale responses,
   sanitized failures, bounds and timeout.
 - `test/azure-binding.cases.json`: one field table both suites judge.
+- `test/test_migration.py`: the source checkpoint (below).
 
 These stand-ins do not prove Azure sign-in, inference, a real launch or the real Azure CLI.
+
+## Source checkpoint
+
+`bin/check-migration` names the owner paths phase A1 may change and the manifest's
+`source_deltas` pins each one's content hash and exact-U blob. Every other U path stays
+byte-identical, an admitted U path keeps exact U's mode, and a path A1 adds is a plain file.
+Candidate readiness stays blocked: `--require-ready` still exits 3. The mechanism is the one the
+S1 branch introduced, so the two phases merge into one table; the hashes of paths both phases
+change (`T/__init__.py`, `T/commands.py`) must be pinned again by whichever merges second.
 
 ## CLI design notes
 

@@ -22,7 +22,7 @@ export type DiscoveryConfig = { target: string; subscription?: string };
  *  (null or "local": this computer). */
 export type DiscoveryRequest = DiscoveryConfig & { scope: string; kind: AzureKind; machines: (string | null)[] };
 /** Runs one Azure CLI command and gives its JSON; throws when it fails (its words are never kept). */
-export type AzRun = (args: string[]) => Promise<unknown>;
+type AzRun = (args: string[]) => Promise<unknown>;
 
 const DEPLOYMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const RESOURCE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}[A-Za-z0-9])?$/;
@@ -32,8 +32,8 @@ const GROUP = /^[\w.()][\w.()-]{0,89}$/;
 const LOCAL = "local";
 const MAX_JSON = 4 << 20;
 
-export const IDLE = "Refresh reads this resource's deployments with this machine's Azure CLI login, or type a deployment's name. Changes apply to new conversations; existing ones keep theirs.";
-export const NOT_A_TEST = "Inventory is not a sign-in, model-request or tool-use test.";
+const IDLE = "Refresh reads this resource's deployments with this machine's Azure CLI login, or type a deployment's name. Changes apply to new conversations; existing ones keep theirs.";
+const NOT_A_TEST = "Inventory is not a sign-in, model-request or tool-use test.";
 const NO_TARGET = "Set the Azure resource or endpoint before refreshing deployments";
 const NO_SUBSCRIPTION = "Use an Azure subscription ID (a UUID), or leave it empty for the host's Azure CLI subscription";
 const ONE_MACHINE = "Choose one machine or space before discovering Azure deployments";
@@ -106,8 +106,8 @@ export class AzureDeployments {
   private now: () => number;
   private changed: () => void;
 
-  constructor(o: { run?: AzRun; az?: string; timeoutMs?: number; now?: () => number; changed?: () => void } = {}) {
-    this.run = o.run ?? azCli(o.az ?? process.env.SHEPHERDR_AZ ?? "az", o.timeoutMs ?? 30_000);
+  constructor(o: { az?: string; timeoutMs?: number; now?: () => number; changed?: () => void } = {}) {
+    this.run = azCli(o.az ?? "az", o.timeoutMs ?? 30_000);
     this.now = o.now ?? Date.now;
     this.changed = o.changed ?? (() => {});
   }

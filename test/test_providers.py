@@ -1,7 +1,7 @@
 """Provider bindings and launch plans (herdr_task/providers.py), across herdr-task's own command
 line: Personal starts as it always did, an Azure binding is refused before anything is started or
-changed, `provider plan` shows the official plan for each supported sign-in, and no credential's
-value is ever read or written.
+changed (by start, resume, switch, the tick's queue and an automation), `provider plan` shows the
+official plan for each supported sign-in, and no credential's value is ever read or written.
 
 The command-line tests run on CI only, as herdr-task's others: HOME stays the account's own, the
 task lists, settings and templates are throwaway ones (herdr-task's own overrides), and `hc` is a
@@ -56,6 +56,9 @@ FP = {"entra-id": "b4ff5e524c831cf3eb23385562a1e07606b2f98a18ab17b71030acd4286ad
       "codex": "44e019ec9ff5b99ccb91a33d83e95ec6c5d75bfd66c5d3b91e6bd7bb6fe9169b",
       "space": "05c67c012ea6fc16ea0739ba8dbffac40c853fd73df3a2ac9acfc646e756536c"}
 PENDING = ["launch admission", "bound resume", "settings and selectors", "native qualification"]
+# Settings' start limits off: the runner's own load, memory or disk never decides what a tick starts.
+ROOM = {"machine": {"start_load": None, "start_memory": None, "start_disk": None}}
+INLINE = "marker-inline-credential-3b9d"
 
 
 def claude_env(deployment, inherited=None):
@@ -112,10 +115,12 @@ class Fixture:
         self.test.assertEqual((p.returncode, p.stderr), (1, ""), p.stdout)
         return json.loads(p.stdout)["error"]
 
-    def provider(self, everywhere=None, space=None, **top):
+    def provider(self, everywhere=None, space=None, also=None, **top):
+        """Writes the settings file: Everywhere's and the space's "provider" sections, `also` beside
+        Everywhere's (its other settings), `top` at the file's top."""
         d = {"version": 1, **top}
         if everywhere is not None:
-            d["everywhere"] = {"provider": everywhere}
+            d["everywhere"] = {"provider": everywhere, **(also or {})}
         if space is not None:
             d["spaces"] = {"sp1": {"folder": self.repo, "provider": space}}
         with open(self.settings, "w") as f:
@@ -155,10 +160,10 @@ class Fixture:
     def branches(self):
         return subprocess.run(["git", "-C", self.repo, "branch", "--format=%(refname:short)"], check=True, capture_output=True, text=True).stdout.split()
 
-    def settle(self, agents=1):
+    def settle(self, agents=1, tid=1):
         """Waits for the background watcher of each started agent to finish its one write."""
         for _ in range(200):
-            if sum(1 for a in self.task()["agents"] if a.get("ended")) >= agents:
+            if sum(1 for a in self.task(tid)["agents"] if a.get("ended")) >= agents:
                 return
             time.sleep(0.1)
         self.test.fail("the agent watcher didn't finish")
@@ -249,6 +254,24 @@ class PersonalPassThrough(unittest.TestCase):
         self.started_plainly(f)
         f.settle()
 
+    def test_a_provider_section_that_cannot_be_read_refuses_on_personal_too(self):
+        # The section's shape is checked on every route: settings are copied between machines, so a
+        # key put there is said and never started past. Its value is never repeated.
+        for section, words in (({"route": "personal", "api_key": "marker-pasted-key-6d21"}, "'api_key'"),
+                               ({"claude_deployment": 7}, "provider claude_deployment isn't text")):
+            with self.subTest(section=sorted(section)):
+                f = Fixture(self)
+                tid = f.add()
+                f.provider(section)
+                before = f.snapshot()
+                self.assertIn(words, f.refused("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now"))
+                f.nothing_started(before)
+                self.assertNotIn("marker-pasted-key-6d21", f.seen + json.dumps(f.calls()) + f.store_text())
+                # Without the section Personal starts again.
+                f.provider({"route": "personal"})
+                f.ok("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now", "--here")
+                f.settle(tid=tid)
+
 
 @ON_CI
 class AzureRefusesBeforeEffects(unittest.TestCase):
@@ -331,6 +354,56 @@ class AzureRefusesBeforeEffects(unittest.TestCase):
         f.settle(2)
         f.no_secret()
 
+    def test_the_tick_does_not_start_a_queued_task_and_personal_starts_it_after(self):
+        f = Fixture(self)
+        f.provider({"route": "personal"}, also=ROOM)
+        first, second = f.add("--here"), f.add("--here", "--after", "1")
+        # Personal: it waits its turn behind the first, then nothing holds it.
+        self.assertEqual(f.ok("start", str(second), "--folder", f.repo, "--space", "sp1")["queued"], True)
+        f.ok("rm", str(first), "--folder", f.repo)
+        f.provider({"route": "azure-foundry", **CLAUDE}, also=ROOM)
+        report = f.ok("tick", "--folder", f.repo)
+        self.assertEqual(report["started"], [])
+        task = f.task(second)
+        self.assertEqual((task["state"], task["agents"], "queue" in task), ("queued", [], True))
+        self.assertTrue(task["attention"].startswith("Couldn't start: Azure Foundry is set for Claude Code"), task["attention"])
+        self.assertIn("only plans it", task["attention"])
+        self.assertEqual((f.launches(), f.worktrees(), f.branches()), ([], [f"worktree {f.repo}"], ["main"]))
+        # Back on Personal the next tick starts it: the refusal left its place in the queue whole.
+        f.provider({"route": "personal"}, also=ROOM)
+        report = f.ok("tick", "--folder", f.repo)
+        self.assertEqual([x["id"] for x in report["started"]], [second])
+        self.assertEqual(len(f.launches()), 1)
+        task = f.task(second)
+        self.assertEqual((task["state"], "attention" in task, "queue" in task), ("running", False, False))
+        f.settle(tid=second)
+        f.no_secret()
+
+    def test_an_automation_neither_queues_nor_starts_its_task(self):
+        f = Fixture(self)
+        room = {**ROOM, "tasks": {"max_running": 1}}
+        f.provider({"route": "personal"}, also=room)
+        busy = f.add("--here")
+        f.ok("start", str(busy), "--folder", f.repo, "--space", "sp1", "--now")
+        auto = f.ok("auto", "add", "Nightly check", "--folder", f.repo, "--space", "sp1", "--on", "merged", "--here")
+        # Personal: with one task at work its task waits its turn, as a start would.
+        out = f.ok("auto", "run-now", str(auto["id"]), "--folder", f.repo)
+        self.assertEqual(out["runs"][-1].get("queued"), "1 task is running here")
+        self.assertEqual(f.task(busy + 1)["state"], "queued")
+        f.provider({"route": "azure-foundry", **CLAUDE}, also=room)
+        launched = len(f.launches())
+        out = f.ok("auto", "run-now", str(auto["id"]), "--folder", f.repo)
+        self.assertIn("only plans it", out["last_error"]["message"])
+        self.assertEqual((out["last_error"]["kind"], "queued" in out["runs"][-1]), ("start", False))
+        self.assertIn("only plans it", out["runs"][-1]["error"])
+        # Its task is there for the person, saying why: not queued, not started, no worktree.
+        task = f.task(busy + 2)
+        self.assertEqual((task["state"], task["agents"], "queue" in task, "queued_at" in task), ("todo", [], False, False))
+        self.assertTrue(task["attention"].startswith("Couldn't start: Azure Foundry is set for Claude Code"), task["attention"])
+        self.assertEqual((len(f.launches()), f.worktrees(), f.branches()), (launched, [f"worktree {f.repo}"], ["main"]))
+        f.settle(tid=busy)
+        f.no_secret()
+
 
 @ON_CI
 class LaunchPlans(unittest.TestCase):
@@ -395,12 +468,44 @@ class LaunchPlans(unittest.TestCase):
     def test_an_argv_that_routes_itself_is_refused(self):
         f = Fixture(self)
         f.provider({"route": "azure-foundry", **CLAUDE, **CODEX})
-        for argv, words in ((["codex", "-c", 'model_provider="azure"'], "remove the argv's own provider"),
-                            (["codex", "--oss"], "remove the argv's own provider"),
-                            (["claude", "--settings", "/somewhere/settings.json"], "must be inline JSON, not a file")):
+        own = "remove the argv's own provider"
+        for argv, words in ((["codex", "-c", 'model_provider="azure"'], own),
+                            # Codex trims an override's key, and takes it attached to -c or --config too.
+                            (["codex", "-c", ' model_provider = "azure"'], own),
+                            (["codex", '-cmodel_provider="azure"'], own),
+                            (["codex", '-c=model_provider="azure"'], own),
+                            (["codex", '--config=model_provider="azure"'], own),
+                            (["codex", "--config", ' model_providers.azure.base_url = "https://other.example/v1"'], own),
+                            (["codex", "-c", 'model_providers={azure={name="other"}}'], own),
+                            (["codex", "--oss"], own),
+                            (["claude", "--settings", "/somewhere/settings.json"], "must be inline JSON, not a file"),
+                            (["claude", "--settings=/somewhere/settings.json"], "as a separate JSON word")):
             with self.subTest(argv=argv):
                 self.assertIn(words, f.no_plan("--argv", json.dumps(argv)))
         self.assertEqual(f.calls(), [])
+
+    def test_a_credential_written_into_the_argv_is_refused_by_name(self):
+        f = Fixture(self)
+        inline = lambda variable: ["claude", "--settings", json.dumps({"env": {variable: INLINE}})]
+        for auth, variable in (("api-key", "ANTHROPIC_FOUNDRY_API_KEY"), ("bearer-token", "ANTHROPIC_FOUNDRY_AUTH_TOKEN")):
+            with self.subTest(auth=auth):
+                f.provider({"route": "azure-foundry", **CLAUDE, "claude_auth": auth})
+                self.assertIn(f"{variable} comes from the execution host's environment", f.no_plan("--argv", json.dumps(inline(variable))))
+        # The same through a start: refused before the task, a worktree or hc is touched.
+        tid = f.add()
+        before = f.snapshot()
+        why = f.refused("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now", "--argv", json.dumps(inline("ANTHROPIC_FOUNDRY_AUTH_TOKEN")))
+        self.assertIn("ANTHROPIC_FOUNDRY_AUTH_TOKEN comes from the execution host's environment", why)
+        f.nothing_started(before)
+        # A second --settings word could carry one past the first: one word only.
+        twice = ["claude", "--settings", "{}", *inline("ANTHROPIC_FOUNDRY_AUTH_TOKEN")[1:]]
+        self.assertIn("one --settings word", f.no_plan("--argv", json.dumps(twice)))
+        # A credential the plan doesn't use is blanked in the argv, as the inherited one is.
+        f.provider({"route": "azure-foundry", **CLAUDE})
+        argv = f.plan("--argv", json.dumps(inline("ANTHROPIC_FOUNDRY_API_KEY")))["argv"]
+        self.assertEqual(json.loads(argv[argv.index("--settings") + 1]), {"env": claude_env("claude-deployment")})
+        self.assertNotIn(INLINE, f.seen + json.dumps(f.calls()) + f.store_text())
+        f.no_secret()
 
     def test_the_most_specific_layer_wins_field_by_field(self):
         f = Fixture(self)
@@ -442,7 +547,10 @@ class LaunchPlans(unittest.TestCase):
 
 class Binding(unittest.TestCase):
     """The binding's own rules, in the module: the fields both herdr-task and the service's
-    discovery judge (test/azure-binding.cases.json), and a backup the provider setting holds."""
+    discovery judge (test/azure-binding.cases.json), and a backup the provider setting holds.
+    The backup tests call takeover() itself, with its launch and hc replaced: reaching it through
+    `herdr-task tick` needs a live agent, its session log and a provider cut that the recording
+    hc doesn't model, so the tick's own gate is proved above and the backup's stays in-module."""
 
     def setUp(self):
         from unittest import mock
