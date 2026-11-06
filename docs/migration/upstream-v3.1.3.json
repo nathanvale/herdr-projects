@@ -14,25 +14,25 @@
       "phase": "N1",
       "path": "docs/install.md",
       "upstream_blob": "d2dc270b1f21336dab9a665b3453b74f22a44358",
-      "sha256": "ff707bbee9c2eacb7e0924153bfe329c2de2fd08691a2b88652b6f128326785c"
+      "sha256": "1d873a9d35b198f5af955895714422c426a3c9d560cc53316ef93d0f4a171313"
     },
     {
       "phase": "N1",
       "path": "mods/tasks/bin/herdr_task/cli.py",
       "upstream_blob": "a4689c769c8d483e52339aa087ef6d068462a994",
-      "sha256": "d71ab64abe052e9b9d255f690df5d1f07ec4e6559cc7f774be57d774c773dba9"
+      "sha256": "ed7bbbfb31b9adefe780e01a4aa4f3a31c8f25c3baea8c5417825fa828dfa33a"
     },
     {
       "phase": "N1",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "b5c79307e31319af731e10c67f4d289a2b892818",
-      "sha256": "f7346e94e41bb27067cbdd9c0290e5ea94d21da7cb0bbda001d6e329bf59595d"
+      "sha256": "79334b586db3b04b595a2d52dbad58955d7499770dce3683028dce1d45531f9a"
     },
     {
       "phase": "N1",
       "path": "mods/tasks/bin/herdr_task/github.py",
       "upstream_blob": "b80f7cc5e44d62e1b0d587222c5bfbadc951f708",
-      "sha256": "c259fd376502bff10526be3b57b2ff99c3c74b1ae3ec4386036fc650eb2ea09e"
+      "sha256": "2a2ffaa7d8bba229c2cd2e15f115c88c55e768eb2f99f4f2eecda33cdbb51f3f"
     },
     {
       "phase": "N1",
@@ -44,13 +44,13 @@
       "phase": "N1",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "104a0d67f907d4f26dc62ded57780e4e060a3b7b",
-      "sha256": "036d38736f1b0afa73a74a568e5e05e516b30d8b1d35cd7aafeeaea5888a9039"
+      "sha256": "8ecf62216ac29ef8347912b63a8bfeaae89fac38fad324ade40dc67a22b517f7"
     },
     {
       "phase": "N1",
       "path": "test/test_native_publication.py",
       "upstream_blob": null,
-      "sha256": "f005d5681764e5f0c398284145cf6fd40165f22472d173067b4e7c9ff7a98a3e"
+      "sha256": "f094036e7fdc132cc481237c6a4b1c19f6522d51b4e9b2f14f27d97dcafff789"
     }
   ],
   "requirements": [
