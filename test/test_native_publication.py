@@ -28,9 +28,17 @@ CI = os.environ.get("CI") == "true"
 ON_CI = unittest.skipUnless(CI, "runs only on CI: herdr-task's commands never run from a test on a person's machine")
 URL = "https://github.com/o/r.git"
 AUTH = "To get started with GitHub CLI, please run:  gh auth login"
+# gh 2.101.0's words, read from a repo with a remote elsewhere.
+NOT_GITHUB = ("none of the git remotes configured for this repository point to a known GitHub host. "
+              "To tell gh about a new GitHub host, please use `gh auth login`")
+ELSEWHERE = "https://bitbucket.org/o/r.git"
+ALIAS = "git@work-alias:o/r.git"
+ENTERPRISE = "https://git.example.com/o/r.git"
 
 FAKE_HC = '''#!/usr/bin/env python3
-import json, sys
+import json, os, sys
+with open(os.environ["FAKE_HC_LOG"], "a") as f:
+    f.write(json.dumps(sys.argv[1:]) + "\\n")
 if sys.argv[1:2] == ["ls"]:
     print(json.dumps({"terminals": []}))
 else:
@@ -110,16 +118,18 @@ class Fixture:
         test.addCleanup(shutil.rmtree, self.tmp, True)
         join = lambda name: os.path.join(self.tmp, name)
         self.repo, self.wt, self.bare, self.state = join("repo"), join("wt"), join("remote.git"), join("gh.json")
-        self.log, self.gh_route = join("gh.log"), join("bin/gh-route")
+        self.log, self.hc_log, self.gh_route = join("gh.log"), join("hc.log"), join("bin/gh-route")
         os.makedirs(join("bin"))
         for path, body in ((join("bin/hc"), FAKE_HC), (self.gh_route, FAKE_GH)):
             with open(path, "w") as f:
                 f.write(body)
             os.chmod(path, 0o755)
         open(self.log, "w").close()
+        open(self.hc_log, "w").close()
         self.env = {k: v for k, v in os.environ.items() if not k.startswith(("HC_", "HERDR_"))}
         self.env.update(PATH=join("bin") + os.pathsep + os.environ.get("PATH", ""), SHELL="/bin/sh", GIT_TERMINAL_PROMPT="0",
-                        FAKE_GH_STATE=self.state, FAKE_GH_LOG=self.log, FAKE_GH_BARE=self.bare, HERDR_TASK_GH=self.gh_route,
+                        FAKE_HC_LOG=self.hc_log, FAKE_GH_STATE=self.state, FAKE_GH_LOG=self.log, FAKE_GH_BARE=self.bare,
+                        HERDR_TASK_GH=self.gh_route,
                         HERDR_TASK_STORE=join("tasks"), HERDR_TASK_SETTINGS=join("shepherdr.json"),
                         HERDR_TASK_TEMPLATES=join("templates"))
         self.github(prs=[])
@@ -153,6 +163,14 @@ class Fixture:
     def rev(self, ref):
         return self.git(self.repo, "rev-parse", ref)
 
+    def sibling(self, words):
+        """A commit beside the task's own, on `start`; on no branch yet."""
+        return self.git(self.repo, "commit-tree", "HEAD^{tree}", "-p", self.start, "-m", words)
+
+    def publish(self, commit, branch):
+        """GitHub's branch moves to this commit; this clone's stays where it was."""
+        self.git(self.repo, "push", "-q", "origin", f"{commit}:refs/heads/{branch}")
+
     def remote_tip(self, branch):
         r = subprocess.run(["git", "-C", self.bare, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
                            capture_output=True, text=True, env=self.env)
@@ -172,7 +190,7 @@ class Fixture:
 
     def pr(self, **over):
         return {"number": 7, "url": "https://github.com/o/r/pull/7", "state": "OPEN", "isCrossRepository": False,
-                "headRefName": "task/1", "headRefOid": self.tip, "baseRefName": "target", "baseRefOid": self.start,
+                "headRefName": "task/1", "headRefOid": self.tip, "baseRefName": "target",
                 "mergeable": "MERGEABLE", "statusCheckRollup": [], "mergeCommit": None, **over}
 
     def calls(self, *prefix):
@@ -180,6 +198,12 @@ class Fixture:
         with open(self.log) as f:
             rows = [json.loads(line) for line in f]
         return [r for r in rows if r[:len(prefix)] == list(prefix)]
+
+    def hc(self, *verbs):
+        """hc's calls so far with these verbs."""
+        with open(self.hc_log) as f:
+            rows = [json.loads(line) for line in f]
+        return [r for r in rows if r[:1] and r[0] in verbs]
 
     def run(self, *args):
         return subprocess.run([sys.executable, os.path.join(BIN, "herdr-task"), *args], capture_output=True, text=True,
@@ -220,6 +244,13 @@ class Fixture:
 
     def no_ready(self, *more):
         return self.refused("ready", "1", "--folder", self.repo, "--summary", "Sign-in works again", *more)
+
+    def merges_here(self, into="main"):
+        """ready, then Accept, end in a local merge into this branch."""
+        self.ready()
+        self.test.assertEqual(self.task()["state"], "ready")
+        self.test.assertEqual(self.ok("accept", "1", "--folder", self.repo)["accepted"], "merged")
+        self.test.assertEqual((self.task()["state"], self.task()["merged"], self.rev(into)), ("done", True, self.tip))
 
 
 @ON_CI
@@ -263,26 +294,61 @@ class Adoption(unittest.TestCase):
     def test_a_base_the_commits_dont_prove(self):
         """A base behind the task's start: the pull request would carry more than the task's work. Its
         name proves nothing, the recorded base's own name included."""
-        for name in ("target", "old-base"):
+        for name in ("behind", "old-base"):
             with self.subTest(name=name):
-                self.f.github(prs=[self.f.pr(baseRefName=name, baseRefOid=self.f.first)])
+                self.f.publish(self.f.first, name)
+                self.f.github(prs=[self.f.pr(baseRefName=name)])
                 self.refuses("Can't prove")
 
     def test_a_branch_that_took_in_its_base_later_refuses(self):
         f = self.f
-        moved = f.git(f.repo, "commit-tree", "HEAD^{tree}", "-p", f.start, "-m", "moved on")
+        moved = f.sibling("moved on")
         merged = f.git(f.repo, "commit-tree", "HEAD^{tree}", "-p", f.tip, "-p", moved, "-m", "took it in")
         f.git(f.wt, "merge", "-q", "--ff-only", merged)
-        f.github(prs=[f.pr(headRefOid=merged, baseRefOid=moved)])
+        f.publish(moved, "target")
+        f.github(prs=[f.pr(headRefOid=merged)])
         self.refuses("Can't prove")
 
     def test_a_base_commit_not_here_can_be_fetched_first(self):
-        self.f.github(prs=[self.f.pr(baseRefOid="a" * 40)])
+        f = self.f
+        only = f.git(f.bare, "-c", "user.name=T", "-c", "user.email=t@example.invalid", "commit-tree",
+                     f"{f.start}^{{tree}}", "-p", f.start, "-m", "only on GitHub")
+        f.git(f.bare, "update-ref", "refs/heads/target", only)
         self.assertIn("git fetch origin target", self.refuses("isn't here"))
 
-    def test_no_base_commit_from_gh_refuses(self):
-        self.f.github(prs=[self.f.pr(baseRefOid=None)])
-        self.refuses("no commit")
+    def test_a_base_branch_github_doesnt_have_refuses(self):
+        self.f.github(prs=[self.f.pr(baseRefName="gone")])
+        self.refuses("isn't on GitHub")
+
+    def test_no_answer_on_the_base_branch_refuses(self):
+        self.f.github(prs=[self.f.pr()], fail="HTTP 502: Bad Gateway", fail_on="api")
+        self.refuses("gh couldn't read target on GitHub")
+
+    def test_the_base_is_read_from_the_branch_never_from_the_pull_request(self):
+        """A pull request's own base commit is history: GitHub's branch decides, either way."""
+        f = self.f
+        f.github(prs=[f.pr(baseRefOid=f.first)])
+        self.assertTrue(f.adopt()["adopted"])
+        self.assertEqual([c for c in f.calls("pr", "view") if "baseRefOid" in " ".join(c)], [])
+        self.assertTrue(f.calls("api", "repos/o/r/git/ref/heads/target"))
+
+    def test_a_recorded_base_that_went_its_own_way_refuses(self):
+        """Both descend from the start, so the start rule holds; the target would still lose it."""
+        f = self.f
+        f.git(f.repo, "update-ref", "refs/heads/old-base", f.sibling("on the recorded base"))
+        f.publish(f.sibling("on the target"), "target")
+        self.assertIn("silently replace", self.refuses("isn't in target"))
+
+    def test_a_recorded_base_that_moved_only_on_github_refuses(self):
+        f = self.f
+        f.publish(f.sibling("on the recorded base"), "old-base")
+        f.publish(f.sibling("on the target"), "target")
+        self.refuses("isn't in target")
+        self.assertEqual(f.rev("old-base"), f.start)
+
+    def test_a_recorded_base_nobody_has_refuses(self):
+        self.f.git(self.f.repo, "branch", "-D", "old-base")
+        self.refuses("isn't on GitHub or here")
 
     def test_a_branch_with_nothing_of_its_own(self):
         self.f.seed(start=self.f.tip)
@@ -305,7 +371,8 @@ class Adoption(unittest.TestCase):
         t = f.task()
         self.assertEqual((t["pr"]["number"], t["pr"]["url"], t["pr"]["repo"]), (7, "https://github.com/o/r/pull/7", "o/r"))
         self.assertEqual((t["base"], t["base_set"], t["state"]), ("target", True, "running"))
-        self.assertEqual([(b["base"], b["pr"]) for b in t["base_history"]], [("old-base", 7)])
+        self.assertEqual((t["adopted_from"]["base"], t["adopted_from"]["pr"]), ("old-base", 7))
+        self.assertEqual(out["adopted_from"]["base"], "old-base")
         # Only read: nothing created, pushed or merged, and the local branches stay.
         self.assertEqual((f.remote_tip("task/1"), f.calls("pr", "create"), f.calls("pr", "merge"), f.calls("pr", "comment")), (None, [], [], []))
         self.assertEqual((f.rev("target"), f.rev("old-base")), (f.start, f.start))
@@ -314,15 +381,18 @@ class Adoption(unittest.TestCase):
         self.assertIn("was based on: old-base", shown)
         self.assertEqual(f.ok("show", "1", "--folder", f.repo, "--evidence")["evidence"]["scope"], "task/1 into target")
 
+    def test_it_says_the_old_and_new_base(self):
+        p = self.f.run("adopt", "1", "--folder", self.f.repo, "--pr", "7")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("its base moves from old-base to target", p.stdout)
+
     def test_a_link_works_as_a_number_does(self):
         self.assertTrue(self.f.adopt("https://github.com/o/r/pull/7")["adopted"])
         self.assertEqual(self.f.task()["pr"]["number"], 7)
 
     def test_a_base_that_moved_on_since_is_still_equivalent(self):
         f = self.f
-        moved = f.git(f.repo, "commit-tree", "HEAD^{tree}", "-p", f.start, "-m", "another task merged")
-        f.git(f.repo, "update-ref", "refs/heads/target", moved)
-        f.github(prs=[f.pr(baseRefOid=moved)])
+        f.publish(f.sibling("another task merged"), "target")
         self.assertTrue(f.adopt()["adopted"])
         self.assertEqual(f.task()["base"], "target")
 
@@ -403,6 +473,7 @@ class FailsClosed(unittest.TestCase):
         error = f.no_ready()
         self.assertIn("gh couldn't", error)
         self.assertIn("gh auth login", error)
+        self.assertIn("say why in your chat and end your turn", error)
         self.assertEqual(f.saved(), before)  # not Ready, no summary, and no answer saved
         self.assertEqual(f.task()["state"], "running")
         self.merged_nothing()
@@ -483,7 +554,9 @@ class SeparateFailures(unittest.TestCase):
         self.assertIn("git couldn't push task/1 to origin", error)
         self.assertIn("Permission denied to this identity", error)
         self.assertIn("apart from gh's sign-in", error)
+        self.assertIn("say why in your chat and end your turn", error)
         self.assertNotIn("gh couldn't", error)
+        self.assertNotIn("tracking ref", error)
         self.assertEqual(f.saved(), before)
         self.assertEqual((f.calls("pr", "create"), f.remote_tip("task/1")), ([], None))
 
@@ -510,6 +583,20 @@ class SeparateFailures(unittest.TestCase):
         newer = f.commit(f.wt, "one more fix")
         f.ready()
         self.assertEqual(f.remote_tip("task/1"), newer)
+
+    def test_a_lease_refused_on_the_tracking_ref_says_so(self):
+        """A branch published without a push from here: git's lease has no tracking ref to go on."""
+        f = self.f
+        f.git(f.repo, "push", "-q", "origin", "task/1")
+        f.adopt()
+        f.git(f.repo, "update-ref", "-d", "refs/remotes/origin/task/1")
+        f.commit(f.wt, "one more fix")
+        before = f.saved()
+        error = f.no_ready()
+        self.assertIn("stale info", error)
+        self.assertIn(f"tracking ref origin/task/1 is at nothing and GitHub has {f.tip[:7]}", error)
+        self.assertEqual(f.saved(), before)
+        self.assertEqual(f.remote_tip("task/1"), f.tip)
 
     def test_no_answer_on_the_remote_tip_refuses(self):
         f = self.f
@@ -567,6 +654,65 @@ class ReadyAfterAdoption(unittest.TestCase):
         self.assertEqual(f.saved(), before)
         self.published_only()
 
+    def test_one_already_merged_leaves_the_task_to_the_tick(self):
+        f = self.f
+        f.github(prs=[f.pr(state="MERGED")])
+        before = f.saved()
+        self.assertIn("The tick finishes the task", f.no_ready())
+        self.assertEqual(f.saved(), before)
+        self.published_only()
+        self.assertEqual(f.remote_tip("task/1"), None)
+
+    def refused_accept(self, words):
+        """Accept refuses with these words: nothing merged, and it stays Ready with why."""
+        f = self.f
+        self.assertIn(words, f.refused("accept", "1", "--folder", f.repo))
+        self.published_only()
+        self.assertEqual(f.task()["state"], "ready")
+        self.assertIn(words, f.task()["attention"])
+
+    def test_accept_refuses_a_retargeted_pull_request_until_it_is_back(self):
+        f = self.f
+        f.ready()
+        f.github(prs=[f.pr(baseRefName="other")])
+        self.refused_accept("now targets other, not target")
+        f.github(prs=[f.pr()])
+        self.assertEqual(f.ok("accept", "1", "--folder", f.repo)["accepted"], "github")
+
+    def test_accept_refuses_a_head_pushed_since(self):
+        f = self.f
+        f.ready()
+        f.github(prs=[f.pr(headRefOid=f.first)])
+        self.refused_accept("isn't what adoption verified")
+
+    def test_accept_refuses_a_branch_that_moved_here_since(self):
+        f = self.f
+        f.ready()
+        f.commit(f.wt, "one more fix")
+        self.refused_accept("isn't what adoption verified")
+
+    def test_the_tick_never_merges_a_retargeted_pull_request(self):
+        f = self.f
+        f.ready()
+        f.seed(auto_merge="checks")  # as Accept leaves it while checks run
+        f.github(prs=[f.pr(baseRefName="other")])
+        f.ok("tick", "--folder", f.repo)
+        self.published_only()
+        self.assertEqual(f.task()["state"], "ready")
+        self.assertIn("now targets other", f.task()["attention"])
+
+    def test_the_tick_finishes_one_merged_into_its_real_base(self):
+        f = self.f
+        f.ready()
+        f.publish(f.tip, "target")
+        f.github(prs=[f.pr(state="MERGED", mergeCommit={"oid": f.tip})])
+        self.assertEqual(f.ok("tick", "--folder", f.repo)["done"], [1])
+        t = f.task()
+        self.assertEqual((t["state"], t["merged"], t["pr"]["number"], t["base"]), ("done", True, 7, "target"))
+        self.assertEqual(list(json.loads(f.saved())["main_watch"]), ["target"])
+        self.assertFalse(os.path.isdir(f.wt))
+        self.assertEqual((f.rev("main"), f.rev("old-base"), f.calls("pr", "merge")), (f.start, f.start, []))
+
     def test_the_persons_accept_merges_through_the_pull_request(self):
         f = self.f
         f.ready()
@@ -594,29 +740,150 @@ class OrdinaryPublication(unittest.TestCase):
 
 
 @ON_CI
-class NoGitHubRemote(unittest.TestCase):
+class NoRemotes(unittest.TestCase):
     def merges_here(self, f):
-        f.ready()
-        self.assertEqual(f.task()["state"], "ready")
-        self.assertEqual(f.ok("accept", "1", "--folder", f.repo)["accepted"], "merged")
-        self.assertEqual((f.task()["state"], f.task()["merged"], f.rev("main")), ("done", True, f.tip))
-        self.assertEqual(f.calls("pr") + f.calls("api"), [])
+        f.merges_here()
+        self.assertEqual(f.calls(), [])  # gh was never asked
 
-    def test_a_repo_with_no_github_remote_merges_locally_whatever_gh_says(self):
+    def test_a_repo_with_no_remotes_merges_locally_whatever_gh_would_say(self):
         f = Fixture(self, github=False)
-        f.github(prs=[], fail="none of the git remotes configured for this repository point to a known GitHub host")
+        f.github(prs=[], fail=AUTH)
         self.merges_here(f)
 
     def test_without_gh_too(self):
         f = Fixture(self, github=False)
         f.env["HERDR_TASK_GH"] = os.path.join(f.tmp, "no-such-gh")
-        self.merges_here(f)
+        f.merges_here()
 
-    def test_a_remote_elsewhere_merges_locally(self):
+
+@ON_CI
+class OnlyGhsOwnNoIsANo(unittest.TestCase):
+    def elsewhere(self, url, **answers):
         f = Fixture(self, github=False)
-        f.git(f.repo, "remote", "add", "origin", "https://bitbucket.org/o/r.git")
-        f.github(prs=[], fail="none of the git remotes configured for this repository point to a known GitHub host")
-        self.merges_here(f)
+        f.git(f.repo, "remote", "add", "origin", url)
+        f.github(prs=[], **answers)
+        return f
+
+    def test_any_other_failure_refuses_for_a_repo_with_a_remote(self):
+        for url, failure in ((ELSEWHERE, AUTH), (ALIAS, AUTH), (ENTERPRISE, AUTH), (ALIAS, "error connecting to api.github.com"),
+                             (ENTERPRISE, "HTTP 503: Service Unavailable")):
+            with self.subTest(url=url, failure=failure):
+                f = self.elsewhere(url, fail=failure)
+                before = f.saved()
+                self.assertIn("gh couldn't", f.no_ready())
+                self.assertEqual(f.saved(), before)
+                f.seed(state="ready", ready_at=1)
+                before = f.saved()
+                self.assertIn("gh couldn't", f.refused("accept", "1", "--folder", f.repo))
+                self.assertEqual((f.saved(), f.rev("main")), (before, f.start))
+
+    def test_ghs_own_no_is_saved_and_merges_locally(self):
+        f = self.elsewhere(ELSEWHERE, fail=NOT_GITHUB)
+        f.merges_here()
+        self.assertEqual(json.loads(f.saved())["github"]["repo"], None)
+        self.assertEqual(len(f.calls("repo", "view")), 1)  # Accept took the saved answer
+        self.assertEqual(f.calls("pr") + f.calls("api"), [])
+
+    def test_a_remote_added_since_a_saved_no_is_asked_about(self):
+        f = self.elsewhere(ELSEWHERE, fail=NOT_GITHUB)
+        f.ready()
+        f.seed(state="running")
+        f.git(f.repo, "remote", "add", "work", ENTERPRISE)
+        f.github(prs=[], fail=AUTH)
+        self.assertIn("gh couldn't", f.no_ready())
+
+    def test_a_github_remote_overrules_that_answer(self):
+        f = Fixture(self)
+        f.github(prs=[], fail=NOT_GITHUB)
+        before = f.saved()
+        self.assertIn("gh couldn't", f.no_ready())
+        self.assertEqual(f.saved(), before)
+
+    def once_on_github(self):
+        """A task whose ready saved gh's answer, with no pull request now: the name is what's tested."""
+        f = Fixture(self)
+        f.ready()
+        self.assertEqual(json.loads(f.saved())["github"]["repo"], "o/r")
+        f.edit(lambda d: (d["tasks"][0].pop("pr"), d["tasks"][0].update(state="running")))
+        return f
+
+    def test_removing_the_remote_clears_the_saved_name(self):
+        f = self.once_on_github()
+        f.git(f.repo, "remote", "remove", "origin")
+        f.github(prs=[], fail=AUTH)
+        f.merges_here("old-base")
+        self.assertNotIn("github", json.loads(f.saved()))
+
+    def test_moving_the_remote_off_github_clears_the_saved_name(self):
+        f = self.once_on_github()
+        f.git(f.repo, "remote", "set-url", "origin", ELSEWHERE)
+        f.github(prs=[], fail=NOT_GITHUB)
+        f.merges_here("old-base")
+        self.assertEqual(json.loads(f.saved())["github"]["repo"], None)
+
+    def test_a_name_saved_by_an_older_version_clears_too(self):
+        f = Fixture(self)
+        f.edit(lambda d: d.update(github={"repo": "o/r", "at": int(time.time() * 1000)}))
+        f.git(f.repo, "remote", "remove", "origin")
+        f.merges_here("old-base")
+        self.assertNotIn("github", json.loads(f.saved()))
+
+    def test_gh_not_installed_on_a_remote_elsewhere_stays_local(self):
+        f = self.elsewhere(ELSEWHERE)
+        f.env["HERDR_TASK_GH"] = os.path.join(f.tmp, "no-such-gh")
+        f.merges_here()
+
+    def test_gh_not_installed_with_a_saved_name_refuses(self):
+        f = self.elsewhere(ALIAS)
+        f.env["HERDR_TASK_GH"] = os.path.join(f.tmp, "no-such-gh")
+        f.edit(lambda d: d.update(github={"repo": "o/r", "at": 1}))
+        before = f.saved()
+        self.assertIn("isn't installed", f.no_ready())
+        self.assertEqual(f.saved(), before)
+
+
+@ON_CI
+class AWorktreeThatIsGone(unittest.TestCase):
+    """Settings that merge on their own, so a local merge would be asked of its agent at once."""
+
+    def gone(self, github=True):
+        f = Fixture(self, github=github)
+        f.seed(set={"merge": "auto"})
+        shutil.rmtree(f.wt)
+        return f
+
+    def test_ready_refuses_before_anything_else(self):
+        for github in (True, False):
+            with self.subTest(github=github):
+                f = self.gone(github)
+                before = f.saved()
+                self.assertIn("is gone", f.no_ready())
+                self.assertEqual(f.saved(), before)
+                self.assertEqual(f.hc("send", "run"), [])
+
+    def test_a_reviewers_pass_is_refused_too(self):
+        f = self.gone()
+        self.assertIn("is gone", f.refused("review", "1", "--folder", f.repo, "--pass"))
+        self.assertEqual((f.task()["state"], f.task()["reviews"][-1]["result"]), ("running", "pass"))
+        self.assertEqual(f.hc("send", "run"), [])
+
+
+@ON_CI
+class AReviewersPass(unittest.TestCase):
+    def test_a_refused_publication_keeps_the_round_and_ends_the_reviewer(self):
+        f = Fixture(self)
+        f.seed(review={"round": 1, "of": 1, "reviewer": "t9"})
+        f.github(prs=[], fail=AUTH)
+        f.env["HC_TERMINAL_ID"] = "t9"
+        self.assertIn("gh couldn't", f.refused("review", "1", "--folder", f.repo, "--pass"))
+        t = f.task()
+        self.assertEqual((t["state"], t["reviews"][-1]["result"], t["reviews"][-1]["round"]), ("running", "pass", 1))
+        self.assertNotIn("review", t)
+        self.assertNotIn("github", json.loads(f.saved()))  # no failed answer rode along
+        ends = time.time() + 20  # the reviewer ends a moment after the command returns
+        while time.time() < ends and not f.hc("kill"):
+            time.sleep(0.2)
+        self.assertEqual(f.hc("kill"), [["kill", "t9"]])
 
 
 @ON_CI
@@ -634,10 +901,10 @@ class ProofStaysChecked(unittest.TestCase):
         home, folder = os.path.expanduser("~"), self.f.repo
         rel = os.path.relpath(folder, home) if folder.startswith(home + "/") else folder
         path = os.path.join(home, ".herdr", "artifacts", re.sub(r"[^A-Za-z0-9._-]+", "-", rel.strip("/")).strip("-") + ".json")
+        self.addCleanup(lambda: os.path.exists(path) and os.unlink(path))
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
             json.dump({"folder": folder, "artifacts": [{"id": "art-1", "title": "Proof", "files": files}]}, f)
-        self.addCleanup(os.unlink, path)
 
     def test_a_custom_panel_is_refused_before_anything_is_published(self):
         f = self.f

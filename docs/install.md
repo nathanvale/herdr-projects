@@ -17,23 +17,25 @@ place, never overwrites what you made yourself, and keeps a backup of anything i
 ## Pull requests and credentials
 
 In a repo with a GitHub remote, `herdr-task ready` publishes a worktree task and Accept merges it through its pull
-request. A repo with no GitHub remote merges locally, and needs no `gh`.
+request. A repo with no remotes merges locally. So does one whose remotes `gh` says aren't on GitHub, and one with no
+`gh` installed and no remote recognisably GitHub's.
 
 - `gh` and `git push` sign in separately. `gh` reads and opens pull requests. `git push` uses whatever the remote's own
   configuration gives git. A refusal says which of the two failed.
-- `herdr-task` runs `gh` from `PATH`, or the command named in `HERDR_TASK_GH`. Running `herdr-task` under `ghh run` is
-  the other route, and `ghh` leaves git's push identity to the remote's configuration. Shepherdr holds no credential
-  of its own for either.
-- When `gh` can't answer in a repo with a GitHub remote (signed out, not installed, not on the caller's `PATH`), `ready`
-  and Accept refuse and leave the task as it was. They never merge locally instead, because nobody can then say whether
-  a pull request exists.
+- `herdr-task` runs `gh` from `PATH`, or the command named in `HERDR_TASK_GH`. Shepherdr holds no credential of its own
+  for either.
+- Any other failure of `gh` in a repo with a remote (signed out, no network, an alias or Enterprise host it can't place)
+  makes `ready` and Accept refuse and leave the task as it was, as does `gh` not installed or not on the caller's `PATH`
+  when a remote is recognisably GitHub's. They never merge locally instead, because nobody can then say whether a pull
+  request exists.
 - A branch GitHub already holds at exactly its commit isn't pushed, so publishing it needs only `gh`'s access.
 - `herdr-task adopt <task> --pr <number or link>` records a pull request that already exists on a started task, when
   its target differs from the base the task recorded. It reads and checks, and never creates, pushes or merges. The pull
-  request must be this repo's own and open, for the task's branch, at exactly its tip, and the task's start commit must
-  be the one merge base of that tip and the pull request's base commit. The task's base then becomes the pull request's,
-  the old one stays in its history, and it merges only on the person's Accept. The base commit must be in this clone: a
-  `git fetch` first, if adopt asks for it, is the one step that uses git's own access.
+  request must be this repo's own and open, for the task's branch, at exactly its tip. The task's start commit must be
+  the one merge base of that tip and the commit GitHub's base branch holds now, and the recorded base's commit must be
+  in that commit too. The task's base then becomes the pull request's, the old one is kept as `adopted_from`, and it
+  merges only on the person's Accept, which refuses if the pull request's base or head has moved since. The base commit
+  must be in this clone: a `git fetch` first, if adopt asks for it, is the one step that uses git's own access.
 
 ## Install
 

@@ -182,8 +182,8 @@ def cmd_show(args):
         text.append(f"worktree: {v['worktree']} (branch {v['branch']}, base {v.get('base')})")
     if v.get("base_set"):
         text.append(f"merges into: {v['base']} (" + {"space": "its space's base branch", "pull-request": "its pull request's base"}.get(v.get("base_by"), "set for this task") + ")")
-    for b in v.get("base_history") or []:
-        text.append(f"was based on: {b['base']} (until pull request #{b['pr']} was adopted)")
+    if v.get("adopted_from"):
+        text.append(f"was based on: {v['adopted_from']['base']} (until pull request #{v['adopted_from']['pr']} was adopted)")
     if v.get("after_refs"):
         text.append("comes after: " + ", ".join(v["after_refs"]))
     if v.get("review_rounds"):
@@ -285,6 +285,7 @@ def cmd_ready(args):
             refresh_sessions(s, t, [k for k in live_agents(s.key(t)) if k["address"] == me])
         if t["state"] == "done":
             raise Fail(f"{s.ref(t)} is already done.")
+        worktree_here(s, t)
         wt = t.get("worktree") if t.get("mode") == "worktree" else None
         if wt and os.path.isdir(wt):
             if git(wt, "status", "--porcelain", "--untracked-files=no")[1]:
@@ -539,14 +540,23 @@ def back_to_work(s, t, why, said=WORKING_AGAIN):
     return True
 
 
+def worktree_here(s, t):
+    """Refuses (Fail) a worktree task whose folder is gone: nothing can be published from it, and
+    without one gh would never be asked whether the repo merges through a pull request."""
+    wt = t.get("worktree")
+    if t.get("mode") == "worktree" and wt and not os.path.isdir(wt):
+        raise Fail(f"{s.ref(t)}'s worktree {wt} is gone, so it can't be published or merged. The task stays as it was: say why "
+                   "in your chat and end your turn.")
+
+
 def finalize(s, t):
     """Ready: on GitHub its pull request opens; then the merge policy in Settings decides who
     merges: auto (now), checks (once its checks pass) or ask (the person). An adopted pull request
     always asks: ready never merges it. Publishing comes first, and gh or git failing there refuses
     (Fail): on GitHub, Ready means published. Returns what to say."""
-    wt = t.get("worktree")
-    worktree = t.get("mode") == "worktree" and wt
-    repo = github(s) if worktree and os.path.isdir(wt) else None
+    worktree_here(s, t)
+    worktree = t.get("mode") == "worktree" and t.get("worktree")
+    repo = github(s) if worktree else None
     pr = pr_open(s, t, repo, t.get("summary")) if repo else None
     t["state"], t["ready_at"] = "ready", now()
     for k in ("attention", "merge_requested", "review"):
@@ -568,6 +578,7 @@ def finalize(s, t):
                 err = merge_now(s, t)
                 return msg + (f" Merging it waits: {err}" if err else " Merged; done.")
             return msg + " It merges by itself once its checks pass."
+        no_local_merge(s, t)
         try:
             sent, started = tell(s, t, local_merge_msg(s, t), None)
             t["merge_requested"] = now()
@@ -588,6 +599,7 @@ def cmd_review(args):
     if args.changes_file:
         with open(args.changes_file) as f:
             text = f.read()
+    refused = None
     with open_store(args) as s:
         t = s.find(args.id)
         rv = t.pop("review", None) or {}
@@ -599,7 +611,12 @@ def cmd_review(args):
         t.setdefault("reviews", []).append(rec)
         s.dirty = True
         if args.passed:
-            msg = f"{s.ref(t)}: review round {n} passed. " + finalize(s, t)
+            # Refused (publication): the round stays recorded and the reviewer still ends, as
+            # finalize() changed nothing; refused after the store is saved.
+            try:
+                msg = f"{s.ref(t)}: review round {n} passed. " + finalize(s, t)
+            except Fail as e:
+                refused = str(e)
         else:
             last = n >= of
             if t["state"] == "ready":
@@ -615,6 +632,8 @@ def cmd_review(args):
         guard(["hc"])
         subprocess.Popen(["sh", "-c", 'sleep 4; hc kill "$1" >/dev/null 2>&1; sleep 2; hc rm "$1" >/dev/null 2>&1', "x", me],
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    if refused:
+        raise Fail(refused)
     say(args, v, msg)
 
 
@@ -818,6 +837,21 @@ def local_merge_msg(s, t):
 MERGE_FAILED = "GitHub didn't merge it"  # a merge that failed: never in the way of the next try
 
 
+def adopted_moved(s, t, v):
+    """What moved on an adopted pull request since adoption verified it, for the person; None when
+    nothing did, or it wasn't adopted. Its base must still be the task's and its head the branch's
+    tip here: what merges is what was verified, not whatever the pull request holds now."""
+    if not t["pr"].get("adopted"):
+        return None
+    n, base, tip = t["pr"]["number"], t.get("base") or "main", branch_tip(s, t)
+    if v.get("baseRefName") != base:
+        return f"Pull request #{n} now targets {v.get('baseRefName')}, not {base}, which adoption verified. Retarget it to {base}, then accept again."
+    if v.get("headRefOid") != tip:
+        return (f"Pull request #{n} is at {str(v.get('headRefOid'))[:7]}, and {t.get('branch')} is at {str(tip)[:7]} here, which isn't "
+                "what adoption verified. Bring them to the same commit, then accept again.")
+    return None
+
+
 def merge_now(s, t):
     """Merges the task's pull request on GitHub (squash) and tidies up here. Returns why it
     couldn't, or None when it's merged (and the task done)."""
@@ -827,7 +861,7 @@ def merge_now(s, t):
     if not v:
         return f"Couldn't reach pull request #{n} on GitHub."
     if v.get("state") != "MERGED":
-        problem = pr_problem(v)
+        problem = pr_problem(v) or adopted_moved(s, t, v)
         if problem:
             t["attention"] = problem
             return problem
@@ -983,9 +1017,10 @@ def cmd_adopt(args):
         t = s.find(args.id)
         adopted = adopt_existing(s, t, args.pr)
         v = view(s, t)
-    pr = v["pr"]
+    pr, was = v["pr"], (v.get("adopted_from") or {}).get("base")
+    moved = f"its base moves from {was} to {v['base']}" if was else f"its base stays {v.get('base')}"
     say(args, {**v, "adopted": adopted}, f"{s.ref(t)}: pull request #{pr['number']} " +
-        (f"adopted; it merges into {v['base']} on the person's Accept. {pr['url']}" if adopted else f"was already adopted. {pr['url']}"))
+        (f"adopted; {moved}, and it merges there on the person's Accept. {pr['url']}" if adopted else f"was already adopted. {pr['url']}"))
 
 
 def cmd_fix(args):
