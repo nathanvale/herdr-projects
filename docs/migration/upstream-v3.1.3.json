@@ -44,13 +44,13 @@
       "phase": "A1",
       "path": "mods/tasks/bin/herdr_task/providers.py",
       "upstream_blob": null,
-      "sha256": "ba52b5f024194e9b291c6a466a0df8b5f7740e62990a67e849360009911c175b"
+      "sha256": "6b85acbbb8a902e31dfaa8034f56623bfa8361f256ba8632f139f8cc398ad766"
     },
     {
       "phase": "A1",
       "path": "mods/tasks/bin/herdr_task/takeover.py",
       "upstream_blob": "5af6c073493766adc3b052cb3677b75e71beb14b",
-      "sha256": "70a531683c34af7901d7f1676d8da753aae25050e65d27165090166336fa5714"
+      "sha256": "6876bcbaa82aa62004f92f37b4d0d7c5c463c417da573c4c726ca0e169a61f8d"
     },
     {
       "phase": "A1",
@@ -74,7 +74,7 @@
       "phase": "A1",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "87fcf7b3bc8135953df57479259e43606d6696e886dde90cb9074926d8675072"
+      "sha256": "0ebcbe53236e2d432838019838ff627b358ff9aa491a4c525febd891ce821ff1"
     }
   ],
   "requirements": [

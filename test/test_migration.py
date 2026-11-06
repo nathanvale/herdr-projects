@@ -129,6 +129,8 @@ class NativeFoundation(unittest.TestCase):
             change(target)
             return self.check()
         finally:
+            if target.is_symlink():
+                target.unlink()
             target.write_bytes(data)
             target.chmod(mode)
 
@@ -147,6 +149,17 @@ class NativeFoundation(unittest.TestCase):
                 code, observed = self.changed(path, lambda target: target.write_bytes(target.read_bytes() + b'\n'))
                 self.assertEqual(code, 1)
                 self.assertEqual(observed['error'], 'Source differs from its admitted phase content at ' + path)
+
+    def test_a_symbolic_link_to_the_same_content_is_refused(self):
+        def link(target):
+            twin = self.copy.parent / 'twin'
+            twin.write_bytes(target.read_bytes())
+            target.unlink()
+            target.symlink_to(twin)
+        code, observed = self.changed('mods/tasks/bin/herdr_task/providers.py', link)
+        self.assertEqual((code, observed['error']), (1, 'Admitted source path is a symbolic link at mods/tasks/bin/herdr_task/providers.py'))
+        code, observed = self.changed('keys.json', link)
+        self.assertEqual((code, observed['error']), (1, 'Native foundation path is a symbolic link at keys.json'))
 
     def test_an_admitted_path_keeps_its_mode(self):
         code, observed = self.changed('mods/tasks/bin/herdr_task/providers.py', lambda target: target.chmod(0o755))

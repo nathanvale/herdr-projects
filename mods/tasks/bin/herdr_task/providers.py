@@ -195,19 +195,29 @@ def launch_plan(kind, binding):
     return plan
 
 
+# Where an argv's options end: at its first bare "--" (the words from it on are the CLI's
+# operands, never options), else at its end.
+def options_end(argv):
+    return argv.index("--", 1) if "--" in argv[1:] else len(argv)
+
+
 def with_model(argv, flags, flag, model):
     """argv selecting `model` and no other: its first model selection keeps its place with the
     model as its value, every later one is dropped, and with none the flag is added. A selection
     is a flag and the word after it, `--flag=value`, or a one-letter flag with its value attached
-    (`-mvalue`, `-m=value`: kept as the flag and the model, two words). Words from a bare "--" on
-    are the CLI's operands, not options: left as they are."""
+    (`-mvalue`, `-m=value`: kept as the flag and the model, two words). A flag with no value of
+    its own (it is the last option, or the next word is another option) takes the model and the
+    next word stays. Words from a bare "--" on are the CLI's operands, not options: left as they
+    are."""
     words = list(argv)
-    end = words.index("--", 1) if "--" in words[1:] else len(words)
+    end = options_end(words)
     out, i, found = words[:1], 1, False
     while i < end:
         a, i = words[i], i + 1
-        if a in flags and i < end:
-            mine, i = [a, model], i + 1
+        if a in flags:
+            if i < end and not words[i].startswith("-"):
+                i += 1
+            mine = [a, model]
         elif any(a.startswith(f + "=") for f in flags if f.startswith("--")):
             mine = [f"{a.split('=', 1)[0]}={model}"]
         elif any(a.startswith(f) and a != f for f in flags if not f.startswith("--")):
@@ -225,8 +235,8 @@ def with_model(argv, flags, flag, model):
 def codex_override_keys(argv):
     """The key of each -c/--config override in a Codex argv, as Codex reads it: the words before
     the first "=", trimmed (`-c key=value`, `-ckey=value`, `-c=key=value`, `--config key=value`,
-    `--config=key=value`)."""
-    keys, words = [], argv[1:]
+    `--config=key=value`). Only its options are read: not the operands from a bare "--" on."""
+    keys, words = [], argv[1:options_end(argv)]
     for i, a in enumerate(words):
         if a in ("-c", "--config"):
             value = words[i + 1] if i + 1 < len(words) else ""
@@ -251,11 +261,14 @@ def compose(plan, argv):
         raise Fail(f"This plan is for {plan['agent']}, not {agent_key(argv)}.")
     if plan["agent"] == "claude":
         out = with_model(argv, ("--model",), "--model", plan["deployment"])
-        if any(a.startswith("--settings=") for a in out[1:]):
+        # Only the options: a --settings among the operands (after a bare "--") is neither read
+        # nor counted, and the plan's own goes in front of them.
+        end = options_end(out)
+        if any(a.startswith("--settings=") for a in out[1:end]):
             raise Fail("On Azure Foundry, give Claude Code's --settings as a separate JSON word. Nothing was started.")
-        if out[1:].count("--settings") > 1:
+        if out[1:end].count("--settings") > 1:
             raise Fail("On Azure Foundry, give Claude Code one --settings word. Nothing was started.")
-        if "--settings" in out[1:-1]:
+        if "--settings" in out[1:min(end, len(out) - 1)]:
             i = out.index("--settings", 1)
             try:
                 cur = json.loads(out[i + 1])
@@ -272,7 +285,7 @@ def compose(plan, argv):
             return out, dict(plan["env"])
         return out[:1] + ["--settings", json.dumps({"env": plan["settings_env"]})] + out[1:], dict(plan["env"])
     own = any(k in ("model_provider", "model_providers") or k.startswith("model_providers.") for k in codex_override_keys(argv))
-    if own or any(a in ("--oss", "--local-provider") or a.startswith("--local-provider=") for a in argv[1:]):
+    if own or any(a in ("--oss", "--local-provider") or a.startswith("--local-provider=") for a in argv[1:options_end(argv)]):
         raise Fail("On Azure, Codex's provider comes from Settings: remove the argv's own provider (model_provider, --oss). Nothing was started.")
     out = with_model(argv, ("-m", "--model"), "-m", plan["deployment"])
     return out[:1] + plan["args"] + out[1:], dict(plan["env"])

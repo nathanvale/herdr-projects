@@ -221,8 +221,10 @@ def takeover(s, t, k, row, log, report):
     try:
         # Before the task's one backup is spent: Settings' Provider may not start it (providers.py).
         admit_launch(s, argv, space)
-    except Fail:
-        row["reason"] = fit(f"{head(row['reason'])}, backup held")
+    except Fail as e:
+        # The refusal's own words follow, as far as the line holds them: they name a setting or a
+        # variable, never a value (providers.py).
+        row["reason"] = fit(f"{head(row['reason'])}, backup held: {e}")
         return row
     t["backup"] = {"from": running, "to": kind, "why": row["reason"], "at": now(), "from_address": k["address"], "state": "starting"}
     s.dirty = True

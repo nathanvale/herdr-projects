@@ -122,6 +122,9 @@ def validate_foundation(deltas):
     upstream = {line.split('\t')[1] for line in files}
     for path, digest in deltas.items():
         target = ROOT / path
+        # U has no symbolic link, and a phase adds none: a link to the same content is not the file.
+        if target.is_symlink():
+            raise ValueError('Admitted source path is a symbolic link at ' + path)
         if not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != digest:
             raise ValueError('Source differs from its admitted phase content at ' + path)
         # An admitted U path keeps exact U's mode (below); one a phase adds is a plain file.
@@ -135,6 +138,8 @@ def validate_foundation(deltas):
         if kind != 'blob':
             raise ValueError('Unexpected upstream tree entry')
         target = ROOT / path
+        if target.is_symlink():
+            raise ValueError('Native foundation path is a symbolic link at ' + path)
         if path not in deltas and (not target.is_file() or target.read_bytes() != git('cat-file', 'blob', blob)):
             raise ValueError('Native foundation differs from exact U at ' + path)
         if bool(target.stat().st_mode & 0o111) != (mode == '100755'):

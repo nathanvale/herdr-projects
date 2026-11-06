@@ -52,8 +52,9 @@ owners, not implemented interfaces.
 `source_deltas` pins each one's content hash and exact-U blob. The gate proves two
 things: every U path outside that table and outside the three overrides is
 byte-identical to U with U's mode, and each admitted path matches its pin (an
-admitted U path keeps exact U's mode; an admitted added path is a plain file). The
-three overrides (`AGENTS.md`, `docs/develop.md`, `.github/workflows/check.yml`) are
+admitted U path keeps exact U's mode; an admitted added path is a plain file). A
+symbolic link at an admitted path or at a U path outside the overrides refuses, even
+to identical content. The three overrides (`AGENTS.md`, `docs/develop.md`, `.github/workflows/check.yml`) are
 skipped whole, content and mode. They, the checker, the manifest and added files
 outside the table are not pinned by it and rely on review. Candidate readiness
 stays blocked.

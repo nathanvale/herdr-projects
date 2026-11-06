@@ -93,8 +93,9 @@ The plan's deployment is the argv's only model selection. The first selection th
 has keeps its place with the deployment as its value, every later one is removed, and with none
 the flag is added after the program name. For Codex that covers `-m value`, `-mvalue`,
 `-m=value`, `--model value` and `--model=value`; an attached `-m` form becomes two words. For
-Claude Code it covers `--model value` and `--model=value`. Words from a bare `--` on are left as
-they are.
+Claude Code it covers `--model value` and `--model=value`. A flag with no value of its own (it
+is the last option, or the next word starts with `-`) takes the deployment, and the next word
+stays where it is. Words from a bare `--` on are left as they are.
 
 Refused before any effect:
 
@@ -106,6 +107,13 @@ Refused before any effect:
 - A Claude Code `--settings` file path, an attached `--settings=`, or more than one `--settings`.
 - An inline `--settings` whose `env` names the plan's own credential variable. The refusal names
   the variable and never its value.
+
+These checks read only the words before a bare `--`. Words from it on are the CLI's operands:
+one that looks like `--oss`, a `-c` override or `--settings` is neither refused nor parsed, and
+the plan's own `--settings` and `-c` words go before the `--`.
+
+A backup the provider holds is not spent. Its reason line says "backup held" and then the
+refusal's own words, as far as the one line holds them.
 
 The fingerprint is the SHA-256 of the CLI, endpoint or resource, deployment and sign-in method. It
 uses the same expression as the 2.x planner, so equal configuration gives an equal fingerprint
@@ -165,6 +173,8 @@ Known limits of this slice:
 - Model selection reads every argv word up to a bare `--`, without either CLI's option table.
   - A word that is really another option's value (`--append-system-prompt --model`, say) is read
     as a selection.
+  - A `--settings` given last before a bare `--` takes the `--` as its value and is refused as a
+    file path.
   - A flag given after a Codex subcommand (`codex exec -m value`) is read as a selection too, and
     rewritten in place.
   - With no selection, the flag is added right after the program name, so before any subcommand.
@@ -207,8 +217,8 @@ Authored, not run locally (repository policy allows only `bun run typecheck`). R
 - `test/test_providers.py`: the public `herdr-task` process with a recording `hc` stand-in.
   Personal pass-through, refusal before effects for start, queue, resume, switch, the tick's
   queue and an automation's run, the four plans against written-out values, one model selection
-  per argv, self-routing and inline-credential refusals, layering, and no credential value
-  anywhere.
+  per argv, self-routing and inline-credential refusals, operands after a bare `--`, layering,
+  and no credential value anywhere.
 - The backup's gate is tested in the module only (`takeover()` with its launch replaced).
   Reaching it through `herdr-task tick` needs a live agent, its session log and a provider cut,
   which the recording `hc` does not model.
@@ -226,7 +236,8 @@ These stand-ins do not prove Azure sign-in, inference, a real launch or the real
 `source_deltas` pins each one's content hash and exact-U blob. The gate proves two things: every
 U path outside that table and outside the three overrides is byte-identical to U with U's mode,
 and each admitted path matches its pin (an admitted U path keeps exact U's mode, and an admitted
-added path is a plain file). The three overrides (`AGENTS.md`, `docs/develop.md`,
+added path is a plain file). A symbolic link at an admitted path or at a U path outside the
+overrides refuses, even to identical content. The three overrides (`AGENTS.md`, `docs/develop.md`,
 `.github/workflows/check.yml`) are skipped whole, content and mode. They, the checker, the
 manifest, and added files outside the table (docs, the checkpoint tests) are not pinned by it:
 they rely on review. Candidate readiness stays blocked: `--require-ready` still exits 3. The mechanism is the one the

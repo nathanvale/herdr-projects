@@ -515,7 +515,14 @@ class LaunchPlans(unittest.TestCase):
                 # and the operands after "--".
                 (["--no-daemon", "--max", "-pmine"], [*one, "--no-daemon", "--max", "-pmine"]),
                 (["--no-daemon", "--", "-m", "gpt-5"], [*one, "--no-daemon", "--", "-m", "gpt-5"]),
-                (["-m", "gpt-5", "--no-daemon", "--", "--model=o3", "-mo4"], [*one, "--no-daemon", "--", "--model=o3", "-mo4"])):
+                (["-m", "gpt-5", "--no-daemon", "--", "--model=o3", "-mo4"], [*one, "--no-daemon", "--", "--model=o3", "-mo4"]),
+                # A flag with no value of its own (the next word is another option, the "--", or
+                # isn't there) takes the deployment, and the next word stays.
+                (["-m", "--no-daemon"], [*one, "--no-daemon"]),
+                (["--no-daemon", "-m"], ["--no-daemon", *one]),
+                (["--no-daemon", "-m", "--", "gpt-5"], ["--no-daemon", *one, "--", "gpt-5"]),
+                (["-m", "gpt-5", "-m", "--no-daemon"], [*one, "--no-daemon"]),
+                (["-m", "gpt-5", "--no-daemon", "--model"], [*one, "--no-daemon"])):
             with self.subTest(codex=words):
                 out = self.planned(f, "--argv", json.dumps(["codex", *words]))
                 self.assertEqual(out["argv"], ["codex", *out["args"], *kept])
@@ -523,10 +530,30 @@ class LaunchPlans(unittest.TestCase):
         for words, kept in (
                 (["--model", "opus", "--model", "sonnet"], ["--model", "claude-deployment"]),
                 (["--model=opus", "--effort", "high", "--model", "sonnet"], ["--model=claude-deployment", "--effort", "high"]),
-                (["--effort", "high", "--model", "opus", "--model=sonnet", "--model=haiku"], ["--effort", "high", "--model", "claude-deployment"])):
+                (["--effort", "high", "--model", "opus", "--model=sonnet", "--model=haiku"], ["--effort", "high", "--model", "claude-deployment"]),
+                (["--model", "--effort", "high"], ["--model", "claude-deployment", "--effort", "high"]),
+                (["--effort", "high", "--model"], ["--effort", "high", "--model", "claude-deployment"])):
             with self.subTest(claude=words):
                 argv = self.planned(f, "--argv", json.dumps(["claude", *words]))["argv"]
                 self.assertEqual(argv[:2] + argv[3:], ["claude", "--settings", *kept])
+
+    def test_operands_after_a_bare_double_dash_are_planned_and_not_read(self):
+        f = Fixture(self)
+        f.provider({"route": "azure-foundry", **CLAUDE, **CODEX})
+        for operands in (["--oss"], ["--local-provider=ollama"], ["-c", 'model_provider="azure"']):
+            with self.subTest(codex=operands):
+                out = self.planned(f, "--argv", json.dumps(["codex", "--no-daemon", "--", *operands]))
+                self.assertEqual(out["argv"], ["codex", *out["args"], "-m", "code-deployment", "--no-daemon", "--", *operands])
+        # Claude Code: a --settings among the operands is not opened, parsed or counted, and the
+        # plan's own --settings goes before the "--".
+        operands = ["--settings", "/somewhere/settings.json"]
+        argv = self.planned(f, "--argv", json.dumps(["claude", "--", *operands]))["argv"]
+        self.assertEqual(argv[:2] + argv[3:], ["claude", "--settings", "--model", "claude-deployment", "--", *operands])
+        self.assertEqual(json.loads(argv[2]), {"env": claude_env("claude-deployment")})
+        operands = ["--settings=/somewhere/settings.json", "--settings", "{}"]
+        argv = self.planned(f, "--argv", json.dumps(["claude", "--settings", '{"fastMode": true}', "--", *operands]))["argv"]
+        self.assertEqual(argv[:4] + argv[5:], ["claude", "--model", "claude-deployment", "--settings", "--", *operands])
+        self.assertEqual(json.loads(argv[4]), {"fastMode": True, "env": claude_env("claude-deployment")})
 
     def test_an_argv_that_routes_itself_is_refused(self):
         f = Fixture(self)
@@ -541,6 +568,11 @@ class LaunchPlans(unittest.TestCase):
                             (["codex", "--config", ' model_providers.azure.base_url = "https://other.example/v1"'], own),
                             (["codex", "-c", 'model_providers={azure={name="other"}}'], own),
                             (["codex", "--oss"], own),
+                            # Before a bare "--" these are still options.
+                            (["codex", "--oss", "--no-daemon", "--", "x"], own),
+                            (["codex", "--no-daemon", "-c", 'model_provider="azure"', "--", "x"], own),
+                            (["claude", "--settings", "/somewhere/settings.json", "--", "x"], "must be inline JSON, not a file"),
+                            (["claude", "--settings=/somewhere/settings.json", "--", "x"], "as a separate JSON word"),
                             (["claude", "--settings", "/somewhere/settings.json"], "must be inline JSON, not a file"),
                             (["claude", "--settings=/somewhere/settings.json"], "as a separate JSON word")):
             with self.subTest(argv=argv):
@@ -664,7 +696,8 @@ class Binding(unittest.TestCase):
 
     def test_a_backup_the_provider_holds_isnt_spent(self):
         row, task, started, ran = self.backup({"route": "azure-foundry", **CODEX})
-        self.assertEqual((row["reason"], "backup" in task, started, ran), ("Out of allowance, backup held", False, [], []))
+        # The refusal's own words follow "backup held", cut to the reason's one line.
+        self.assertEqual((row["reason"], "backup" in task, started, ran), ("Out of allowance, backup held: Azure…", False, [], []))
 
 
 if __name__ == "__main__":
