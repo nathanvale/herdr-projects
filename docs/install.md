@@ -10,8 +10,30 @@ place, never overwrites what you made yourself, and keeps a backup of anything i
 - python3 3.8 or newer, git, and Claude Code or Codex, installed and signed in.
 - bun (the service and the web app; the installer installs it from bun.sh when it's missing), and Tailscale for the
   web app.
-- Optional, per add-on: `gh` (pull requests), agent-browser 0.41.1, node and Chrome (the task browser), bun,
-  `pw-record` and whisper.cpp (`whisper-cli`) for dictation, an ElevenLabs key for voice calls.
+- Optional, per add-on: `gh` (pull requests; a repo with a GitHub remote needs it, see
+  [Pull requests and credentials](#pull-requests-and-credentials)), agent-browser 0.41.1, node and Chrome (the task
+  browser), bun, `pw-record` and whisper.cpp (`whisper-cli`) for dictation, an ElevenLabs key for voice calls.
+
+## Pull requests and credentials
+
+In a repo with a GitHub remote, `herdr-task ready` publishes a worktree task and Accept merges it through its pull
+request. A repo with no GitHub remote merges locally, and needs no `gh`.
+
+- `gh` and `git push` sign in separately. `gh` reads and opens pull requests. `git push` uses whatever the remote's own
+  configuration gives git. A refusal says which of the two failed.
+- `herdr-task` runs `gh` from `PATH`, or the command named in `HERDR_TASK_GH`. Running `herdr-task` under `ghh run` is
+  the other route, and `ghh` leaves git's push identity to the remote's configuration. Shepherdr holds no credential
+  of its own for either.
+- When `gh` can't answer in a repo with a GitHub remote (signed out, not installed, not on the caller's `PATH`), `ready`
+  and Accept refuse and leave the task as it was. They never merge locally instead, because nobody can then say whether
+  a pull request exists.
+- A branch GitHub already holds at exactly its commit isn't pushed, so publishing it needs only `gh`'s access.
+- `herdr-task adopt <task> --pr <number or link>` records a pull request that already exists on a started task, when
+  its target differs from the base the task recorded. It reads and checks, and never creates, pushes or merges. The pull
+  request must be this repo's own and open, for the task's branch, at exactly its tip, and the task's start commit must
+  be the one merge base of that tip and the pull request's base commit. The task's base then becomes the pull request's,
+  the old one stays in its history, and it merges only on the person's Accept. The base commit must be in this clone: a
+  `git fetch` first, if adopt asks for it, is the one step that uses git's own access.
 
 ## Install
 

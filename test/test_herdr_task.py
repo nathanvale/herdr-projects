@@ -620,6 +620,8 @@ class BackToWork(unittest.TestCase):
                 return True, json.dumps(prs), ""
             if a[:2] == ("pr", "create"):
                 return False, "", "a pull request for branch \"b\" into branch \"main\" already exists"
+            if a[:1] == ("api",):
+                return False, "", "gh: Not Found (HTTP 404)"  # the branch isn't on GitHub yet
             return True, "", ""
         for mod, name, value in ((github, "gh", fake), (github, "git", lambda *a: (True, "abc", ""))):
             p = self.mock.patch.object(mod, name, value)
