@@ -162,11 +162,17 @@ Known limits of this slice:
   one on the service's `PATH`; there is no setting or variable that chooses another.
 - One start checks admission up to three times (the command, `begin` and `launch`), each before a
   different effect. L1's single dispatch authority replaces them.
-- Model selection reads the argv word by word, without either CLI's option table. A word that is
-  really another option's value, an abbreviated long flag, a `model` set by a Codex `-c` override
-  or profile, and a flag given after a Codex subcommand are not examined. The Codex forms follow
-  standard short-flag parsing and were not read from the Codex 0.166.0 source; Q owns proving
-  them.
+- Model selection reads every argv word up to a bare `--`, without either CLI's option table.
+  - A word that is really another option's value (`--append-system-prompt --model`, say) is read
+    as a selection.
+  - A flag given after a Codex subcommand (`codex exec -m value`) is read as a selection too, and
+    rewritten in place.
+  - With no selection, the flag is added right after the program name, so before any subcommand.
+  - Not examined: an abbreviated long flag, and a `model` set by a Codex `-c` override or profile.
+  - The Codex forms follow standard short-flag parsing and were not read from the Codex 0.166.0
+    source; Q owns proving them.
+  - An existing limit outside this slice: `agent_argv` appends `--no-daemon` to a Codex argv
+    without it, at the argv's end, so after a bare `--` when there is one.
 
 ## Official contracts and versions
 

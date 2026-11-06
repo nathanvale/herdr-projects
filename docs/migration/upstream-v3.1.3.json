@@ -74,7 +74,7 @@
       "phase": "A1",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "20cbbd129b65e9e83f141ad54dddaad77d1c507c1236d40c2b6e3018db35cf5b"
+      "sha256": "87fcf7b3bc8135953df57479259e43606d6696e886dde90cb9074926d8675072"
     }
   ],
   "requirements": [

@@ -500,20 +500,22 @@ class LaunchPlans(unittest.TestCase):
         f = Fixture(self)
         f.provider({"route": "azure-foundry", **CLAUDE, **CODEX})
         one = ["-m", "code-deployment"]
+        # Each argv carries Codex's --no-daemon itself, before any "--": one without it is given it
+        # at its end (settings.agent_argv), which these cases don't judge.
         for words, kept in (
                 # Codex takes a one-letter flag's value attached, with or without "=".
                 (["-mgpt-5", "--no-daemon"], [*one, "--no-daemon"]),
                 (["--no-daemon", "-m=gpt-5"], ["--no-daemon", *one]),
-                (["--model=gpt-5"], ["--model=code-deployment"]),
+                (["--model=gpt-5", "--no-daemon"], ["--model=code-deployment", "--no-daemon"]),
                 # A second selection would compete with the plan's: only the first place is kept.
-                (["-m", "gpt-5", "-m", "o3"], one),
-                (["--model=gpt-5", "--model", "o3"], ["--model=code-deployment"]),
+                (["--no-daemon", "-m", "gpt-5", "-m", "o3"], ["--no-daemon", *one]),
+                (["--model=gpt-5", "--no-daemon", "--model", "o3"], ["--model=code-deployment", "--no-daemon"]),
                 (["--model", "gpt-5", "--no-daemon", "--model=o3", "-mo4", "-m=o5", "-m", "o6"], ["--model", "code-deployment", "--no-daemon"]),
                 # Not a selection: a long word or another one-letter flag that only looks like one,
                 # and the operands after "--".
-                (["--max", "-pmine"], [*one, "--max", "-pmine"]),
-                (["--", "-m", "gpt-5"], [*one, "--", "-m", "gpt-5"]),
-                (["-m", "gpt-5", "--", "--model=o3", "-mo4"], [*one, "--", "--model=o3", "-mo4"])):
+                (["--no-daemon", "--max", "-pmine"], [*one, "--no-daemon", "--max", "-pmine"]),
+                (["--no-daemon", "--", "-m", "gpt-5"], [*one, "--no-daemon", "--", "-m", "gpt-5"]),
+                (["-m", "gpt-5", "--no-daemon", "--", "--model=o3", "-mo4"], [*one, "--no-daemon", "--", "--model=o3", "-mo4"])):
             with self.subTest(codex=words):
                 out = self.planned(f, "--argv", json.dumps(["codex", *words]))
                 self.assertEqual(out["argv"], ["codex", *out["args"], *kept])
