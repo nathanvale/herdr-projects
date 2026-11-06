@@ -205,10 +205,12 @@ These stand-ins do not prove Azure sign-in, inference, a real launch or the real
 
 `bin/check-migration` names the owner paths phase A1 may change and the manifest's
 `source_deltas` pins each one's content hash and exact-U blob. The gate proves two things: every
-U path outside that table is byte-identical to U, and each admitted path matches its pin (an
-admitted U path keeps exact U's mode, and an admitted added path is a plain file). The checker,
-the manifest, and added files outside the table (docs, the checkpoint tests) are not pinned by
-it: they rely on review. Candidate readiness stays blocked: `--require-ready` still exits 3. The mechanism is the one the
+U path outside that table and outside the three overrides is byte-identical to U with U's mode,
+and each admitted path matches its pin (an admitted U path keeps exact U's mode, and an admitted
+added path is a plain file). The three overrides (`AGENTS.md`, `docs/develop.md`,
+`.github/workflows/check.yml`) are skipped whole, content and mode. They, the checker, the
+manifest, and added files outside the table (docs, the checkpoint tests) are not pinned by it:
+they rely on review. Candidate readiness stays blocked: `--require-ready` still exits 3. The mechanism is the one the
 S1 branch introduced, so the two phases merge into one table; the hashes of paths both phases
 change (`T/__init__.py`, `T/commands.py`) must be pinned again by whichever merges second.
 

@@ -963,7 +963,7 @@
         ".github/workflows/foundry.yml",
         ".github/workflows/core-rewrite.yml"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; pending regression obligation recorded at A1: public-process proof through herdr-task tick that a backup takeover is held by the provider gate before the task's one backup is spent (A1 has in-module proof only in test/test_providers.py, with no stand-in and no coverage claimed); native qualification pending"
     },
     {
       "id": "matching-state-rollback",

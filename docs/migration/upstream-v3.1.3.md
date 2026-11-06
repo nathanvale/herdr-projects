@@ -50,10 +50,13 @@ owners, not implemented interfaces.
 
 `bin/check-migration` names each phase's admitted owner paths; the manifest's
 `source_deltas` pins each one's content hash and exact-U blob. The gate proves two
-things: every U path outside that table is byte-identical to U, and each admitted
-path matches its pin (an admitted U path keeps exact U's mode; an admitted added
-path is a plain file). The checker, the manifest and added files outside the table
-are not pinned by it and rely on review. Candidate readiness stays blocked.
+things: every U path outside that table and outside the three overrides is
+byte-identical to U with U's mode, and each admitted path matches its pin (an
+admitted U path keeps exact U's mode; an admitted added path is a plain file). The
+three overrides (`AGENTS.md`, `docs/develop.md`, `.github/workflows/check.yml`) are
+skipped whole, content and mode. They, the checker, the manifest and added files
+outside the table are not pinned by it and rely on review. Candidate readiness
+stays blocked.
 
 - `T/providers.py` owns nonsecret bindings, the four supported launch plans and the
   admission gate. Start, queue, resume, switch, backup, the tick's queue and an
