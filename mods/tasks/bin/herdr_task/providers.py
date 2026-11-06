@@ -196,16 +196,30 @@ def launch_plan(kind, binding):
 
 
 def with_model(argv, flags, flag, model):
-    """argv asking for `model`: its own model flag's value replaced, else the flag added."""
-    out = list(argv)
-    for i, a in enumerate(out[1:], 1):
-        if a in flags and i + 1 < len(out):
-            out[i + 1] = model
-            return out
-        if any(a.startswith(f + "=") for f in flags if f.startswith("--")):
-            out[i] = f"{a.split('=', 1)[0]}={model}"
-            return out
-    return out[:1] + [flag, model] + out[1:]
+    """argv selecting `model` and no other: its first model selection keeps its place with the
+    model as its value, every later one is dropped, and with none the flag is added. A selection
+    is a flag and the word after it, `--flag=value`, or a one-letter flag with its value attached
+    (`-mvalue`, `-m=value`: kept as the flag and the model, two words). Words from a bare "--" on
+    are the CLI's operands, not options: left as they are."""
+    words = list(argv)
+    end = words.index("--", 1) if "--" in words[1:] else len(words)
+    out, i, found = words[:1], 1, False
+    while i < end:
+        a, i = words[i], i + 1
+        if a in flags and i < end:
+            mine, i = [a, model], i + 1
+        elif any(a.startswith(f + "=") for f in flags if f.startswith("--")):
+            mine = [f"{a.split('=', 1)[0]}={model}"]
+        elif any(a.startswith(f) and a != f for f in flags if not f.startswith("--")):
+            mine = [a[:2], model]
+        else:
+            out.append(a)
+            continue
+        if not found:
+            out += mine
+        found = True
+    out += words[end:]
+    return out if found else out[:1] + [flag, model] + out[1:]
 
 
 def codex_override_keys(argv):

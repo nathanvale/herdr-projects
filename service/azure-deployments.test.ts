@@ -184,6 +184,22 @@ test("a refresh for a new endpoint replaces one still running, whose late answer
   f.readOnly();
 });
 
+test("a refresh for another machine never joins this computer's running one or shows its inventory", async () => {
+  const f = fixture({ hold: true });
+  const refused = { busy: false, options: [], hint: IDLE, warn: "Azure discovery reads only this computer's Azure CLI. Enter the deployment manually for other machines." };
+  const local = f.codex();
+  await f.entered();
+  const remote = f.codex("all", ["vm"]); // the same scope, CLI, endpoint and subscription, for another machine
+  // refused at once: it doesn't wait for this computer's read, and that read's place is gone
+  expect(f.d.view("all", "codex", { target: ENDPOINT })).toEqual(refused);
+  expect(await remote).toEqual(refused);
+  f.release();
+  expect(await local).toEqual(refused); // this computer's late inventory is dropped, not shown under the refusal
+  expect(f.d.view("all", "codex", { target: ENDPOINT })).toEqual(refused);
+  expect(f.calls()).toEqual([SHOW, RESOURCES, DEPLOYMENTS]); // the other machine's Refresh ran nothing
+  f.readOnly();
+});
+
 test("discovery stays on this computer and Azure public cloud, and Everywhere needs exactly one machine", async () => {
   const f = fixture();
   expect(await f.codex("all", ["vm"])).toEqual({ busy: false, options: [], hint: IDLE, warn: "Azure discovery reads only this computer's Azure CLI. Enter the deployment manually for other machines." });

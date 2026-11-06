@@ -496,6 +496,36 @@ class LaunchPlans(unittest.TestCase):
         self.assertEqual(out["argv"][:6] + out["argv"][7:], ["claude", "--model", "claude-deployment", "--effort", "high", "--settings", "--permission-mode", "plan"])
         self.assertEqual(json.loads(out["argv"][6]), {"fastMode": True, "env": {"MY_FLAG": "1", **claude_env("claude-deployment")}})
 
+    def test_the_argv_selects_the_plans_deployment_and_no_other_model(self):
+        f = Fixture(self)
+        f.provider({"route": "azure-foundry", **CLAUDE, **CODEX})
+        one = ["-m", "code-deployment"]
+        for words, kept in (
+                # Codex takes a one-letter flag's value attached, with or without "=".
+                (["-mgpt-5", "--no-daemon"], [*one, "--no-daemon"]),
+                (["--no-daemon", "-m=gpt-5"], ["--no-daemon", *one]),
+                (["--model=gpt-5"], ["--model=code-deployment"]),
+                # A second selection would compete with the plan's: only the first place is kept.
+                (["-m", "gpt-5", "-m", "o3"], one),
+                (["--model=gpt-5", "--model", "o3"], ["--model=code-deployment"]),
+                (["--model", "gpt-5", "--no-daemon", "--model=o3", "-mo4", "-m=o5", "-m", "o6"], ["--model", "code-deployment", "--no-daemon"]),
+                # Not a selection: a long word or another one-letter flag that only looks like one,
+                # and the operands after "--".
+                (["--max", "-pmine"], [*one, "--max", "-pmine"]),
+                (["--", "-m", "gpt-5"], [*one, "--", "-m", "gpt-5"]),
+                (["-m", "gpt-5", "--", "--model=o3", "-mo4"], [*one, "--", "--model=o3", "-mo4"])):
+            with self.subTest(codex=words):
+                out = self.planned(f, "--argv", json.dumps(["codex", *words]))
+                self.assertEqual(out["argv"], ["codex", *out["args"], *kept])
+                self.assertEqual(len(out["args"]), 4)
+        for words, kept in (
+                (["--model", "opus", "--model", "sonnet"], ["--model", "claude-deployment"]),
+                (["--model=opus", "--effort", "high", "--model", "sonnet"], ["--model=claude-deployment", "--effort", "high"]),
+                (["--effort", "high", "--model", "opus", "--model=sonnet", "--model=haiku"], ["--effort", "high", "--model", "claude-deployment"])):
+            with self.subTest(claude=words):
+                argv = self.planned(f, "--argv", json.dumps(["claude", *words]))["argv"]
+                self.assertEqual(argv[:2] + argv[3:], ["claude", "--settings", *kept])
+
     def test_an_argv_that_routes_itself_is_refused(self):
         f = Fixture(self)
         f.provider({"route": "azure-foundry", **CLAUDE, **CODEX})

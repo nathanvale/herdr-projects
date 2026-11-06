@@ -6,8 +6,8 @@ owners and nothing else:
 - `mods/tasks/bin/herdr_task/providers.py`: nonsecret provider bindings and launch plans.
 - `service/azure-deployments.ts`: explicit, read-only deployment discovery.
 
-This is source and authored regressions only. Nothing here is CI-proved, deployed or natively
-qualified, and no Azure launch is dispatched. The [2.x reference](azure-foundry.md) stays a
+This is source and its regressions only. CI's source checks run them; nothing here is deployed or
+natively qualified, and no Azure launch is dispatched. The [2.x reference](azure-foundry.md) stays a
 historical document.
 
 ## What works now, and what is held
@@ -89,6 +89,13 @@ credential and model variables read the same way is the 2.x planner's working as
 documented contract; native qualification (Q) has to prove it for each sign-in route. The active
 credential's variable is left out of the plan entirely.
 
+The plan's deployment is the argv's only model selection. The first selection the argv already
+has keeps its place with the deployment as its value, every later one is removed, and with none
+the flag is added after the program name. For Codex that covers `-m value`, `-mvalue`,
+`-m=value`, `--model value` and `--model=value`; an attached `-m` form becomes two words. For
+Claude Code it covers `--model value` and `--model=value`. Words from a bare `--` on are left as
+they are.
+
 Refused before any effect:
 
 - Codex with Entra ID or a bearer token. Microsoft's guide says Entra ID is not available for Codex.
@@ -155,6 +162,11 @@ Known limits of this slice:
   one on the service's `PATH`; there is no setting or variable that chooses another.
 - One start checks admission up to three times (the command, `begin` and `launch`), each before a
   different effect. L1's single dispatch authority replaces them.
+- Model selection reads the argv word by word, without either CLI's option table. A word that is
+  really another option's value, an abbreviated long flag, a `model` set by a Codex `-c` override
+  or profile, and a flag given after a Codex subcommand are not examined. The Codex forms follow
+  standard short-flag parsing and were not read from the Codex 0.166.0 source; Q owns proving
+  them.
 
 ## Official contracts and versions
 
@@ -188,14 +200,15 @@ Authored, not run locally (repository policy allows only `bun run typecheck`). R
 
 - `test/test_providers.py`: the public `herdr-task` process with a recording `hc` stand-in.
   Personal pass-through, refusal before effects for start, queue, resume, switch, the tick's
-  queue and an automation's run, the four plans against written-out values, self-routing and
-  inline-credential refusals, layering, and no credential value anywhere.
+  queue and an automation's run, the four plans against written-out values, one model selection
+  per argv, self-routing and inline-credential refusals, layering, and no credential value
+  anywhere.
 - The backup's gate is tested in the module only (`takeover()` with its launch replaced).
   Reaching it through `herdr-task tick` needs a live agent, its session log and a provider cut,
   which the recording `hc` does not model.
 - `service/azure-deployments.test.ts`: the discovery class against a stand-in `az` process.
   Filters for both CLIs, subscription pinning, scope, memory-only state, stale responses,
-  sanitized failures, bounds and timeout.
+  another machine's refresh during a local one, sanitized failures, bounds and timeout.
 - `test/azure-binding.cases.json`: one field table both suites judge.
 - `test/test_migration.py`: the source checkpoint (below).
 

@@ -44,7 +44,7 @@
       "phase": "A1",
       "path": "mods/tasks/bin/herdr_task/providers.py",
       "upstream_blob": null,
-      "sha256": "5dae0c7d9dd6aec7820f3340491cecc568080d3e5bd272439545a83af0946878"
+      "sha256": "ba52b5f024194e9b291c6a466a0df8b5f7740e62990a67e849360009911c175b"
     },
     {
       "phase": "A1",
@@ -56,13 +56,13 @@
       "phase": "A1",
       "path": "service/azure-deployments.test.ts",
       "upstream_blob": null,
-      "sha256": "1c24d98b96033edd246e85e1e536aca45a259cc32052a9087d346b4a461d4113"
+      "sha256": "2b9ced12a88a108de5477b902462540a7a387046c75dc851ada625df1dfa46d8"
     },
     {
       "phase": "A1",
       "path": "service/azure-deployments.ts",
       "upstream_blob": null,
-      "sha256": "f3bc312e8ccd0eda12e587a66a934d7e87c10c81b770e7e6b346a7bcc1f1a2da"
+      "sha256": "7805d841023f35efaf8280e5cb0f85e18f58a743436df5756ac07168263400d7"
     },
     {
       "phase": "A1",
@@ -74,7 +74,7 @@
       "phase": "A1",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "7b112eca0f731481840072f21898470642350aa2c29c0fa183c109fb03cd4a20"
+      "sha256": "20cbbd129b65e9e83f141ad54dddaad77d1c507c1236d40c2b6e3018db35cf5b"
     }
   ],
   "requirements": [

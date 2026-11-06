@@ -139,15 +139,18 @@ export class AzureDeployments {
 
   /** Refresh, asked for by the person: reads the inventory for this scope and CLI. Throws before asking Azure when the
    *  request can't be one (nothing set, a bad subscription id, no single machine); any failure after that clears the
-   *  scope's choices and leaves one fixed line in the view. A second Refresh of the same configuration while one runs
-   *  joins it; one for another configuration replaces it, and the older response is dropped when it lands. */
+   *  scope's choices and leaves one fixed line in the view. A second Refresh for this computer under the same
+   *  configuration while one runs joins it; one for another configuration or another machine replaces it, and the
+   *  older response is dropped when it lands. */
   async refresh(req: DiscoveryRequest): Promise<DiscoveryView> {
     const resource = discoveryResource(req.kind, req.target), subscription = discoverySubscription(req.subscription);
     if (req.machines.length !== 1) throw new Error(ONE_MACHINE);
     const id = `${req.scope}\0${req.kind}`, key = AzureDeployments.key(req.kind, req);
-    const running = this.entries.get(id);
-    if (running?.busy && running.key === key) { await running.pending; return this.view(req.scope, req.kind, req); }
     const local = req.machines[0] === null || req.machines[0] === LOCAL;
+    const running = this.entries.get(id);
+    // The key names no machine, so only a Refresh for this computer may join: another machine's must get its own
+    // refusal, never this computer's inventory. (A busy entry is always local: a refusal settles before anything waits.)
+    if (local && running?.busy && running.key === key) { await running.pending; return this.view(req.scope, req.kind, req); }
     const entry: Entry = { key, busy: true, options: [], pending: Promise.resolve() };
     this.entries.set(id, entry);
     this.changed();
