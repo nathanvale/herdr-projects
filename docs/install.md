@@ -19,16 +19,18 @@ place, never overwrites what you made yourself, and keeps a backup of anything i
 In a repo with a GitHub remote, `herdr-task ready` publishes a worktree task and Accept merges it through its pull
 request. A repo with no remotes merges locally, and so does one whose remotes are all on Bitbucket Cloud, GitLab.com or
 Azure DevOps, without asking `gh`. So does one `gh` says has no remote on a host it knows, unless `gh` has confirmed that
-repo on GitHub before with the same remotes, and one with no `gh` installed and no remote recognisably GitHub's.
+repo on GitHub before with the same remotes, and one with no `gh` installed, no remote recognisably GitHub's and no
+saved repo name.
 
 - `gh` and `git push` sign in separately. `gh` reads and opens pull requests. `git push` uses whatever the remote's own
   configuration gives git. A refusal says which of the two failed.
 - `herdr-task` runs `gh` from `PATH`, or the command named in `HERDR_TASK_GH`. Shepherdr holds no credential of its own
   for either.
-- Any other failure of `gh` in a repo with a remote (signed out, no network, an alias or Enterprise host it can't place)
-  makes `ready` and Accept refuse and leave the task as it was, as does `gh` not installed or not on the caller's `PATH`
-  when a remote is recognisably GitHub's. They never merge locally instead, because nobody can then say whether a pull
-  request exists.
+- Any other failure of `gh` in a repo with a remote (signed out, no network) makes `ready` and Accept refuse and leave the
+  task as it was, as does `gh` not installed or not on the caller's `PATH` when a remote is recognisably GitHub's. They
+  never merge locally instead, because nobody can then say whether a pull request exists.
+- An alias or Enterprise repo `gh` has never confirmed, with `gh` not knowing that host, takes `gh`'s no and merges
+  locally: `gh` can't tell it from a host that isn't GitHub. A repo `gh` has confirmed keeps refusing.
 - A branch GitHub already holds at exactly its commit isn't pushed, so publishing it needs only `gh`'s access.
 - `herdr-task adopt <task> --pr <number or link>` records a pull request that already exists on a started task, when
   its target differs from the base the task recorded. It reads and checks, and never creates, pushes or merges. The pull
