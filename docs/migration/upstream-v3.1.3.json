@@ -44,7 +44,7 @@
       "phase": "A1",
       "path": "mods/tasks/bin/herdr_task/providers.py",
       "upstream_blob": null,
-      "sha256": "6b85acbbb8a902e31dfaa8034f56623bfa8361f256ba8632f139f8cc398ad766"
+      "sha256": "c57982df7beed8fc6d0661ba1c90344c909dca3c5e426b3b04fe8ea9cb0e0b75"
     },
     {
       "phase": "A1",
@@ -74,7 +74,7 @@
       "phase": "A1",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "0ebcbe53236e2d432838019838ff627b358ff9aa491a4c525febd891ce821ff1"
+      "sha256": "e3ad0a7bdfba62296d7f6b2cf39a36144fa1f35cb132ece9e95a73fb83cc3a79"
     }
   ],
   "requirements": [

@@ -537,23 +537,41 @@ class LaunchPlans(unittest.TestCase):
                 argv = self.planned(f, "--argv", json.dumps(["claude", *words]))["argv"]
                 self.assertEqual(argv[:2] + argv[3:], ["claude", "--settings", *kept])
 
-    def test_operands_after_a_bare_double_dash_are_planned_and_not_read(self):
+    def test_words_after_a_bare_double_dash_are_operands_unless_claude_could_read_them_as_options(self):
         f = Fixture(self)
         f.provider({"route": "azure-foundry", **CLAUDE, **CODEX})
         for operands in (["--oss"], ["--local-provider=ollama"], ["-c", 'model_provider="azure"']):
             with self.subTest(codex=operands):
                 out = self.planned(f, "--argv", json.dumps(["codex", "--no-daemon", "--", *operands]))
                 self.assertEqual(out["argv"], ["codex", *out["args"], "-m", "code-deployment", "--no-daemon", "--", *operands])
-        # Claude Code: a --settings among the operands is not opened, parsed or counted, and the
-        # plan's own --settings goes before the "--".
-        operands = ["--settings", "/somewhere/settings.json"]
-        argv = self.planned(f, "--argv", json.dumps(["claude", "--", *operands]))["argv"]
-        self.assertEqual(argv[:2] + argv[3:], ["claude", "--settings", "--model", "claude-deployment", "--", *operands])
+        # Claude Code: any other word after the "--" stays an operand, and the plan's own
+        # --settings goes before the "--".
+        operands = ["fix the tests", "--settings-note"]
+        argv = self.planned(f, "--argv", json.dumps(["claude", "--effort", "high", "--", *operands]))["argv"]
+        self.assertEqual(argv[:2] + argv[3:], ["claude", "--settings", "--model", "claude-deployment", "--effort", "high", "--", *operands])
         self.assertEqual(json.loads(argv[2]), {"env": claude_env("claude-deployment")})
-        operands = ["--settings=/somewhere/settings.json", "--settings", "{}"]
-        argv = self.planned(f, "--argv", json.dumps(["claude", "--settings", '{"fastMode": true}', "--", *operands]))["argv"]
-        self.assertEqual(argv[:4] + argv[5:], ["claude", "--model", "claude-deployment", "--settings", "--", *operands])
-        self.assertEqual(json.loads(argv[4]), {"fastMode": True, "env": claude_env("claude-deployment")})
+        # But the "--" may be another option's value, and then a --settings or --model after it
+        # is a real option: it can't be told apart, so it is refused and never repeated.
+        unsure = "can't be told from an option"
+        for argv in (["claude", "--append-system-prompt", "--", "--settings", "/file.json"],
+                     ["claude", "--append-system-prompt", "--", "--model", "other"],
+                     ["claude", "--append-system-prompt", "--", "--model=other"],
+                     ["claude", "--", "--settings=/file.json"],
+                     ["claude", "--", "--settings", "/somewhere/settings.json"],
+                     ["claude", "--settings", '{"fastMode": true}', "--", "--settings=/somewhere/settings.json", "--settings", "{}"]):
+            with self.subTest(claude=argv):
+                why = f.no_plan("--argv", json.dumps(argv))
+                self.assertIn(unsure, why)
+                self.assertTrue(why.endswith("Nothing was started."), why)
+                self.assertNotIn(argv[-1], why)
+        # An inline --settings there, carrying the plan's own credential variable: its value is
+        # in nothing herdr-task says.
+        f.provider({"route": "azure-foundry", **CLAUDE, "claude_auth": "api-key"})
+        inline = json.dumps({"env": {"ANTHROPIC_FOUNDRY_API_KEY": INLINE}})
+        self.assertIn(unsure, f.no_plan("--argv", json.dumps(["claude", "--append-system-prompt", "--", "--settings", inline])))
+        self.assertNotIn(INLINE, f.seen + json.dumps(f.calls()))
+        self.assertEqual(f.calls(), [])
+        f.no_secret()
 
     def test_an_argv_that_routes_itself_is_refused(self):
         f = Fixture(self)

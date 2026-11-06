@@ -95,7 +95,8 @@ the flag is added after the program name. For Codex that covers `-m value`, `-mv
 `-m=value`, `--model value` and `--model=value`; an attached `-m` form becomes two words. For
 Claude Code it covers `--model value` and `--model=value`. A flag with no value of its own (it
 is the last option, or the next word starts with `-`) takes the deployment, and the next word
-stays where it is. Words from a bare `--` on are left as they are.
+stays where it is. Words from a bare `--` on are left as they are (for Claude Code, see the
+refusal below).
 
 Refused before any effect:
 
@@ -108,9 +109,19 @@ Refused before any effect:
 - An inline `--settings` whose `env` names the plan's own credential variable. The refusal names
   the variable and never its value.
 
-These checks read only the words before a bare `--`. Words from it on are the CLI's operands:
-one that looks like `--oss`, a `-c` override or `--settings` is neither refused nor parsed, and
-the plan's own `--settings` and `-c` words go before the `--`.
+A bare `--` is read differently for each CLI:
+
+- Codex: these checks and the model selection stop at the `--`. Words from it on are operands:
+  one that looks like `--oss` or a `-c` override is neither refused nor parsed, and the plan's
+  own `-c` and `-m` words go before the `--`. The reason is that clap treats `--` as a
+  terminator. That was read from clap's main branch, not the version Codex 0.166.0 pins, so Q
+  owns proving it.
+- Claude Code: a `--settings`, `--settings=`, `--model` or `--model=` word from a bare `--` on
+  refuses. The `--` may be another option's value (`--append-system-prompt -- --settings file`),
+  and then that word is a real option that could override the plan's routing or carry a
+  credential. Which way Claude Code's parser reads it is not confirmed, so the argv is refused
+  under both readings and no word of it is repeated. Any other word after the `--` stays an
+  operand and plans normally, with the plan's own `--settings` before the `--`.
 
 A backup the provider holds is not spent. Its reason line says "backup held" and then the
 refusal's own words, as far as the one line holds them.

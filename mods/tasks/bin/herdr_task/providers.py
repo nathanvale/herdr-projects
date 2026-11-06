@@ -78,6 +78,8 @@ NO_FIELD = ("Shepherdr settings' provider section has a field it doesn't know. I
             "Keys and tokens never go in settings: remove any other field. Nothing was started.")
 NO_INLINE_CREDENTIAL = ("On Azure Foundry, {} comes from the execution host's environment, never from the argv's --settings: "
                         "remove it there. Nothing was started.")
+NO_OPTION_AFTER_DASHES = ("On Azure Foundry, Claude Code's argv can't carry --settings or --model after a bare \"--\": there it "
+                          "can't be told from an option. Remove it, or give it before the \"--\". Nothing was started.")
 HELD = ("Azure Foundry is set for {}, and its launch plan is valid, but this version only plans it: starting or resuming an "
         "agent on Azure waits for launch admission and bound resume (still pending). Nothing was started or changed. "
         "`herdr-task provider plan --agent {}` shows the plan; set Provider to Personal to start on the CLI's own sign-in.")
@@ -261,9 +263,15 @@ def compose(plan, argv):
         raise Fail(f"This plan is for {plan['agent']}, not {agent_key(argv)}.")
     if plan["agent"] == "claude":
         out = with_model(argv, ("--model",), "--model", plan["deployment"])
-        # Only the options: a --settings among the operands (after a bare "--") is neither read
-        # nor counted, and the plan's own goes in front of them.
         end = options_end(out)
+        # A bare "--" may be another option's value, and then a --settings or --model after it
+        # is a real option that could reroute the launch or carry a credential; read as one when
+        # it is an operand, it would stand in for the plan's own. Neither reading is safe: refused,
+        # and no word of the argv is repeated.
+        if any(a in ("--settings", "--model") or a.startswith(("--settings=", "--model=")) for a in out[end:]):
+            raise Fail(NO_OPTION_AFTER_DASHES)
+        # Only the options below: any other word from the "--" on is left as an operand, and the
+        # plan's own --settings goes in front.
         if any(a.startswith("--settings=") for a in out[1:end]):
             raise Fail("On Azure Foundry, give Claude Code's --settings as a separate JSON word. Nothing was started.")
         if out[1:end].count("--settings") > 1:
