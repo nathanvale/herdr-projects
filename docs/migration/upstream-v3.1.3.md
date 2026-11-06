@@ -1,6 +1,7 @@
 # Full 3.x source migration
 
-S0 is a source-only foundation. Required Bitbucket, Azure and lifecycle ports are
+S0 is a source-only foundation; N1 adds native pull request adoption and fail-closed
+publication on it. Required Bitbucket, Azure and lifecycle ports are
 pending. This checkpoint is not deployable or ready for application use. Check's
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
@@ -35,6 +36,7 @@ owners, not implemented interfaces.
 | Phase | Dependencies | Owner and exit |
 | --- | --- | --- |
 | S0 | This source admission | Exact U, F/P dispositions and blocked readiness; Root review and CI before dependent work. |
+| N1 | S0, separately authorized | `T/github.py`, commands and CLI; adopt an existing pull request, fail closed on GitHub, separate gh and git failures. Not a port. |
 | S1 | Reviewed S0 | New `T/forge.py`, existing `T/github.py`, commands/proof/worktree consumers; preserve GitHub defaults. Smallest next customization. |
 | A1 | Reviewed S0 | New `T/providers.py` and `service/azure-deployments.ts`; nonsecret bindings, supported authentication and discovery custody. |
 | B1 | S1 | New `T/bitbucket.py`, `T/bitbucket_http.py`; qualified identity, host credentials and complete exact-head reads. |
@@ -44,6 +46,25 @@ owners, not implemented interfaces.
 | L2 | A2, L1 | Native revive/watch/manual restart through that owner; independent qualification and conditional retirement. |
 | Q | B2, A2, L2 | Exact candidate CI/public process proof; all required ports and old proof obligations resolved. |
 | R | Q, human state choices | Separately admitted rehearsal and matching executable/state rollback. |
+
+### N1 native publication checkpoint
+
+`bin/check-migration` names each phase's admitted owner paths; the manifest's
+`source_deltas` pins each one's content hash and exact-U blob. Every U path outside
+that table and the three overrides stays byte-identical to U with U's mode. A phase
+cannot widen its owners or drift its content. It cannot roll back either: naming an
+earlier phase over its deltas refuses, and dropping the deltas as well refuses
+because the admitted paths then differ from exact U. Candidate readiness stays blocked.
+
+- `T/github.py` owns adoption (`adopt_existing()`), reached by `herdr-task adopt`.
+  Base equivalence is proved from commits: the task's start commit is the one merge
+  base of its tip and the pull request's base commit. S1 moves this behind the forge.
+- A repo with a GitHub remote refuses while gh can't answer, gh not installed
+  included, and never reaches a local merge. A repo with none keeps its local path.
+- Credential custody is unchanged: [Pull requests and credentials](../install.md#pull-requests-and-credentials).
+- This phase, A1 and S1 each add one row to `PHASES` and their rows to `source_deltas`.
+  They merge into one table, and whichever merges second re-pins every path they share.
+- This fix is not a required port. No inventory requirement changes status.
 
 ### Bitbucket contract
 
@@ -142,7 +163,8 @@ inventory. Q must port or explicitly reconcile every obligation. Default native
 tests do not establish fork parity. Old optional production-plugin proof is not
 silently considered covered by default tests.
 
-Root runs `python3 bin/check-migration`, the new five public-CLI checkpoint tests
+Root runs `python3 bin/check-migration`, its public-CLI checkpoint tests
+(`test/test_migration.py`), the N1 publication tests (`test/test_native_publication.py`)
 and every native Check command. CI owns frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.

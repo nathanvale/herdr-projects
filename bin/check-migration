@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the S0 source contract without starting or installing anything."""
+"""Validate the source checkpoint contract without starting or installing anything."""
 import argparse
 import hashlib
 import json
@@ -25,6 +25,13 @@ missing-history launch-uncertainty late-sender-fence one-revival-owner manual-re
 delivery-retries task-lifecycle-holds screen-reconnect protected-update
 plugin-state-compatibility fork-ci-obligations matching-state-rollback'''.split())
 OVERRIDES = {'AGENTS.md', 'docs/develop.md', '.github/workflows/check.yml'}
+# Reviewed source phases, in order, and the owner paths each may change. The manifest pins each
+# admitted path's content; this table, not the manifest, decides what a phase may touch.
+PHASES = {
+    'S0': frozenset(),
+    'N1': frozenset('''docs/install.md mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py
+mods/tasks/bin/herdr_task/github.py test/test_herdr_task.py test/test_native_publication.py'''.split()),
+}
 
 
 def git(*args):
@@ -34,22 +41,46 @@ def git(*args):
     return result.stdout
 
 
+def admitted(phase):
+    """{path: phase} for every owner path the phases up to `phase` may change."""
+    order = list(PHASES)
+    return {path: name for name in order[:order.index(phase) + 1] for path in PHASES[name]}
+
+
+def validate_deltas(contract):
+    rows = contract.get('source_deltas')
+    if not isinstance(rows, list):
+        raise ValueError('Source deltas are missing')
+    owners = admitted(contract['phase'])
+    paths = [row.get('path') for row in rows]
+    if len(paths) != len(set(paths)) or set(paths) != set(owners):
+        raise ValueError('Source deltas differ from the admitted owners of phase ' + contract['phase'])
+    upstream = {line.split('\t')[1]: line.split()[2] for line in git('ls-tree', '-r', INPUTS['U']).decode().splitlines()}
+    for row in rows:
+        if row.get('phase') != owners[row['path']] or row.get('upstream_blob') != upstream.get(row['path']):
+            raise ValueError('Source delta phase or upstream provenance changed at ' + row['path'])
+        if not isinstance(row.get('sha256'), str) or len(row['sha256']) != 64:
+            raise ValueError('Source delta lacks its admitted content hash at ' + row['path'])
+    return {row['path']: row['sha256'] for row in rows}
+
+
 def validate_contract(contract):
     if contract.get('schema') != 1 or contract.get('inputs') != INPUTS:
         raise ValueError('Fixed inputs or contract schema changed')
-    if (contract.get('phase'), contract.get('architecture'), contract.get('candidate_readiness')) != (
-            'S0', 'full-upstream-3.x', 'blocked'):
-        raise ValueError('S0 must remain a blocked full-upstream source checkpoint')
+    if contract.get('phase') not in PHASES or (contract.get('architecture'), contract.get('candidate_readiness')) != (
+            'full-upstream-3.x', 'blocked'):
+        raise ValueError('The checkpoint must remain a blocked full-upstream source phase')
     rows = contract.get('requirements', [])
     if len(rows) != len(REQUIRED) or {row.get('id') for row in rows} != REQUIRED:
         raise ValueError('Required behavior inventory is incomplete or duplicated')
     for row in rows:
         if row.get('status') not in {'pending', 'reuse-unqualified', 'decision-held'}:
-            raise ValueError('S0 cannot claim a required port is qualified')
+            raise ValueError('A source checkpoint cannot claim a required port is qualified')
         if not all(row.get(key) for key in ('phase', 'requirement', 'owners', 'source_paths', 'evidence')):
             raise ValueError('Requirement lacks owner, proof source or disposition')
         if row.get('port_source') != INPUTS['P']:
             raise ValueError('Required port source changed')
+    return validate_deltas(contract)
 
 
 def validate_inventory(inventory):
@@ -84,8 +115,19 @@ def validate_inventory(inventory):
     return len(rows)
 
 
-def validate_foundation():
+def validate_foundation(deltas):
     files = git('ls-tree', '-r', INPUTS['U']).decode().splitlines()
+    upstream = {line.split('\t')[1] for line in files}
+    for path, digest in deltas.items():
+        target = ROOT / path
+        # U has no symbolic link, and a phase adds none: a link to the same content is not the file.
+        if target.is_symlink():
+            raise ValueError('Admitted source path is a symbolic link at ' + path)
+        if not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+            raise ValueError('Source differs from its admitted phase content at ' + path)
+        # An admitted U path keeps exact U's mode (below); one a phase adds is a plain file.
+        if path not in upstream and target.stat().st_mode & 0o111:
+            raise ValueError('Admitted source path is executable at ' + path)
     for line in files:
         metadata, path = line.split('\t')
         if path in OVERRIDES:
@@ -94,7 +136,9 @@ def validate_foundation():
         if kind != 'blob':
             raise ValueError('Unexpected upstream tree entry')
         target = ROOT / path
-        if not target.is_file() or target.read_bytes() != git('cat-file', 'blob', blob):
+        if target.is_symlink():
+            raise ValueError('Native foundation path is a symbolic link at ' + path)
+        if path not in deltas and (not target.is_file() or target.read_bytes() != git('cat-file', 'blob', blob)):
             raise ValueError('Native foundation differs from exact U at ' + path)
         if bool(target.stat().st_mode & 0o111) != (mode == '100755'):
             raise ValueError('Native executable mode differs at ' + path)
@@ -117,16 +161,17 @@ def main():
     try:
         contract = json.loads(args.manifest.read_text())
         inventory = json.loads(args.inventory.read_text())
-        validate_contract(contract)
+        deltas = validate_contract(contract)
         count = validate_inventory(inventory)
-        native = validate_foundation()
+        native = validate_foundation(deltas)
     except (ValueError, KeyError, TypeError, OSError) as error:
         print(json.dumps({'source_validation': 'failed', 'candidate_readiness': 'blocked', 'error': str(error)}))
         return 1
-    print(json.dumps({'source_validation': 'passed', 'candidate_readiness': 'blocked',
-                      'requirements': len(REQUIRED), 'file_dispositions': count, 'native_files': native}))
+    print(json.dumps({'source_validation': 'passed', 'candidate_readiness': 'blocked', 'phase': contract['phase'],
+                      'requirements': len(REQUIRED), 'file_dispositions': count, 'native_files': native,
+                      'source_deltas': len(deltas)}))
     if args.require_ready:
-        print('S0 is source-only. Complete required ports, Root CI and native qualification before candidate readiness.', file=sys.stderr)
+        print(contract['phase'] + ' is source-only. Complete required ports, Root CI and native qualification before candidate readiness.', file=sys.stderr)
         return 3
     return 0
 
