@@ -305,7 +305,7 @@
         },
         {
           "path": "mods/tasks/bin/herdr_task/providers.py",
-          "existing": false
+          "existing": true
         }
       ],
       "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
@@ -315,7 +315,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 source and authored regressions; CI and native qualification pending"
     },
     {
       "id": "azure-claude-entra",
@@ -325,7 +325,7 @@
       "owners": [
         {
           "path": "mods/tasks/bin/herdr_task/providers.py",
-          "existing": false
+          "existing": true
         }
       ],
       "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
@@ -335,7 +335,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 source and authored regressions; CI and native qualification pending"
     },
     {
       "id": "azure-claude-key",
@@ -345,7 +345,7 @@
       "owners": [
         {
           "path": "mods/tasks/bin/herdr_task/providers.py",
-          "existing": false
+          "existing": true
         }
       ],
       "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
@@ -355,7 +355,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 source and authored regressions; CI and native qualification pending"
     },
     {
       "id": "azure-claude-token",
@@ -365,7 +365,7 @@
       "owners": [
         {
           "path": "mods/tasks/bin/herdr_task/providers.py",
-          "existing": false
+          "existing": true
         }
       ],
       "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
@@ -375,7 +375,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 source and authored regressions; CI and native qualification pending"
     },
     {
       "id": "azure-codex-key",
@@ -385,7 +385,7 @@
       "owners": [
         {
           "path": "mods/tasks/bin/herdr_task/providers.py",
-          "existing": false
+          "existing": true
         }
       ],
       "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
@@ -395,7 +395,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 source and authored regressions; CI and native qualification pending"
     },
     {
       "id": "azure-credential-custody",
@@ -405,7 +405,7 @@
       "owners": [
         {
           "path": "mods/tasks/bin/herdr_task/providers.py",
-          "existing": false
+          "existing": true
         },
         {
           "path": "service/settings.ts",
@@ -419,7 +419,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 source and authored regressions; CI and native qualification pending"
     },
     {
       "id": "azure-discovery",
@@ -429,7 +429,7 @@
       "owners": [
         {
           "path": "service/azure-deployments.ts",
-          "existing": false
+          "existing": true
         },
         {
           "path": "service/settings.ts",
@@ -443,7 +443,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 discovery owner and authored regressions; A2 settings surfaces, CI and native qualification pending"
     },
     {
       "id": "azure-discovery-scope",
@@ -453,7 +453,7 @@
       "owners": [
         {
           "path": "service/azure-deployments.ts",
-          "existing": false
+          "existing": true
         }
       ],
       "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
@@ -463,7 +463,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 discovery owner and authored regressions; A2 settings surfaces, CI and native qualification pending"
     },
     {
       "id": "azure-discovery-stale",
@@ -473,7 +473,7 @@
       "owners": [
         {
           "path": "service/azure-deployments.ts",
-          "existing": false
+          "existing": true
         }
       ],
       "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
@@ -483,7 +483,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 discovery owner and authored regressions; A2 settings surfaces, CI and native qualification pending"
     },
     {
       "id": "azure-settings-surfaces",
@@ -549,7 +549,7 @@
       "owners": [
         {
           "path": "mods/tasks/bin/herdr_task/providers.py",
-          "existing": false
+          "existing": true
         },
         {
           "path": "mods/tasks/bin/herdr_task/revive.py",
@@ -581,7 +581,7 @@
         },
         {
           "path": "mods/tasks/bin/herdr_task/providers.py",
-          "existing": false
+          "existing": true
         }
       ],
       "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",

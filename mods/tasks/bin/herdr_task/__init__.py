@@ -9,6 +9,8 @@ before it:
                ones.
   agents       Live agents: a task's terminals, its status and what its agent last said or asks.
   provider     Provider errors: a turn the model's provider cut off, and whether to retry it.
+  providers    Provider bindings and launch plans: Personal (the default, untouched) or Azure
+               Foundry from nonsecret settings; credentials are named, never read.
   sessions     Agent sessions: the Claude Code or Codex session a task's agent runs, so it can
                resume.
   github       GitHub and merging: pull requests, checks, and finishing a merged task.

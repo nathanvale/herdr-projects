@@ -19,6 +19,7 @@ from .agents import (
     agent_running, busy_again, detail, fit, LINE_MAX, live_agents, ready_turns, STATUSES, SUMMARY_MAX, WORKING_AGAIN,
 )
 from .sessions import refresh_sessions
+from .providers import admit_launch
 from .github import finish, gh, github, merged_here, own_work, pr_adopt, pr_open, pr_pending, pr_problem, pr_view, update_main, watch_main
 from .launch import (
     base_ref, brief, caller_labels, caller_space, current_base, default_space, folder_for, handoff, launch, name_tabs,
@@ -205,6 +206,8 @@ def cmd_show(args):
 
 def begin(s, t, argv, space, parent=None):
     """Starts the task's first agent. Returns its record."""
+    # Before its state or worktree changes: a provider that can't start it refuses here.
+    admit_launch(s, argv, space)
     t["state"], t["started"] = "running", now()
     # Its brief teaches `reviewed`: ready waits for a review of its final commit (review_refusal).
     t["review_gate"] = True
@@ -233,6 +236,7 @@ def cmd_start(args):
         space = bare(args.space) if args.space else (q.get("space") or default_space())
         argv = agent_argv(None, args.argv) if args.argv else worker_argv(s, t, space, args.agent) if args.agent else \
             (q.get("argv") or worker_argv(s, t, space))
+        admit_launch(s, argv, space)  # before it is queued too
         parent = args.parent or q.get("parent")
         # A queued task started again goes now; otherwise it waits its turn.
         reason = None if (t["state"] == "queued" or args.now) else queue_reason(s, t)
@@ -722,13 +726,15 @@ def last_agent(t):
 def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None):
     """Starts an agent for the task: the last agent's own session when it's the same kind of agent
     and the session is known; else a fresh one with a handoff. `message` goes after either."""
-    unarchive(s, t)
     prev = last_agent(t)
-    parent = parent_for(parent or (prev or {}).get("parent"), space)
     # The last agent's argv again, unless the task's agent, model or effort changed since (edit).
     keep = prev and prev.get("argv") and (t.get("pick_at") or 0) <= (prev.get("at") or 0)
     argv = agent_argv(None, argv_json) if argv_json else worker_argv(s, t, space, key) if key else \
         (prev["argv"] if keep else worker_argv(s, t, space))
+    # Before anything changes: a provider that can't start it refuses here.
+    admit_launch(s, argv, space)
+    unarchive(s, t)
+    parent = parent_for(parent or (prev or {}).get("parent"), space)
     same = prev and agent_key(argv) == prev.get("agent")
     res = resume_argv(argv, prev["session"]) if same and prev.get("session") else None
     if res:

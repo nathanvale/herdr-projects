@@ -4,10 +4,11 @@ import json
 import os
 import re
 
-from .base import APP_HOME, git, hc_json, now, run, STORE
+from .base import APP_HOME, Fail, git, hc_json, now, run, STORE
 from .settings import AGENTS, argv_for, settings_for
 from .agents import fit, from_person, log_tail, said
 from .provider import provider_cut, provider_error
+from .providers import admit_launch
 from .launch import brief, launch, parent_for
 
 
@@ -217,6 +218,12 @@ def takeover(s, t, k, row, log, report):
     labels = k.get("labels") or {}
     space = labels.get("herdr.task.space") or labels.get("herdr.space") or t.get("space")
     argv = backup_argv(s, t, kind)
+    try:
+        # Before the task's one backup is spent: Settings' Provider may not start it (providers.py).
+        admit_launch(s, argv, space)
+    except Fail:
+        row["reason"] = fit(f"{head(row['reason'])}, backup held")
+        return row
     t["backup"] = {"from": running, "to": kind, "why": row["reason"], "at": now(), "from_address": k["address"], "state": "starting"}
     s.dirty = True
     try:

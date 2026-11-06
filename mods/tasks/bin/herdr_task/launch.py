@@ -17,6 +17,7 @@ import time
 
 from .base import ENTRY, Fail, git, hc_json, now, run, WORKTREES
 from .settings import agent_key, ASSISTANT_TEMPLATES, bare, notes, notes_part, review_limits, settings_block
+from .providers import admit_launch
 from .templates import instructions
 from .agents import detail, LINE_MAX, live_agents, SUMMARY_MAX
 from .github import finish, remote_of
@@ -425,6 +426,8 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
     herdr.space, which Herdr gives a pane), herdr.agent, herdr.coordinator (its coordinator's tab,
     which keeps it under a restarted coordinator) and herdr.role=reviewer for a reviewer, kept
     apart from the task's agents. Returns its record."""
+    # The last gate before a terminal is asked for (providers.py): Personal passes untouched.
+    admit_launch(s, argv, space)
     key = s.key(task)
     cmd = list(resume or argv)
     if not role:
