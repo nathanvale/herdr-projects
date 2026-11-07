@@ -94,9 +94,10 @@ the background work's gate. Nothing else moves.
   the answers are files, so an outage doesn't affect them. Behaviour change, with background
   work on too: another machine's flag isn't touched then, where each touch used to wait and
   land once the core was back, perhaps for a terminal gone since; the first round after it's
-  back sends one instead, within 4 s. That flag reaches its machine only through the core,
-  so an outage still lets it go stale as before. It's touched every 8 to 12 s, so about 3 s
-  of outage can be enough and over about 11 s always is, within the hook's 15 s.
+  back sends one (at its usual 8 s spacing) instead of a queued touch landing at once, so an
+  outage ending 12 to 15 s after the last touch now lets that flag go stale where it didn't
+  before. An outage covering the round that would refresh it is enough, however short; one
+  over about 12 s always is.
 - Existing limitation, the same with background work on: closing the window's chat
   (`close()` in `mods/chat/main.js`) deletes the flag and empties every request waiting on
   that terminal, so a card about to be answered on a page goes to the terminal instead.
