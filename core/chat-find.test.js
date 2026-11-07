@@ -1,8 +1,9 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { argvFor, inOtherFolder, sessionOf } from "./agents.js";
+import { Agents } from "../service/agents.ts";
+import { argvFor, inOtherFolder, OTHER_FOLDER, sessionOf } from "./agents.js";
 import { FIND } from "./chat-log.js";
 
 // FIND as its callers run it (sh, on the agent's machine) against real processes in throwaway folders. Each agent
@@ -228,6 +229,35 @@ test("the window's picker refuses before it restarts or switches anything", () =
   expect(pick.indexOf("agent.inOtherFolder(this.kind, this.path)")).toBeGreaterThan(-1);
   expect(pick.indexOf("agent.inOtherFolder(this.kind, this.path)")).toBeLessThan(pick.indexOf("this.switchTask(pick, cx)"));
   expect(pick.indexOf("agent.inOtherFolder(this.kind, this.path)")).toBeLessThan(pick.indexOf("agent.restart(t, built, mine)"));
+});
+
+// What the service's restart() would run, as stand-ins first on PATH, each saying it was called.
+function standIns() {
+  const bin = folder(), called = join(bin, "called"), path = process.env.PATH;
+  mkdirSync(bin);
+  for (const name of ["herdr-task", "herdr-app"]) {
+    writeFileSync(join(bin, name), `#!/bin/sh\necho "${name} $1" >> "${called}"\necho '{"terminal":"t9"}'\n`);
+    chmodSync(join(bin, name), 0o755);
+  }
+  process.env.PATH = `${bin}:${path}`;
+  running.push(() => { process.env.PATH = path; });
+  return () => (existsSync(called) ? readFileSync(called, "utf8").trim().split("\n") : []);
+}
+const webRestart = (labels, path) => new Agents({ terminals: new Map([["t1", { state: "live", argv: ["claude"], cwd: "/work",
+  foreground: { argv: ["claude"], cwd: "/work" }, labels }]]) }).restart("t1", { path }, { kind: "claude" });
+
+test("the web's restart refuses an agent under another folder, and nothing runs", async () => {
+  const called = standIns(), log = join(folder(), "projects", "-work", `${SESSION}.jsonl`);
+  for (const labels of [{ "herdr.task": "list#1" }, {}]) {
+    await expect(webRestart(labels, log)).rejects.toThrow(OTHER_FOLDER);
+    expect(called()).toEqual([]);
+  }
+});
+
+test("the web's restart still restarts an agent under ~/.claude", async () => {
+  const called = standIns(), log = join(fallback, "projects", "-work", `${SESSION}.jsonl`);
+  expect(await webRestart({ "herdr.task": "list#1" }, log)).toBe("t9");
+  expect(called()).toEqual(["herdr-task switch", "herdr-app do"]);
 });
 
 test("another folder called .claude finds nothing, as it would pass for ~/.claude", async () => {

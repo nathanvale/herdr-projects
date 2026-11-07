@@ -14,13 +14,13 @@
       "phase": "C1",
       "path": "core/agents.js",
       "upstream_blob": "31b6a264e1294771baa34bf3d81264437fc9ac0d",
-      "sha256": "fd4b60b1727631579aeee6910a8fe49f6c660b6b55569956c5ee948ca53a9eac"
+      "sha256": "920c704c22b1d7e76edecfcb710e35af4e75bf2640c19b3de5a22200c1539e8e"
     },
     {
       "phase": "C1",
       "path": "core/chat-find.test.js",
       "upstream_blob": null,
-      "sha256": "581abe0519da05fd40abeb4f1bf45f1e6510e59a1822f68a25687f61768c02a5"
+      "sha256": "5f6a413a45449d0f1deac15587eb992facb443efdb254a4e02e05297cdef22cb"
     },
     {
       "phase": "C1",
@@ -32,7 +32,7 @@
       "phase": "C1",
       "path": "mods/chat/core/agents.js",
       "upstream_blob": "31b6a264e1294771baa34bf3d81264437fc9ac0d",
-      "sha256": "fd4b60b1727631579aeee6910a8fe49f6c660b6b55569956c5ee948ca53a9eac"
+      "sha256": "920c704c22b1d7e76edecfcb710e35af4e75bf2640c19b3de5a22200c1539e8e"
     },
     {
       "phase": "C1",
@@ -44,25 +44,25 @@
       "phase": "C1",
       "path": "mods/chat/main.js",
       "upstream_blob": "e6ea18f4de286a8af505041f7ca7713bb7a8a94c",
-      "sha256": "279001a34a35e82ba6539c5887e24e2359aaaa89adf3491ad725cf9bd89e685a"
+      "sha256": "516de329cb6336a1f62decd2bbcbed56530b00fac3a25a783e8699739a6d034b"
     },
     {
       "phase": "C1",
       "path": "mods/coordinator/core/agents.js",
       "upstream_blob": "31b6a264e1294771baa34bf3d81264437fc9ac0d",
-      "sha256": "fd4b60b1727631579aeee6910a8fe49f6c660b6b55569956c5ee948ca53a9eac"
+      "sha256": "920c704c22b1d7e76edecfcb710e35af4e75bf2640c19b3de5a22200c1539e8e"
     },
     {
       "phase": "C1",
       "path": "mods/newspace/core/agents.js",
       "upstream_blob": "31b6a264e1294771baa34bf3d81264437fc9ac0d",
-      "sha256": "fd4b60b1727631579aeee6910a8fe49f6c660b6b55569956c5ee948ca53a9eac"
+      "sha256": "920c704c22b1d7e76edecfcb710e35af4e75bf2640c19b3de5a22200c1539e8e"
     },
     {
       "phase": "C1",
       "path": "mods/shepherdr-settings/core/agents.js",
       "upstream_blob": "31b6a264e1294771baa34bf3d81264437fc9ac0d",
-      "sha256": "fd4b60b1727631579aeee6910a8fe49f6c660b6b55569956c5ee948ca53a9eac"
+      "sha256": "920c704c22b1d7e76edecfcb710e35af4e75bf2640c19b3de5a22200c1539e8e"
     },
     {
       "phase": "A1",
@@ -117,6 +117,12 @@
       "path": "mods/tasks/bin/herdr_task/takeover.py",
       "upstream_blob": "5af6c073493766adc3b052cb3677b75e71beb14b",
       "sha256": "6876bcbaa82aa62004f92f37b4d0d7c5c463c417da573c4c726ca0e169a61f8d"
+    },
+    {
+      "phase": "C1",
+      "path": "service/agents.ts",
+      "upstream_blob": "c3a51d026cac3bee43f41be0e63d102859fdbd01",
+      "sha256": "9b69dbcfc5089e6fabd8d4f025191afae4128220b85eb8156062ee3f6a8a3768"
     },
     {
       "phase": "A1",

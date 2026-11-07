@@ -9,7 +9,7 @@ import { sh } from "./model.ts";
 import * as AG from "../core/agents.js";
 import { kindOf } from "../core/chat-reader.js";
 
-const { DEFAULTS, parseDefaults, current, menuFor, rowFor, argvFor, sessionOf, NAMES, line } = AG as any;
+const { DEFAULTS, parseDefaults, current, menuFor, rowFor, argvFor, sessionOf, inOtherFolder, OTHER_FOLDER, NAMES, line } = AG as any;
 const APP = process.env.HERDR_APP_HOME || join(HOME, ".config", "herdr-app");
 
 async function run(cmd: string[]) {
@@ -109,6 +109,8 @@ export class Agents {
     const t: any = this.hub.terminals.get(addr);
     if (!t || t.state !== "live") throw new Error("That agent isn't running.");
     const kind = kindOf(t) ?? "claude";
+    // Both ways below end it and start one without its CLAUDE_CONFIG_DIR, as the window's picker refuses (core/agents.js).
+    if (inOtherFolder(kind, reader?.path ?? null)) throw new Error(OTHER_FOLDER);
     const old = { agent: kind, argv: t.foreground?.argv ?? t.argv ?? [], session: sessionOf(kind, reader?.path ?? null) };
     const built = argvFor({ agent: pick.kind, model: pick.model, effort: pick.effort, fast: pick.speed === "fast", perm: pick.perm ?? current(kind, old.argv, {}, {}).perm }, old);
     const pane = t.labels?.["herdr.chat"] ?? "";

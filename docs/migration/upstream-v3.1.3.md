@@ -108,7 +108,8 @@ for each candidate process and never for the caller:
   another account. `session_of()` returns such a session only to `any_folder=True`, which
   `T/news.py` alone asks for, so nothing records it and every path that starts an agent
   behaves as before. `sessionOf()` in `core/agents.js` gives it no id, and the window's picker
-  refuses, as finding the log is what shows it. Carrying the folder belongs to L1 and L2.
+  and `service/agents.ts` `restart()` refuse before anything ends, as finding the log is what
+  shows the window's picker and the web's Composer. Carrying the folder belongs to L1 and L2.
 - `sessionOf()` knows ~/.claude by its shape, as the agent's machine's home isn't known
   there, so FIND finds nothing for another folder called `.claude`, and so does `session_of()`.
 - The macOS reader has no CI: `core/chat-find.test.js` and `test/test_session_discovery.py`

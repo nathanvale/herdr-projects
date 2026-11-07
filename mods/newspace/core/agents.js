@@ -266,6 +266,7 @@ export function argvFor(pick, old) {
 // another folder called .claude). Chat reads it, but nothing continues it: a restart, resume or fork carries no
 // CLAUDE_CONFIG_DIR, so it would start on another profile (L1, L2). The path is the agent's machine's, so its home
 // isn't known here.
+export const OTHER_FOLDER = "It runs under its own Claude Code folder, which a restart can't carry yet.";
 export function inOtherFolder(kind, path) {
   return kind === "claude" && Boolean(path) && !/\/\.claude\/projects\/[^/]+\/[^/]+$/.test(path);
 }
