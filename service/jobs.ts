@@ -5,12 +5,13 @@
 //   others that have no service of their own (and those running an Assistant: their tick brings agents back after a
 //   crash), and another service does that only while the host can't be reached (herdr-task's own lock keeps two ticks
 //   of one machine from ever running at once);
-// - another machine's agent asking for a secret (herdr.secret.want): herdr-secret serve answers it from the vault here;
-// - a chat open on a web page: the question hook's flag (data/chat-asks/open/<terminal>), so its cards come to the page
-//   (another machine's agent: its flag there, through herdr-core).
+// - another machine's agent asking for a secret (herdr.secret.want): herdr-secret serve answers it from the vault here.
 // The window sees this service running (GET /api/health: jobs) and leaves the same work to it (lib/service.js), and
 // takes it back when the service is gone: one runs it at a time. While the installed window can't do that yet (a
-// 3.0 layout), the service runs none of it.
+// 3.0 layout), or SHEPHERDR_JOBS=off, the service runs none of it.
+// Not background work, and kept here either way: a chat open on a web page, the question hook's flag
+// (data/chat-asks/open/<terminal>), so its cards come to the page (another machine's agent: its flag there, through
+// herdr-core). It's presence: only this service knows which chats its pages follow, and it runs nothing but the touch.
 import { existsSync, readdirSync, utimesSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Hub } from "./hub.ts";
@@ -69,6 +70,7 @@ export class Jobs {
   constructor(private hub: Hub, private host: Host | null = null) {}
 
   start() {
+    setInterval(() => this.flags(), 4000);
     if (!this.on) { console.log("background work: left to the window (its layout predates the service)"); return; }
     console.log("background work: here");
     setInterval(() => void this.tick(), 15_000);
@@ -76,7 +78,6 @@ export class Jobs {
     this.hub.on((e) => {
       if (e.type === "reset" || ("terminal" in e && e.terminal)) { this.onChange(); this.serveSecrets(); }
     });
-    setInterval(() => this.flags(), 4000);
   }
 
   private async tick() {
@@ -127,9 +128,11 @@ export class Jobs {
     if (this.served.size > 200) this.served.clear();
   }
 
-  /** The hook asks a chat only while its flag is fresh (ask-hook.sh: 15 s): a page showing a local Claude agent's chat
-   *  keeps it so. */
+  /** The hook asks a chat only while its flag is fresh (ask-hook.sh: 15 s): a page showing a Claude agent's chat
+   *  keeps it so, with or without the background work. Not while herdr-core is away: what it last listed may be gone,
+   *  and a call to another machine would wait and land once it's back. */
   private flags() {
+    if (!this.hub.up) return;
     const now = new Date();
     for (const a of new Set(this.watched())) {
       const t: any = this.hub.terminals.get(a);

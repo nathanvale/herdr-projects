@@ -1,7 +1,8 @@
 # Full 3.x source migration
 
 S0 is a source-only foundation; A1 adds provider launch plans and deployment discovery
-owners on it, with Azure dispatch held. Required Bitbucket, Azure and lifecycle ports are
+owners on it, with Azure dispatch held, and W1 keeps a web page's chat flag apart from
+background work. Required Bitbucket, Azure and lifecycle ports are
 pending. This checkpoint is not deployable or ready for application use. Check's
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
@@ -38,6 +39,7 @@ owners, not implemented interfaces.
 | S0 | This source admission | Exact U, F/P dispositions and blocked readiness; Root review and CI before dependent work. |
 | S1 | Reviewed S0 | New `T/forge.py`, existing `T/github.py`, commands/proof/worktree consumers; preserve GitHub defaults. Smallest next customization. |
 | A1 | Reviewed S0 | New `T/providers.py` and `service/azure-deployments.ts`; nonsecret bindings, supported authentication and discovery custody. |
+| W1 | S0, separately authorized | `service/jobs.ts`; a chat a web page follows keeps its ask flag with background work off, and nothing else runs. Not a port. |
 | B1 | S1 | New `T/bitbucket.py`, `T/bitbucket_http.py`; qualified identity, host credentials and complete exact-head reads. |
 | B2 | B1 | New `T/publications.py`, commands/output/CLI; durable claims, publication/readiness and current admission. |
 | A2 | A1 | Shared settings/agents, desktop/web controls, `T/settings.py`, launch/resume; discovery, selectors and binding parity. |
@@ -73,6 +75,33 @@ stays blocked.
   selection only; the same treatment of endpoint, credential and model variables is unproved.
   The backup's gate has in-module proof only; its public-process proof is Q's.
 - Detail, official sources and authored regressions: [Azure launch plans](../azure-launch-plans.md).
+
+### W1 web chat flag checkpoint
+
+Claude Code's question hook (`mods/chat/ask-hook.sh`) asks a chat only while
+`data/chat-asks/open/<terminal>` is under 15 s old. On the web only `service/jobs.ts`
+touched it, and only with background work on, so with `SHEPHERDR_JOBS=off`, or a 3.0
+window keeping that work, a web page got no cards. W1 starts that flag's round before
+the background work's gate. Nothing else moves.
+
+- Background work keeps its gate: the task tick, `scheduler --ensure`, other machines'
+  ticks and `herdr-secret serve` run only as before. `/api/health`'s `jobs` is unchanged.
+- The flag is kept only for a live Claude agent's chat that a page follows, as before.
+  Another machine's agent keeps its flag there through `machine.exec`, the same one
+  `touch` with background work on or off; the cards there are already read and answered
+  through that link (`service/asks.ts`).
+- Behaviour change, with background work on too: while herdr-core is away the round does
+  nothing, where it used to touch every flag from the last list and queue each
+  remote touch to land once the core was back, perhaps for a terminal gone since. An
+  outage under about 10 s keeps the flag fresh.
+- With background work off and a window there, a request from an agent whose chat a page
+  follows now waits for a chat's answer instead of going straight to the terminal, as it
+  already did with background work on. The window's own flag code is unchanged.
+- Untouched: `mods/chat/ask-hook.sh`, `service/asks.ts`, request identity, the answer
+  path, `service/main.ts` and every permission restriction.
+- `service/jobs-flags.test.ts` runs `service/jobs.ts` in a child process with stand-ins for
+  herdr-task, herdr-secret and the hub. A real Claude, its hook and a real page are not run.
+- This fix is not a required port. No inventory requirement changes status.
 
 ### Bitbucket contract
 
@@ -173,7 +202,8 @@ silently considered covered by default tests.
 
 Root runs `python3 bin/check-migration`, its public-CLI checkpoint tests
 (`test/test_migration.py`), the A1 provider and discovery tests (`test/test_providers.py`,
-`service/azure-deployments.test.ts`) and every native Check command. CI owns frozen dependency installation, web
+`service/azure-deployments.test.ts`), the W1 flag tests (`service/jobs-flags.test.ts`)
+and every native Check command. CI owns frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.
 Missing dependencies/generated web sources are prerequisite blockers, not authority

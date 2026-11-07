@@ -33,6 +33,7 @@ PHASES = {
 mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py
 mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/takeover.py service/azure-deployments.test.ts
 service/azure-deployments.ts test/azure-binding.cases.json test/test_providers.py'''.split()),
+    'W1': frozenset('docs/web.md service/jobs-flags.test.ts service/jobs.ts'.split()),
 }
 
 

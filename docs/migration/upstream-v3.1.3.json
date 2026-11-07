@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "phase": "A1",
+  "phase": "W1",
   "architecture": "full-upstream-3.x",
   "candidate_readiness": "blocked",
   "inputs": {
@@ -75,6 +75,24 @@
       "path": "test/test_providers.py",
       "upstream_blob": null,
       "sha256": "df45bf34a173658598b6e63befc3b49bd1383453b322f901668f900e5dcd389d"
+    },
+    {
+      "phase": "W1",
+      "path": "docs/web.md",
+      "upstream_blob": "70eb15e77333c77d108784a2172ef1d571efc226",
+      "sha256": "66133379533ad0b76248be422d1f71ba8053f0b40e6dbecd9fdf9264306a3fda"
+    },
+    {
+      "phase": "W1",
+      "path": "service/jobs-flags.test.ts",
+      "upstream_blob": null,
+      "sha256": "239d6dc6262f6934f570d1703eab94de29b948bfe832cc9c79cf5a5e61f827fd"
+    },
+    {
+      "phase": "W1",
+      "path": "service/jobs.ts",
+      "upstream_blob": "49126d5ddb6d2f360bfbfd2c7cc5b4e1644e0802",
+      "sha256": "4e23ca5ad979fb6b12cd4939abf2438ab2eca84185f16884c2412def6c5823c4"
     }
   ],
   "requirements": [
@@ -994,7 +1012,7 @@
     }
   ],
   "inventory": "upstream-v3.1.3-files.json",
-  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held; no required fork port is complete, CI-proved or runtime-qualified",
+  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held, and the W1 web chat flag kept apart from background work; no required fork port is complete, CI-proved or runtime-qualified",
   "azure_cli_design": {
     "skill": "my-second-brain-playground:cli-design",
     "route": "maintain/extend existing-project",
