@@ -308,8 +308,9 @@ test("a process that has gone finds nothing", async () => {
   expect(await find(p.pid)).toBe("");
 });
 
-// Node's process.title rewrites argv in place, which is what macOS reads the environment past: a title that fills it
-// leaves the count landing beyond the variable when it comes first. Set must never read as unset.
+// Node's process.title rewrites argv in place, which is what macOS reads the environment past. A short one zero-fills
+// the rest, and the environment is still found. One that fills it leaves the count landing beyond the variable when it
+// comes first, which refuses: set must never read as unset.
 const TITLED = `process.title = process.argv[1] === "fill" ? "z".repeat(4000) : "t"; console.log("ready"); setTimeout(() => {}, 120000);`;
 test.skipIf(!Bun.which("node"))("a process that set its title never reads as unset", async () => {
   for (const title of ["short", "fill"]) {
@@ -319,6 +320,14 @@ test.skipIf(!Bun.which("node"))("a process that set its title never reads as uns
     await firstLine(p);
     const log = session(dir, p.pid);
     session(fallback, p.pid, OTHER);
-    expect(await find(p.pid)).toBe(process.platform === "darwin" ? "" : log);
+    expect(await find(p.pid)).toBe(process.platform === "darwin" && title === "fill" ? "" : log);
   }
+});
+
+test.skipIf(!Bun.which("node"))("a process that set a short title and has no variable is under ~/.claude", async () => {
+  const p = Bun.spawn(["node", "-e", TITLED, "short"], { env: environment({}), stdout: "pipe", stderr: "ignore" });
+  running.push(() => p.kill(9));
+  await firstLine(p);
+  const log = session(fallback, p.pid);
+  expect(await find(p.pid)).toBe(log);
 });

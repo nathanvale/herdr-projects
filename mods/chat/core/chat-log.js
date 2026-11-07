@@ -38,10 +38,20 @@ words = data[4:].split(b"\\0")
 i = 1
 while i < len(words) and not words[i]:
     i += 1
-env = words[i + int.from_bytes(data[:4], sys.byteorder):]
+argc = int.from_bytes(data[:4], sys.byteorder)
+start = i + argc
+# A short title zero-fills argv past itself, so the environment starts at the next word. Only
+# with argc of 2 or more and every word after argv[0] empty: with 1 there is nothing to check.
+if argc >= 2 and not any(words[i + 1:start]):
+    while start < len(words) and not words[start]:
+        start += 1
+env = words[start:]
 env = env[:env.index(b"")] if b"" in env else []
-# argc counts argv as it started. A process that set its title rewrote argv, so the count can
-# land past the variable: seen anywhere but here, where the environment starts is not known.
+# What follows the environment: a system binary shows these with no environment before them.
+if env and env[0].startswith(b"executable_path="):
+    env = []
+# argc counts argv as it started. A title that fills argv collapses it, so the count can land
+# past the variable: seen anywhere but here, where the environment starts is not known.
 name = b"CLAUDE_CONFIG_DIR="
 found = [e for e in env if e.startswith(name)]
 if not env or (not found and any(w.startswith(name) for w in words)):

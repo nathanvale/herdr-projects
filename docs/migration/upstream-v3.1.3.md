@@ -96,10 +96,13 @@ for each candidate process and never for the caller:
   reads `KERN_PROCARGS2` through python3, as `ps eww` is flat text. Any other platform
   finds nothing. Both read the environment the process started with.
 - macOS reads live memory, and `argc` no longer marks where the environment starts once a
-  process sets its title (Node's `process.title` rewrites argv). The variable seen anywhere
-  but in the counted environment refuses, and so does an empty count, so a set variable never
-  reads as unset. So a Node agent that set its title can find nothing, and an argument shaped
-  like the variable, with the variable unset, refuses too.
+  process sets its title (Node's `process.title` rewrites argv). A short title zero-fills argv
+  past itself, so with `argc` of 2 or more and every word after `argv[0]` empty the
+  environment starts at the next word, and a Node agent reads as usual. A title that fills
+  argv collapses it: the variable seen anywhere but in the counted environment refuses, and
+  so does an empty count, so a set variable reads as unset only if a process overwrites its
+  own environment memory. An argument shaped like the variable, with the variable unset,
+  refuses too.
 - Behaviour change: on macOS FIND now needs python3 on its PATH. Without it every Claude
   agent there loses Chat, including default ones that work today. `session_of()` runs in
   python already and doesn't.

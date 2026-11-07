@@ -262,7 +262,8 @@ class SessionOf(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("node"), "needs node")
     def test_a_process_that_set_its_title_never_reads_as_unset(self):
-        """A title that fills argv leaves macOS's count landing past the variable when it comes first."""
+        """A short title zero-fills argv and the environment is still found. One that fills it leaves
+        macOS's count landing past the variable when it comes first, which refuses."""
         for title in ("short", "fill"):
             with self.subTest(title=title):
                 folder = self.folder("titled-" + title)
@@ -274,7 +275,17 @@ class SessionOf(unittest.TestCase):
                 p.stdout.readline()
                 log = self.session(folder, p.pid)
                 self.session(self.fallback, p.pid, OTHER)
-                self.assertEqual(self.found(p.pid), (None, None) if DARWIN else (SESSION, log))
+                self.assertEqual(self.found(p.pid), (None, None) if DARWIN and title == "fill" else (SESSION, log))
+
+    @unittest.skipUnless(shutil.which("node"), "needs node")
+    def test_a_short_title_and_no_variable_is_under_the_default_folder(self):
+        p = subprocess.Popen(["node", "-e", TITLED, "short"], env=self.environment({}), stdout=subprocess.PIPE, text=True)
+        self.addCleanup(p.wait)
+        self.addCleanup(p.kill)
+        self.addCleanup(p.stdout.close)
+        p.stdout.readline()
+        log = self.session(self.fallback, p.pid)
+        self.assertEqual(self.found(p.pid), (SESSION, log))
 
 
 if __name__ == "__main__":
