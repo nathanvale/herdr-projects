@@ -36,14 +36,14 @@ class SourceCheckpoint(unittest.TestCase):
         self.assertEqual(observed['candidate_readiness'], 'blocked')
         self.assertEqual(observed['requirements'], 40)
         self.assertEqual(observed['file_dispositions'], 121)
-        self.assertEqual((observed['phase'], observed['source_deltas']), ('A1', 11))
+        self.assertEqual((observed['phase'], observed['source_deltas']), ('C1', 26))
 
     def test_candidate_gate_refuses_even_when_source_validation_passes(self):
         result, observed = self.run_check('--require-ready')
         self.assertEqual(result.returncode, 3)
         self.assertEqual(observed['source_validation'], 'passed')
         self.assertEqual(observed['candidate_readiness'], 'blocked')
-        self.assertIn('A1 is source-only', result.stderr)
+        self.assertIn('C1 is source-only', result.stderr)
         self.assertIn('Complete required ports', result.stderr)
 
     def test_existing_discovery_cannot_be_dropped(self):
@@ -83,11 +83,11 @@ class SourceCheckpoint(unittest.TestCase):
 
     def test_an_unadmitted_owner_cannot_join_the_phase(self):
         def widen(data):
-            data['source_deltas'].append({'phase': 'A1', 'path': 'mods/tasks/bin/herdr_task/revive.py',
+            data['source_deltas'].append({'phase': 'C1', 'path': 'mods/tasks/bin/herdr_task/revive.py',
                                           'upstream_blob': None, 'sha256': '0' * 64})
         result, observed = self.fixture(MANIFEST, widen, '--manifest')
         self.assertEqual(result.returncode, 1)
-        self.assertIn('admitted owners of phase A1', observed['error'])
+        self.assertIn('admitted owners of phase C1', observed['error'])
 
     def test_a_delta_cannot_drop_its_upstream_provenance(self):
         def rewrite(data):
@@ -144,7 +144,7 @@ class NativeFoundation(unittest.TestCase):
         self.assertEqual(observed['error'], 'Native foundation differs from exact U at keys.json')
 
     def test_an_admitted_path_refuses_any_content_but_the_pinned_one(self):
-        for path in ('mods/tasks/bin/herdr_task/launch.py', 'mods/tasks/bin/herdr_task/providers.py'):
+        for path in ('core/chat-log.js', 'mods/tasks/bin/herdr_task/launch.py', 'mods/tasks/bin/herdr_task/providers.py'):
             with self.subTest(path=path):
                 code, observed = self.changed(path, lambda target: target.write_bytes(target.read_bytes() + b'\n'))
                 self.assertEqual(code, 1)

@@ -13,10 +13,12 @@ import { HOME } from "./paths.ts";
 import * as SC from "../core/screens.js";
 import * as CV from "../core/chat-view.js";
 import * as AG from "../core/agents.js";
+import { FOLDER } from "../core/chat-log.js";
+import { sh } from "./model.ts";
 
 const { ScreenWatch, starting, cliOf, readScreen, screenText, pressKeys, SCREEN } = SC as any;
 const { LOST, lostMessage, shellWord, WORDS, sessionStarted, sessionFailed } = CV as any;
-const { freshArgv } = AG as any;
+const { freshArgv, lostRefusal } = AG as any;
 const APP = process.env.HERDR_APP_HOME || join(HOME, ".config", "herdr-app");
 type Run = (args: string[]) => Promise<{ code: number; stdout: string; stderr?: string }>;
 /** an agent to watch: its address, and its task's id when it is a task's worker */
@@ -97,6 +99,10 @@ export class AgentWatch {
     if (done() || (now?.state === "live" && cliOf(now))) return;
     this.note(addr, WORDS.sessionGone);
     try {
+      // fresh drops what its launch set, and a new start carries no CLAUDE_CONFIG_DIR (core/agents.js)
+      const machine = addr.includes("/") ? addr.split("/")[0] : null;
+      const why = await lostRefusal(kind, t, (pid: number) => sh(this.hub, FOLDER, ["folder", String(pid)], machine).then((r: any) => r.stdout, () => ""));
+      if (why) throw new Error(why);
       const named = /^([a-z][a-z0-9]*)-(\d+)(?:-|$)/.exec(t.name ?? "");
       const ref = w.ref ?? (t.labels?.["herdr.task"] && named ? `${named[1].toUpperCase()}-${named[2]}` : null);
       const tplFile = join(HOME, ".config", "herdr-core", "templates", "assistant.md");
