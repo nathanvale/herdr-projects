@@ -273,6 +273,23 @@ class CheckoutAccess(unittest.TestCase):
         self.assert_refused(self.run_tool("apply", cwd=repo, script=repo / "bin/checkout-access"), "isn't the checkout")
         self.assertFalse((self.base / "store/.claude").exists())
 
+    def test_a_work_tree_set_elsewhere_is_refused(self):
+        elsewhere = self.base / "elsewhere"
+        elsewhere.mkdir()
+        git(self.repo, "config", "core.worktree", str(elsewhere))
+        self.assert_refused(self.run_tool("apply"), "isn't the checkout")
+        self.assertFalse(self.settings.exists())
+
+    def test_a_git_directory_it_cant_write_is_refused_without_a_traceback(self):
+        folder = self.repo / ".git"
+        self.addCleanup(folder.chmod, 0o755)
+        folder.chmod(0o555)
+        result = self.run_tool("apply")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(result.stderr.startswith("checkout-access: "), result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertFalse(self.settings.exists())
+
     def test_a_global_ignore_is_enough_to_keep_the_file_out_of_git(self):
         git(self.repo, "rm", "-q", ".claude/.gitignore")
         git(self.repo, "commit", "-q", "-m", "no local ignore")
@@ -332,7 +349,9 @@ class CheckoutAccess(unittest.TestCase):
     def test_a_record_it_cant_read_is_refused(self):
         self.applied()
         record = self.repo / ".git/checkout-access.json"
-        for value in ("[]", '{"version": 2}', '{"version": 1, "settings": "x", "added": 1, "created": []}'):
+        for value in ("[]", '{"version": 2}', '{"version": 2, "settings": "x", "added": [], "created": []}',
+                      '{"version": 1, "settings": 1, "added": [], "created": []}',
+                      '{"version": 1, "settings": "x", "added": 1, "created": []}'):
             record.write_text(value)
             self.assert_refused(self.run_tool("rollback"), "isn't a version 1 record")
         self.assertEqual(self.listed(), [str(self.worktrees)])
