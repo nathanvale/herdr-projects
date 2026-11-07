@@ -32,13 +32,13 @@
       "phase": "N1",
       "path": "mods/tasks/bin/herdr_task/cli.py",
       "upstream_blob": "a4689c769c8d483e52339aa087ef6d068462a994",
-      "sha256": "ed7bbbfb31b9adefe780e01a4aa4f3a31c8f25c3baea8c5417825fa828dfa33a"
+      "sha256": "349f4941f8b98f5ffdbd1866a35f43d20640df3a1d8fd75816566ae819629029"
     },
     {
       "phase": "N1",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "b5c79307e31319af731e10c67f4d289a2b892818",
-      "sha256": "2606e3f8e4e97cb1e3c934fe6c88cf5715000677c605db1a96e5fefd543da2ae"
+      "sha256": "eceed9a823c767893b4f487b84c27dc3b3f2f2b3a4f06bfd2e2ecf763d7a1e5a"
     },
     {
       "phase": "N1",
