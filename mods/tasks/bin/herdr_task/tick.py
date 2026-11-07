@@ -20,7 +20,7 @@ from .queues import machine_hold, refresh_ext, running_count, set_hold, waiting_
 from .archive import archive_pass
 from .browsers import browser_pass
 from .output import progress_clock, say
-from .commands import back_to_work, begin, merge_now, MERGE_FAILED
+from .commands import adopted_moved, back_to_work, begin, merge_now, MERGE_FAILED, merged_elsewhere, MOVED
 from .news import news_pass, typing
 from .takeover import cant_go_on, takeover
 from .ghnews import main_pass, pr_deliver, pr_news
@@ -35,8 +35,9 @@ def at_work(s, t):
 
 
 def facts(s, t, report):
-    """A worktree task whose own work merged anywhere is done (once its agent is between turns); a
-    pull request's problems need the person."""
+    """A worktree task whose own work merged anywhere is done (once its agent is between turns),
+    but for an adopted pull request merged off the task's base, which waits for the person
+    (merged_elsewhere()) and is reported once; a pull request's problems need the person."""
     if t.get("pr"):
         pr = t["pr"]
         if now() - pr.get("checked", 0) < PR_EVERY:
@@ -47,6 +48,12 @@ def facts(s, t, report):
         if not v:
             return
         if v.get("state") == "MERGED":
+            held = merged_elsewhere(s, t, v)
+            if held:
+                if held != t.get("attention"):
+                    t["attention"] = held
+                    report["attention"].append(t["id"])
+                return
             if at_work(s, t):
                 return
             t["merged"] = True
@@ -54,7 +61,7 @@ def facts(s, t, report):
             finish(s, t)
             report["done"].append(t["id"])
             return
-        problem = pr_problem(v)
+        problem = pr_problem(v) or adopted_moved(s, t, v)
         t["_pr_fresh"] = not problem and not pr_pending(v)
         try:
             pr_news(s, t, v, report)
@@ -64,7 +71,7 @@ def facts(s, t, report):
             if problem:
                 t["attention"] = problem
                 report["attention"].append(t["id"])
-            elif t.get("attention", "").startswith(("Checks failing", "It conflicts", "The pull request was closed", MERGE_FAILED)):
+            elif t.get("attention", "").startswith(("Checks failing", "It conflicts", "The pull request was closed", MERGE_FAILED, MOVED)):
                 t.pop("attention")
     elif merged_here(s, t) and not at_work(s, t):
         t["merged"] = True

@@ -568,7 +568,7 @@ class BackToWork(unittest.TestCase):
         """Accept with GitHub giving these pull request views and merge results in turn."""
         views, merges = list(views), list(merges)
         done = []
-        patches = [(self.commands, "pr_view", lambda t: views.pop(0)),
+        patches = [(self.commands, "pr_read", lambda t: (views.pop(0), None)), (self.commands, "pr_view", lambda t: views.pop(0)),
                    (self.commands, "gh", lambda *a, **k: merges.pop(0)),
                    (self.commands, "watch_main", lambda *a: None), (self.commands, "update_main", lambda *a: None),
                    (self.commands, "finish", lambda s, t, even_if_busy=False: (t.update(state="done"), done.append(t["id"])))]
@@ -610,7 +610,8 @@ class BackToWork(unittest.TestCase):
     # A pull request its agent opened itself (SHEP-13: "a pull request for branch ... already exists"):
     # ready and Accept adopt it, never fail on it.
     def github_has(self, prs):
-        """GitHub with these open pull requests for the branch; opening another fails as gh does."""
+        """GitHub with these open pull requests for the branch. Opening another goes as gh's does: only
+        one from this repo into the same base stands in the way."""
         import herdr_task.github as github
         calls = []
 
@@ -619,7 +620,11 @@ class BackToWork(unittest.TestCase):
             if a[:2] == ("pr", "list"):
                 return True, json.dumps(prs), ""
             if a[:2] == ("pr", "create"):
-                return False, "", "a pull request for branch \"b\" into branch \"main\" already exists"
+                if any(not p["isCrossRepository"] and p["baseRefName"] == "main" for p in prs):
+                    return False, "", "a pull request for branch \"b\" into branch \"main\" already exists"
+                return True, "https://github.com/o/r/pull/600", ""
+            if a[:1] == ("api",):
+                return False, "", "gh: Not Found (HTTP 404)"  # the branch isn't on GitHub yet
             return True, "", ""
         for mod, name, value in ((github, "gh", fake), (github, "git", lambda *a: (True, "abc", ""))):
             p = self.mock.patch.object(mod, name, value)
@@ -635,20 +640,35 @@ class BackToWork(unittest.TestCase):
         self.assertNotIn(("pr", "create"), calls)
         self.assertIn(("pr", "comment"), calls)  # the summary still reaches it
 
-    def test_ready_never_adopts_a_forks_or_another_ones(self):
-        mine = {"number": 599, "url": "https://github.com/o/r/pull/599", "isCrossRepository": False, "baseRefName": "main", "headRefOid": "abc"}
-        for other in ({"isCrossRepository": True}, {"baseRefName": "dev"}, {"headRefOid": "f00"}):
-            github, calls = self.github_has([{**mine, **other}])
-            t = self.ready(mode="worktree", worktree="/w", branch="b")
-            with self.assertRaises(self.commands.Fail):
-                github.pr_open(self.store, t, "o/r")
-            self.assertNotIn("pr", t, other)
+    MINE = {"number": 599, "url": "https://github.com/o/r/pull/599", "isCrossRepository": False, "baseRefName": "main", "headRefOid": "abc"}
+
+    def test_ready_never_adopts_a_forks(self):
+        github, calls = self.github_has([{**self.MINE, "isCrossRepository": True}])
+        t = self.ready(mode="worktree", worktree="/w", branch="b")
+        self.assertEqual(github.pr_open(self.store, t, "o/r")["number"], 600)  # its own, as gh opens it
+        self.assertIn(("pr", "create"), calls)
+
+    def test_ready_never_adopts_one_at_another_commit(self):
+        github, calls = self.github_has([{**self.MINE, "headRefOid": "f00"}])
+        t = self.ready(mode="worktree", worktree="/w", branch="b")
+        with self.assertRaises(self.commands.Fail):
+            github.pr_open(self.store, t, "o/r")
+        self.assertIn(("pr", "create"), calls)
+        self.assertNotIn("pr", t)
+
+    def test_ready_never_adopts_or_doubles_one_into_another_base(self):
+        github, calls = self.github_has([{**self.MINE, "baseRefName": "dev"}])
+        t = self.ready(mode="worktree", worktree="/w", branch="b")
+        with self.assertRaises(self.commands.Fail) as no:
+            github.pr_open(self.store, t, "o/r")
+        self.assertIn("herdr-task adopt SHEP-7 --pr 599", str(no.exception))
+        self.assertNotIn(("pr", "create"), calls)
+        self.assertNotIn("pr", t)
 
     def test_ready_opens_one_when_there_is_none(self):
         github, calls = self.github_has([])
         t = self.ready(mode="worktree", worktree="/w", branch="b")
-        with self.assertRaises(self.commands.Fail):
-            github.pr_open(self.store, t, "o/r")
+        self.assertEqual(github.pr_open(self.store, t, "o/r")["number"], 600)
         self.assertIn(("pr", "create"), calls)
 
     def test_accept_adopts_the_open_pull_request(self):

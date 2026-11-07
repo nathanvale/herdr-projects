@@ -12,7 +12,7 @@ from .base import bundle, Fail, guard, run, STORE, sync_held, VERSION
 from .agents import LINE_MAX, SUMMARY_MAX
 from .launch import cmd_allow, name_tabs
 from .commands import (
-    cmd_accept, cmd_add, cmd_alert, cmd_config, cmd_edit, cmd_fix, cmd_list, cmd_merge, cmd_ready,
+    cmd_accept, cmd_add, cmd_adopt, cmd_alert, cmd_config, cmd_edit, cmd_fix, cmd_list, cmd_merge, cmd_ready,
     cmd_resume, cmd_review, cmd_review_more, cmd_reviewed, cmd_rm, cmd_show, cmd_start, cmd_state, cmd_status,
     cmd_switch, cmd_unarchive, cmd_where,
 )
@@ -135,7 +135,8 @@ def main():
         return 0
 
     p = argparse.ArgumentParser(prog="herdr-task", description="Herdr's tasks: add, start and finish work for a folder.",
-                                epilog="Run on another machine's folder: herdr-task --on <machine> <command> ...")
+                                epilog="Run on another machine's folder: herdr-task --on <machine> <command> ... "
+                                       "HERDR_TASK_GH names the gh command to run (default: gh on PATH).")
     sub = p.add_subparsers(dest="cmd")
 
     def cmd(name, fn, help, id=True):
@@ -203,6 +204,14 @@ def main():
     c.add_argument("--proof", help="its proof artifact's id (herdr-artifact publish prints it); default: its newest artifact titled \"... · Proof\"")
     c.add_argument("--agents-md", help="\"For AGENTS.md\": one line about setting up or testing this repo that the next agent "
                                        "would need and AGENTS.md lacks; the Assistant decides whether to add it")
+    c = cmd("adopt", cmd_adopt, "record a pull request that already exists on a started task, when ready can't (its base differs from "
+                                "the task's recorded one): checks it first, then the task merges into its base. Never creates, pushes or merges")
+    c.description = ("Records a pull request that already exists on a started task. It needs a worktree task, running or ready, with "
+                     "its start commit recorded; this repo's own open pull request for its branch, at exactly its tip; the start "
+                     "commit as the one merge base of that tip and the commit GitHub's base branch holds now; and the recorded "
+                     "base in that commit. gh must answer. Never creates, pushes or merges.")
+    c.epilog = "example: herdr-task adopt HAT-4 --pr 123"
+    c.add_argument("--pr", required=True, help="the pull request: its number or its link")
     c = cmd("reviewed", cmd_reviewed, "a task's agent records one review round of its current commit (Review: on): ready then "
                                       "accepts that commit; uses one of its Review rounds")
     c.add_argument("--report", help="the round's findings in a line (levels, what was fixed)")
@@ -382,7 +391,8 @@ def main():
     agent_opts(c)
     c.add_argument("--space")
     c.add_argument("--reason", help="what to fix (default: what Herdr found)")
-    c = cmd("merge", cmd_merge, "ask the task's agent to merge it (the Merge button)")
+    c = cmd("merge", cmd_merge, "merge it now (the Merge button): a pull request squash-merges on GitHub, unless something holds "
+                                "it back; with none, in a repo not on GitHub, its agent is asked to merge it here")
     agent_opts(c)
     c.add_argument("--space")
     c = cmd("resume", cmd_resume, "continue a stopped task")
@@ -411,7 +421,8 @@ def main():
         args.fn(args)
     except Fail as e:
         if getattr(args, "json", False):
-            print(json.dumps({"error": str(e)}))
+            cause = getattr(e, "cause", None)
+            print(json.dumps({"error": str(e), **({"cause": cause} if cause else {})}))
         else:
             print(f"herdr-task: {e}", file=sys.stderr)
         return 1

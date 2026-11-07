@@ -1,7 +1,8 @@
 # Full 3.x source migration
 
 S0 is a source-only foundation; A1 adds provider launch plans and deployment discovery
-owners on it, with Azure dispatch held. Required Bitbucket, Azure and lifecycle ports are
+owners on it, with Azure dispatch held, and N1 adds native pull request adoption and
+fail-closed publication. Required Bitbucket, Azure and lifecycle ports are
 pending. This checkpoint is not deployable or ready for application use. Check's
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
@@ -36,6 +37,7 @@ owners, not implemented interfaces.
 | Phase | Dependencies | Owner and exit |
 | --- | --- | --- |
 | S0 | This source admission | Exact U, F/P dispositions and blocked readiness; Root review and CI before dependent work. |
+| N1 | S0, separately authorized | `T/github.py`, commands and CLI; adopt an existing pull request, fail closed on GitHub, separate gh and git failures. Not a port. |
 | S1 | Reviewed S0 | New `T/forge.py`, existing `T/github.py`, commands/proof/worktree consumers; preserve GitHub defaults. Smallest next customization. |
 | A1 | Reviewed S0 | New `T/providers.py` and `service/azure-deployments.ts`; nonsecret bindings, supported authentication and discovery custody. |
 | B1 | S1 | New `T/bitbucket.py`, `T/bitbucket_http.py`; qualified identity, host credentials and complete exact-head reads. |
@@ -73,6 +75,32 @@ stays blocked.
   selection only; the same treatment of endpoint, credential and model variables is unproved.
   The backup's gate has in-module proof only; its public-process proof is Q's.
 - Detail, official sources and authored regressions: [Azure launch plans](../azure-launch-plans.md).
+
+### N1 native publication checkpoint
+
+`bin/check-migration` names each phase's admitted owner paths; the manifest's
+`source_deltas` pins each one's content hash and exact-U blob. Every U path outside
+that table and the three overrides stays byte-identical to U with U's mode. A phase
+cannot widen its owners or drift its content. It cannot roll back either: naming an
+earlier phase over its deltas refuses, and dropping the deltas as well refuses
+because the admitted paths then differ from exact U. Candidate readiness stays blocked.
+
+- `T/github.py` owns adoption (`adopt_existing()`), reached by `herdr-task adopt`.
+  Base equivalence is proved from commits: the task's start commit is the one merge
+  base of its tip and the commit GitHub's base branch holds now, read through gh, and
+  the recorded base is in that commit. Accept and the tick recheck an adopted pull
+  request's base and head. S1 moves this behind the forge.
+- Known gap: a retarget between Accept's read and `gh pr merge` isn't caught. The head
+  stays guarded by `--match-head-commit`; gh offers no such guard for the base.
+- A repo with no remotes, or only remotes on another named forge, stays local without
+  asking gh. Otherwise only gh's own word that it knows no such host is a saved no, and
+  a github.com remote or a name saved for the same remotes overrules it. Any other gh
+  failure refuses and never reaches a local merge. gh not installed refuses for a
+  recognised GitHub remote; whether that holds is an open human decision.
+- Credential custody is unchanged: [Pull requests and credentials](../install.md#pull-requests-and-credentials).
+- This phase, A1 and S1 each add one row to `PHASES` and their rows to `source_deltas`.
+  They merge into one table, and whichever merges second re-pins every path they share.
+- This fix is not a required port. No inventory requirement changes status.
 
 ### Bitbucket contract
 
@@ -173,7 +201,8 @@ silently considered covered by default tests.
 
 Root runs `python3 bin/check-migration`, its public-CLI checkpoint tests
 (`test/test_migration.py`), the A1 provider and discovery tests (`test/test_providers.py`,
-`service/azure-deployments.test.ts`) and every native Check command. CI owns frozen dependency installation, web
+`service/azure-deployments.test.ts`), the N1 publication tests (`test/test_native_publication.py`)
+and every native Check command. CI owns frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.
 Missing dependencies/generated web sources are prerequisite blockers, not authority
