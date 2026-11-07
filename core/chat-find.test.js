@@ -9,6 +9,8 @@ import { FIND } from "./chat-log.js";
 // these on CI; on macOS they take FIND's other reader, and CI never does.
 const SESSION = "aaaaaaaa-0000-4000-8000-000000000001";
 const OTHER = "bbbbbbbb-0000-4000-8000-000000000002";
+// Everything a shell or printf could take for something else, in one folder's name.
+const ODD = `odd \\n $(x) * "quoted" 'single'`;
 const WAIT = `print("ready", flush=True); import time; time.sleep(120)`;
 // Linux: a process that isn't dumpable keeps /proc/<pid>/environ from its own user too.
 const SEALED = `import ctypes; ctypes.CDLL(None).prctl(4, 0, 0, 0, 0); ${WAIT}`;
@@ -188,9 +190,49 @@ test("a value that isn't an exact absolute path finds nothing, never ~/.claude",
   }
 });
 
-test("only the variable itself counts: not another's value, and not an argument", async () => {
+test("only the variable itself counts: not another's value", async () => {
   const decoy = `CLAUDE_CONFIG_DIR=${folder()}`;
-  const { pid } = await agent({ NOTES: `x\n${decoy}`, ALSO: decoy }, WAIT, [decoy]);
+  const { pid } = await agent({ NOTES: `x\n${decoy}`, ALSO: decoy });
   const log = session(fallback, pid);
   expect(await find(pid)).toBe(log);
+});
+
+// Linux reads the environment apart from argv. macOS can't tell an argument from a moved environment, so it refuses.
+test("an argument shaped like the variable: not read on Linux, refused on macOS, never another folder", async () => {
+  const dir = folder();
+  const { pid } = await agent({}, WAIT, [`CLAUDE_CONFIG_DIR=${dir}`]);
+  session(dir, pid, OTHER);
+  const log = session(fallback, pid);
+  expect(await find(pid)).toBe(process.platform === "darwin" ? "" : log);
+});
+
+test("a folder's name is taken literally, whatever a shell or printf would make of it", async () => {
+  const dir = join(home, ODD);
+  const { pid } = await agent({ CLAUDE_CONFIG_DIR: dir });
+  const log = session(dir, pid);
+  expect(await find(pid)).toBe(log);
+});
+
+test("a process that has gone finds nothing", async () => {
+  const p = Bun.spawn(["python3", "-c", WAIT], { env: environment({}), stdout: "pipe", stderr: "ignore" });
+  await firstLine(p);
+  p.kill(9);
+  await p.exited;
+  session(fallback, p.pid);
+  expect(await find(p.pid)).toBe("");
+});
+
+// Node's process.title rewrites argv in place, which is what macOS reads the environment past: a title that fills it
+// leaves the count landing beyond the variable when it comes first. Set must never read as unset.
+const TITLED = `process.title = process.argv[1] === "fill" ? "z".repeat(4000) : "t"; console.log("ready"); setTimeout(() => {}, 120000);`;
+test.skipIf(!Bun.which("node"))("a process that set its title never reads as unset", async () => {
+  for (const title of ["short", "fill"]) {
+    const dir = folder();
+    const p = Bun.spawn(["node", "-e", TITLED, title], { env: { CLAUDE_CONFIG_DIR: dir, ...environment({}) }, stdout: "pipe", stderr: "ignore" });
+    running.push(() => p.kill(9));
+    await firstLine(p);
+    const log = session(dir, p.pid);
+    session(fallback, p.pid, OTHER);
+    expect(await find(p.pid)).toBe(process.platform === "darwin" ? "" : log);
+  }
 });

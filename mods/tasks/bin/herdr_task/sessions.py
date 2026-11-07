@@ -36,7 +36,10 @@ def environment(pid):
             return []
     if sys.platform != "darwin":
         return []
-    import ctypes  # here alone: a python built without it still runs everything else
+    try:
+        import ctypes  # here alone: a python built without it still runs everything else
+    except ImportError:
+        return []
     size = ctypes.c_size_t(os.sysconf("SC_ARG_MAX"))
     buf = ctypes.create_string_buffer(size.value)
     mib = (ctypes.c_int * 3)(1, 49, int(pid))  # CTL_KERN, KERN_PROCARGS2
@@ -49,14 +52,20 @@ def environment(pid):
     while i < len(words) and not words[i]:
         i += 1
     env = words[i + int.from_bytes(data[:4], sys.byteorder):]
-    return env[:env.index(b"")] if b"" in env else []
+    env = env[:env.index(b"")] if b"" in env else []
+    # argc counts argv as it started. A process that set its title rewrote argv, so the count can
+    # land past the variable: seen anywhere but here, where the environment starts is not known.
+    if not any(e.startswith(CONFIG_DIR) for e in env) and any(w.startswith(CONFIG_DIR) for w in words):
+        return []
+    return env
 
 
 def claude_dir(pid):
     """The folder Claude Code uses in process pid, from that process's own environment, never this
     one's: its CLAUDE_CONFIG_DIR, or ~/.claude when it has none. None, so no other folder is tried,
     when that can't be read exactly: no way to read it here, an empty environment (macOS shows a
-    system binary's so, and a set variable looks unset), or a value that isn't one absolute path.
+    system binary's so, and a set variable looks unset), a macOS block whose start moved
+    (environment()), or a value that isn't one absolute path.
     FIND in core/chat-log.js is the same rule."""
     entries = environment(pid)
     if not entries:
@@ -85,7 +94,11 @@ def session_of(pid):
             if isinstance(sid, str) and SESSION_ID.fullmatch(sid):
                 log = None
                 base = os.path.join(folder, "projects")
-                for d in os.listdir(base) if os.path.isdir(base) else []:
+                try:
+                    projects = os.listdir(base)
+                except OSError:  # none yet, or not this user's to read: no log, as for a session just begun
+                    projects = []
+                for d in projects:
                     f = os.path.join(base, d, sid + ".jsonl")
                     if os.path.isfile(f):
                         log = f

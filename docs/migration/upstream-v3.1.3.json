@@ -14,19 +14,19 @@
       "phase": "C1",
       "path": "core/chat-find.test.js",
       "upstream_blob": null,
-      "sha256": "472bd73d3210da40fde364a06f8ac5ad776ca970ba82fed5ed8d395a2ffa8a1d"
+      "sha256": "705dc657aaef71981090127ccf621eb01f23fca45815723de2b4c8c45032cfc3"
     },
     {
       "phase": "C1",
       "path": "core/chat-log.js",
       "upstream_blob": "1c85a10ebc92f7f7107f9d95dbfb7c55b289a9e7",
-      "sha256": "cbe8512010cdff738ec627cfd44dcba2abd3749776697b486d043750d4f8d4b6"
+      "sha256": "14cceb48a63da536cd1429281e0edc29a64a4cbe131d51594f56b20257be17fc"
     },
     {
       "phase": "C1",
       "path": "mods/chat/core/chat-log.js",
       "upstream_blob": "1c85a10ebc92f7f7107f9d95dbfb7c55b289a9e7",
-      "sha256": "cbe8512010cdff738ec627cfd44dcba2abd3749776697b486d043750d4f8d4b6"
+      "sha256": "14cceb48a63da536cd1429281e0edc29a64a4cbe131d51594f56b20257be17fc"
     },
     {
       "phase": "A1",
@@ -68,7 +68,7 @@
       "phase": "C1",
       "path": "mods/tasks/bin/herdr_task/sessions.py",
       "upstream_blob": "1e83c80b8eb5d302751cf51a6085314de205ab8d",
-      "sha256": "6e875d550c190016d14ae2e63b25c0f65fb62459a1ac92206806fc25ef002b6a"
+      "sha256": "b32058cee0ccc9733c00108bd959b421b2377a456b4797b6fc55e8c28b2fe4b0"
     },
     {
       "phase": "A1",
@@ -104,7 +104,7 @@
       "phase": "C1",
       "path": "test/test_session_discovery.py",
       "upstream_blob": null,
-      "sha256": "eab86c771ae7f8487fdc9fd5f8c81b5db83e5531b1925dea3c035e65237df1f2"
+      "sha256": "046f8c5ee243a6b793705ff4cb46be5a80fcc542fc89c544134ecd3397d02b4f"
     }
   ],
   "requirements": [

@@ -15,6 +15,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(ROOT, "mods", "tasks", "bin")
 SESSION = "aaaaaaaa-0000-4000-8000-000000000001"
 OTHER = "bbbbbbbb-0000-4000-8000-000000000002"
+# Everything a shell or printf could take for something else, in one folder's name.
+ODD = """odd \\n $(x) * "quoted" 'single'"""
+# Node's process.title rewrites argv in place, which is what macOS reads the environment past.
+TITLED = 'process.title = process.argv[1] === "fill" ? "z".repeat(4000) : "t"; console.log("ready"); setTimeout(() => {}, 120000);'
+DARWIN = sys.platform == "darwin"
 WAIT = 'print("ready", flush=True); import time; time.sleep(120)'
 # Linux: a process that isn't dumpable keeps /proc/<pid>/environ from its own user too.
 SEALED = "import ctypes; ctypes.CDLL(None).prctl(4, 0, 0, 0, 0); " + WAIT
@@ -174,9 +179,49 @@ class SessionOf(unittest.TestCase):
 
     def test_only_the_variable_itself_counts(self):
         decoy = "CLAUDE_CONFIG_DIR=" + self.folder()
-        pid, _ = self.agent({"NOTES": "x\n" + decoy, "ALSO": decoy}, args=(decoy,))
+        pid, _ = self.agent({"NOTES": "x\n" + decoy, "ALSO": decoy})
         log = self.session(self.fallback, pid)
         self.assertEqual(self.found(pid), (SESSION, log))
+
+    def test_an_argument_shaped_like_the_variable(self):
+        """Linux reads the environment apart from argv. macOS can't tell an argument from a moved
+        environment, so it refuses. Never another folder."""
+        folder = self.folder()
+        pid, _ = self.agent(args=("CLAUDE_CONFIG_DIR=" + folder,))
+        self.session(folder, pid, OTHER)
+        log = self.session(self.fallback, pid)
+        self.assertEqual(self.found(pid), (None, None) if DARWIN else (SESSION, log))
+
+    def test_a_folders_name_is_taken_literally(self):
+        folder = self.folder(ODD)
+        pid, _ = self.agent({"CLAUDE_CONFIG_DIR": folder})
+        log = self.session(folder, pid)
+        self.assertEqual(self.found(pid), (SESSION, log))
+
+    def test_a_process_that_has_gone_finds_nothing(self):
+        p = subprocess.Popen([sys.executable, "-c", WAIT], env=self.environment({}), stdout=subprocess.PIPE, text=True)
+        p.stdout.readline()
+        p.stdout.close()
+        p.kill()
+        p.wait()
+        self.session(self.fallback, p.pid)
+        self.assertEqual(self.found(p.pid), (None, None))
+
+    @unittest.skipUnless(shutil.which("node"), "needs node")
+    def test_a_process_that_set_its_title_never_reads_as_unset(self):
+        """A title that fills argv leaves macOS's count landing past the variable when it comes first."""
+        for title in ("short", "fill"):
+            with self.subTest(title=title):
+                folder = self.folder("titled-" + title)
+                env = {"CLAUDE_CONFIG_DIR": folder, **self.environment({})}
+                p = subprocess.Popen(["node", "-e", TITLED, title], env=env, stdout=subprocess.PIPE, text=True)
+                self.addCleanup(p.wait)
+                self.addCleanup(p.kill)
+                self.addCleanup(p.stdout.close)
+                p.stdout.readline()
+                log = self.session(folder, p.pid)
+                self.session(self.fallback, p.pid, OTHER)
+                self.assertEqual(self.found(p.pid), (None, None) if DARWIN else (SESSION, log))
 
 
 if __name__ == "__main__":

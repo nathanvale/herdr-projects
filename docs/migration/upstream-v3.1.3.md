@@ -89,9 +89,20 @@ for each candidate process and never for the caller:
   as empty, so empty is no evidence.
 - Metadata whose `pid` isn't that process's selects nothing. A session with no log stays
   pending. Nothing scans across folders.
+- A reused pid isn't caught: a crashed agent's metadata names the same pid as a new process
+  under that folder, so it can match until the new process rewrites the file. The `pid`
+  check catches metadata for another pid and no other stale metadata.
 - Only that one variable is taken from a process. Linux reads `/proc/<pid>/environ`; macOS
   reads `KERN_PROCARGS2` through python3, as `ps eww` is flat text. Any other platform
   finds nothing. Both read the environment the process started with.
+- macOS reads live memory, and `argc` no longer marks where the environment starts once a
+  process sets its title (Node's `process.title` rewrites argv). The variable seen anywhere
+  but in the counted environment refuses, and so does an empty count, so a set variable never
+  reads as unset. So a Node agent that set its title finds nothing, and an argument shaped
+  like the variable, with the variable unset, refuses too.
+- Behaviour change: on macOS FIND now needs python3 on its PATH. Without it every Claude
+  agent there loses Chat, including default ones that work today. `session_of()` runs in
+  python already and doesn't.
 - The macOS reader has no CI: `core/chat-find.test.js` and `test/test_session_discovery.py`
   take it only when run on macOS.
 - This fix is not a required port. No inventory requirement changes status.

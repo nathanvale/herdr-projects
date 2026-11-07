@@ -14,8 +14,9 @@ kids() { for k in $(pgrep -P "$1" 2>/dev/null); do echo "$k"; kids "$k"; done; }
 # The folder Claude Code uses in process $1, from that process's own environment, never this
 # shell's: its CLAUDE_CONFIG_DIR, or ~/.claude when it has none. Fails, so no other folder is
 # tried, when that can't be read exactly: no way to read it here, an empty environment (macOS
-# shows a system binary's so, and a set variable looks unset), or a value that isn't one
-# absolute path. Status 3 is "read, and unset". Takes only that variable, and keeps nothing else.
+# shows a system binary's so, and a set variable looks unset), a macOS block whose start moved
+# (below), or a value that isn't one absolute path. Status 3 is "read, and unset". Takes only
+# that variable, and keeps nothing else.
 claude_dir() {
   case "$(uname)" in
     Linux)
@@ -38,15 +39,17 @@ while i < len(words) and not words[i]:
     i += 1
 env = words[i + int.from_bytes(data[:4], sys.byteorder):]
 env = env[:env.index(b"")] if b"" in env else []
-if not env:
+# argc counts argv as it started. A process that set its title rewrote argv, so the count can
+# land past the variable: seen anywhere but here, where the environment starts is not known.
+name = b"CLAUDE_CONFIG_DIR="
+found = [e for e in env if e.startswith(name)]
+if not env or (not found and any(w.startswith(name) for w in words)):
     sys.exit(2)
-for e in env:
-    if e.startswith(b"CLAUDE_CONFIG_DIR="):
-        if b"\\n" in e:
-            sys.exit(2)
-        os.write(1, e[18:])
-        sys.exit(0)
-sys.exit(3)
+if not found:
+    sys.exit(3)
+if b"\\n" in found[0]:
+    sys.exit(2)
+os.write(1, found[0][len(name):])
 ' "$1") ;;
     *) return 1 ;;
   esac
@@ -68,7 +71,7 @@ for p in "$pid" $(kids "$pid"); do
     [ "$(sed -n 's/.*[{,]"pid":\\([0-9]*\\)[,}].*/\\1/p' "$j")" = "$p" ] || continue
     id=$(sed -n 's/.*"sessionId":"\\([0-9a-fA-F-]*\\)".*/\\1/p' "$j")
     [ -n "$id" ] || continue
-    for f in "$d"/projects/*/"$id".jsonl; do [ -f "$f" ] && { echo "$f"; exit 0; }; done
+    for f in "$d"/projects/*/"$id".jsonl; do [ -f "$f" ] && { printf '%s\\n' "$f"; exit 0; }; done
     echo "pending"; exit 0
   else
     if [ -d "/proc/$p/fd" ]; then
