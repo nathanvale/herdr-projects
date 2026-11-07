@@ -10,13 +10,24 @@ export type Pass = { ok: true; who: string; via: "tailnet" | "local" } | { ok: f
 
 const READS = new Set(["GET", "HEAD"]);
 
-export function gate(req: Request, g: Gate, socket = false, peerTrusted = false): Pass {
+export function gate(req: Request, g: Gate, socket = false, peerTrusted = false,
+  privatePeer?: { origin: string; login: string | null }): Pass {
   const h = req.headers;
   const host = (h.get("host") ?? "").toLowerCase();
   const login = h.get("tailscale-user-login");
   const write = socket || !READS.has(req.method);
   if (req.method === "OPTIONS") return { ok: false, status: 403, why: "no cross-site requests" };
   if (h.get("sec-fetch-site") === "cross-site") return { ok: false, status: 403, why: "cross-site" };
+
+  // Only the direct TLS listener supplies this argument, after Tailscale whois of the TCP peer. Headers cannot opt in.
+  if (privatePeer) {
+    if (!g.owner) return { ok: false, status: 503, why: "Tailscale isn't running here" };
+    if (privatePeer.login !== g.owner) return { ok: false, status: 403, why: "only this machine's owner" };
+    if (host !== new URL(privatePeer.origin).host) return { ok: false, status: 421, why: "wrong host" };
+    if (write && h.get("origin") !== privatePeer.origin) return { ok: false, status: 403, why: "wrong origin" };
+    if (write && !socket && h.get("x-shepherdr") !== "1") return { ok: false, status: 403, why: "missing x-shepherdr" };
+    return { ok: true, who: privatePeer.login, via: "tailnet" };
+  }
 
   if (login !== null) {
     if (!g.owner || !g.dns) return { ok: false, status: 503, why: "Tailscale isn't running here" };

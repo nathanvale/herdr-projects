@@ -14,6 +14,7 @@ import { DATA, SOCK, TOKEN, PORT, HOME, ensureData } from "./paths.ts";
 import { holdLock } from "./lock.ts";
 import { gate, type Gate } from "./auth.ts";
 import { trustedPeer } from "./peer.ts";
+import { readPrivateDomain, servePrivateDomain, type Admitted } from "./private-domain.ts";
 import { whoami, share, served, unshare, restoreShare, type Me } from "./tailscale.ts";
 import { qrFile } from "./qr.ts";
 import { Hub } from "./hub.ts";
@@ -57,6 +58,8 @@ const { withEverywhere, withSpace } = NF as any;
 const ROOT = join(import.meta.dir, "..");
 const WEB = process.env.SHEPHERDR_WEB_DIR || join(ROOT, "web", "dist");
 export const VERSION = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version as string;
+const privateConfig = readPrivateDomain(process.env.SHEPHERDR_PRIVATE_DOMAIN);
+let privateServer: Bun.Server<{ who: string }> | null = null;
 
 ensureData();
 const release = await holdLock(SOCK);
@@ -323,10 +326,8 @@ function chatView(addr: string): ChatView {
   };
 }
 
-const server = Bun.serve<{ who: string }>({
-  hostname: "127.0.0.1",
-  port: PORT,
-  async fetch(req, srv) {
+const handlers = {
+  async fetch(req: Request, srv: Bun.Server<{ who: string }>, admitted?: Admitted): Promise<Response | undefined> {
     const url = new URL(req.url);
     const path = url.pathname.startsWith("/shepherdr/") ? url.pathname.slice(10) : url.pathname;
     // the window asks this (lib/service.js): while jobs is true it leaves its background work to the service
@@ -334,15 +335,16 @@ const server = Bun.serve<{ who: string }>({
       // the other machines this service ticks (Serve from: the host the ones with no service of their own)
       ticks: jobs.on ? host.tickOn() : [] });
     // the Web add-on switched off: nothing for the tailnet (this machine's own callers still get the API)
-    if (req.headers.has("tailscale-user-login") && !webOn()) return new Response("Shepherdr's web app is off (Shepherdr settings › Window › Add-ons).", { status: 404 });
+    const browser = !!admitted || req.headers.has("tailscale-user-login");
+    if (browser && !webOn()) return new Response("Shepherdr's web app is off (Shepherdr settings › Window › Add-ons).", { status: 404 });
     // another machine serves it now (Serve from): a page that still comes here goes there
-    if (req.headers.has("tailscale-user-login") && !host.serving()) {
+    if (browser && !host.serving()) {
       const there = host.hostLink();
       return there ? Response.redirect(there, 302) : new Response("Shepherdr's web app is served from another machine now.", { status: 404 });
     }
     const socket = path === "/api/ws" || path === "/api/terminal" || path === "/api/browser" || path === "/api/voice";
     const viaTailnet = req.headers.has("tailscale-user-login");
-    const pass = gate(req, g, socket, viaTailnet && trustedPeer(srv.requestIP(req)?.port, PORT));
+    const pass = admitted ?? gate(req, g, socket, viaTailnet && trustedPeer(srv.requestIP(req)?.port, PORT));
     if (!pass.ok) return new Response(pass.why, { status: pass.status });
     if (path === "/api/browser") {
       // a task's browser (2.1's Browser panel): this machine's tasks
@@ -363,7 +365,7 @@ const server = Bun.serve<{ who: string }>({
       return srv.upgrade(req, { data: { who: pass.who, voice: { key, addr } } as any }) ? undefined : new Response("upgrade failed", { status: 400 });
     }
     if (socket) return srv.upgrade(req, { data: { who: pass.who } }) ? undefined : new Response("upgrade failed", { status: 400 });
-    if (path === "/api/me") return json({ login: pass.who, via: pass.via, machine: me?.host ?? null, link: me ? `https://${me.dns}/shepherdr/` : null, version: VERSION, off: offPlugins() });
+    if (path === "/api/me") return json({ login: pass.who, via: pass.via, machine: me?.host ?? null, link: admitted && privateConfig ? `${privateConfig.origin}/shepherdr/` : me ? `https://${me.dns}/shepherdr/` : null, version: VERSION, off: offPlugins() });
     if (path === "/api/state" && req.method === "GET") return json(store.doc.version ? store.doc : await store.load());
     if (path === "/api/state" && req.method === "POST") {
       const body = await req.json().catch(() => null);
@@ -574,7 +576,7 @@ const server = Bun.serve<{ who: string }>({
     return file(path);
   },
   websocket: {
-    open(ws) {
+    open(ws: Bun.ServerWebSocket<{ who: string }>) {
       const d: any = ws.data;
       const page = { send: (x: any) => { ws.send(x); }, close: () => ws.close(), buffered: () => ws.getBufferedAmount() };
       if (d.voice) d.bridge = voiceCall(hub, d.voice.addr, callName(d.voice.key), chatView(d.voice.addr), page);
@@ -582,11 +584,18 @@ const server = Bun.serve<{ who: string }>({
       else if (d.browser) d.bridge = browserRelay(d.browser, page);
       else live.join(ws);
     },
-    message(ws, msg) { const d: any = ws.data; if (d.voice) d.bridge?.message(msg); else if (d.bridge) d.bridge.message(String(msg)); else live.message(ws, String(msg)); },
-    close(ws) { const d: any = ws.data; if (d.bridge) d.bridge.end(); else live.leave(ws); },
+    message(ws: Bun.ServerWebSocket<{ who: string }>, msg: string | Buffer) { const d: any = ws.data; if (d.voice) d.bridge?.message(msg); else if (d.bridge) d.bridge.message(String(msg)); else live.message(ws, String(msg)); },
+    close(ws: Bun.ServerWebSocket<{ who: string }>) { const d: any = ws.data; if (d.bridge) d.bridge.end(); else live.leave(ws); },
   },
-});
+};
+const server = Bun.serve<{ who: string }>({ hostname: "127.0.0.1", port: PORT, ...handlers });
+if (privateConfig) {
+  try {
+    privateServer = await servePrivateDomain(privateConfig, () => g, handlers);
+    console.log(`Private HTTPS on ${privateConfig.origin}/shepherdr/`);
+  } catch (err) { console.error(`Private HTTPS unavailable: ${(err as Error).message}`); }
+}
 
 console.log(`Shepherdr ${VERSION} on http://127.0.0.1:${server.port} (data ${DATA})${me && webOn() ? `, https://${me.dns}/shepherdr/` : ""}`);
 
-for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => { server.stop(true); release(); process.exit(0); });
+for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => { privateServer?.stop(true); server.stop(true); release(); process.exit(0); });
