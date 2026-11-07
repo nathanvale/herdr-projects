@@ -49,6 +49,20 @@ task = {"agents": [{"address": "t1"}]}
 sessions.refresh_sessions(types.SimpleNamespace(dirty=False), task, [k])
 print(json.dumps({"session_of": sessions.session_of(pid), "record": revive.record_of(k), "agent": task["agents"][0]}))
 """
+# news_read() as the tick calls it, for an Assistant told while read: only what it reads of the log
+# is real, and the labels it would set come back.
+QUIET = """
+import json, sys
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+from herdr_task import news
+pid, labels = int(sys.argv[2]), []
+news.hc_json = lambda *a: {"state": "live", "turn": 5, "labels": {news.READ: "4"}, "foreground": {"pid": pid}}
+news.status_word = lambda k: "idle"
+news.run = labels.append
+news.news_read({"t1": {"turn": 4, "at": news.now()}})
+print(json.dumps(labels))
+"""
 CAN_SEAL = sys.platform.startswith("linux") and os.geteuid() != 0
 
 
@@ -95,6 +109,17 @@ class SessionOf(unittest.TestCase):
                            capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         return json.loads(r.stdout)
+
+    def test_news_reads_a_log_under_another_folder(self):
+        """The one caller that asks for any folder: a <no-reply> there leaves the Assistant read."""
+        folder = self.folder()
+        pid, _ = self.agent({"CLAUDE_CONFIG_DIR": folder})
+        with open(self.session(folder, pid), "w") as f:
+            json.dump({"type": "assistant", "message": {"content": [{"type": "text", "text": "<hc no-reply/>"}]}}, f)
+        r = subprocess.run([sys.executable, "-c", QUIET, BIN, str(pid)], env=self.environment({}),
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout), [["hc", "label", "t1", "herdr.chat.read=5"]])
 
     def test_a_session_under_the_default_folder_is_kept_as_before(self):
         pid, _ = self.agent()

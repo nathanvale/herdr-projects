@@ -109,8 +109,9 @@ for each candidate process and never for the caller:
 - A session under another folder is for reading only. Revive, resume, a restart and a fork
   carry no `CLAUDE_CONFIG_DIR`, so continuing it would start on another profile, perhaps
   another account. `session_of()` returns such a session only to `any_folder=True`, which
-  `T/news.py` alone asks for, so nothing records it and every path that starts an agent
-  behaves as before. `sessionOf()` in `core/agents.js` gives it no id, and the window's picker
+  `T/news.py` alone asks for, so for a non-default folder nothing records it and every path
+  that starts an agent behaves as before. A default agent whose environment can't be read
+  does change: it gets no record, so a resume starts fresh. `sessionOf()` in `core/agents.js` gives it no id, and the window's picker
   and `service/agents.ts` `restart()` refuse before anything ends, as finding the log is what
   shows the window's picker and the web's Composer. Carrying the folder belongs to L1 and L2.
 - `sessionOf()` knows ~/.claude by its shape, as the agent's machine's home isn't known
