@@ -2267,7 +2267,8 @@ export default class Chat extends View {
 
   // Restarts the agent with what the picker chose; this chat follows the new one.
   applyPick(pick, cx) {
-    // Only a chat that found its log shows the picker, and a restart can't carry this agent's folder.
+    // A found log shows this picker, and a restart can't carry that agent's folder. One on its
+    // start screen shows it with no log (locate()), as it always has, and isn't refused.
     if (agent.inOtherFolder(this.kind, this.path)) { toast({ title: "The agent didn't restart", body: agent.OTHER_FOLDER, level: "error" }); return; }
     if (this.thread) return this.switchTask(pick, cx);
     const mine = this.myPane();

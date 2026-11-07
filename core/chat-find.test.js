@@ -127,14 +127,40 @@ test("metadata with no pid: nothing", async () => {
   expect(await find(pid)).toBe("");
 });
 
-test("a session with no log yet is pending, in either folder", async () => {
+test("a session with no log yet is pending under ~/.claude, and nothing under another folder", async () => {
   const dir = folder();
   const plain = await agent();
   const custom = await agent({ CLAUDE_CONFIG_DIR: dir });
   session(fallback, plain.pid, SESSION, { log: false });
   session(dir, custom.pid, SESSION, { log: false });
   expect(await find(plain.pid)).toBe("pending");
-  expect(await find(custom.pid)).toBe("pending");
+  expect(await find(custom.pid)).toBe("");
+});
+
+test("under another folder the next look finds the log once it's there", async () => {
+  const dir = folder();
+  const { pid } = await agent({ CLAUDE_CONFIG_DIR: dir });
+  session(dir, pid, SESSION, { log: false });
+  expect(await find(pid)).toBe("");
+  const log = session(dir, pid);
+  expect(await find(pid)).toBe(log);
+});
+
+test("~/.claude named outright is pending as ~/.claude is", async () => {
+  const { pid } = await agent({ CLAUDE_CONFIG_DIR: fallback });
+  session(fallback, pid, SESSION, { log: false });
+  expect(await find(pid)).toBe("pending");
+});
+
+test("a candidate with no log yet under another folder leaves the next one to be read", async () => {
+  const dir = folder();
+  const parent = folder();
+  const { pid, line } = await agent({ CLAUDE_CONFIG_DIR: parent }, WRAPPER, [WAIT, dir]);
+  const child = Number(line);
+  running.push(() => process.kill(child, 9));
+  session(parent, pid, SESSION, { log: false });
+  const log = session(dir, child, OTHER);
+  expect(await find(pid)).toBe(log);
 });
 
 // Unreadable: Linux, a process that seals itself (root reads it anyway, so not as root); macOS, a system binary,
@@ -159,12 +185,12 @@ test("a folder that holds nothing for it never falls back to ~/.claude", async (
   expect(await find(pid)).toBe("");
 });
 
-test("a log only another folder holds isn't taken: its own session is pending", async () => {
+test("a log only another folder holds isn't taken", async () => {
   const dir = folder();
   const { pid } = await agent({ CLAUDE_CONFIG_DIR: dir });
   session(dir, pid, SESSION, { log: false });
   session(fallback, pid, SESSION);
-  expect(await find(pid)).toBe("pending");
+  expect(await find(pid)).toBe("");
 });
 
 test("the caller's own CLAUDE_CONFIG_DIR says nothing about the agent", async () => {
@@ -243,8 +269,9 @@ function standIns() {
   running.push(() => { process.env.PATH = path; });
   return () => (existsSync(called) ? readFileSync(called, "utf8").trim().split("\n") : []);
 }
-const webRestart = (labels, path) => new Agents({ terminals: new Map([["t1", { state: "live", argv: ["claude"], cwd: "/work",
-  foreground: { argv: ["claude"], cwd: "/work" }, labels }]]) }).restart("t1", { path }, { kind: "claude" });
+// An address no terminal has: were the guard to go, nothing real could be restarted on an installed machine.
+const webRestart = (labels, path) => new Agents({ terminals: new Map([["no-such-terminal", { state: "live", argv: ["claude"], cwd: "/work",
+  foreground: { argv: ["claude"], cwd: "/work" }, labels }]]) }).restart("no-such-terminal", { path }, { kind: "claude" });
 
 test("the web's restart refuses an agent under another folder, and nothing runs", async () => {
   const called = standIns(), log = join(folder(), "projects", "-work", `${SESSION}.jsonl`);

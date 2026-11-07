@@ -7,7 +7,8 @@
 // rollout file open, so the file is whatever rollout-*.jsonl its process (or a child) holds.
 // Both are exact: no guessing by folder or time, so two agents in one folder never get mixed up.
 
-// Prints the log's path on the agent's machine, or nothing. Args: kind, pid.
+// Prints the log's path on the agent's machine, "pending" for a session under ~/.claude with no
+// log yet, or nothing. Args: kind, pid.
 export const FIND = `
 kind="$1"; pid="$2"
 kids() { for k in $(pgrep -P "$1" 2>/dev/null); do echo "$k"; kids "$k"; done; }
@@ -86,7 +87,9 @@ for p in "$pid" $(kids "$pid"); do
     id=$(sed -n 's/.*"sessionId":"\\([0-9a-fA-F-]*\\)".*/\\1/p' "$j")
     [ -n "$id" ] || continue
     for f in "$d"/projects/*/"$id".jsonl; do [ -f "$f" ] && { printf '%s\\n' "$f"; exit 0; }; done
-    echo "pending"; exit 0
+    # Under another folder nothing, so no chat opens for an agent no guard can see yet: pending
+    # has no path for inOtherFolder (core/agents.js) to read, and the next look finds the log.
+    case "$d" in */.claude) echo "pending"; exit 0 ;; esac
   else
     if [ -d "/proc/$p/fd" ]; then
       f=$(for d in /proc/$p/fd/*; do readlink "$d"; done 2>/dev/null | grep '/rollout-.*\\.jsonl$' | head -1)
