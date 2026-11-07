@@ -1,4 +1,6 @@
 """bin/checkout-access through its command line, against real git repositories in temporary folders."""
+import importlib.machinery
+import importlib.util
 import json
 import os
 import shutil
@@ -7,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 ENV = {"PATH": os.environ["PATH"], "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
@@ -41,9 +44,36 @@ class CheckoutAccess(unittest.TestCase):
         git(repo, "commit", "-q", "-m", "base")
         return repo
 
-    def run_tool(self, command, cwd=None, script=None):
+    def run_tool(self, command, cwd=None, script=None, env=None):
         return subprocess.run([sys.executable, str(script or self.repo / "bin/checkout-access"), command], cwd=str(cwd or self.repo),
-                              env=ENV, capture_output=True, text=True)
+                              env={**ENV, **(env or {})}, capture_output=True, text=True)
+
+    def loaded_tool(self):
+        """The repository's own copy as a module, for what the command line can't time."""
+        loader = importlib.machinery.SourceFileLoader("checkout_access", str(self.repo / "bin/checkout-access"))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        tool = importlib.util.module_from_spec(spec)
+        loader.exec_module(tool)
+        return tool
+
+    def refused_after_a_write_during(self, command):
+        """Runs command while another writer changes the settings straight after its first read."""
+        tool, reads = self.loaded_tool(), []
+        real = tool.read_settings
+
+        def racing(path):
+            result = real(path)
+            if not reads:
+                reads.append(path)
+                self.settings.write_text('{"model": "theirs"}')
+            return result
+
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(str(self.repo))
+        with mock.patch.object(tool, "read_settings", racing), mock.patch.dict(os.environ, ENV):
+            with self.assertRaises(tool.Refusal) as caught:
+                getattr(tool, command)(None)
+        self.assertIn("changed while this ran", str(caught.exception))
 
     def applied(self, **kw):
         result = self.run_tool("apply", **kw)
@@ -149,6 +179,13 @@ class CheckoutAccess(unittest.TestCase):
         self.assert_refused(self.run_tool("apply"), "symbolic link")
         self.assertEqual(target.read_text(), "{}")
 
+    def test_a_linked_claude_folder_is_refused(self):
+        target = self.base / "real"
+        (self.repo / ".claude").rename(target)
+        (self.repo / ".claude").symlink_to(target)
+        self.assert_refused(self.run_tool("apply"), "symbolic link")
+        self.assertFalse((target / "settings.local.json").exists())
+
     def test_a_contract_that_reaches_outside_is_refused(self):
         for folder, words in (("..", "plain path"), ("../x", "plain path"), ("/etc", "plain path"), ("~/x", "plain path"),
                               (".", "plain path"), ("missing", "doesn't exist")):
@@ -199,6 +236,106 @@ class CheckoutAccess(unittest.TestCase):
         self.assert_refused(self.run_tool("rollback"), "isn't valid JSON")
         self.assertEqual(self.settings.read_text(), "{not json")
         self.assertTrue((self.repo / ".git/checkout-access.json").exists())
+
+    def test_a_callers_git_variables_cant_redirect_it(self):
+        other = self.make_repo(self.base / "other")
+        result = self.run_tool("apply", env={"GIT_DIR": str(other / ".git"), "GIT_WORK_TREE": str(other)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.listed(), [str(self.worktrees)])
+        self.assertFalse((other / ".claude/settings.local.json").exists())
+        self.assertFalse((other / ".git/checkout-access.json").exists())
+
+    def test_a_bare_repository_is_refused(self):
+        for name, words in (("store.git", "isn't a checkout"), (".git", "isn't the checkout")):
+            bare = self.base / "bare" / name
+            git(self.base, "clone", "-q", "--bare", str(self.repo), str(bare))
+            linked = self.base / "bare" / "linked" / name
+            git(bare, "worktree", "add", "-q", str(linked), "HEAD")
+            self.assert_refused(self.run_tool("apply", cwd=linked, script=linked / "bin/checkout-access"), words)
+            self.assertFalse((bare.parent / ".claude").exists())
+
+    def test_a_submodule_is_refused(self):
+        outer = self.make_repo(self.base / "outer")
+        git(outer, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(self.repo), "inner")
+        inner = outer / "inner"
+        self.assert_refused(self.run_tool("apply", cwd=inner, script=inner / "bin/checkout-access"), "isn't a checkout")
+        self.assertFalse((outer / ".claude/settings.local.json").exists())
+
+    def test_a_git_directory_kept_elsewhere_is_refused(self):
+        repo = self.base / "separate"
+        (repo / ".claude").mkdir(parents=True)
+        (repo / ".worktrees").mkdir()
+        (repo / "bin").mkdir()
+        (self.base / "store/.worktrees").mkdir(parents=True)
+        shutil.copy(ROOT / "bin/checkout-access", repo / "bin/checkout-access")
+        (repo / ".claude/checkout-access.json").write_text(json.dumps({"version": 1, "directories": [".worktrees"]}))
+        git(self.base, "init", "-q", f"--separate-git-dir={self.base / 'store/.git'}", str(repo))
+        self.assert_refused(self.run_tool("apply", cwd=repo, script=repo / "bin/checkout-access"), "isn't the checkout")
+        self.assertFalse((self.base / "store/.claude").exists())
+
+    def test_a_global_ignore_is_enough_to_keep_the_file_out_of_git(self):
+        git(self.repo, "rm", "-q", ".claude/.gitignore")
+        git(self.repo, "commit", "-q", "-m", "no local ignore")
+        self.assert_refused(self.run_tool("apply"), "Merge .claude/.gitignore")
+        ignore, config = self.base / "ignore", self.base / "config"
+        ignore.write_text("settings.local.json\n")
+        config.write_text(f"[core]\n\texcludesFile = {ignore}\n")
+        result = self.run_tool("apply", env={"GIT_CONFIG_GLOBAL": str(config)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.listed(), [str(self.worktrees)])
+
+    def test_apply_keeps_the_files_mode(self):
+        self.settings.write_text("{}")
+        self.settings.chmod(0o644)
+        self.applied()
+        self.assertEqual(self.settings.stat().st_mode & 0o777, 0o644)
+
+    def test_a_write_during_apply_leaves_the_record_as_it_was(self):
+        self.refused_after_a_write_during("apply")
+        self.assertEqual(self.settings.read_text(), '{"model": "theirs"}')
+        self.assertFalse((self.repo / ".git/checkout-access.json").exists())
+
+    def test_a_write_during_a_later_apply_restores_the_earlier_record(self):
+        self.applied()
+        record = self.repo / ".git/checkout-access.json"
+        before = record.read_text()
+        (self.repo / "sub/more").mkdir()
+        contract = self.repo / ".claude/checkout-access.json"
+        contract.write_text(json.dumps({"version": 1, "directories": [".worktrees", "sub/more"]}))
+        self.refused_after_a_write_during("apply")
+        self.assertEqual(record.read_text(), before)
+
+    def test_a_write_during_rollback_keeps_the_file_and_the_record(self):
+        self.applied()
+        self.refused_after_a_write_during("rollback")
+        self.assertEqual(self.settings.read_text(), '{"model": "theirs"}')
+        self.assertTrue((self.repo / ".git/checkout-access.json").exists())
+
+    def test_a_failed_write_leaves_no_temporary_file(self):
+        tool = self.loaded_tool()
+        with mock.patch.object(tool.os, "replace", side_effect=OSError("disk")), self.assertRaises(OSError):
+            tool.replace(str(self.settings), None, {})
+        self.assertEqual(sorted(p.name for p in self.settings.parent.iterdir()), [".gitignore", "checkout-access.json"])
+
+    def test_a_moved_repository_names_its_repair(self):
+        self.applied()
+        moved = self.base / "moved"
+        self.repo.rename(moved)
+        before = (moved / ".claude/settings.local.json").read_text()
+        for command in ("apply", "rollback"):
+            result = self.run_tool(command, cwd=moved, script=moved / "bin/checkout-access")
+            self.assert_refused(result, "by hand")
+            self.assertIn(str(self.worktrees), result.stderr)
+            self.assertIn(str(moved / ".git/checkout-access.json"), result.stderr)
+        self.assertEqual((moved / ".claude/settings.local.json").read_text(), before)
+
+    def test_a_record_it_cant_read_is_refused(self):
+        self.applied()
+        record = self.repo / ".git/checkout-access.json"
+        for value in ("[]", '{"version": 2}', '{"version": 1, "settings": "x", "added": 1, "created": []}'):
+            record.write_text(value)
+            self.assert_refused(self.run_tool("rollback"), "isn't a version 1 record")
+        self.assertEqual(self.listed(), [str(self.worktrees)])
 
     def test_rollback_with_nothing_applied_changes_nothing(self):
         self.assertIn("Nothing to roll back", self.run_tool("rollback").stdout)

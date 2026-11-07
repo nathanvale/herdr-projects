@@ -18,12 +18,14 @@ in a folder's path are resolved, and a folder that leaves the repository is refu
 import argparse
 import json
 import os
+import stat
 import subprocess
 import sys
 
 CONTRACT = os.path.join(".claude", "checkout-access.json")
 SETTINGS = os.path.join(".claude", "settings.local.json")
 RECORD = "checkout-access.json"
+CALLER_GIT = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE")
 
 
 class Refusal(Exception):
@@ -31,7 +33,9 @@ class Refusal(Exception):
 
 
 def git(folder, *args):
-    result = subprocess.run(["git", "-C", folder, *args], capture_output=True, text=True)
+    """Asks about folder itself: a caller's GIT_DIR would make two repositories look like one."""
+    env = {k: v for k, v in os.environ.items() if k not in CALLER_GIT}
+    result = subprocess.run(["git", "-C", folder, *args], capture_output=True, text=True, env=env)
     return result.returncode, result.stdout.strip()
 
 
@@ -49,7 +53,12 @@ def main_checkout():
         raise Refusal(f"{here} isn't a checkout with a .git folder.")
     if common_dir(os.getcwd()) != shared:
         raise Refusal(f"Run this inside the repository it belongs to: {os.path.dirname(shared)}.")
-    return here, os.path.dirname(shared), shared
+    root = os.path.dirname(shared)
+    code, top = git(root, "rev-parse", "--show-toplevel")
+    own = git(here, "rev-parse", "--absolute-git-dir")[1]
+    if code != 0 or os.path.realpath(top) != root or (os.path.realpath(own) == shared and here != root):
+        raise Refusal(f"{root} isn't the checkout that {shared} belongs to.")
+    return here, root, shared
 
 
 def wanted(here, root):
@@ -86,7 +95,8 @@ def settings_path(root):
     if git(root, "ls-files", "--error-unmatch", SETTINGS)[0] == 0:
         raise Refusal(f"{path} is tracked. Its paths are this machine's, so it must stay untracked.")
     if git(root, "check-ignore", "-q", SETTINGS)[0] != 0:
-        raise Refusal(f"Git doesn't ignore {path} in {root}, so it could be committed.")
+        raise Refusal(f"Git doesn't ignore {path} in {root}, so it could be committed. "
+                      f"Merge .claude/.gitignore to the branch checked out there, or ignore the file another way.")
     return path
 
 
@@ -113,25 +123,40 @@ def read_settings(path):
     return raw, data, listed
 
 
-def replace(path, raw, data):
-    """Writes data atomically, unless the file changed since it was read."""
+def unchanged(path, raw):
     if read_settings(path)[0] != raw:
         raise Refusal(f"{path} changed while this ran. Nothing changed: run it again.")
+
+
+def replace(path, raw, data):
+    """Writes data atomically, keeping the file's mode, unless it changed since it was read."""
+    unchanged(path, raw)
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    mode = 0o600 if raw is None else stat.S_IMODE(os.stat(path).st_mode)
     temporary = f"{path}.{os.getpid()}.tmp"
-    with open(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as f:
-        f.write(json.dumps(data, indent=2) + "\n")
-    os.replace(temporary, path)
+    try:
+        with open(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as f:
+            f.write(json.dumps(data, indent=2) + "\n")
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
 
 
 def read_record(shared):
+    path = os.path.join(shared, RECORD)
     try:
-        with open(os.path.join(shared, RECORD)) as f:
+        with open(path) as f:
             record = json.load(f)
     except FileNotFoundError:
         return None
     except (OSError, ValueError) as e:
         raise Refusal(f"This repository's record can't be read: {e}. Nothing changed.")
+    lists = isinstance(record, dict) and [record.get("added"), record.get("created")]
+    if not lists or record.get("version") != 1 or not isinstance(record.get("settings"), str) or not all(
+            isinstance(items, list) and all(isinstance(item, str) for item in items) for items in lists):
+        raise Refusal(f"{path} isn't a version 1 record. Nothing changed.")
     return record
 
 
@@ -140,6 +165,20 @@ def write_record(shared, record):
     with open(f"{path}.tmp", "w") as f:
         json.dump(record, f)
     os.replace(f"{path}.tmp", path)
+
+
+def restore_record(shared, previous):
+    if previous is None:
+        os.remove(os.path.join(shared, RECORD))
+    else:
+        write_record(shared, previous)
+
+
+def moved(shared, record, path):
+    """The record belongs to another path, so this can't tell what's safe to remove from this one."""
+    return Refusal(f"This repository's record names {record['settings']}, not {path}, so the repository moved. Nothing "
+                   f"changed. Remove these entries from {path} by hand: {', '.join(record['added'])}. "
+                   f"Then delete {os.path.join(shared, RECORD)}.")
 
 
 def plan():
@@ -166,16 +205,20 @@ def apply(_):
     if not add:
         print(f"Nothing to do: {path} already lists {', '.join(present)}.")
         return
-    record = read_record(shared) or {"version": 1, "settings": path, "added": [], "created": []}
-    if record.get("settings") != path:
-        raise Refusal(f"This repository's record names {record.get('settings')}, not {path}. Nothing changed.")
-    for name, missing in (("file", raw is None), ("permissions", "permissions" not in data),
-                          ("additionalDirectories", "additionalDirectories" not in data.get("permissions", {}))):
-        if missing and name not in record["created"]:
-            record["created"].append(name)
-    record["added"] = sorted({*record["added"], *add})
-    write_record(shared, record)
-    replace(path, raw, {**data, "permissions": {**data.get("permissions", {}), "additionalDirectories": listed + add}})
+    previous = read_record(shared)
+    record = previous or {"version": 1, "settings": path, "added": [], "created": []}
+    if record["settings"] != path:
+        raise moved(shared, record, path)
+    created = [name for name, missing in (("file", raw is None), ("permissions", "permissions" not in data),
+                                          ("additionalDirectories", "additionalDirectories" not in data.get("permissions", {})))
+               if missing and name not in record["created"]]
+    # The record goes first: after a crash here, rollback finds nothing of its own and changes nothing.
+    write_record(shared, {**record, "added": sorted({*record["added"], *add}), "created": record["created"] + created})
+    try:
+        replace(path, raw, {**data, "permissions": {**data.get("permissions", {}), "additionalDirectories": listed + add}})
+    except (Refusal, OSError):
+        restore_record(shared, previous)
+        raise
     for folder in add:
         print(f"Added: {folder}")
     print(f"Saved in {path}, which stays untracked.")
@@ -187,9 +230,9 @@ def rollback(_):
     if record is None:
         print("Nothing to roll back.")
         return
-    path = record.get("settings")
-    if path != os.path.join(os.path.dirname(shared), SETTINGS):
-        raise Refusal(f"This repository's record names {path}, which isn't this repository's. Nothing changed.")
+    path = os.path.join(os.path.dirname(shared), SETTINGS)
+    if record["settings"] != path:
+        raise moved(shared, record, path)
     raw, data, listed = read_settings(path)
     removed = [d for d in listed if d in record["added"]]
     kept = [d for d in listed if d not in record["added"]]
@@ -201,6 +244,7 @@ def rollback(_):
         if not permissions and "permissions" in record["created"]:
             del data["permissions"]
         if not data and "file" in record["created"]:
+            unchanged(path, raw)
             os.remove(path)
         elif removed:
             replace(path, raw, data)
@@ -220,7 +264,7 @@ def main():
     args = parser.parse_args()
     try:
         args.run(args)
-    except Refusal as e:
+    except (Refusal, OSError) as e:
         print(f"checkout-access: {e}", file=sys.stderr)
         return 1
     return 0
