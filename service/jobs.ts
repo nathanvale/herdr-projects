@@ -129,17 +129,18 @@ export class Jobs {
   }
 
   /** The hook asks a chat only while its flag is fresh (ask-hook.sh: 15 s): a page showing a Claude agent's chat
-   *  keeps it so, with or without the background work. Not while herdr-core is away: what it last listed may be gone,
-   *  and a call to another machine would wait and land once it's back. */
+   *  keeps it so, with or without the background work. While herdr-core is away a flag here is still touched (it's a
+   *  file, and so are the answers), but not another machine's: the call would wait and land once the core is back,
+   *  perhaps for a terminal gone since. */
   private flags() {
-    if (!this.hub.up) return;
     const now = new Date();
     for (const a of new Set(this.watched())) {
       const t: any = this.hub.terminals.get(a);
       if (!t || !/^([\w.-]+\/)?[\w.-]+$/.test(a) || t.state !== "live") continue;
       if ((t.status?.app ?? t.foreground?.name) !== "claude" && t.status?.app !== "claude-code") continue;
       if (a.includes("/")) {
-        // another machine's agent: its flag there, every 8 s at most
+        // another machine's agent: its flag there, every 8 s at most, while herdr-core is here
+        if (!this.hub.up) continue;
         const [m, id] = a.split("/");
         if (Date.now() - (this.flagged.get(a) ?? 0) < 8000) continue;
         this.flagged.set(a, Date.now());

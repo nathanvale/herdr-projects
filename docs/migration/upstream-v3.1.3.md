@@ -90,10 +90,19 @@ the background work's gate. Nothing else moves.
   Another machine's agent keeps its flag there through `machine.exec`, the same one
   `touch` with background work on or off; the cards there are already read and answered
   through that link (`service/asks.ts`).
-- Behaviour change, with background work on too: while herdr-core is away the round does
-  nothing, where it used to touch every flag from the last list and queue each
-  remote touch to land once the core was back, perhaps for a terminal gone since. An
-  outage under about 10 s keeps the flag fresh.
+- While herdr-core is away, flags here are touched from its last list as before: they and
+  the answers are files, so an outage doesn't affect them. Behaviour change, with background
+  work on too: another machine's flag isn't touched then, where each touch used to wait and
+  land once the core was back, perhaps for a terminal gone since; the first round after it's
+  back sends one instead, within 4 s. That flag reaches its machine only through the core,
+  so an outage still lets it go stale as before. It's touched every 8 to 12 s, so about 3 s
+  of outage can be enough and over about 11 s always is, within the hook's 15 s.
+- Existing limitation, the same with background work on: closing the window's chat
+  (`close()` in `mods/chat/main.js`) deletes the flag and empties every request waiting on
+  that terminal, so a card about to be answered on a page goes to the terminal instead.
+  The service makes the flag again within 4 s, for the next request. While the window and
+  a page show one chat, both can answer one request; the hook takes the first answer file
+  it sees.
 - With background work off and a window there, a request from an agent whose chat a page
   follows now waits for a chat's answer instead of going straight to the terminal, as it
   already did with background work on. The window's own flag code is unchanged.

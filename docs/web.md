@@ -25,7 +25,8 @@ connection it came on). A page from anywhere else can't change anything: writes 
   them itself. With `SHEPHERDR_JOBS=off` the service runs none of it: a window there does, and with none nothing does.
 - A web page's question and permission cards don't need that: while a page follows a Claude agent's chat, the service
   keeps its ask flag fresh (`data/chat-asks/open/<terminal>`, on the agent's machine), so the agent's hook asks the
-  page. It does with the background work off too, and touches only that flag; it pauses while herdr-core is away.
+  page. It does with the background work off too, and touches only that flag; another machine's waits while
+  herdr-core is away.
 - The logic both sides share is in `core/` (plain JavaScript): the mods get copies (`bin/sync-shared`), the service
   imports it. `lib/features.json` lists every feature with its Herdr side, its web side and its shared logic; CI
   checks both sides are there.

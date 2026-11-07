@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, expect, test } from "bun:test";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,6 +10,7 @@ import { join } from "node:path";
 // No agent, model, tick, scheduler or vault is reached.
 
 const root = mkdtempSync(join(tmpdir(), "shep-jobs-flags-"));
+afterAll(() => rmSync(root, { recursive: true, force: true }));
 let made = 0;
 const folder = () => { const f = join(root, String(made++)); mkdirSync(f, { recursive: true }); return f; };
 
@@ -23,10 +24,11 @@ function standIns() {
 }
 
 // The child's own pieces: a hub as service/hub.ts shows itself (terminals, up, on, call; a call made while herdr-core
-// is away waits until it's back, as Hub.core() does), the flag's age, and the result as its last line.
+// is away waits until it's back, as Hub.core() does, and is noted when it's made), the flag's age, waits that poll
+// until a deadline, and the result as its last line.
 const CHILD = `
-import { statSync, utimesSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, statSync, utimesSync } from "node:fs";
+import { dirname, join } from "node:path";
 const { Jobs } = await import(process.argv[2]);
 const input = JSON.parse(process.argv[3]);
 const OPEN = join(process.env.HERDR_APP_HOME, "data", "chat-asks", "open");
@@ -36,26 +38,32 @@ process.on("unhandledRejection", (e) => errors.push(String(e)));
 const listeners = new Set();
 let back = null;
 const sent = [];
+const record = (t) => [t.address, t];
 const hub = {
   up: true,
-  terminals: new Map(input.terminals.map((t) => [t.address, t])),
+  terminals: new Map(input.terminals.map(record)),
   on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
   emit(e) { for (const fn of listeners) fn(e); },
   async call(method, params) {
+    sent.push({ method, on: params.on ?? null, argv: params.argv ?? null, away: !this.up });
     if (!this.up) await new Promise((r) => (back = r));
-    sent.push({ method, on: params.on ?? null, argv: params.argv ?? null });
     if (input.callsFail) throw new Error("no answer");
     return { code: 0, stdout: "" };
   },
   down() { this.up = false; this.emit({ type: "reset" }); },
-  again(terminals) { this.terminals = new Map(terminals.map((t) => [t.address, t])); this.up = true; this.emit({ type: "reset" }); back?.(); back = null; },
+  again(terminals) { this.terminals = new Map(terminals.map(record)); this.up = true; this.emit({ type: "reset" }); back?.(); back = null; },
 };
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const wait = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
+// true once ok() is, polled until the deadline
+const until = async (ok, ms = 12_000) => { const end = Date.now() + ms; while (Date.now() < end) { if (ok()) return true; await wait(100); } return Boolean(ok()); };
 // seconds since the flag was touched, or null for no flag
 const age = (a) => { try { return Math.round((Date.now() - statSync(join(OPEN, a)).mtimeMs) / 1000); } catch { return null; } };
+const fresh = (a) => { const s = age(a); return s !== null && s < 15; };
 // a minute old, as a page gone long since (none there: nothing to age)
 const stale = (...as) => { const old = new Date(Date.now() - 60_000); for (const a of as) try { utimesSync(join(OPEN, a), old, old); } catch {} };
-const ROUND = 4600;   // one round of the flags (every 4 s) and a little
+const sentTo = (id, from = 0) => sent.slice(from).filter((c) => c.argv?.at(-1) === id);
+const called = () => { try { return readFileSync(join(dirname(process.argv[1]), "called"), "utf8").trim().split("\\n"); } catch { return []; } };
+const ROUND = 5000;   // one round of the flags (every 4 s) and a second more: for what must not happen
 const jobs = new Jobs(hub, null);
 let following = input.follow;
 jobs.watched = () => following;
@@ -63,17 +71,24 @@ const out = {};
 const finish = () => { console.log(JSON.stringify({ ...out, sent, errors })); process.exit(0); };
 `;
 
+// A child that hasn't finished by then is killed, and its test fails with what it wrote.
 async function child(code: string, input: unknown, env: Record<string, string>, app = folder()) {
   const { bin, called } = standIns(), home = folder();
   const script = join(bin, "child.mjs");
   writeFileSync(script, CHILD + code);
   const p = Bun.spawn([process.execPath, script, join(import.meta.dir, "jobs.ts"), JSON.stringify(input)], {
     cwd: home, env: { PATH: bin, HOME: home, HERDR_APP_HOME: app, SHEPHERDR_DATA: join(home, "data"), ...env }, stdout: "pipe", stderr: "pipe" });
-  const [text, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
-  await p.exited;
-  const last = text.trim().split("\n").pop() ?? "";
-  if (!last.startsWith("{")) throw new Error(err || text);
-  return { ...JSON.parse(last), called: called() };
+  const timer = setTimeout(() => p.kill(), 50_000);
+  try {
+    const [text, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
+    await p.exited;
+    const last = text.trim().split("\n").pop() ?? "";
+    if (!last.startsWith("{")) throw new Error(`child ended without a result (${p.signalCode ?? p.exitCode}): ${err || text}`);
+    return { ...JSON.parse(last), called: called() };
+  } finally {
+    clearTimeout(timer);
+    if (p.exitCode === null && p.signalCode === null) p.kill();
+  }
 }
 
 const claude = (address: string, state = "live") => ({ address, state, foreground: { name: "claude" }, labels: {} });
@@ -88,15 +103,13 @@ function oldLayout() {
   return app;
 }
 
-// Each case runs from the start, side by side, so the file takes one case's time.
+// Each case runs from the start, side by side, so the file takes the longest case's time.
 const off = child(`
 jobs.start();
 hub.emit({ type: "labels", terminal: "vm/t3" });
-await wait(ROUND);
-out.first = age("t1");
+out.first = await until(() => fresh("t1") && sentTo("t2").length > 0);
 stale("t1");
-await wait(ROUND);
-out.kept = age("t1");
+out.kept = await until(() => fresh("t1"));
 following = [];
 stale("t1");
 const before = sent.length;
@@ -104,37 +117,39 @@ await wait(ROUND);
 out.left = age("t1");
 out.sentAfterLeaving = sent.length - before;
 finish();
-`, { terminals: [claude("t1"), { ...claude("vm/t2") }, { address: "vm/t3", state: "live", labels: { "herdr.secret.want": "w1", "herdr.role": "coordinator" } }], follow: ["t1", "vm/t2"] },
+`, { terminals: [claude("t1"), claude("vm/t2"), { address: "vm/t3", state: "live", labels: { "herdr.secret.want": "w1", "herdr.role": "coordinator" } }], follow: ["t1", "vm/t2"] },
 { SHEPHERDR_JOBS: "off" });
 
 const on = child(`
 jobs.start();
 hub.emit({ type: "labels", terminal: "vm/t3" });
-await wait(ROUND);
-out.first = age("t1");
+out.first = await until(() => fresh("t1") && sentTo("t2").length > 0);
 stale("t1");
-await wait(ROUND);
-out.kept = age("t1");
+out.kept = await until(() => fresh("t1"));
+out.ticked = await until(() => called().length >= 5);
 finish();
 `, { terminals: [claude("t1"), claude("vm/t2"), { address: "vm/t3", state: "live", labels: { "herdr.secret.want": "w1", "herdr.role": "coordinator" } }], follow: ["t1", "vm/t2"] },
 { SHEPHERDR_JOBS: "on" });
 
+// Away just after a touch on the other machine and for over three rounds, so its 8 s spacing can't hide one; back
+// without t4 and vm/t8, gone meanwhile.
 const reconnect = child(`
 jobs.start();
-await wait(ROUND);
-out.first = [age("t1"), age("t4")];
+out.first = await until(() => fresh("t1") && fresh("t4") && sentTo("t5").length > 0 && sentTo("t8").length > 0);
+const awayAt = Date.now();
 hub.down();
 stale("t1", "t4");
-const before = sent.length;
-await wait(ROUND);
-out.whileAway = [age("t1"), age("t4")];
-hub.again([input.terminals[0]]);
+out.localWhileAway = await until(() => fresh("t1") && fresh("t4"));
+await wait(14_000 - (Date.now() - awayAt));
+out.remoteWhileAway = sent.filter((c) => c.away).length;
+const before = sent.length, backAt = Date.now();
+hub.again([input.terminals[0], input.terminals[2]]);
 stale("t4");
-await wait(ROUND);
-out.after = [age("t1"), age("t4")];
-out.goneSentAfter = sent.slice(before).filter((c) => c.on === "vm").length;
+out.remoteBack = await until(() => sentTo("t5", before).length > 0);
+await wait(ROUND - (Date.now() - backAt));
+out.after = { t1: fresh("t1"), t4: age("t4"), t8: sentTo("t8", before).length };
 finish();
-`, { terminals: [claude("t1"), claude("t4"), claude("vm/t5")], follow: ["t1", "t4", "vm/t5"] },
+`, { terminals: [claude("t1"), claude("t4"), claude("vm/t5"), claude("vm/t8")], follow: ["t1", "t4", "vm/t5", "vm/t8"] },
 { SHEPHERDR_JOBS: "off" });
 
 // The flag folder's place taken by a file: every write fails until it's cleared.
@@ -145,17 +160,18 @@ const failing = (() => {
   return child(`
 import { rmSync } from "node:fs";
 jobs.start();
+await until(() => sentTo("t2").length > 0);
 await wait(ROUND);
 out.blocked = age("t1");
 rmSync(OPEN);
-await wait(ROUND);
-out.cleared = age("t1");
+out.cleared = await until(() => fresh("t1"));
 finish();
 `, { terminals: [claude("t1"), claude("vm/t2")], follow: ["t1", "vm/t2"], callsFail: true }, { SHEPHERDR_JOBS: "off" }, app);
 })();
 
 const kinds = child(`
 jobs.start();
+out.flagged = await until(() => fresh("t1") && fresh("t2"));
 await wait(ROUND);
 out.ages = Object.fromEntries(input.follow.map((a) => [a, age(a)]));
 finish();
@@ -174,9 +190,8 @@ const T = 60_000;
 test("background work off: a followed Claude chat's flag is made and kept fresh, here and on its own machine", async () => {
   const r = await off;
   expect(r.errors).toEqual([]);
-  expect(r.first).not.toBeNull();
-  expect(r.first).toBeLessThan(15);
-  expect(r.kept).toBeLessThan(15);
+  expect(r.first).toBe(true);
+  expect(r.kept).toBe(true);
   expect(flagArgv(r.sent).map((c: any) => [c.on, c.argv.at(-1)])).toContainEqual(["vm", "t2"]);
 }, T);
 
@@ -196,26 +211,27 @@ test("a page that stops following: its flag isn't touched again and goes stale",
 test("background work on: as before, the tick and scheduler here and on the other machine, secrets served, and the flag kept", async () => {
   const r = await on;
   expect(r.errors).toEqual([]);
+  expect(r.ticked).toBe(true);
   expect(r.called).toContain("herdr-task tick --json");
   expect(r.called).toContain("herdr-task scheduler --ensure --json");
   expect(r.called).toContain("herdr-task --on vm tick --json");
   expect(r.called).toContain("herdr-task --on vm scheduler --ensure --json");
   expect(r.called).toContain("herdr-secret serve vm/t3");
-  expect(r.first).toBeLessThan(15);
-  expect(r.kept).toBeLessThan(15);
+  expect(r.first).toBe(true);
+  expect(r.kept).toBe(true);
   expect(flagArgv(r.sent).map((c: any) => [c.on, c.argv.at(-1)])).toContainEqual(["vm", "t2"]);
 }, T);
 
-test("herdr-core away and back: nothing is touched while it's away, a terminal gone since isn't touched, the rest is", async () => {
+test("herdr-core away: flags here stay fresh, none goes to another machine; back: that resumes, and nothing gone meanwhile is touched", async () => {
   const r = await reconnect;
   expect(r.errors).toEqual([]);
-  expect(r.first[0]).toBeLessThan(15);
-  expect(r.first[1]).toBeLessThan(15);
-  expect(r.whileAway[0]).toBeGreaterThanOrEqual(55);
-  expect(r.whileAway[1]).toBeGreaterThanOrEqual(55);
-  expect(r.after[0]).toBeLessThan(15);
-  expect(r.after[1]).toBeGreaterThanOrEqual(55);
-  expect(r.goneSentAfter).toBe(0);
+  expect(r.first).toBe(true);
+  expect(r.localWhileAway).toBe(true);
+  expect(r.remoteWhileAway).toBe(0);
+  expect(r.remoteBack).toBe(true);
+  expect(r.after.t1).toBe(true);
+  expect(r.after.t4).toBeGreaterThanOrEqual(55);
+  expect(r.after.t8).toBe(0);
   expect(r.called).toEqual([]);
 }, T);
 
@@ -223,7 +239,7 @@ test("a flag that can't be written, here or on another machine, throws nothing, 
   const r = await failing;
   expect(r.errors).toEqual([]);
   expect(r.blocked).toBeNull();
-  expect(r.cleared).toBeLessThan(15);
+  expect(r.cleared).toBe(true);
   expect(flagArgv(r.sent).length).toBeGreaterThan(0);
   expect(r.called).toEqual([]);
 }, T);
@@ -231,8 +247,7 @@ test("a flag that can't be written, here or on another machine, throws nothing, 
 test("a window that keeps the background work: only a live Claude agent's chat is flagged, never another agent or a finished one", async () => {
   const r = await kinds;
   expect(r.errors).toEqual([]);
-  expect(r.ages.t1).toBeLessThan(15);
-  expect(r.ages.t2).toBeLessThan(15);
+  expect(r.flagged).toBe(true);
   for (const a of ["t3", "t4", "t5"]) expect(r.ages[a]).toBeNull();
   expect(r.sent).toEqual([]);
   expect(r.called).toEqual([]);
