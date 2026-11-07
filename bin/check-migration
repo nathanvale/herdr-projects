@@ -29,6 +29,10 @@ OVERRIDES = {'AGENTS.md', 'docs/develop.md', '.github/workflows/check.yml'}
 # admitted path's content; this table, not the manifest, decides what a phase may touch.
 PHASES = {
     'S0': frozenset(),
+    'A1': frozenset('''mods/tasks/bin/herdr_task/__init__.py mods/tasks/bin/herdr_task/automations.py
+mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py
+mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/takeover.py service/azure-deployments.test.ts
+service/azure-deployments.ts test/azure-binding.cases.json test/test_providers.py'''.split()),
     'N1': frozenset('''docs/install.md mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py
 mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/tick.py test/test_herdr_task.py
 test/test_native_publication.py'''.split()),

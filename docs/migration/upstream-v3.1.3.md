@@ -1,7 +1,8 @@
 # Full 3.x source migration
 
-S0 is a source-only foundation; N1 adds native pull request adoption and fail-closed
-publication on it. Required Bitbucket, Azure and lifecycle ports are
+S0 is a source-only foundation; A1 adds provider launch plans and deployment discovery
+owners on it, with Azure dispatch held, and N1 adds native pull request adoption and
+fail-closed publication. Required Bitbucket, Azure and lifecycle ports are
 pending. This checkpoint is not deployable or ready for application use. Check's
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
@@ -46,6 +47,34 @@ owners, not implemented interfaces.
 | L2 | A2, L1 | Native revive/watch/manual restart through that owner; independent qualification and conditional retirement. |
 | Q | B2, A2, L2 | Exact candidate CI/public process proof; all required ports and old proof obligations resolved. |
 | R | Q, human state choices | Separately admitted rehearsal and matching executable/state rollback. |
+
+### A1 provider checkpoint
+
+`bin/check-migration` names each phase's admitted owner paths; the manifest's
+`source_deltas` pins each one's content hash and exact-U blob. The gate proves two
+things: every U path outside that table and outside the three overrides is
+byte-identical to U with U's mode, and each admitted path matches its pin (an
+admitted U path keeps exact U's mode; an admitted added path is a plain file). A
+symbolic link at an admitted path or at a U path outside the overrides refuses, even
+to identical content. The three overrides (`AGENTS.md`, `docs/develop.md`, `.github/workflows/check.yml`) are
+skipped whole, content and mode. They, the checker, the manifest and added files
+outside the table are not pinned by it and rely on review. Candidate readiness
+stays blocked.
+
+- `T/providers.py` owns nonsecret bindings, the four supported launch plans and the
+  admission gate. Start, queue, resume, switch, backup, the tick's queue and an
+  automation's run consult it. A valid Azure plan is held, not dispatched.
+- `service/azure-deployments.ts` owns explicit read-only discovery. Nothing calls it yet.
+- Hard A2 prerequisite: coordinator launch sites (`service/actions.ts`,
+  `service/spaces.ts`, `service/agents.ts`, `mods/chat/main.js`,
+  `mods/coordinator/restart.sh`) do not read the binding. No control, command or
+  selector may set an Azure route until each refuses or plans through the provider owner.
+- Carried to L1: binding the execution machine. A pushed settings copy refuses Azure,
+  but a Serve-from host's file is its own.
+- Carried to Q: empty settings `env` values are documented as unset for provider
+  selection only; the same treatment of endpoint, credential and model variables is unproved.
+  The backup's gate has in-module proof only; its public-process proof is Q's.
+- Detail, official sources and authored regressions: [Azure launch plans](../azure-launch-plans.md).
 
 ### N1 native publication checkpoint
 
@@ -171,7 +200,8 @@ tests do not establish fork parity. Old optional production-plugin proof is not
 silently considered covered by default tests.
 
 Root runs `python3 bin/check-migration`, its public-CLI checkpoint tests
-(`test/test_migration.py`), the N1 publication tests (`test/test_native_publication.py`)
+(`test/test_migration.py`), the A1 provider and discovery tests (`test/test_providers.py`,
+`service/azure-deployments.test.ts`), the N1 publication tests (`test/test_native_publication.py`)
 and every native Check command. CI owns frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.

@@ -22,6 +22,7 @@ from .automations import auto_list, cmd_auto, cmd_scheduler, cmd_track, EVENTS, 
 from .machines import cmd_assistants, cmd_machines, cmd_sync_auto, cmd_tell
 from .autopilot import cmd_autopilot, cmd_complete, cmd_progress
 from .home import cmd_home
+from .providers import cmd_provider
 
 
 # ---- another machine ------------------------------------------------------------------------
@@ -376,6 +377,16 @@ def main():
     c.add_argument("text")
     c.add_argument("--json", action="store_true")
     c.set_defaults(fn=cmd_tell)
+    pr = sub.add_parser("provider", help="Personal or Azure Foundry: how an agent would be routed (plan); read-only").add_subparsers(dest="provider")
+    plan_help = ("the launch plan for one CLI under this folder's settings: its route, deployment, sign-in method "
+                 "and the variable's name its key comes from. Reads no credential, starts nothing, signs in nowhere")
+    c = pr.add_parser("plan", help=plan_help, description=plan_help)
+    c.add_argument("--agent", help="the CLI: claude or codex")
+    c.add_argument("--argv", help="how it would be started, as a JSON list (default from --agent)")
+    c.add_argument("--space", help="the space whose settings apply (default: the folder's)")
+    c.add_argument("--folder", help="the task folder (default: here)")
+    c.add_argument("--json", action="store_true")
+    c.set_defaults(fn=cmd_provider)
     c = cmd("fix", cmd_fix, "ask the task's agent to fix what keeps its pull request from merging")
     agent_opts(c)
     c.add_argument("--space")

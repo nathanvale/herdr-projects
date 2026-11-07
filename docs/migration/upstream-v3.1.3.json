@@ -17,6 +17,18 @@
       "sha256": "9f2d62afbd739b532cde0c40f8bcc6300014ed7ff9bc2475234bbbafccb92c6e"
     },
     {
+      "phase": "A1",
+      "path": "mods/tasks/bin/herdr_task/__init__.py",
+      "upstream_blob": "3d166c20ba39b46df4d797acfabeaeac0e28aa21",
+      "sha256": "a37c4824011019f5a5fea27df8fdbbe14e194b72c098d20afd35345c5e4b358d"
+    },
+    {
+      "phase": "A1",
+      "path": "mods/tasks/bin/herdr_task/automations.py",
+      "upstream_blob": "da572d86b2977cf6c08e7a5eb55869b699c6f876",
+      "sha256": "8f7b0fb518d0a0efdf7eb7eabe0df42fde7d0fa01e0b88f8750a3e5faecf09f8"
+    },
+    {
       "phase": "N1",
       "path": "mods/tasks/bin/herdr_task/cli.py",
       "upstream_blob": "a4689c769c8d483e52339aa087ef6d068462a994",
@@ -35,10 +47,46 @@
       "sha256": "874a8bbf640815cf448cd9a260718d2281a2f00b26d24e8ddf324e120929aedd"
     },
     {
+      "phase": "A1",
+      "path": "mods/tasks/bin/herdr_task/launch.py",
+      "upstream_blob": "2b6472babbde8057bc0718e8783e44076a9f1c85",
+      "sha256": "3a9e28cecc4295dc7922f7520e3fddb8ba9184c4065793fccd18f9fc84bcb409"
+    },
+    {
+      "phase": "A1",
+      "path": "mods/tasks/bin/herdr_task/providers.py",
+      "upstream_blob": null,
+      "sha256": "e97fc9b5f9fc456c7aa3ece820a29da9c02351f8d965a39038a988e9ff825c28"
+    },
+    {
+      "phase": "A1",
+      "path": "mods/tasks/bin/herdr_task/takeover.py",
+      "upstream_blob": "5af6c073493766adc3b052cb3677b75e71beb14b",
+      "sha256": "6876bcbaa82aa62004f92f37b4d0d7c5c463c417da573c4c726ca0e169a61f8d"
+    },
+    {
       "phase": "N1",
       "path": "mods/tasks/bin/herdr_task/tick.py",
       "upstream_blob": "7f88c8b41da539c48311c26cceb67946fa62a99b",
       "sha256": "68daaabff03779216b75f086a4e83528690c3334ffa1973022d6424e8f3fb7c4"
+    },
+    {
+      "phase": "A1",
+      "path": "service/azure-deployments.test.ts",
+      "upstream_blob": null,
+      "sha256": "2b9ced12a88a108de5477b902462540a7a387046c75dc851ada625df1dfa46d8"
+    },
+    {
+      "phase": "A1",
+      "path": "service/azure-deployments.ts",
+      "upstream_blob": null,
+      "sha256": "7805d841023f35efaf8280e5cb0f85e18f58a743436df5756ac07168263400d7"
+    },
+    {
+      "phase": "A1",
+      "path": "test/azure-binding.cases.json",
+      "upstream_blob": null,
+      "sha256": "ed74e094fe3c3411b5f8af21af848bbe6b65cdc4573ff162d07ccb8ebeb15afc"
     },
     {
       "phase": "N1",
@@ -51,6 +99,12 @@
       "path": "test/test_native_publication.py",
       "upstream_blob": null,
       "sha256": "fee2123952c29d40fb45ca4edff0d16ca6897d61fe5cb98c1e34caa704b3a9b9"
+    },
+    {
+      "phase": "A1",
+      "path": "test/test_providers.py",
+      "upstream_blob": null,
+      "sha256": "df45bf34a173658598b6e63befc3b49bd1383453b322f901668f900e5dcd389d"
     }
   ],
   "requirements": [
@@ -349,7 +403,7 @@
         },
         {
           "path": "mods/tasks/bin/herdr_task/providers.py",
-          "existing": false
+          "existing": true
         }
       ],
       "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
@@ -359,7 +413,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 source and authored regressions; CI and native qualification pending"
     },
     {
       "id": "azure-claude-entra",
@@ -369,7 +423,7 @@
       "owners": [
         {
           "path": "mods/tasks/bin/herdr_task/providers.py",
-          "existing": false
+          "existing": true
         }
       ],
       "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
@@ -379,7 +433,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 source and authored regressions; blanking inactive credential, endpoint and model variables with empty settings env values is documented for provider selection only and is for Q to prove; CI and native qualification pending"
     },
     {
       "id": "azure-claude-key",
@@ -389,7 +443,7 @@
       "owners": [
         {
           "path": "mods/tasks/bin/herdr_task/providers.py",
-          "existing": false
+          "existing": true
         }
       ],
       "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
@@ -399,7 +453,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 source and authored regressions; blanking inactive credential, endpoint and model variables with empty settings env values is documented for provider selection only and is for Q to prove; CI and native qualification pending"
     },
     {
       "id": "azure-claude-token",
@@ -409,7 +463,7 @@
       "owners": [
         {
           "path": "mods/tasks/bin/herdr_task/providers.py",
-          "existing": false
+          "existing": true
         }
       ],
       "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
@@ -419,7 +473,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 source and authored regressions; blanking inactive credential, endpoint and model variables with empty settings env values is documented for provider selection only and is for Q to prove; CI and native qualification pending"
     },
     {
       "id": "azure-codex-key",
@@ -429,7 +483,7 @@
       "owners": [
         {
           "path": "mods/tasks/bin/herdr_task/providers.py",
-          "existing": false
+          "existing": true
         }
       ],
       "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
@@ -439,7 +493,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 source and authored regressions; CI and native qualification pending"
     },
     {
       "id": "azure-credential-custody",
@@ -449,7 +503,7 @@
       "owners": [
         {
           "path": "mods/tasks/bin/herdr_task/providers.py",
-          "existing": false
+          "existing": true
         },
         {
           "path": "service/settings.ts",
@@ -463,7 +517,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 source and authored regressions: the planner names variables only and refuses an argv that carries the plan's credential variable; execution-machine binding is carried to L1; CI and native qualification pending"
     },
     {
       "id": "azure-discovery",
@@ -473,7 +527,7 @@
       "owners": [
         {
           "path": "service/azure-deployments.ts",
-          "existing": false
+          "existing": true
         },
         {
           "path": "service/settings.ts",
@@ -487,7 +541,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 discovery owner and authored regressions; A2 settings surfaces, CI and native qualification pending"
     },
     {
       "id": "azure-discovery-scope",
@@ -497,7 +551,7 @@
       "owners": [
         {
           "path": "service/azure-deployments.ts",
-          "existing": false
+          "existing": true
         }
       ],
       "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
@@ -507,7 +561,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 discovery owner and authored regressions; A2 settings surfaces, CI and native qualification pending"
     },
     {
       "id": "azure-discovery-stale",
@@ -517,7 +571,7 @@
       "owners": [
         {
           "path": "service/azure-deployments.ts",
-          "existing": false
+          "existing": true
         }
       ],
       "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
@@ -527,7 +581,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A1 discovery owner and authored regressions; A2 settings surfaces, CI and native qualification pending"
     },
     {
       "id": "azure-settings-surfaces",
@@ -555,7 +609,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; hard prerequisite recorded by A1: coordinator launch sites must refuse or plan through T/providers.py before any control, command or selector can set an Azure route; native qualification pending"
     },
     {
       "id": "azure-new-start",
@@ -583,7 +637,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; hard prerequisite recorded by A1: coordinator launch sites must refuse or plan through T/providers.py before any control, command or selector can set an Azure route; native qualification pending"
     },
     {
       "id": "azure-bound-resume",
@@ -593,7 +647,7 @@
       "owners": [
         {
           "path": "mods/tasks/bin/herdr_task/providers.py",
-          "existing": false
+          "existing": true
         },
         {
           "path": "mods/tasks/bin/herdr_task/revive.py",
@@ -625,7 +679,7 @@
         },
         {
           "path": "mods/tasks/bin/herdr_task/providers.py",
-          "existing": false
+          "existing": true
         }
       ],
       "port_source": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
@@ -939,7 +993,7 @@
         ".github/workflows/foundry.yml",
         ".github/workflows/core-rewrite.yml"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; pending regression obligation recorded at A1: public-process proof through herdr-task tick that a backup takeover is held by the provider gate before the task's one backup is spent (A1 has in-module proof only in test/test_providers.py, with no stand-in and no coverage claimed); native qualification pending"
     },
     {
       "id": "matching-state-rollback",
@@ -970,7 +1024,7 @@
     }
   ],
   "inventory": "upstream-v3.1.3-files.json",
-  "source_claim": "native foundation only; no required fork port is implemented or runtime-qualified",
+  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held; no required fork port is complete, CI-proved or runtime-qualified",
   "azure_cli_design": {
     "skill": "my-second-brain-playground:cli-design",
     "route": "maintain/extend existing-project",
