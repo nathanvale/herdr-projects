@@ -1,22 +1,74 @@
 // Shared core: the source is core/chat-log.js (was mods/chat/log.js); the chat mod, the service and the web
 // app read agents' logs with it. bin/sync-shared copies it into mods/chat/core/. Edit it here, never a copy.
 // Finding an agent's own session log and reading it as a conversation.
-// Claude Code: ~/.claude/sessions/<pid>.json names the session its process writes, so the
-// log is ~/.claude/projects/*/<sessionId>.jsonl. Codex keeps its rollout file open, so the
-// file is whatever rollout-*.jsonl its process (or a child) holds. Both are exact: no
-// guessing by folder or time, so two agents in one folder never get mixed up.
+// Claude Code: <folder>/sessions/<pid>.json names the session its process writes, so the
+// log is <folder>/projects/*/<sessionId>.jsonl. The folder is that process's own, as
+// claude_dir below reads it (T/sessions.py's claude_dir() is the same rule). Codex keeps its
+// rollout file open, so the file is whatever rollout-*.jsonl its process (or a child) holds.
+// Both are exact: no guessing by folder or time, so two agents in one folder never get mixed up.
 
 // Prints the log's path on the agent's machine, or nothing. Args: kind, pid.
 export const FIND = `
 kind="$1"; pid="$2"
 kids() { for k in $(pgrep -P "$1" 2>/dev/null); do echo "$k"; kids "$k"; done; }
+# The folder Claude Code uses in process $1, from that process's own environment, never this
+# shell's: its CLAUDE_CONFIG_DIR, or ~/.claude when it has none. Fails, so no other folder is
+# tried, when that can't be read exactly: no way to read it here, an empty environment (macOS
+# shows a system binary's so, and a set variable looks unset), or a value that isn't one
+# absolute path. Status 3 is "read, and unset". Takes only that variable, and keeps nothing else.
+claude_dir() {
+  case "$(uname)" in
+    Linux)
+      c=$(LC_ALL=C tr 2>/dev/null '\\n\\0' '\\1\\n' < "/proc/$1/environ" | LC_ALL=C awk -v n=CLAUDE_CONFIG_DIR= '
+        index($0, n) == 1 { print substr($0, length(n) + 1); f = 1; exit }
+        END { exit (f ? 0 : (NR ? 3 : 2)) }') ;;
+    Darwin)
+      c=$(python3 2>/dev/null -c '
+import ctypes, os, sys
+size = ctypes.c_size_t(os.sysconf("SC_ARG_MAX"))
+buf = ctypes.create_string_buffer(size.value)
+mib = (ctypes.c_int * 3)(1, 49, int(sys.argv[1]))  # CTL_KERN, KERN_PROCARGS2
+if ctypes.CDLL(None).sysctl(mib, ctypes.c_uint(3), buf, ctypes.byref(size), None, ctypes.c_size_t(0)):
+    sys.exit(2)
+data = buf.raw[:size.value]
+# argc, the executable and its padding, then argv, then the environment up to an empty string.
+words = data[4:].split(b"\\0")
+i = 1
+while i < len(words) and not words[i]:
+    i += 1
+env = words[i + int.from_bytes(data[:4], sys.byteorder):]
+env = env[:env.index(b"")] if b"" in env else []
+if not env:
+    sys.exit(2)
+for e in env:
+    if e.startswith(b"CLAUDE_CONFIG_DIR="):
+        if b"\\n" in e:
+            sys.exit(2)
+        os.write(1, e[18:])
+        sys.exit(0)
+sys.exit(3)
+' "$1") ;;
+    *) return 1 ;;
+  esac
+  case $? in
+    0) ;;
+    3) printf '%s\\n' "$HOME/.claude"; return 0 ;;
+    *) return 1 ;;
+  esac
+  case "$c" in
+    /*[[:cntrl:]]*|[!/]*|"") return 1 ;;
+  esac
+  printf '%s\\n' "$c"
+}
 for p in "$pid" $(kids "$pid"); do
   if [ "$kind" = claude ]; then
-    j="$HOME/.claude/sessions/$p.json"
+    d=$(claude_dir "$p") || continue
+    j="$d/sessions/$p.json"
     [ -f "$j" ] || continue
+    [ "$(sed -n 's/.*[{,]"pid":\\([0-9]*\\)[,}].*/\\1/p' "$j")" = "$p" ] || continue
     id=$(sed -n 's/.*"sessionId":"\\([0-9a-fA-F-]*\\)".*/\\1/p' "$j")
     [ -n "$id" ] || continue
-    for f in "$HOME"/.claude/projects/*/"$id".jsonl; do [ -f "$f" ] && { echo "$f"; exit 0; }; done
+    for f in "$d"/projects/*/"$id".jsonl; do [ -f "$f" ] && { echo "$f"; exit 0; }; done
     echo "pending"; exit 0
   else
     if [ -d "/proc/$p/fd" ]; then
