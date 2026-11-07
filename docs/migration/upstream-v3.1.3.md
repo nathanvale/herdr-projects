@@ -98,10 +98,13 @@ the background work's gate. Nothing else moves.
   outage ending 12 to 15 s after the last touch now lets that flag go stale where it didn't
   before. An outage covering the round that would refresh it is enough, however short; one
   over about 12 s always is.
-- Existing limitation, the same with background work on: closing the window's chat
-  (`close()` in `mods/chat/main.js`) deletes the flag and empties every request waiting on
-  that terminal, so a card about to be answered on a page goes to the terminal instead.
-  The service makes the flag again within 4 s, for the next request. While the window and
+- Existing limitation, the same with background work on: a window closing an agent's chat
+  on that agent's own machine (`close()` in `mods/chat/main.js`; a window showing another
+  machine's agent leaves its flag alone) deletes the flag and empties every request waiting
+  on that terminal, so a card about to be answered on a page goes to the terminal instead.
+  The service makes the flag again for the next request: within 4 s for an agent on the
+  service's machine, and for another machine's agent at its next remote touch, up to about
+  12 s later with the 8 s spacing, plus the link's delay. While the window and
   a page show one chat, both can answer one request; the hook takes the first answer file
   it sees.
 - With background work off and a window there, a request from an agent whose chat a page
