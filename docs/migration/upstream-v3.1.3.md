@@ -1,7 +1,8 @@
 # Full 3.x source migration
 
 S0 is a source-only foundation; A1 adds provider launch plans and deployment discovery
-owners on it, with Azure dispatch held. Required Bitbucket, Azure and lifecycle ports are
+owners on it, with Azure dispatch held, and C1 finds a Claude Code session under its own
+agent's folder. Required Bitbucket, Azure and lifecycle ports are
 pending. This checkpoint is not deployable or ready for application use. Check's
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
@@ -38,6 +39,7 @@ owners, not implemented interfaces.
 | S0 | This source admission | Exact U, F/P dispositions and blocked readiness; Root review and CI before dependent work. |
 | S1 | Reviewed S0 | New `T/forge.py`, existing `T/github.py`, commands/proof/worktree consumers; preserve GitHub defaults. Smallest next customization. |
 | A1 | Reviewed S0 | New `T/providers.py` and `service/azure-deployments.ts`; nonsecret bindings, supported authentication and discovery custody. |
+| C1 | S0, separately authorized | `core/chat-log.js` FIND and `T/sessions.py`; a Claude Code session is found under its own process's folder. Not a port. |
 | B1 | S1 | New `T/bitbucket.py`, `T/bitbucket_http.py`; qualified identity, host credentials and complete exact-head reads. |
 | B2 | B1 | New `T/publications.py`, commands/output/CLI; durable claims, publication/readiness and current admission. |
 | A2 | A1 | Shared settings/agents, desktop/web controls, `T/settings.py`, launch/resume; discovery, selectors and binding parity. |
@@ -73,6 +75,26 @@ stays blocked.
   selection only; the same treatment of endpoint, credential and model variables is unproved.
   The backup's gate has in-module proof only; its public-process proof is Q's.
 - Detail, official sources and authored regressions: [Azure launch plans](../azure-launch-plans.md).
+
+### C1 chat profile checkpoint
+
+`core/chat-log.js` (FIND, copied to `mods/chat/core/` by `bin/sync-shared`) and
+`T/sessions.py` (`session_of()`) find an agent's Claude Code session, each by one rule,
+for each candidate process and never for the caller:
+
+- That process's `CLAUDE_CONFIG_DIR` set to an absolute path: exactly that folder.
+- Its environment readable and the variable unset: `$HOME/.claude`.
+- Unreadable, an empty environment, or a value that isn't an exact absolute path: nothing
+  for that process, and no other folder is tried. macOS shows a system binary's environment
+  as empty, so empty is no evidence.
+- Metadata whose `pid` isn't that process's selects nothing. A session with no log stays
+  pending. Nothing scans across folders.
+- Only that one variable is taken from a process. Linux reads `/proc/<pid>/environ`; macOS
+  reads `KERN_PROCARGS2` through python3, as `ps eww` is flat text. Any other platform
+  finds nothing. Both read the environment the process started with.
+- The macOS reader has no CI: `core/chat-find.test.js` and `test/test_session_discovery.py`
+  take it only when run on macOS.
+- This fix is not a required port. No inventory requirement changes status.
 
 ### Bitbucket contract
 
@@ -173,7 +195,8 @@ silently considered covered by default tests.
 
 Root runs `python3 bin/check-migration`, its public-CLI checkpoint tests
 (`test/test_migration.py`), the A1 provider and discovery tests (`test/test_providers.py`,
-`service/azure-deployments.test.ts`) and every native Check command. CI owns frozen dependency installation, web
+`service/azure-deployments.test.ts`), the C1 discovery tests (`core/chat-find.test.js`,
+`test/test_session_discovery.py`) and every native Check command. CI owns frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.
 Missing dependencies/generated web sources are prerequisite blockers, not authority
