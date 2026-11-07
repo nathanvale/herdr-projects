@@ -7,11 +7,8 @@
 // rollout file open, so the file is whatever rollout-*.jsonl its process (or a child) holds.
 // Both are exact: no guessing by folder or time, so two agents in one folder never get mixed up.
 
-// Prints the log's path on the agent's machine, "pending" for a session under ~/.claude with no
-// log yet, or nothing. Args: kind, pid.
-export const FIND = `
-kind="$1"; pid="$2"
-kids() { for k in $(pgrep -P "$1" 2>/dev/null); do echo "$k"; kids "$k"; done; }
+// How FIND and FOLDER read a process: its children, and the folder Claude Code uses in it.
+const PROCESS = `kids() { for k in $(pgrep -P "$1" 2>/dev/null); do echo "$k"; kids "$k"; done; }
 # The folder Claude Code uses in process $1, from that process's own environment, never this
 # shell's: its CLAUDE_CONFIG_DIR, or ~/.claude when it has none. Fails, so no other folder is
 # tried, when that can't be read exactly: no way to read it here, an empty environment (macOS
@@ -77,7 +74,13 @@ os.write(1, found[0][len(name):])
     */.claude) return 1 ;;
   esac
   printf '%s\\n' "$c"
-}
+}`;
+
+// Prints the log's path on the agent's machine, "pending" for a session under ~/.claude with no
+// log yet, or nothing. Args: kind, pid.
+export const FIND = `
+kind="$1"; pid="$2"
+${PROCESS}
 for p in "$pid" $(kids "$pid"); do
   if [ "$kind" = claude ]; then
     d=$(claude_dir "$p") || continue
@@ -100,6 +103,30 @@ for p in "$pid" $(kids "$pid"); do
     [ -n "$f" ] && { echo "$f"; exit 0; }
   fi
 done
+true`;
+
+// Which folder the Claude Code at a process uses, for what would start it again, on the agent's
+// machine: "default" (~/.claude), "other", or nothing when that can't be read. It asks the process,
+// so it answers with no reader, no log and no session, where FIND prints nothing. The process with
+// its own session is the agent, as in FIND. With none yet, another folder in the process or a child
+// counts, and the process itself must be readable: a wrapper hides what it started. Args: pid.
+export const FOLDER = `
+pid="$1"
+${PROCESS}
+other=""; blind=""
+for p in "$pid" $(kids "$pid"); do
+  if ! d=$(claude_dir "$p"); then
+    [ "$p" = "$pid" ] && blind=1
+    continue
+  fi
+  w=other
+  [ "$d" = "$HOME/.claude" ] && w=default
+  j="$d/sessions/$p.json"
+  if [ -f "$j" ] && [ "$(sed -n 's/.*[{,]"pid":\\([0-9]*\\)[,}].*/\\1/p' "$j")" = "$p" ]; then echo "$w"; exit 0; fi
+  [ "$w" = other ] && other=1
+done
+[ -n "$other" ] && { echo other; exit 0; }
+[ -n "$blind" ] || echo default
 true`;
 
 // Reads a log on the agent's machine, sending back only what the chat shows. Each kept line

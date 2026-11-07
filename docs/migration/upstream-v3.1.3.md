@@ -39,7 +39,7 @@ owners, not implemented interfaces.
 | S0 | This source admission | Exact U, F/P dispositions and blocked readiness; Root review and CI before dependent work. |
 | S1 | Reviewed S0 | New `T/forge.py`, existing `T/github.py`, commands/proof/worktree consumers; preserve GitHub defaults. Smallest next customization. |
 | A1 | Reviewed S0 | New `T/providers.py` and `service/azure-deployments.ts`; nonsecret bindings, supported authentication and discovery custody. |
-| C1 | S0, separately authorized | `core/chat-log.js` FIND and `T/sessions.py`; a Claude Code session is found under its own process's folder, for reading only. Not a port. |
+| C1 | S0, separately authorized | `core/chat-log.js` FIND and `T/sessions.py`; a Claude Code session is found under its own process's folder, for reading only, and nothing starts such an agent again. Not a port. |
 | B1 | S1 | New `T/bitbucket.py`, `T/bitbucket_http.py`; qualified identity, host credentials and complete exact-head reads. |
 | B2 | B1 | New `T/publications.py`, commands/output/CLI; durable claims, publication/readiness and current admission. |
 | A2 | A1 | Shared settings/agents, desktop/web controls, `T/settings.py`, launch/resume; discovery, selectors and binding parity. |
@@ -114,13 +114,35 @@ for each candidate process and never for the caller:
   carry no `CLAUDE_CONFIG_DIR`, so continuing it would start on another profile, perhaps
   another account. `session_of()` returns such a session only to `any_folder=True`, which
   `T/news.py` alone asks for, so for a non-default folder nothing records it and no path
-  that starts an agent gains anything: each behaves as before, or refuses once a log is found.
-  A default agent whose environment can't be read
-  does change: it gets no record, so a resume starts fresh. `sessionOf()` in `core/agents.js` gives it no id, and the window's picker
-  and `service/agents.ts` `restart()` refuse before anything ends, as a found log is what
-  newly shows the window's picker and the web's Composer for such an agent. The window's start
-  screen shows its picker with no log, as before, and that isn't refused. Carrying the folder
-  belongs to L1 and L2.
+  that starts an agent gains anything. A default agent whose environment can't be read
+  does change: it gets no record, so a resume starts fresh. `sessionOf()` in `core/agents.js`
+  gives a session under another folder no id. Carrying the folder belongs to L1 and L2.
+- What would start an agent again asks its process, not a found log: FIND prints nothing for
+  a custom-folder agent with no log, and a reader can be gone or have no path yet. `FOLDER`
+  in `core/chat-log.js` runs on the agent's machine and prints `default`, `other` or nothing.
+  The process with its own session is the agent; with none yet, another folder in the process
+  or a child counts, and the process itself must be readable. It shares FIND's process
+  reading, and FIND's arguments and output don't change.
+- A running agent: `restartRefusal()` in `core/agents.js`, called by the window's picker, its
+  task switch and `service/agents.ts` `restart()` before anything ends. Another folder and
+  unreadable both refuse, each in its own words, so that also changes a default agent whose
+  process can't be read: it no longer restarts. The live list lacks another machine's
+  foreground program, so the service asks `hc get`. Codex isn't asked.
+- A lost session: `lostRefusal()`, called by the window's `lostSession()` and
+  `service/watch.ts`. The agent has gone, so it has no process to ask. Refused: a
+  `CLAUDE_CONFIG_DIR=` word before the agent's in the launch's argv, which `freshArgv()` drops
+  (any value, even `~/.claude` written out); a live shell that reads another folder; in the
+  window, a log it had found under another folder. Not refused, as the two rules conflict
+  here and each departs from "unreadable refuses": a shell that can't be read, since macOS
+  shows no environment for a system binary such as `/bin/zsh`, and what's typed inherits that
+  shell as the agent that left did; and an ended terminal with no assignment, which leaves
+  nothing to read, as refusing would end recovery for every default agent. So an ended agent
+  whose variable arrived any other way can still start fresh on another folder. That a
+  terminal gets the core's environment plus its caller's overrides is read from `hc`'s own
+  description of its record, not proved here.
+- A fork refused for another folder says so, in both the window and `service/actions.ts`.
+- Still open: a tab's Restart and Switch agent (`tab-switch` in `service/actions.ts`) and
+  `mods/coordinator/restart.sh`'s fixed `~/.claude` lookup don't ask.
 - `sessionOf()` knows ~/.claude by its shape, as the agent's machine's home isn't known
   there, so FIND finds nothing for another folder called `.claude`, and so does `session_of()`.
 - The macOS reader has no CI: `core/chat-find.test.js` and `test/test_session_discovery.py`

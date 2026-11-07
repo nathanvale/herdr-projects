@@ -36,7 +36,7 @@ class SourceCheckpoint(unittest.TestCase):
         self.assertEqual(observed['candidate_readiness'], 'blocked')
         self.assertEqual(observed['requirements'], 40)
         self.assertEqual(observed['file_dispositions'], 121)
-        self.assertEqual((observed['phase'], observed['source_deltas']), ('C1', 24))
+        self.assertEqual((observed['phase'], observed['source_deltas']), ('C1', 26))
 
     def test_candidate_gate_refuses_even_when_source_validation_passes(self):
         result, observed = self.run_check('--require-ready')

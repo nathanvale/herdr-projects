@@ -208,11 +208,14 @@ function kept(kind, argv) {
   return out.filter((x) => x !== undefined);
 }
 
+// Where the agent's own word stands in a launch's argv (after env, a shell and the like), or -1.
+const agentAt = (argv) => argv.findIndex((a, i) => (i === 0 || !a.startsWith("-")) && /^(claude|codex)$/.test(String(a).split("/").pop()));
+
 // The same agent, model and flags as `argv`, without what resumed a conversation (and without a
 // first message), or null when argv resumed none: for a fresh start once that session is gone.
 export function freshArgv(kind, argv) {
   argv = argv ?? [];
-  const at = argv.findIndex((a, i) => (i === 0 || !a.startsWith("-")) && /^(claude|codex)$/.test(String(a).split("/").pop()));
+  const at = agentAt(argv);
   if (at < 0) return null;
   const rest = argv.slice(at + 1), out = [argv[at]];
   let resumed = false;
@@ -269,6 +272,32 @@ export function argvFor(pick, old) {
 export const OTHER_FOLDER = "It runs under its own Claude Code folder, which a restart can't carry yet.";
 export function inOtherFolder(kind, path) {
   return kind === "claude" && Boolean(path) && !/\/\.claude\/projects\/[^/]+\/[^/]+$/.test(path);
+}
+
+export const UNREAD_FOLDER = "Its Claude Code folder can't be read, so a restart might start it on another.";
+
+// What FOLDER (core/chat-log.js) printed, run on the agent's machine by each side's read(pid).
+const folderWord = (out) => String(out ?? "").trim().split("\n").pop();
+
+// Why nothing may restart the Claude Code running at pid, or null: its own process says, so a reader with no path, or
+// none, changes nothing, and neither does a custom-folder agent with no log yet. Unreadable refuses, never ~/.claude.
+export async function restartRefusal(kind, pid, read) {
+  if (kind !== "claude") return null;
+  const word = pid ? folderWord(await read(pid)) : "";
+  return word === "default" ? null : word === "other" ? OTHER_FOLDER : UNREAD_FOLDER;
+}
+
+// The same once the agent has gone, with no process of its own left to ask. Its launch's assignment, which freshArgv
+// drops, is lost by any new start, so it refuses (`path`: its log, when a chat had found one). A live terminal's shell
+// is what the new agent inherits: another folder there refuses. A shell that can't be read refuses nothing, as macOS
+// shows no environment for its own /bin/zsh and what's typed inherits that shell as the agent that left did. With no
+// assignment an ended terminal leaves nothing to read, and refusing would end recovery for every default agent.
+export async function lostRefusal(kind, t, read, path = null) {
+  if (kind !== "claude") return null;
+  const argv = t?.argv ?? [];
+  if (inOtherFolder(kind, path) || argv.slice(0, agentAt(argv) + 1).some((a) => String(a).startsWith("CLAUDE_CONFIG_DIR="))) return OTHER_FOLDER;
+  const pid = t?.state === "live" ? t.foreground?.pid : null;
+  return pid && folderWord(await read(pid)) === "other" ? OTHER_FOLDER : null;
 }
 
 // The conversation's id, from its log's file name; none for one nothing may continue (inOtherFolder).

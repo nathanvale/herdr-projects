@@ -14,7 +14,7 @@
       "phase": "C1",
       "path": "core/agents.js",
       "upstream_blob": "31b6a264e1294771baa34bf3d81264437fc9ac0d",
-      "sha256": "920c704c22b1d7e76edecfcb710e35af4e75bf2640c19b3de5a22200c1539e8e"
+      "sha256": "d3c093ce929ed32306243d938b0f65cebf263a50afce61a8f28914494b4f2cb3"
     },
     {
       "phase": "C1",
@@ -26,43 +26,43 @@
       "phase": "C1",
       "path": "core/chat-log.js",
       "upstream_blob": "1c85a10ebc92f7f7107f9d95dbfb7c55b289a9e7",
-      "sha256": "0cf3fc911bcacf4c343a882193b0bc0dd337d75540884b72561932c8c925e62b"
+      "sha256": "35819464fe7e584eb244a9f9467408e13ef37d9066a1b3784fb3ec828a5441d8"
     },
     {
       "phase": "C1",
       "path": "mods/chat/core/agents.js",
       "upstream_blob": "31b6a264e1294771baa34bf3d81264437fc9ac0d",
-      "sha256": "920c704c22b1d7e76edecfcb710e35af4e75bf2640c19b3de5a22200c1539e8e"
+      "sha256": "d3c093ce929ed32306243d938b0f65cebf263a50afce61a8f28914494b4f2cb3"
     },
     {
       "phase": "C1",
       "path": "mods/chat/core/chat-log.js",
       "upstream_blob": "1c85a10ebc92f7f7107f9d95dbfb7c55b289a9e7",
-      "sha256": "0cf3fc911bcacf4c343a882193b0bc0dd337d75540884b72561932c8c925e62b"
+      "sha256": "35819464fe7e584eb244a9f9467408e13ef37d9066a1b3784fb3ec828a5441d8"
     },
     {
       "phase": "C1",
       "path": "mods/chat/main.js",
       "upstream_blob": "e6ea18f4de286a8af505041f7ca7713bb7a8a94c",
-      "sha256": "381eee0b66e40cf79f6b5265095c8e10739c198f429b8efa84ef26512ae70587"
+      "sha256": "76cc3ba56352b6db9376af46409245eee5ea295bbf5008cde9edb8a5567145ce"
     },
     {
       "phase": "C1",
       "path": "mods/coordinator/core/agents.js",
       "upstream_blob": "31b6a264e1294771baa34bf3d81264437fc9ac0d",
-      "sha256": "920c704c22b1d7e76edecfcb710e35af4e75bf2640c19b3de5a22200c1539e8e"
+      "sha256": "d3c093ce929ed32306243d938b0f65cebf263a50afce61a8f28914494b4f2cb3"
     },
     {
       "phase": "C1",
       "path": "mods/newspace/core/agents.js",
       "upstream_blob": "31b6a264e1294771baa34bf3d81264437fc9ac0d",
-      "sha256": "920c704c22b1d7e76edecfcb710e35af4e75bf2640c19b3de5a22200c1539e8e"
+      "sha256": "d3c093ce929ed32306243d938b0f65cebf263a50afce61a8f28914494b4f2cb3"
     },
     {
       "phase": "C1",
       "path": "mods/shepherdr-settings/core/agents.js",
       "upstream_blob": "31b6a264e1294771baa34bf3d81264437fc9ac0d",
-      "sha256": "920c704c22b1d7e76edecfcb710e35af4e75bf2640c19b3de5a22200c1539e8e"
+      "sha256": "d3c093ce929ed32306243d938b0f65cebf263a50afce61a8f28914494b4f2cb3"
     },
     {
       "phase": "A1",
@@ -120,9 +120,21 @@
     },
     {
       "phase": "C1",
+      "path": "service/actions.ts",
+      "upstream_blob": "34cb28ed6c352eaba02452e290f2c1356e835568",
+      "sha256": "e0e52f16804819f878aa4933157fa9997585c701b160d2b6548972eaddfc42fa"
+    },
+    {
+      "phase": "C1",
       "path": "service/agents.ts",
       "upstream_blob": "c3a51d026cac3bee43f41be0e63d102859fdbd01",
-      "sha256": "9b69dbcfc5089e6fabd8d4f025191afae4128220b85eb8156062ee3f6a8a3768"
+      "sha256": "54fe06d6c5b0765f4cd11e15514fff02f9e217a6bece6dd36a414aeb562c1c07"
+    },
+    {
+      "phase": "C1",
+      "path": "service/watch.ts",
+      "upstream_blob": "7e38406d2becbab5a05014de9afa229d7250f160",
+      "sha256": "432119138f7034f34c28e1d3e668816818c2b490aea4a60e46658e7bc9650873"
     },
     {
       "phase": "A1",
