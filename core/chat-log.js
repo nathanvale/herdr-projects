@@ -89,7 +89,8 @@ for p in "$pid" $(kids "$pid"); do
     for f in "$d"/projects/*/"$id".jsonl; do [ -f "$f" ] && { printf '%s\\n' "$f"; exit 0; }; done
     # Under another folder nothing, so no chat opens for an agent no guard can see yet: pending
     # has no path for inOtherFolder (core/agents.js) to read, and the next look finds the log.
-    case "$d" in */.claude) echo "pending"; exit 0 ;; esac
+    # Either way this process's session is the answer: a child's log is another conversation.
+    case "$d" in */.claude) echo "pending" ;; esac; exit 0
   else
     if [ -d "/proc/$p/fd" ]; then
       f=$(for d in /proc/$p/fd/*; do readlink "$d"; done 2>/dev/null | grep '/rollout-.*\\.jsonl$' | head -1)

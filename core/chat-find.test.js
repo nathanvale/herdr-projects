@@ -152,15 +152,15 @@ test("~/.claude named outright is pending as ~/.claude is", async () => {
   expect(await find(pid)).toBe("pending");
 });
 
-test("a candidate with no log yet under another folder leaves the next one to be read", async () => {
+test("a process with its own session and no log stops FIND: a child's log is another conversation", async () => {
   const dir = folder();
   const parent = folder();
   const { pid, line } = await agent({ CLAUDE_CONFIG_DIR: parent }, WRAPPER, [WAIT, dir]);
   const child = Number(line);
   running.push(() => process.kill(child, 9));
   session(parent, pid, SESSION, { log: false });
-  const log = session(dir, child, OTHER);
-  expect(await find(pid)).toBe(log);
+  session(dir, child, OTHER);
+  expect(await find(pid)).toBe("");
 });
 
 // Unreadable: Linux, a process that seals itself (root reads it anyway, so not as root); macOS, a system binary,

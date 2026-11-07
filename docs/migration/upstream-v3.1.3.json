@@ -20,13 +20,13 @@
       "phase": "C1",
       "path": "core/chat-find.test.js",
       "upstream_blob": null,
-      "sha256": "9ef5026e99339064933524f38c46528b7f1644183ec92096b9f08ef59c1b49a2"
+      "sha256": "9e2c363dc451a45f055da276c94390072b13b1bddaa71d04428ec45644e76680"
     },
     {
       "phase": "C1",
       "path": "core/chat-log.js",
       "upstream_blob": "1c85a10ebc92f7f7107f9d95dbfb7c55b289a9e7",
-      "sha256": "d6f628f2f2d0e3e6ba71487a3bd4a19299e93a41930ef02fa3ea9c4112ec0a04"
+      "sha256": "0cf3fc911bcacf4c343a882193b0bc0dd337d75540884b72561932c8c925e62b"
     },
     {
       "phase": "C1",
@@ -38,7 +38,7 @@
       "phase": "C1",
       "path": "mods/chat/core/chat-log.js",
       "upstream_blob": "1c85a10ebc92f7f7107f9d95dbfb7c55b289a9e7",
-      "sha256": "d6f628f2f2d0e3e6ba71487a3bd4a19299e93a41930ef02fa3ea9c4112ec0a04"
+      "sha256": "0cf3fc911bcacf4c343a882193b0bc0dd337d75540884b72561932c8c925e62b"
     },
     {
       "phase": "C1",

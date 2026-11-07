@@ -89,8 +89,8 @@ for each candidate process and never for the caller:
   as empty, so empty is no evidence.
 - Metadata whose `pid` isn't that process's selects nothing. A session with no log stays
   pending under `~/.claude`. Nothing scans across folders.
-- Under another folder a session with no log prints nothing, as pending has no path for a
-  guard to read and would open a chat that could restart it. The cost: a fresh custom-folder
+- Under another folder a session with no log prints nothing, and FIND stops at that process,
+  as pending has no path for a guard to read and would open a chat that could restart it. The cost: a fresh custom-folder
   agent shows "Can't find this conversation" until its first log line, as today. Both chats
   look again while they have no path, so it opens then.
 - A reused pid isn't caught: a crashed agent's metadata names the same pid as a new process
@@ -113,8 +113,9 @@ for each candidate process and never for the caller:
 - A session under another folder is for reading only. Revive, resume, a restart and a fork
   carry no `CLAUDE_CONFIG_DIR`, so continuing it would start on another profile, perhaps
   another account. `session_of()` returns such a session only to `any_folder=True`, which
-  `T/news.py` alone asks for, so for a non-default folder nothing records it and every path
-  that starts an agent behaves as before. A default agent whose environment can't be read
+  `T/news.py` alone asks for, so for a non-default folder nothing records it and no path
+  that starts an agent gains anything: each behaves as before, or refuses once a log is found.
+  A default agent whose environment can't be read
   does change: it gets no record, so a resume starts fresh. `sessionOf()` in `core/agents.js` gives it no id, and the window's picker
   and `service/agents.ts` `restart()` refuse before anything ends, as a found log is what
   newly shows the window's picker and the web's Composer for such an agent. The window's start
