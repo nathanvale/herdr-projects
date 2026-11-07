@@ -2,7 +2,6 @@ import { afterAll, afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agents } from "../service/agents.ts";
 import { argvFor, inOtherFolder, OTHER_FOLDER, sessionOf } from "./agents.js";
 import { FIND } from "./chat-log.js";
 
@@ -257,35 +256,51 @@ test("the window's picker refuses before it restarts or switches anything", () =
   expect(pick.indexOf("agent.inOtherFolder(this.kind, this.path)")).toBeLessThan(pick.indexOf("agent.restart(t, built, mine)"));
 });
 
-// What the service's restart() would run, as stand-ins first on PATH, each saying it was called.
+// What the service's restart() would run, as stand-ins, each saying it was called.
 function standIns() {
-  const bin = folder(), called = join(bin, "called"), path = process.env.PATH;
+  const bin = folder(), called = join(bin, "called");
   mkdirSync(bin);
   for (const name of ["herdr-task", "herdr-app"]) {
     writeFileSync(join(bin, name), `#!/bin/sh\necho "${name} $1" >> "${called}"\necho '{"terminal":"t9"}'\n`);
     chmodSync(join(bin, name), 0o755);
   }
-  process.env.PATH = `${bin}:${path}`;
-  running.push(() => { process.env.PATH = path; });
-  return () => (existsSync(called) ? readFileSync(called, "utf8").trim().split("\n") : []);
+  return { bin, called: () => (existsSync(called) ? readFileSync(called, "utf8").trim().split("\n") : []) };
 }
-// An address no terminal has: were the guard to go, nothing real could be restarted on an installed machine.
-const webRestart = (labels, path) => new Agents({ terminals: new Map([["no-such-terminal", { state: "live", argv: ["claude"], cwd: "/work",
-  foreground: { argv: ["claude"], cwd: "/work" }, labels }]]) }).restart("no-such-terminal", { path }, { kind: "claude" });
+// restart() in a process of its own, as Bun finds a program through the PATH its process started with. Nothing real is
+// in reach, were the guard to go: only the stand-ins on PATH, a HERDR_APP_HOME with no restart.sh, and an address no
+// terminal has.
+const RESTART = `
+const { Agents } = await import(process.argv[2]);
+const [labels, path] = JSON.parse(process.argv[3]);
+const terminals = new Map([["no-such-terminal", { state: "live", argv: ["claude"], cwd: "/work", foreground: { argv: ["claude"], cwd: "/work" }, labels }]]);
+const out = await new Agents({ terminals }).restart("no-such-terminal", { path }, { kind: "claude" })
+  .then((terminal) => ({ terminal }), (e) => ({ error: e.message }));
+console.log(JSON.stringify(out));
+`;
+async function webRestart(bin, labels, path) {
+  const script = join(bin, "restart.mjs");
+  writeFileSync(script, RESTART);
+  const p = Bun.spawn([process.execPath, script, join(import.meta.dir, "..", "service", "agents.ts"), JSON.stringify([labels, path])], {
+    cwd: home, env: { PATH: bin, HOME: home, HERDR_APP_HOME: join(home, "no-app"), SHEPHERDR_DATA: join(home, "no-data") }, stdout: "pipe", stderr: "pipe" });
+  const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
+  await p.exited;
+  if (!out.trim()) throw new Error(err);
+  return JSON.parse(out);
+}
 
 test("the web's restart refuses an agent under another folder, and nothing runs", async () => {
-  const called = standIns(), log = join(folder(), "projects", "-work", `${SESSION}.jsonl`);
+  const { bin, called } = standIns(), log = join(folder(), "projects", "-work", `${SESSION}.jsonl`);
   for (const labels of [{ "herdr.task": "list#1" }, {}]) {
-    await expect(webRestart(labels, log)).rejects.toThrow(OTHER_FOLDER);
+    expect(await webRestart(bin, labels, log)).toEqual({ error: OTHER_FOLDER });
     expect(called()).toEqual([]);
   }
-});
+}, 20000);
 
 test("the web's restart still restarts an agent under ~/.claude", async () => {
-  const called = standIns(), log = join(fallback, "projects", "-work", `${SESSION}.jsonl`);
-  expect(await webRestart({ "herdr.task": "list#1" }, log)).toBe("t9");
+  const { bin, called } = standIns(), log = join(fallback, "projects", "-work", `${SESSION}.jsonl`);
+  expect(await webRestart(bin, { "herdr.task": "list#1" }, log)).toEqual({ terminal: "t9" });
   expect(called()).toEqual(["herdr-task switch", "herdr-app do"]);
-});
+}, 20000);
 
 test("another folder called .claude finds nothing, as it would pass for ~/.claude", async () => {
   const dir = join(home, "elsewhere", ".claude");
