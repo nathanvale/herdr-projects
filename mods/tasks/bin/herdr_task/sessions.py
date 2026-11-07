@@ -65,8 +65,9 @@ def claude_dir(pid):
     one's: its CLAUDE_CONFIG_DIR, or ~/.claude when it has none. None, so no other folder is tried,
     when that can't be read exactly: no way to read it here, an empty environment (macOS shows a
     system binary's so, and a set variable looks unset), a macOS block whose start moved
-    (environment()), or a value that isn't one absolute path.
-    FIND in core/chat-log.js is the same rule."""
+    (environment()), a value that isn't one absolute path, or another folder called .claude,
+    which sessionOf (core/agents.js) would take for ~/.claude. FIND in core/chat-log.js is the
+    same rule."""
     entries = environment(pid)
     if not entries:
         return None
@@ -74,15 +75,26 @@ def claude_dir(pid):
     if value is None:
         return os.path.join(HOME, ".claude")
     path = os.fsdecode(value)
-    return path if path.startswith("/") and not re.search(r"[\x00-\x1f\x7f]", path) else None
+    path = path[:-1] if path.endswith("/") else path
+    if not path.startswith("/") or re.search(r"[\x00-\x1f\x7f]", path):
+        return None
+    if os.path.basename(path) == ".claude" and path != os.path.join(HOME, ".claude"):
+        return None
+    return path
 
 
-def session_of(pid):
+def session_of(pid, any_folder=False):
     """(session id, log path) of the agent process pid (or a child), as FIND in core/chat-log.js
     finds it: Claude Code names its session in <folder>/sessions/<pid>.json under that process's
-    own folder (claude_dir()), and the file must say that pid; Codex holds its rollout open."""
+    own folder (claude_dir()), and the file must say that pid; Codex holds its rollout open.
+
+    Only one under ~/.claude, unless any_folder: nearly everything here keeps the answer to start
+    or resume that agent, and neither carries CLAUDE_CONFIG_DIR, so it would come back on another
+    profile (L1, L2). any_folder is for what only reads the log."""
     for p in [str(pid)] + kids(pid):
         folder = claude_dir(p)
+        if not any_folder and folder != os.path.join(HOME, ".claude"):
+            folder = None
         j = os.path.join(folder, "sessions", p + ".json") if folder else None
         if j and os.path.isfile(j):
             try:

@@ -1,7 +1,8 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { argvFor, inOtherFolder, sessionOf } from "./agents.js";
 import { FIND } from "./chat-log.js";
 
 // FIND as its callers run it (sh, on the agent's machine) against real processes in throwaway folders. Each agent
@@ -187,6 +188,61 @@ test("a value that isn't an exact absolute path finds nothing, never ~/.claude",
     const { pid } = await agent({ CLAUDE_CONFIG_DIR: value });
     session(fallback, pid);
     expect(await find(pid)).toBe("");
+  }
+});
+
+// Chat reads a session under another folder; nothing continues it, as a restart or fork carries no CLAUDE_CONFIG_DIR.
+const restart = (path) => argvFor({ agent: "claude" }, { agent: "claude", argv: [], session: sessionOf("claude", path) });
+
+test("a session under ~/.claude can be continued", async () => {
+  const { pid } = await agent();
+  session(fallback, pid);
+  const path = await find(pid);
+  expect(sessionOf("claude", path)).toBe(SESSION);
+  expect(restart(path).resume).toBe(true);
+  expect(inOtherFolder("claude", path)).toBe(false);
+});
+
+test("a session under another folder is found and never continued", async () => {
+  const dir = folder();
+  const { pid } = await agent({ CLAUDE_CONFIG_DIR: dir });
+  const log = session(dir, pid);
+  const path = await find(pid);
+  expect(path).toBe(log);
+  expect(sessionOf("claude", path)).toBe(null);
+  expect(restart(path).resume).toBe(false);
+  expect(inOtherFolder("claude", path)).toBe(true);
+});
+
+test("Codex and a chat with no log are as before", () => {
+  const rollout = "/x/rollout-2026-01-01-aaaaaaaa-0000-4000-8000-000000000001.jsonl";
+  expect(sessionOf("codex", rollout)).toBe(SESSION);
+  expect(inOtherFolder("codex", rollout)).toBe(false);
+  expect(sessionOf("claude", null)).toBe(null);
+  expect(inOtherFolder("claude", null)).toBe(false);
+});
+
+test("the window's picker refuses before it restarts or switches anything", () => {
+  const main = readFileSync(join(import.meta.dir, "..", "mods", "chat", "main.js"), "utf8");
+  const pick = main.slice(main.indexOf("  applyPick(pick, cx) {"));
+  expect(pick.indexOf("agent.inOtherFolder(this.kind, this.path)")).toBeGreaterThan(-1);
+  expect(pick.indexOf("agent.inOtherFolder(this.kind, this.path)")).toBeLessThan(pick.indexOf("this.switchTask(pick, cx)"));
+  expect(pick.indexOf("agent.inOtherFolder(this.kind, this.path)")).toBeLessThan(pick.indexOf("agent.restart(t, built, mine)"));
+});
+
+test("another folder called .claude finds nothing, as it would pass for ~/.claude", async () => {
+  const dir = join(home, "elsewhere", ".claude");
+  const { pid } = await agent({ CLAUDE_CONFIG_DIR: dir });
+  session(dir, pid);
+  expect(await find(pid)).toBe("");
+});
+
+test("~/.claude named outright is ~/.claude, with or without its last slash", async () => {
+  for (const value of [fallback, `${fallback}/`]) {
+    const { pid } = await agent({ CLAUDE_CONFIG_DIR: value });
+    const log = session(fallback, pid);
+    expect(await find(pid)).toBe(log);
+    expect(sessionOf("claude", log)).toBe(SESSION);
   }
 });
 

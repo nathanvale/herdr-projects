@@ -32,7 +32,23 @@ print(c.pid, flush=True)
 time.sleep(120)
 """
 CALL = ("import json, sys; sys.dont_write_bytecode = True; sys.path.insert(0, sys.argv[1]);"
-        "from herdr_task.sessions import session_of; print(json.dumps(session_of(int(sys.argv[2]))))")
+        "from herdr_task.sessions import session_of; print(json.dumps(session_of(int(sys.argv[2]), any_folder=True)))")
+# What starts or resumes an agent keeps: revive's record, the task's session, and session_of as they
+# call it. hc stands aside; the session reads are real.
+KEPT = """
+import json, sys, types
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+from herdr_task import revive, sessions
+sessions.detail = lambda k: k
+sessions.agent_running = lambda k: True
+revive.status_word = lambda k: "idle"
+pid = int(sys.argv[2])
+k = {"address": "t1", "argv": ["claude"], "foreground": {"pid": pid, "argv": ["claude"]}, "cwd": "/work", "pid": 7}
+task = {"agents": [{"address": "t1"}]}
+sessions.refresh_sessions(types.SimpleNamespace(dirty=False), task, [k])
+print(json.dumps({"session_of": sessions.session_of(pid), "record": revive.record_of(k), "agent": task["agents"][0]}))
+"""
 CAN_SEAL = sys.platform.startswith("linux") and os.geteuid() != 0
 
 
@@ -73,6 +89,43 @@ class SessionOf(unittest.TestCase):
                            capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         return tuple(json.loads(r.stdout))
+
+    def kept(self, pid):
+        r = subprocess.run([sys.executable, "-c", KEPT, BIN, str(pid)], env=self.environment({}),
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_a_session_under_the_default_folder_is_kept_as_before(self):
+        pid, _ = self.agent()
+        log = self.session(self.fallback, pid)
+        kept = self.kept(pid)
+        self.assertEqual(kept["session_of"], [SESSION, log])
+        self.assertEqual((kept["record"]["session"], kept["record"]["log"]), (SESSION, log))
+        self.assertEqual(kept["agent"], {"address": "t1", "session": SESSION, "log": log})
+
+    def test_a_session_under_another_folder_is_found_and_never_kept(self):
+        """Nothing may come back on another profile: no revive record, no session on the task for
+        resume, and session_of as those call it says what it said before this folder was read."""
+        folder = self.folder()
+        pid, _ = self.agent({"CLAUDE_CONFIG_DIR": folder})
+        log = self.session(folder, pid)
+        self.assertEqual(self.found(pid), (SESSION, log))
+        self.assertEqual(self.kept(pid), {"session_of": [None, None], "record": None, "agent": {"address": "t1"}})
+
+    def test_the_default_folder_named_outright_is_kept_with_or_without_its_slash(self):
+        for value in (self.fallback, self.fallback + "/"):
+            with self.subTest(value=value):
+                pid, _ = self.agent({"CLAUDE_CONFIG_DIR": value})
+                log = self.session(self.fallback, pid)
+                self.assertEqual(self.found(pid), (SESSION, log))
+                self.assertEqual(self.kept(pid)["session_of"], [SESSION, log])
+
+    def test_another_folder_called_dot_claude_finds_nothing(self):
+        folder = self.folder(os.path.join("elsewhere", ".claude"))
+        pid, _ = self.agent({"CLAUDE_CONFIG_DIR": folder})
+        self.session(folder, pid)
+        self.assertEqual(self.found(pid), (None, None))
 
     def test_no_variable_finds_it_under_the_default_folder(self):
         pid, _ = self.agent()

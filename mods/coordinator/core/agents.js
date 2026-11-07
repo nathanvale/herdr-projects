@@ -262,8 +262,17 @@ export function argvFor(pick, old) {
   return { argv: ["codex", ...a], resume: false, base: ["codex", ...a] };
 }
 
-// The conversation's id, from its log's file name.
+// A Claude Code log under a folder other than ~/.claude (FIND finds each agent's own, core/chat-log.js, and never
+// another folder called .claude). Chat reads it, but nothing continues it: a restart, resume or fork carries no
+// CLAUDE_CONFIG_DIR, so it would start on another profile (L1, L2). The path is the agent's machine's, so its home
+// isn't known here.
+export function inOtherFolder(kind, path) {
+  return kind === "claude" && Boolean(path) && !/\/\.claude\/projects\/[^/]+\/[^/]+$/.test(path);
+}
+
+// The conversation's id, from its log's file name; none for one nothing may continue (inOtherFolder).
 export function sessionOf(kind, path) {
+  if (inOtherFolder(kind, path)) return null;
   const m = kind === "claude" ? /([0-9a-f-]{36})\.jsonl$/.exec(path ?? "") : /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/.exec(path ?? "");
   return m ? m[1] : null;
 }

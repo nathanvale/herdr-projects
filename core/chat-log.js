@@ -15,7 +15,8 @@ kids() { for k in $(pgrep -P "$1" 2>/dev/null); do echo "$k"; kids "$k"; done; }
 # shell's: its CLAUDE_CONFIG_DIR, or ~/.claude when it has none. Fails, so no other folder is
 # tried, when that can't be read exactly: no way to read it here, an empty environment (macOS
 # shows a system binary's so, and a set variable looks unset), a macOS block whose start moved
-# (below), or a value that isn't one absolute path. Status 3 is "read, and unset". Takes only
+# (below), a value that isn't one absolute path, or another folder called .claude, which
+# sessionOf (core/agents.js) would take for ~/.claude. Status 3 is "read, and unset". Takes only
 # that variable, and keeps nothing else.
 claude_dir() {
   case "$(uname)" in
@@ -58,8 +59,11 @@ os.write(1, found[0][len(name):])
     3) printf '%s\\n' "$HOME/.claude"; return 0 ;;
     *) return 1 ;;
   esac
+  c=\${c%/}
   case "$c" in
     /*[[:cntrl:]]*|[!/]*|"") return 1 ;;
+    "$HOME/.claude") ;;
+    */.claude) return 1 ;;
   esac
   printf '%s\\n' "$c"
 }

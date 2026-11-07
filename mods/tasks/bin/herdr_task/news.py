@@ -212,7 +212,7 @@ def news_read(quiet):
         quiet.pop(addr)
         if str((k.get("labels") or {}).get(READ)) != str(q["turn"]):
             continue  # read since, or changed by someone else
-        log = session_of((k.get("foreground") or {}).get("pid") or "")[1] if (k.get("foreground") or {}).get("pid") else None
+        log = session_of((k.get("foreground") or {}).get("pid") or "", any_folder=True)[1] if (k.get("foreground") or {}).get("pid") else None
         for d in reversed(log_tail(log, 65536)):
             if from_person(d) is not None:
                 break

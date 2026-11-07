@@ -39,7 +39,7 @@ owners, not implemented interfaces.
 | S0 | This source admission | Exact U, F/P dispositions and blocked readiness; Root review and CI before dependent work. |
 | S1 | Reviewed S0 | New `T/forge.py`, existing `T/github.py`, commands/proof/worktree consumers; preserve GitHub defaults. Smallest next customization. |
 | A1 | Reviewed S0 | New `T/providers.py` and `service/azure-deployments.ts`; nonsecret bindings, supported authentication and discovery custody. |
-| C1 | S0, separately authorized | `core/chat-log.js` FIND and `T/sessions.py`; a Claude Code session is found under its own process's folder. Not a port. |
+| C1 | S0, separately authorized | `core/chat-log.js` FIND and `T/sessions.py`; a Claude Code session is found under its own process's folder, for reading only. Not a port. |
 | B1 | S1 | New `T/bitbucket.py`, `T/bitbucket_http.py`; qualified identity, host credentials and complete exact-head reads. |
 | B2 | B1 | New `T/publications.py`, commands/output/CLI; durable claims, publication/readiness and current admission. |
 | A2 | A1 | Shared settings/agents, desktop/web controls, `T/settings.py`, launch/resume; discovery, selectors and binding parity. |
@@ -98,11 +98,19 @@ for each candidate process and never for the caller:
 - macOS reads live memory, and `argc` no longer marks where the environment starts once a
   process sets its title (Node's `process.title` rewrites argv). The variable seen anywhere
   but in the counted environment refuses, and so does an empty count, so a set variable never
-  reads as unset. So a Node agent that set its title finds nothing, and an argument shaped
+  reads as unset. So a Node agent that set its title can find nothing, and an argument shaped
   like the variable, with the variable unset, refuses too.
 - Behaviour change: on macOS FIND now needs python3 on its PATH. Without it every Claude
   agent there loses Chat, including default ones that work today. `session_of()` runs in
   python already and doesn't.
+- A session under another folder is for reading only. Revive, resume, a restart and a fork
+  carry no `CLAUDE_CONFIG_DIR`, so continuing it would start on another profile, perhaps
+  another account. `session_of()` returns such a session only to `any_folder=True`, which
+  `T/news.py` alone asks for, so nothing records it and every path that starts an agent
+  behaves as before. `sessionOf()` in `core/agents.js` gives it no id, and the window's picker
+  refuses, as finding the log is what shows it. Carrying the folder belongs to L1 and L2.
+- `sessionOf()` knows ~/.claude by its shape, as the agent's machine's home isn't known
+  there, so FIND finds nothing for another folder called `.claude`, and so does `session_of()`.
 - The macOS reader has no CI: `core/chat-find.test.js` and `test/test_session_discovery.py`
   take it only when run on macOS.
 - This fix is not a required port. No inventory requirement changes status.

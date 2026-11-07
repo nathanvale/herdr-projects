@@ -33,8 +33,10 @@ PHASES = {
 mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py
 mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/takeover.py service/azure-deployments.test.ts
 service/azure-deployments.ts test/azure-binding.cases.json test/test_providers.py'''.split()),
-    'C1': frozenset('''core/chat-find.test.js core/chat-log.js mods/chat/core/chat-log.js
-mods/tasks/bin/herdr_task/sessions.py test/test_session_discovery.py'''.split()),
+    'C1': frozenset('''core/agents.js core/chat-find.test.js core/chat-log.js mods/chat/core/agents.js
+mods/chat/core/chat-log.js mods/chat/main.js mods/coordinator/core/agents.js mods/newspace/core/agents.js
+mods/shepherdr-settings/core/agents.js mods/tasks/bin/herdr_task/news.py mods/tasks/bin/herdr_task/sessions.py
+test/test_session_discovery.py'''.split()),
 }
 
 
