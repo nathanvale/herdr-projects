@@ -461,13 +461,20 @@ those earlier phases admitted are B2's from here, and their pins are B2's.
   3. Refused with nothing sent: two pull requests open from the branch, one into another base (no
      second pull request), one whose description carries another operation's id, or this task's own
      not open from the branch into its base now.
-  4. The push, unless Bitbucket's branch holds the commit already, and only when that branch is absent,
-     held in the commit pushed (a fast-forward), or the commit this task itself last pushed there (as
-     P leases on its own pushed head): anything else is someone's commits, and it refuses with nothing
-     pushed. Then `git push --force-with-lease=refs/heads/<branch>:<that commit>` to the frozen URL,
-     prompts off. A push git can't confirm is read back there (`ls-remote`), never pushed again in that
-     command; one it can't read back either is `uncertain` and keeps the claim. A confirmed push is
-     saved in the claim at once.
+  4. Branch ownership, read-only: a branch that exists on Bitbucket where this host never pushed it
+     (no recorded push of its own) refuses, never pushed over and with no pull request opened; one
+     moved since this host's own last push refuses too.
+     The push, unless Bitbucket's branch holds the commit already: one atomic ref update on the
+     server, `git push --porcelain --force-with-lease=refs/heads/<branch>:<expect>` to the frozen URL,
+     prompts off. The first push is create-if-absent (`<expect>` empty: the ref must not exist), so
+     exactly one push ever creates the branch; later ones expect this host's own last push (as P leases
+     on its own pushed head). Its operation id, commit and expectation are saved in the claim before
+     git runs. git's own line for the ref decides: moved (done), rejected or already there when it had
+     to be absent (lost: another push created it, refused), or no line (`uncertain`, kept). An
+     uncertain push is settled from the branch next time: as its expectation, it didn't land and may go
+     again; at its commit as an update of this host's branch, it landed; at its commit as the first push,
+     held, as another host's push of the same commit looks the same. A confirmed push is saved in the
+     claim at once.
   5. The draft: the task's saved record, or one opened by hand at exactly that head carrying no
      operation id (adopted, as GitHub's SHEP-13), or a new one: `POST` with `draft: true`,
      `close_source_branch: false`, the source branch at exactly that commit, the title
@@ -506,17 +513,17 @@ those earlier phases admitted are B2's from here, and their pins are B2's.
   `show --evidence`) carries the same facts as `publication` (or `unreadable` with why), and one text
   line. Ready on a pull request herdr-task never merges says so, whatever the merge setting, and sets
   no auto merge.
-- Concurrency, as it actually is: exclusion holds on one execution host, across its folders, tasks
-  and commands. herdr-task keeps no shared store between machines, and runs a folder's commands on the
-  machine holding it, so a second host doesn't see the first one's claim. Between hosts, only
-  Bitbucket's answers stand. A host never opens a pull request while any is open from the branch.
-  It never adopts, reconciles or prepares one carrying another operation's id, so neither host takes
-  over the other's effect. Two hosts publishing one branch at the same moment can each open one, as
-  Bitbucket has no conditional create; the next Ready of either sees two open and refuses. So the
-  ticket's "two execution hosts cannot independently claim the same owned effect" is not met: it
-  needs a store both hosts share, and a canonical cross-machine claim (`bitbucket-two-machine`'s
-  `service/store.ts`) isn't built. That is held for a decision. A fork's branch of the same name is
-  another branch and is left out of the open pull requests read.
+- Concurrency, as it actually is: exclusion holds per Bitbucket repository and task branch, through
+  the server's ref transaction. herdr-task keeps no shared store between machines (each host has its
+  own claims file), so two execution hosts publishing the same task both may read the branch as
+  absent, but only one create-if-absent push can create it. Only the branch's owner opens, adopts or
+  prepares its pull request, so exactly one opens; the other refuses saying another push created the
+  branch first, holding no claim. Within one host the claims file's lock also refuses a second task,
+  folder or command before anything is sent. A third party pushing the branch first (someone's own
+  push, before Ready) blocks publication until the person removes or renames it. This relies on git's
+  receive-pack checking each update's old id, not on Bitbucket refusing a second pull request, and no
+  shared store, service or core document is used. A fork's branch of the same name is another branch
+  and is left out of the open pull requests read.
 - Merge: B1's refusal is unchanged for every published record. Nothing sends a Bitbucket merge or
   merges another way.
 - Regression: `test/test_bitbucket_publication.py` runs `ready`, `show`, `accept` and `merge` as
@@ -524,14 +531,17 @@ those earlier phases admitted are B2's from here, and their pins are B2's.
   are a bare repository's, reached by git through the remote's rewrite to an SSH alias and a test SSH
   transport. It covers the happy path with fields people set kept, lost replies found at once and on
   reopening (no second `POST`, same id), an empty lookup that never releases, an uncertain preparation,
-  a refused write that keeps its push, zero-effect refusals, someone's commits on the branch never
-  pushed over, a push that can't be read back, merge settings that promise nothing, a fork's branch
+  a refused write that keeps its push, zero-effect refusals, a branch this host never pushed never
+  pushed over, its own last push the only one rewritten, a push git doesn't answer for, two simulated
+  hosts publishing the same task (one branch creation, one pull request, the other refused; after, and
+  racing with the same or another commit), merge settings that promise nothing, a fork's branch
   left out, a remote changed before the push and before the write, a push URL git would rewrite,
   claims of another task or machine, and an unreadable claims file.
 - Not covered: Bitbucket's real answers (the list query's `q`, a `/` in `refs/branches/<name>`
   sent as `%2F`, draft and reviewer fields, the 255-character title bound and the 32000-character
-  description bound are as P and its documentation give them), a real helper, account and push, two
-  real hosts, and a delayed write landing after its reconciliation. All are native qualification.
+  description bound are as P and its documentation give them), Bitbucket's own git server applying
+  `--force-with-lease` as git's receive-pack does, a real helper, account and push, two real hosts,
+  and a delayed write landing after its reconciliation. All are native qualification.
   Python checks and the regression are authored here and run only in Root's CI.
 - Not a required port's completion: every `bitbucket-*` requirement, `public-cli-outcomes` and the
   B2 part of `request-replay` stay pending until Root CI and native qualification.

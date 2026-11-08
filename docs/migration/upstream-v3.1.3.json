@@ -326,13 +326,13 @@
       "phase": "B2",
       "path": "mods/tasks/bin/herdr_task/publications.py",
       "upstream_blob": null,
-      "sha256": "17b912825fc968295da2db8fcce80ffe700904f579cf2df65a9ecc16258c81a3"
+      "sha256": "71933866152b9dacf345ab4f3cdd0bdbbcb286ab9132eb25880a50f4d0aa7dcc"
     },
     {
       "phase": "B2",
       "path": "test/test_bitbucket_publication.py",
       "upstream_blob": null,
-      "sha256": "b8bf2246e93f17c93f4096c10e3f0738e7e19e4a417b147f765e0e87f3c1d80c"
+      "sha256": "ad1f9ede7c6916a2d2b97712a2ee22677ecf50766005535608c83aaceae4c04c"
     }
   ],
   "requirements": [
@@ -491,7 +491,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; B2 pushes only to the one push URL git derives, which no insteadOf/pushInsteadOf rule rewrites again, re-reads the remote's views as the last check before the push and each write, pushes only over an absent branch, a fast-forward or this task's own last push (leased on exactly that, so no one's commits are dropped), keeps the claim as uncertain for a push it can't confirm or read back, reads a push git can't confirm back rather than pushing again, and saves a confirmed push in this host's claim at once, kept through later refusals and shown by show and --json (test/test_bitbucket_publication.py authored, CI pending); a real push and Git credential are native qualification"
+      "evidence": "source-inspected; B2 pushes only to the one push URL git derives, which no insteadOf/pushInsteadOf rule rewrites again, re-reads the remote's views as the last check before the push and each write, pushes create-if-absent first and then only from this host's own recorded last push (one atomic ref update with that exact expectation, so no one's commits are dropped), saves each push's operation id before git runs and settles one git didn't answer for from the branch next time, and keeps a confirmed push in this host's claim whatever fails later, shown by show and --json (test/test_bitbucket_publication.py authored, CI pending); a real push and Git credential are native qualification"
     },
     {
       "id": "bitbucket-uncertainty",
@@ -533,7 +533,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; B2's claim excludes one execution host's folders, tasks and commands (one claims file under one lock, owner with machine name); herdr-task keeps no shared store, so across hosts only Bitbucket's answers stand: no create while any pull request is open from the branch, and no adoption, reconciliation or preparation of one carrying another operation's id; two hosts creating at the same moment can each open one, refused at the next Ready; so two hosts are not excluded from the same effect (ticket #10's criterion not met, held for a decision): the canonical cross-machine claim (service/store.ts) is not built (test/test_bitbucket_publication.py authored with claims of another task and machine; CI pending); two real hosts are native qualification"
+      "evidence": "source-inspected; B2 excludes per Bitbucket repository and task branch through the server's ref transaction: the task branch's first push is create-if-absent (--force-with-lease=<ref>: with the claim's operation id saved first), so one push creates it; a host that never pushed an existing branch refuses read-only, and only the branch's owner opens, adopts or prepares its pull request; one host's claims file and lock also exclude its own folders, tasks and commands; a third party pushing the branch first blocks publication; no shared store (service/store.ts unused) (test/test_bitbucket_publication.py authored: two simulated hosts on one bare repository and the fixture Bitbucket, read after and racing with the same and another commit, one branch creation and one pull request; CI pending); Bitbucket's own git server and two real hosts are native qualification"
     },
     {
       "id": "bitbucket-merge-refusal",

@@ -16,6 +16,7 @@ sends and keeps given Bitbucket's answers as its documentation shows them; Bitbu
 real credential helper, a real account and two real execution hosts are native qualification.
 
 Runs only on CI, as the other command-line tests."""
+import copy
 import json
 import os
 import re
@@ -52,6 +53,7 @@ class Model:
         self.f, self.bare, self.prs, self.statuses, self.next = f, bare, {}, {}, 7
         self.create = self.prepare = "ok"
         self.listing = "ok"
+        self.stale = False  # reads that predate another host's push: no task/1 branch and no pull request yet
         self.after_create, self.touch = None, {}
 
     def head(self, ref):
@@ -86,13 +88,14 @@ class Model:
                 return (200, REPOSITORY)
             if p.startswith(ROOT + "/refs/branches/"):
                 name = urllib.parse.unquote(p[len(ROOT + "/refs/branches/"):])
-                full = self.head(f"refs/heads/{name}")
+                full = None if self.stale and name == "task/1" else self.head(f"refs/heads/{name}")
                 return (200, {"name": name, "target": {"hash": full}}) if full else (404, {"type": "error"})
             if p == ROOT + "/pullrequests":
                 if self.listing == "unavailable":
                     return (503, {"type": "error"})
                 m = re.fullmatch(r'source\.branch\.name="([^"]+)" AND state="OPEN"', urllib.parse.parse_qs(u.query)["q"][0])
-                rows = [self.row(x) for x in self.prs.values() if x["source"] == m.group(1) and x["state"] == "OPEN"]
+                rows = [self.row(x) for x in self.prs.values()
+                        if x["source"] == m.group(1) and x["state"] == "OPEN" and not self.stale]
                 return (200, {"values": rows, "size": len(rows), "page": 1, "pagelen": 50})
             m = re.fullmatch(re.escape(ROOT) + r"/pullrequests/(\d+)", p)
             if m:
@@ -139,6 +142,11 @@ def fixture(test):
     os.makedirs(os.path.dirname(f.bare_bb))
     f.git(f.tmp, "init", "-q", "--bare", "-b", "main", f.bare_bb)
     f.git(f.repo, "push", "-q", f.bare_bb, "main")
+    # Every ref update the server makes, as git's own update hook sees it: "<ref> <old> <new>".
+    f.ref_log = os.path.join(f.tmp, "ref-updates.log")
+    open(f.ref_log, "w").close()
+    f.program(os.path.join(f.bare_bb, "hooks", "update"), '#!/bin/sh\n[ -z "$FAKE_REF_LOG" ] || echo "$1 $2 $3" >> "$FAKE_REF_LOG"\n')
+    f.env["FAKE_REF_LOG"] = f.ref_log
     f.git(f.repo, "remote", "add", "origin", bb.REMOTE)
     f.git(f.repo, "config", "url.bbtest:.insteadOf", "https://bitbucket.org/")
     empty = os.path.join(f.tmp, "gitconfig")
@@ -255,29 +263,110 @@ class Publishing(unittest.TestCase):
         self.ready()
         self.assertEqual((self.f.task()["pr"]["number"], len(self.writes("POST"))), (7, 1))
 
-    def test_someone_elses_commits_on_the_branch_are_never_pushed_over(self):
-        f = self.f
-        other = f.sibling("a reviewer's fixup")
-        f.git(f.repo, "push", "-q", f.bare_bb, f"{other}:refs/heads/task/1")
-        out = self.ready(1)
-        self.assertIn("would drop someone's commits", out["error"])
-        self.assertEqual((out["publication"]["result"], self.there(), self.writes("POST")), ("refused", other, []))
-        # One the branch holds (it only moves forward) is pushed over, as nothing is lost.
-        self.f = f = fixture(self)
-        f.git(f.repo, "push", "-q", f.bare_bb, f"{f.start}:refs/heads/task/1")
-        self.ready()
-        self.assertEqual(self.there(), f.tip)
+    def test_a_branch_this_host_never_pushed_is_never_pushed_over(self):
+        for name, commit in (("someone's commits", lambda f: f.sibling("a reviewer's fixup")), ("even ones it holds", lambda f: f.start)):
+            with self.subTest(name):
+                self.f = f = fixture(self)
+                other = commit(f)
+                f.git(f.repo, "push", "-q", f.bare_bb, f"{other}:refs/heads/task/1")
+                out = self.ready(1)
+                self.assertIn("this machine never pushed it there", out["error"])
+                self.assertEqual((out["publication"]["result"], self.there(), self.writes("POST")), ("refused", other, []))
+                self.assertIsNone(self.claim())
 
-    def test_a_push_git_cant_confirm_or_read_back_is_uncertain_and_keeps_the_claim(self):
+    def test_this_hosts_own_last_push_is_the_only_one_it_pushes_over(self):
+        f = self.f
+        self.ready()
+        first = f.tip
+        f.git(f.wt, "commit", "-q", "--amend", "-m", "the task's work, reworded")
+        f.tip = f.git(f.wt, "rev-parse", "HEAD")
+        f.seed(state="running")
+        self.ready()
+        self.assertEqual((self.there(), len(self.writes("POST")), len(self.writes("PUT"))), (f.tip, 1, 2))
+        self.assertEqual(self.claim()["pushed"]["head"], f.tip)
+        self.assertIn(f"refs/heads/task/1 {first} {f.tip}", self.updates())
+        # Someone else's push since: the next push refuses, its expectation no longer the branch's.
+        f.git(f.repo, "push", "-q", "-f", f.bare_bb, f"{f.sibling('a fixup on Bitbucket')}:refs/heads/task/1")
+        f.git(f.wt, "commit", "-q", "--allow-empty", "-m", "more")
+        f.tip = f.git(f.wt, "rev-parse", "HEAD")
+        f.seed(state="running")
+        out = self.ready(1)
+        self.assertIn("someone pushed since", out["error"])
+        self.assertEqual(out["publication"]["result"], "refused")
+        self.assertNotEqual(self.there(), f.tip)
+
+    def test_a_push_git_doesnt_answer_for_keeps_its_claim_and_is_settled_from_the_branch(self):
         f = self.f
         f.env["FAKE_SSH_FAIL"] = "1"
         out = self.ready(1)
         self.assertIn("may or may not have happened", out["error"])
         self.assertEqual((out["publication"]["result"], self.writes("POST"), self.there()), ("uncertain", [], None))
-        self.assertIsNotNone(self.claim())
-        del f.env["FAKE_SSH_FAIL"]
+        op = self.claim()["push"]["id"]
+        self.assertEqual((self.claim()["push"]["state"], out["publication"]["push"]["operation"]), ("uncertain", op))
+        del f.env["FAKE_SSH_FAIL"]  # the branch is still absent: it didn't land, and a create-if-absent may go again
         self.ready()
-        self.assertEqual((self.there(), f.task()["state"]), (f.tip, "ready"))
+        self.assertEqual((self.there(), f.task()["state"], self.claim()["push"]), (f.tip, "ready", None))
+
+    # ---- two execution hosts ---------------------------------------------------------------
+
+    def second_host(self):
+        """Another execution host with the same task: its own clone of the folder (the same commits), its
+        own task list and claims file and its own machine name, on the same Bitbucket and SSH transport."""
+        a = self.f
+        b = copy.copy(a)
+        root = os.path.join(a.tmp, "host-b")
+        os.makedirs(root)
+        b.repo, b.wt = os.path.join(root, "repo"), os.path.join(root, "wt")
+        b.env = {**a.env, "HERDR_TASK_STORE": os.path.join(root, "tasks"), "HERDR_TASK_SETTINGS": os.path.join(root, "shepherdr.json")}
+        b.claims_path = os.path.join(root, "tasks", ".publications.json")
+        with open(b.env["HERDR_TASK_SETTINGS"], "w") as fh:
+            json.dump({"here": "host-b"}, fh)
+        b.git(root, "clone", "-q", a.repo, b.repo)
+        for k, v in (("remote.origin.url", bb.REMOTE), ("url.bbtest:.insteadOf", "https://bitbucket.org/"),
+                     ("credential.helper", os.path.join(a.tmp, "bin", "credential-helper")), ("credential.useHttpPath", "true"),
+                     ("user.name", "T"), ("user.email", "t@example.invalid"), ("commit.gpgsign", "false")):
+            b.git(b.repo, "config", k, v)
+        b.git(b.repo, "worktree", "add", "-q", "-b", "task/1", b.wt, a.tip)
+        b.ok("add", "Fix login", "--folder", b.repo, "--space", "sp1")
+        b.store = b.ok("where", "--folder", b.repo)["store"]
+        b.seed(state="running", started=1, mode="worktree", worktree=b.wt, branch="task/1", start=a.start, base="main")
+        return b
+
+    def as_host(self, host, code):
+        mine, self.f = self.f, host
+        try:
+            return self.ready(code)
+        finally:
+            self.f = mine
+
+    def updates(self):
+        with open(self.f.ref_log) as fh:
+            return fh.read().splitlines()
+
+    def test_two_hosts_publishing_the_same_task_create_its_branch_and_pull_request_once(self):
+        cases = {
+            "the second reads after the first": (False, False, "this machine never pushed it there"),
+            "both read before either pushed, the same commit": (True, False, "refused to create task/1"),
+            "both read before either pushed, another commit": (True, True, "refused to create task/1"),
+        }
+        for name, (racing, own_commit, words) in cases.items():
+            with self.subTest(name):
+                self.f = a = fixture(self)
+                b = self.second_host()
+                if own_commit:
+                    b.tip = b.commit(b.wt, "host b's own")
+                self.ready()  # host A publishes
+                a.model.stale = racing
+                out = self.as_host(b, 1)
+                a.model.stale = False
+                self.assertIn(words, out["error"])
+                self.assertEqual((out["publication"]["result"], out["publication"]["changed"]), ("refused", []))
+                created = [u for u in self.updates() if u.startswith("refs/heads/task/1 " + "0" * 40)]
+                self.assertEqual((len(created), len(self.writes("POST")), self.there()), (1, 1, a.tip))
+                self.assertEqual((b.task()["state"], b.task().get("pr"), a.task()["state"], a.task()["pr"]["number"]),
+                                 ("running", None, "ready", 7))
+                with open(b.claims_path) as fh:
+                    self.assertEqual(json.load(fh)["claims"], {})  # the loser holds nothing
 
     def test_merge_stays_refused_once_published(self):
         f = self.f
