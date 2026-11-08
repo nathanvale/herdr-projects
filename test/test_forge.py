@@ -318,6 +318,37 @@ class AnExistingPullRequestOnAnotherHost(unittest.TestCase):
         self.assertEqual(f.calls("pr"), [])
         self.assertEqual((os.path.isdir(f.wt), f.rev("refs/heads/task/1")), (True, f.tip))
 
+    def mirror_merged(self):
+        """The same-named github.com mirror's pull request #7, merged at the task's tip into its base. Its
+        merge never reached the folder's own base, so local Git (landed()) can't say the work is there."""
+        f = self.f
+        f.github(prs=[f.pr(state="MERGED", baseRefName="old-base", mergeCommit={"oid": "e" * 40})])
+
+    def test_ready_never_finishes_on_a_mirrors_merged_pull_request(self):
+        f = self.f
+        self.mirror_merged()
+        before = f.saved()
+        self.refused("ready", "1", "--summary", "Sign-in works again")  # publication's own refusal, after SHEP-59 found none
+        self.assertEqual(f.saved(), before)
+        t = f.task()
+        self.assertEqual(t["state"], "running")
+        for key in ("pr", "landed"):
+            self.assertNotIn(key, t)
+        self.assertEqual((f.calls("api"), f.remote_tip("task/1")), ([], None))  # nothing pushed
+
+    def test_the_ticks_ready_read_never_finishes_on_a_mirrors_merged_pull_request(self):
+        f = self.f
+        f.seed(state="ready", ready_at=1, own=f.tip, head=f.tip)
+        self.mirror_merged()
+        unasked(f)
+        self.assertEqual(f.ok("tick", "--folder", f.repo)["done"], [])
+        t = f.task()
+        self.assertEqual(t["state"], "ready")
+        for key in ("pr", "merged", "merged_head", "done_at", "landed"):
+            self.assertNotIn(key, t)
+        self.assertEqual(f.calls("pr"), [])
+        self.assertEqual((os.path.isdir(f.wt), f.rev("refs/heads/task/1")), (True, f.tip))
+
     def test_a_folder_host_gh_didnt_name_refuses(self):
         self.f.git(self.f.repo, "remote", "set-url", "origin", publication.URL)
         self.f.github(prs=[self.f.pr()], repo_url=None)

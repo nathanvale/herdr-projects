@@ -162,7 +162,11 @@ def pr_merged(task, where):
 
 def already_merged(s, task):
     """SHEP-59 (the adapter's already_merged()), with a saved pull request read only through
-    pr_view(): refused (Fail) when it is unreachable or its forge answers for another one."""
+    pr_view(): refused (Fail) when it is unreachable or its forge answers for another one. Its pull
+    request queries (the saved one's view, the merged list) go only when the folder's repository is
+    on the host gh is sent to (reach()): otherwise none is merged, nothing is recorded or raised, and
+    local Git alone (merged_here(), landed()) says whether its work is in its base. Ready then goes
+    on to publication, which refuses on that host (pr_open()); the tick goes on to other tasks."""
     admit(task)
 
     def view(t):
@@ -170,7 +174,14 @@ def already_merged(s, task):
         if v and v.get("refused"):
             raise Fail(v["refused"])
         return v
-    return github.already_merged(s, task, view)
+
+    def reached(s):
+        try:
+            reach(repository(s), "nothing was recorded", "try again")  # the lookup already_merged() just made
+        except Fail:
+            return False
+        return True
+    return github.already_merged(s, task, view, reached)
 
 
 # ---- the saved pull request -----------------------------------------------------------------

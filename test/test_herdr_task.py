@@ -1426,10 +1426,11 @@ class MergedOnlyWithOwnWork(unittest.TestCase):
             if a[:2] == ("pr", "create"):
                 return True, "https://github.com/o/r/pull/705", ""
             return True, "", ""
+        import herdr_task.forge as forge
         where = lambda s, fresh=False: {"provider": "github", "repo": "o/r", "host": "github.com"}
         for mod, name, value in ((github, "gh", fake), (github, "github", lambda s: "o/r"), (self.commands, "repository", where),
                                  (github, "watch_main", lambda *a: None), (self.commands, "watch_main", lambda *a: None),
-                                 (self.tick, "repository", where)):
+                                 (self.tick, "repository", where), (forge, "repository", where)):
             p = mock.patch.object(mod, name, value)
             p.start()
             self.addCleanup(p.stop)

@@ -322,11 +322,16 @@ those earlier phases admitted are S1's from here, and their pins are S1's.
   for that pass) call it before any call about a pull request. gh failing to place the
   folder at a merge reads as gh failing to reach the pull request, as N1 words it.
 - Not covered: read-only presentation in `service/worktree.ts` and `mods/task-pr/main.js`,
-  and GitHub news (`T/ghnews.py`), still read the saved `repo` (B1/B2); Ready's SHEP-59
-  read (also the tick's, for a Ready task) reads the merged list before the host check,
-  and the tick's read of a recorded pull request isn't gated by it (their answers must
-  still be on the reached host, at the task's tip, and a recorded one passed it when
-  saved). Host-qualified GitHub transport is not added.
+  and GitHub news (`T/ghnews.py`), still read the saved `repo` (B1/B2); the tick's read
+  of a recorded pull request isn't gated by it (its answer must still be on the reached
+  host, and a recorded one passed it when saved). Host-qualified GitHub transport is
+  not added.
+- SHEP-59's completion read (`already_merged()`, from Ready and from the tick for a
+  Ready task) makes its pull request queries, the saved one's view and the merged list,
+  only once `reach()` passes for the folder's repository. Otherwise none is merged:
+  nothing is recorded or raised, and local Git alone (`merged_here()`, `landed()`)
+  says whether the work is in its base, as for a folder not on GitHub. Ready then
+  reaches publication, which refuses on that host.
 - Regression: `test/test_forge.py` runs `ready`, `merge` and `tick` as processes on the N1
   fixture. Existing assertions are unchanged; `test_herdr_task.py`'s patch points moved
   to the seam, and the merge fake answers only `gh pr merge`. Fixtures answer as gh does:

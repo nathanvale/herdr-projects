@@ -495,11 +495,13 @@ def landed(s, task):
     return False
 
 
-def already_merged(s, task, view=None):
+def already_merged(s, task, view=None, reached=None):
     """SHEP-59: its work is already in its base (its pull request merged, squash too, or nothing left
     to merge): ready and the tick mark it done instead of opening a pull request. Returns the merged
     pull request ({} when merged without one), or None. Its pull request is recorded on the task.
-    view: how a saved one is read (the forge's, which confirms it is this task's); pr_view() alone."""
+    view: how a saved one is read (the forge's, which confirms it is this task's); pr_view() alone.
+    reached: whether the pull request queries may go (the forge's folder-host check); when it says no,
+    they are skipped as for a folder not on GitHub, and only local Git (landed()) can say merged."""
     if merged_here(s, task):
         return {}
     repo = github(s)
@@ -510,6 +512,7 @@ def already_merged(s, task, view=None):
         # Fetched as a branch: a bare name reads the remote's same-named tag first (as update_main()).
         git(main, "fetch", "--quiet", remote, f"+refs/heads/{base}:refs/remotes/{remote}/{base}")
         tip = git(main, "rev-parse", "--verify", "--quiet", f"refs/heads/{task.get('branch')}")[1] or tip
+    if repo and (reached is None or reached(s)):
         if task.get("pr"):
             v = (view or pr_view)(task)
             if v and v.get("state") == "MERGED" and v.get("headRefOid") == tip:
