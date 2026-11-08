@@ -1457,6 +1457,29 @@ class CycleTwo(unittest.TestCase):
         f.github(prs=[])  # gh now places it on GitHub
         return f
 
+    def saved_no_on_a_reachable_remote(self):
+        """saved_no(), with the remote reaching the bare repo (url.insteadOf), so publishing pushes nowhere real."""
+        f = publication.Fixture(self)
+        f.git(f.repo, "remote", "set-url", "origin", publication.ENTERPRISE)
+        f.git(f.repo, "config", "--add", f"url.{f.bare}.insteadOf", publication.ENTERPRISE)
+        f.github(prs=[], fail=publication.NOT_GITHUB)
+        f.ready()
+        self.assertEqual((f.task()["state"], json.loads(f.saved())["github"]["repo"]), ("ready", None))
+        f.seed(state="running")
+        f.github(prs=[])  # gh now places it on GitHub
+        return f
+
+    # CodeRabbit 9Z8c: Ready asks a saved no again too, and publishes: a refusal saves nothing, so
+    # trusting the saved no would leave the task with no pull request for up to an hour.
+    def test_ready_asks_a_saved_no_again_and_opens_the_pull_request(self):
+        f = self.saved_no_on_a_reachable_remote()
+        f.ready()
+        t = f.task()
+        self.assertEqual((t["state"], (t.get("pr") or {}).get("number")), ("ready", 9))
+        self.assertEqual((len(f.calls("pr", "create")), len(f.calls("repo", "view"))), (1, 2))
+        self.assertEqual((f.remote_tip("task/1"), f.rev("main"), f.hc("send", "run")), (f.tip, f.start, []))
+        self.assertEqual(json.loads(f.saved())["github"]["repo"], "o/r")
+
     def test_merge_asks_a_saved_no_again(self):
         f = self.saved_no()
         self.assertIn("no pull request recorded", f.refused("merge", "1", "--folder", f.repo))

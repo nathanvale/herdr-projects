@@ -92,7 +92,7 @@
       "phase": "N1",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "104a0d67f907d4f26dc62ded57780e4e060a3b7b",
-      "sha256": "f80ef48936f1ded3372e18e31aeef926586d7643c15f65e90818e34acbe4b47f"
+      "sha256": "53df8c7a0b56381319f9bca1a46b876d49b2b216f3377d61116e2471e8e32161"
     },
     {
       "phase": "N1",
