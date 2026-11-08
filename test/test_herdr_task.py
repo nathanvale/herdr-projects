@@ -760,9 +760,11 @@ class BackToWork(unittest.TestCase):
                "statusCheckRollup": [{"name": "check", "conclusion": "FAILURE"}]}
         views = [red]
         clock = [10_000_000]
+        import herdr_task.forge as forge
+        on_github = lambda s, fresh=False: {"provider": "github", "repo": "o/r", "host": "github.com"}  # as gh places it
         for mod, name, value in ((self.tick, "pr_view", lambda t: views[0]), (self.tick, "pr_news", lambda *a: None),
                                  (self.tick, "now", lambda: clock[0]), (self.agents, "now", lambda: clock[0]),
-                                 (self.commands, "now", lambda: clock[0])):
+                                 (self.commands, "now", lambda: clock[0]), (forge, "repository", on_github)):
             p = self.mock.patch.object(mod, name, value)
             p.start()
             self.addCleanup(p.stop)
@@ -985,7 +987,10 @@ class BackToWork(unittest.TestCase):
         t = self.pr_task()
         t["attention"], t["pr"]["checked"] = "GitHub didn't merge it: GraphQL: Something went wrong", 0
         fine = {"state": "OPEN", "mergeable": "MERGEABLE", "statusCheckRollup": [], "headRefOid": "abc"}
-        with self.mock.patch.object(self.tick, "pr_view", lambda t: fine), self.mock.patch.object(self.tick, "pr_news", lambda *a: None):
+        import herdr_task.forge as forge
+        on_github = lambda s, fresh=False: {"provider": "github", "repo": "o/r", "host": "github.com"}  # as gh places it
+        with self.mock.patch.object(self.tick, "pr_view", lambda t: fine), self.mock.patch.object(self.tick, "pr_news", lambda *a: None), \
+                self.mock.patch.object(forge, "repository", on_github):
             self.tick.facts(self.store, t, {"attention": [], "done": []})
         self.assertNotIn("attention", t)  # Ready, its Accept back
 
@@ -1398,8 +1403,15 @@ class MergedOnlyWithOwnWork(unittest.TestCase):
             self.assertEqual(self.tick_once(), ("done", True))
 
     def mock_pr(self, v):
+        from contextlib import ExitStack
         from unittest import mock
-        return mock.patch.object(self.tick, "pr_view", lambda t: v)
+        import herdr_task.forge as forge
+        stack = ExitStack()
+        stack.enter_context(mock.patch.object(self.tick, "pr_view", lambda t: v))
+        # The folder on github.com, the host gh is sent to, as gh would place it (forge.reach()).
+        stack.enter_context(mock.patch.object(forge, "repository",
+                                              lambda s, fresh=False: {"provider": "github", "repo": "o/r", "host": "github.com"}))
+        return stack
 
     # SHEP-59: a pull request squash-merged (its commits never in main), then ready: done, never a
     # second pull request; nor when its work is in main some other way (nothing left to merge).

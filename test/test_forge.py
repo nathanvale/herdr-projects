@@ -349,6 +349,34 @@ class AnExistingPullRequestOnAnotherHost(unittest.TestCase):
         self.assertEqual(f.calls("pr"), [])
         self.assertEqual((os.path.isdir(f.wt), f.rev("refs/heads/task/1")), (True, f.tip))
 
+    def test_the_ticks_read_of_a_record_saved_before_s1_finishes_nothing_and_goes_on(self):
+        """A Ready task recording, in the pre-S1 shape, a pull request pre-S1 gh opened on the github.com
+        mirror, merged at its tip; beside it a task whose work was merged here by hand."""
+        f = self.f
+        f.seed(state="ready", ready_at=1, base="target", pr=dict(LEGACY))
+        f.github(prs=[f.pr(state="MERGED", mergeCommit={"oid": "e" * 40})])
+        wt2 = os.path.join(f.tmp, "wt2")
+        f.git(f.repo, "worktree", "add", "-q", "-b", "task/2", wt2, f.start)
+        tip2 = f.commit(wt2, "the other task's work")
+        f.git(f.repo, "merge", "-q", "--ff-only", "task/2")
+
+        def other(d):
+            t2 = {k: v for k, v in d["tasks"][0].items() if k not in ("pr", "ready_at", "base_set")}
+            t2.update(id=2, title="Other work", state="running", worktree=wt2, branch="task/2", base="main", head=tip2, own=tip2)
+            d["tasks"].append(t2)
+            d["next"] = 3
+        f.edit(other)
+        unasked(f)
+        self.assertEqual(f.ok("tick", "--folder", f.repo)["done"], [2])  # the tick went on: the other task is done
+        self.assertEqual(f.calls("pr"), [])  # the recorded pull request was never asked about
+        t = f.task()
+        self.assertEqual(t["state"], "ready")
+        for key in ("merged", "merged_head", "done_at", "landed"):
+            self.assertNotIn(key, t)
+        self.assertEqual(core(t["pr"]), LEGACY)  # recorded as it was (only the tick's look-again time stamped)
+        self.assertEqual((os.path.isdir(f.wt), f.rev("refs/heads/task/1")), (True, f.tip))
+        self.assertEqual(json.loads(f.saved())["tasks"][1]["state"], "done")
+
     def test_a_folder_host_gh_didnt_name_refuses(self):
         self.f.git(self.f.repo, "remote", "set-url", "origin", publication.URL)
         self.f.github(prs=[self.f.pr()], repo_url=None)

@@ -322,10 +322,13 @@ those earlier phases admitted are S1's from here, and their pins are S1's.
   for that pass) call it before any call about a pull request. gh failing to place the
   folder at a merge reads as gh failing to reach the pull request, as N1 words it.
 - Not covered: read-only presentation in `service/worktree.ts` and `mods/task-pr/main.js`,
-  and GitHub news (`T/ghnews.py`), still read the saved `repo` (B1/B2); the tick's read
-  of a recorded pull request isn't gated by it (its answer must still be on the reached
-  host, and a recorded one passed it when saved). Host-qualified GitHub transport is
-  not added.
+  and GitHub news (`T/ghnews.py`), still read the saved `repo` (B1/B2). Host-qualified
+  GitHub transport is not added.
+- The tick's read of a recorded pull request (`facts()`) passes `reach()` for the
+  folder's repository first, so a record saved before S1 (never checked) is held to it
+  too. Otherwise nothing is read as the task's and nothing finishes: the record and the
+  worktree stay, the next look comes after `PR_EVERY` as when gh doesn't answer, and
+  the tick goes on.
 - SHEP-59's completion read (`already_merged()`, from Ready and from the tick for a
   Ready task) makes its pull request queries, the saved one's view and the merged list,
   only once `reach()` passes for the folder's repository. Otherwise none is merged:
