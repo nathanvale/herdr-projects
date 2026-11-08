@@ -44,17 +44,20 @@ saved repo name.
   The task's base then becomes the pull request's, the old one is kept as `adopted_from`, the tip it verified is kept as
   `adopted_head`, and it merges only on the person's Accept. Accept refuses unless the pull request still targets that
   base and both its head and the branch here are still at `adopted_head`. `ready` never changes `adopted_head`; running
-  `adopt` again after the branch has moved verifies it again and records the new tip. A retarget between Accept's read
-  and the merge isn't caught. If it merges into any other branch anyway, the task isn't finished: Accept and the tick
-  hold it, its worktree and branch stay, and `herdr-task done <task>` is the person's way out. The base commit must be
-  in this clone: a `git fetch` first, if adopt asks for it, is the one step that uses git's own access.
+  `adopt` again after the branch has moved verifies it again and records the new tip. That works for a rewrite on the
+  same start: after a rebase onto a base that has moved, the merge base is no longer the task's start, so `adopt`
+  refuses. A retarget between Accept's read and the merge isn't caught. If it merges into any other branch anyway, the
+  task isn't finished: Accept and the tick hold it, its worktree and branch stay, and `herdr-task done <task>` is the
+  person's way out. The base commit must be in this clone: a `git fetch` first, if adopt asks for it, is the one step
+  that uses git's own access.
 - `ready` opens no second pull request for a branch. When the branch's open pull requests all target another base, it
   refuses before pushing and names the `adopt` command to run.
 - A finished task's branch and worktree go only when the branch's tip is the commit that merged and the worktree holds
   nothing uncommitted (ignored files aside). For a pull request that's the head GitHub merged, never its squash commit;
-  with none, a tip already in the base branch. Otherwise both stay, and the done task says why in `kept`. `gh pr merge`,
-  run with `--repo`, deletes only GitHub's copy of the branch. A merge here into a base that is only a commit, not a
-  branch, refuses.
+  with none, a tip already in the base branch. Otherwise both stay, and the done task says why in `kept`, which Accept,
+  merge and `show` print. That note is written when the task is finished; while an agent still runs in it, finishing
+  leaves both and writes no note. `gh pr merge`, run with `--repo`, deletes only GitHub's copy of the branch (gh 2.101
+  source, read, not run). A merge here into a base that is only a commit, not a branch, refuses.
 
 ## Install
 

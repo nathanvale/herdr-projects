@@ -211,6 +211,8 @@ def cmd_show(args):
         text.append(f"pull request: #{v['pr']['number']} {v['pr']['url']}")
     if v.get("why") and v["status"] == "needs":
         text.append(f"needs the person: {v['why']}")
+    if v.get("kept"):
+        text.append(f"kept: {v['kept']}")
     if v.get("proof"):
         text.append(f"proof: {v['proof']['title']} ({v['proof']['id']})")
     if v.get("archived"):
@@ -879,10 +881,19 @@ def adopted_moved(s, t, v):
     if not verified:
         return (f"{MOVED} #{n} has no head recorded from its adoption, so what merges can't be checked against what was verified. "
                 f"Run {again} to verify it, then accept again.")
-    if v.get("headRefOid") != verified or tip != verified:
-        return (f"{MOVED} #{n} is at {str(v.get('headRefOid'))[:7]}, and {t.get('branch')} is at {str(tip)[:7]} here; adoption "
-                f"verified {verified[:7]}, so that isn't what adoption verified. Bring both back to {verified[:7]}, or run "
-                f"{again} to verify the new head, then accept again.")
+    there, br, ok = str(v.get("headRefOid")), t.get("branch"), verified[:7]
+    if there != verified and tip != verified:
+        where = (f"#{n} and {br} here are both at {there[:7]}" if there == tip else
+                 f"#{n} is at {there[:7]} and {br} is at {str(tip)[:7]} here")
+        return (f"{MOVED} {where}, which isn't what adoption verified ({ok}). Bring them back to {ok}, or bring them to the "
+                f"same commit and run {again} to verify that one, then accept again.")
+    if there != verified:
+        return (f"{MOVED} #{n} is at {there[:7]} on GitHub, which isn't what adoption verified ({ok}); {br} here still is. "
+                f"Bring the pull request back to {ok}, or bring {br} to {there[:7]} and run {again} to verify that one, then "
+                "accept again.")
+    if tip != verified:
+        return (f"{MOVED} #{n} is still at {ok}, but {br} is at {str(tip)[:7]} here, which isn't what adoption verified. "
+                f"Bring {br} back to {ok}, or publish it (ready) and run {again} to verify that one, then accept again.")
     return None
 
 
@@ -940,9 +951,10 @@ def merge_now(s, t):
     watch_main(s, t, ((v.get("mergeCommit") or {}).get("oid")) if v.get("state") == "MERGED" else None)
     update_main(s, t)
     t["merged"] = True
-    # What merged, for finish(): the head GitHub merged on --match-head-commit, or one merged by hand
-    # as gh says it merged. Never the squash commit. (gh, given --repo, deletes only GitHub's branch.)
-    head = matched or v.get("headRefOid")
+    # What merged, for finish(): as gh says it merged when its answer says MERGED (merged by hand, or a
+    # merge that erred and went through), else the head GitHub merged on --match-head-commit. Never the
+    # squash commit. (gh, given --repo, deletes only GitHub's branch: gh 2.101 source, read, not run.)
+    head = v.get("headRefOid") if v.get("state") == "MERGED" else matched
     if isinstance(head, str) and head:
         t["merged_head"] = head
     finish(s, t, even_if_busy=True)
@@ -979,7 +991,8 @@ def cmd_merge(args):
         v = view(s, t)
     if error:
         merge_refused(args, v, error)
-    text = f"{s.ref(t)}: pull request #{t['pr']['number']} merged; done." if how == "github" else \
+    kept = f" {t['kept']}" if t.get("kept") else ""
+    text = f"{s.ref(t)}: pull request #{t['pr']['number']} merged; done.{kept}" if how == "github" else \
         f"{s.ref(t)}: merge asked of {sent}" + (" (a new agent)" if started else "")
     say(args, {**v, "terminal": sent, "new_agent": started, "merged": how == "github"}, text)
 
@@ -1090,6 +1103,8 @@ def cmd_accept(args):
             "github": f"{s.ref(t)} accepted: pull request #{(t.get('pr') or {}).get('number')} merged; done.",
             "checks": f"{s.ref(t)} accepted: it merges once its checks pass.",
             "agent": f"{s.ref(t)} accepted: merge asked of {sent}" + (" (a new agent)" if started else "")}[how]
+    if t.get("kept") and t["state"] == "done":
+        text += f" {t['kept']}"
     say(args, {**v, "accepted": how, "terminal": sent, "new_agent": started}, text)
 
 

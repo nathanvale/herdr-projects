@@ -168,7 +168,8 @@ def merge_into_branch(s, task):
     """Refuses (Fail) a merge here into a base that is only a commit: there's no branch to land it on."""
     base = task.get("base") or "main"
     if only_a_commit(s.loc["folder"], base):
-        raise Fail(f"{s.ref(task)}'s base {base} is {ONLY_A_COMMIT}, so there's nowhere here to merge it. {STAYS}. "
+        shown = base[:7] if OID.fullmatch(base) else base
+        raise Fail(f"{s.ref(task)}'s base {shown} is {ONLY_A_COMMIT}, so there's nowhere here to merge it. {STAYS}. "
                    f"Merge it where you want it by hand, then run `herdr-task done {s.ref(task)}`.")
 
 
@@ -383,7 +384,8 @@ def adopt_existing(s, task, given):
                    f"{base_oid[:7]} at {met}, so the pull request wouldn't carry exactly the task's work. Retarget it or rebase "
                    "the branch so they meet at the start, or leave it unadopted.")
     # The task's base as it merges today: none recorded is main. A commit isn't a branch to merge into.
-    old = task.get("base") or "main"
+    recorded = task.get("base")
+    old = recorded or "main"
     if old != base:
         if OID.fullmatch(old):
             raise Fail(f"{ref}'s recorded base {old[:7]} is {ONLY_A_COMMIT}, so nothing shows {base} holds it. Nothing was "
@@ -403,6 +405,7 @@ def adopt_existing(s, task, given):
     task["pr"] = {**have, "number": number, "url": p["url"], "repo": repo, "adopted": now(), "adopted_head": tip}
     if old != base:
         task["adopted_from"] = {"base": old, "at": now(), "pr": number}
+    if recorded != base:
         task["base"], task["base_set"], task["base_by"] = base, True, "pull-request"
     # Adoption decides no merge: a merge the tick would start, or a refusal it answers, goes with it.
     task.pop("auto_merge", None)
@@ -554,14 +557,17 @@ def kept_because(s, task):
     tip = git(main, "rev-parse", "--verify", "--quiet", f"refs/heads/{br}")[1] if br else ""
     if not tip:
         # No branch left: nothing of it to lose, and a worktree still here is kept, as nothing shows what merged.
-        return f"{kept}: {br or 'its branch'} isn't here to compare with what merged, so nothing was removed." if os.path.isdir(wt) else None
+        return (f"Kept the worktree {wt}: its branch {br or ''} isn't here to compare with what merged, so nothing was removed."
+                if os.path.isdir(wt) else None)
     head = merged_head(s, task, tip)
     if not head:
         if task.get("pr"):
             return f"{kept}: gh didn't confirm which commit of pull request #{task['pr'].get('number')} merged, so nothing was removed."
         return f"{kept}: {br} at {tip[:7]} isn't in {task.get('base') or 'main'}, so it holds work that didn't merge."
     if tip != head:
-        return f"{kept}: {br} is at {tip[:7]}, and what merged was {head[:7]}, so it holds work that didn't merge."
+        # Ahead of it, beside it or behind it (GitHub's "Update branch", a committed suggestion): not
+        # what merged, so neither goes, whichever it is.
+        return f"{kept}: {br} is at {tip[:7]} here and what merged was {head[:7]}, so nothing was removed."
     if os.path.isdir(wt):
         ok, out, _ = git(wt, "status", "--porcelain", "--untracked-files=normal")
         if not ok or out:
