@@ -36,14 +36,14 @@ class SourceCheckpoint(unittest.TestCase):
         self.assertEqual(observed['candidate_readiness'], 'blocked')
         self.assertEqual(observed['requirements'], 40)
         self.assertEqual(observed['file_dispositions'], 121)
-        self.assertEqual((observed['phase'], observed['source_deltas']), ('A1', 11))
+        self.assertEqual((observed['phase'], observed['source_deltas']), ('N1', 16))
 
     def test_candidate_gate_refuses_even_when_source_validation_passes(self):
         result, observed = self.run_check('--require-ready')
         self.assertEqual(result.returncode, 3)
         self.assertEqual(observed['source_validation'], 'passed')
         self.assertEqual(observed['candidate_readiness'], 'blocked')
-        self.assertIn('A1 is source-only', result.stderr)
+        self.assertIn('N1 is source-only', result.stderr)
         self.assertIn('Complete required ports', result.stderr)
 
     def test_existing_discovery_cannot_be_dropped(self):
@@ -69,32 +69,44 @@ class SourceCheckpoint(unittest.TestCase):
         self.assertIn('Original source hash', observed['error'])
 
     def test_admitted_phase_content_cannot_drift(self):
-        def corrupt(data):
-            next(row for row in data['source_deltas'] if row['path'].endswith('/providers.py'))['sha256'] = '0' * 64
-        result, observed = self.fixture(MANIFEST, corrupt, '--manifest')
-        self.assertEqual(result.returncode, 1)
-        self.assertEqual(observed['candidate_readiness'], 'blocked')
-        self.assertIn('admitted phase content at mods/tasks/bin/herdr_task/providers.py', observed['error'])
+        for name in ('github.py', 'providers.py'):
+            with self.subTest(name=name):
+                def corrupt(data):
+                    next(row for row in data['source_deltas'] if row['path'].endswith('/' + name))['sha256'] = '0' * 64
+                result, observed = self.fixture(MANIFEST, corrupt, '--manifest')
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(observed['candidate_readiness'], 'blocked')
+                self.assertIn('admitted phase content at mods/tasks/bin/herdr_task/' + name, observed['error'])
 
     def test_phase_cannot_roll_back_over_its_changes(self):
         result, observed = self.fixture(MANIFEST, lambda data: data.update(phase='S0'), '--manifest')
         self.assertEqual(result.returncode, 1)
         self.assertIn('admitted owners of phase S0', observed['error'])
 
-    def test_an_unadmitted_owner_cannot_join_the_phase(self):
-        def widen(data):
-            data['source_deltas'].append({'phase': 'A1', 'path': 'mods/tasks/bin/herdr_task/revive.py',
-                                          'upstream_blob': None, 'sha256': '0' * 64})
-        result, observed = self.fixture(MANIFEST, widen, '--manifest')
+    def test_phase_cannot_roll_back_by_dropping_its_deltas_too(self):
+        result, observed = self.fixture(MANIFEST, lambda data: data.update(phase='S0', source_deltas=[]), '--manifest')
         self.assertEqual(result.returncode, 1)
-        self.assertIn('admitted owners of phase A1', observed['error'])
+        self.assertEqual(observed['candidate_readiness'], 'blocked')
+        self.assertIn('Native foundation differs from exact U', observed['error'])
+
+    def test_an_unadmitted_owner_cannot_join_the_phase(self):
+        for phase in ('A1', 'N1'):
+            with self.subTest(phase=phase):
+                def widen(data):
+                    data['source_deltas'].append({'phase': phase, 'path': 'mods/tasks/bin/herdr_task/revive.py',
+                                                  'upstream_blob': None, 'sha256': '0' * 64})
+                result, observed = self.fixture(MANIFEST, widen, '--manifest')
+                self.assertEqual(result.returncode, 1)
+                self.assertIn('admitted owners of phase N1', observed['error'])
 
     def test_a_delta_cannot_drop_its_upstream_provenance(self):
-        def rewrite(data):
-            next(row for row in data['source_deltas'] if row['path'].endswith('/takeover.py'))['upstream_blob'] = None
-        result, observed = self.fixture(MANIFEST, rewrite, '--manifest')
-        self.assertEqual(result.returncode, 1)
-        self.assertIn('upstream provenance changed at mods/tasks/bin/herdr_task/takeover.py', observed['error'])
+        for name in ('github.py', 'takeover.py'):
+            with self.subTest(name=name):
+                def rewrite(data):
+                    next(row for row in data['source_deltas'] if row['path'].endswith('/' + name))['upstream_blob'] = None
+                result, observed = self.fixture(MANIFEST, rewrite, '--manifest')
+                self.assertEqual(result.returncode, 1)
+                self.assertIn('upstream provenance changed at mods/tasks/bin/herdr_task/' + name, observed['error'])
 
     def test_a_ready_claim_stays_refused_in_an_admitted_phase(self):
         result, observed = self.fixture(MANIFEST, lambda data: data.update(candidate_readiness='ready'), '--manifest')
@@ -144,7 +156,8 @@ class NativeFoundation(unittest.TestCase):
         self.assertEqual(observed['error'], 'Native foundation differs from exact U at keys.json')
 
     def test_an_admitted_path_refuses_any_content_but_the_pinned_one(self):
-        for path in ('mods/tasks/bin/herdr_task/launch.py', 'mods/tasks/bin/herdr_task/providers.py'):
+        for path in ('mods/tasks/bin/herdr_task/github.py', 'mods/tasks/bin/herdr_task/launch.py',
+                     'mods/tasks/bin/herdr_task/providers.py', 'test/test_native_publication.py'):
             with self.subTest(path=path):
                 code, observed = self.changed(path, lambda target: target.write_bytes(target.read_bytes() + b'\n'))
                 self.assertEqual(code, 1)
@@ -156,13 +169,29 @@ class NativeFoundation(unittest.TestCase):
             twin.write_bytes(target.read_bytes())
             target.unlink()
             target.symlink_to(twin)
-        code, observed = self.changed('mods/tasks/bin/herdr_task/providers.py', link)
-        self.assertEqual((code, observed['error']), (1, 'Admitted source path is a symbolic link at mods/tasks/bin/herdr_task/providers.py'))
+        for path in ('mods/tasks/bin/herdr_task/providers.py', 'test/test_native_publication.py'):
+            with self.subTest(path=path):
+                code, observed = self.changed(path, link)
+                self.assertEqual((code, observed['error']), (1, 'Admitted source path is a symbolic link at ' + path))
         code, observed = self.changed('keys.json', link)
         self.assertEqual((code, observed['error']), (1, 'Native foundation path is a symbolic link at keys.json'))
 
     def test_an_admitted_path_keeps_its_mode(self):
-        code, observed = self.changed('mods/tasks/bin/herdr_task/providers.py', lambda target: target.chmod(0o755))
-        self.assertEqual((code, observed['error']), (1, 'Admitted source path is executable at mods/tasks/bin/herdr_task/providers.py'))
-        code, observed = self.changed('mods/tasks/bin/herdr_task/launch.py', lambda target: target.chmod(0o755))
-        self.assertEqual((code, observed['error']), (1, 'Native executable mode differs at mods/tasks/bin/herdr_task/launch.py'))
+        for path in ('mods/tasks/bin/herdr_task/providers.py', 'test/test_native_publication.py'):
+            with self.subTest(path=path):
+                code, observed = self.changed(path, lambda target: target.chmod(0o755))
+                self.assertEqual((code, observed['error']), (1, 'Admitted source path is executable at ' + path))
+        for path in ('mods/tasks/bin/herdr_task/github.py', 'mods/tasks/bin/herdr_task/launch.py'):
+            with self.subTest(path=path):
+                code, observed = self.changed(path, lambda target: target.chmod(0o755))
+                self.assertEqual((code, observed['error']), (1, 'Native executable mode differs at ' + path))
+
+    def test_an_added_path_outside_the_table_is_left_to_review(self):
+        """What the contract says the gate leaves out: a path no phase admits and U doesn't have."""
+        added = self.copy / 'docs' / 'added-outside-the-table.md'
+        added.write_text('Not pinned by the gate.\n')
+        try:
+            code, observed = self.check()
+        finally:
+            added.unlink()
+        self.assertEqual((code, observed['source_validation']), (0, 'passed'), observed)

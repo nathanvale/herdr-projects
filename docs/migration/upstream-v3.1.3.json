@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "phase": "A1",
+  "phase": "N1",
   "architecture": "full-upstream-3.x",
   "candidate_readiness": "blocked",
   "inputs": {
@@ -10,6 +10,12 @@
     "B": "de8e17957efb4aa016d7e4d652f397aaa95f0880"
   },
   "source_deltas": [
+    {
+      "phase": "N1",
+      "path": "docs/install.md",
+      "upstream_blob": "d2dc270b1f21336dab9a665b3453b74f22a44358",
+      "sha256": "c44928dd7a1a1370df7af16de92e0db404b69d6f98300116b9cb9696cbf1134d"
+    },
     {
       "phase": "A1",
       "path": "mods/tasks/bin/herdr_task/__init__.py",
@@ -23,16 +29,22 @@
       "sha256": "8f7b0fb518d0a0efdf7eb7eabe0df42fde7d0fa01e0b88f8750a3e5faecf09f8"
     },
     {
-      "phase": "A1",
+      "phase": "N1",
       "path": "mods/tasks/bin/herdr_task/cli.py",
       "upstream_blob": "a4689c769c8d483e52339aa087ef6d068462a994",
-      "sha256": "8957073c4299bb75b7ce3bfcd24273e2b78e4911ab60b1711c0a992c83247a72"
+      "sha256": "349f4941f8b98f5ffdbd1866a35f43d20640df3a1d8fd75816566ae819629029"
     },
     {
-      "phase": "A1",
+      "phase": "N1",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "b5c79307e31319af731e10c67f4d289a2b892818",
-      "sha256": "93c3aa22339685857184bf98ee6a115c2e5a4d980df967ea5dcb140560521f63"
+      "sha256": "b83055bd42bf4f815e4ad921878109c0eb3bcd39ab0072cc21ba1aaecbc8b38c"
+    },
+    {
+      "phase": "N1",
+      "path": "mods/tasks/bin/herdr_task/github.py",
+      "upstream_blob": "b80f7cc5e44d62e1b0d587222c5bfbadc951f708",
+      "sha256": "6bc5c35940f39e789d5cbc92f3d9f4136bab95d79a1be361a49411b16b12227a"
     },
     {
       "phase": "A1",
@@ -53,6 +65,12 @@
       "sha256": "6876bcbaa82aa62004f92f37b4d0d7c5c463c417da573c4c726ca0e169a61f8d"
     },
     {
+      "phase": "N1",
+      "path": "mods/tasks/bin/herdr_task/tick.py",
+      "upstream_blob": "7f88c8b41da539c48311c26cceb67946fa62a99b",
+      "sha256": "68daaabff03779216b75f086a4e83528690c3334ffa1973022d6424e8f3fb7c4"
+    },
+    {
       "phase": "A1",
       "path": "service/azure-deployments.test.ts",
       "upstream_blob": null,
@@ -69,6 +87,18 @@
       "path": "test/azure-binding.cases.json",
       "upstream_blob": null,
       "sha256": "ed74e094fe3c3411b5f8af21af848bbe6b65cdc4573ff162d07ccb8ebeb15afc"
+    },
+    {
+      "phase": "N1",
+      "path": "test/test_herdr_task.py",
+      "upstream_blob": "104a0d67f907d4f26dc62ded57780e4e060a3b7b",
+      "sha256": "95cef26519950b02636ae62c78eec7c5c2fb6bfc2034910e444667e8f78c9a14"
+    },
+    {
+      "phase": "N1",
+      "path": "test/test_native_publication.py",
+      "upstream_blob": null,
+      "sha256": "d6ec14ea271834a2e5101d0a1cc2a32716d25c5b26828f5f6610037370bffd8b"
     },
     {
       "phase": "A1",
@@ -994,7 +1024,7 @@
     }
   ],
   "inventory": "upstream-v3.1.3-files.json",
-  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held; no required fork port is complete, CI-proved or runtime-qualified",
+  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held, and N1 native pull request adoption and fail-closed publication; no required fork port is complete, CI-proved or runtime-qualified",
   "azure_cli_design": {
     "skill": "my-second-brain-playground:cli-design",
     "route": "maintain/extend existing-project",
