@@ -577,6 +577,10 @@ def finalize(s, t):
     worktree_here(s, t)
     worktree = t.get("mode") == "worktree" and t.get("worktree")
     repo = github(s) if worktree else None
+    if worktree and not repo and getattr(s, "github_saved", False):
+        # A saved "not on GitHub" is asked again (as no_local_merge() does): Ready decides publication,
+        # and a refusal saves nothing, so a stale no would keep it from publishing for up to an hour.
+        repo = github(s, fresh=True)
     pr = pr_open(s, t, repo, t.get("summary")) if repo else None
     t["state"], t["ready_at"] = "ready", now()
     for k in ("attention", "merge_requested", "review"):

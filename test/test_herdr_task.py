@@ -1487,11 +1487,15 @@ class CycleTwo(unittest.TestCase):
         self.assertNotIn("merge_requested", f.task())
 
     def test_readys_auto_merge_asks_a_saved_no_again(self):
-        f = self.saved_no()
-        f.seed(state="running", set={"merge": "auto"})
-        self.assertIn("no pull request recorded", f.no_ready())
-        self.assertEqual((len(f.calls("repo", "view")), f.hc("send", "run"), f.rev("main")), (2, [], f.start))
-        self.assertNotIn("merge_requested", f.task())
+        """Ready asks again before it publishes (9Z8c), so under auto it opens the pull request and merges
+        through it, never here and never through its agent."""
+        f = self.saved_no_on_a_reachable_remote()
+        f.seed(set={"merge": "auto"})
+        f.ready()
+        t = f.task()
+        self.assertEqual(((t.get("pr") or {}).get("number"), len(f.calls("repo", "view"))), (9, 2))
+        self.assertEqual((f.hc("send", "run"), f.rev("main")), ([], f.start))
+        self.assertNotIn("merge_requested", t)
 
     # 2: no base recorded, adopted into main: its base is written as at eaa90190, with no adopted_from.
     def test_adopted_into_main_with_no_base_recorded_writes_it(self):
