@@ -267,6 +267,12 @@
       "path": "mods/chat-models/core/agents.js",
       "upstream_blob": "572c3762eb072dc3e15215c46971aa88963a2fbe",
       "sha256": "e43d7550c400b241331030dbd44f4fa35ac2b5e02f28e91e06b2fde123210263"
+    },
+    {
+      "phase": "C1",
+      "path": "service/chats.test.ts",
+      "upstream_blob": "5be56bf6be936ac354478a57dd62e1787aec4c88",
+      "sha256": "b64850658f22915955f13f7901bd5cdf5b00867d60afb77e2e12119528dfcce5"
     }
   ],
   "requirements": [

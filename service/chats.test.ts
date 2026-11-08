@@ -5,12 +5,23 @@ import { tmpdir } from "node:os";
 import { Hub } from "./hub.ts";
 import { Chats } from "./chats.ts";
 
-// A throwaway home with one Claude session: the agent with pid 4242 writes to its log.
+// A throwaway home with one Claude session: the agent, a real process, writes to its log. Its log is found from that
+// process's own Claude Code folder (FIND, core/chat-log.js, reads its environment), so a pid no process has finds
+// nothing. It is Bun itself, idle, with a plain HOME and no CLAUDE_CONFIG_DIR, so its folder is this home's .claude
+// (macOS shows no environment for a system binary). It ends at the tests' end, at exit, or by itself after two
+// minutes if neither runs.
+let agent: { kill(): void } | undefined;
+const end = () => { try { agent?.kill(); } catch {} };
+process.on("exit", end);
 const home = mkdtempSync(join(tmpdir(), "chats-test-"));
-afterAll(() => rmSync(home, { recursive: true, force: true }));
+afterAll(() => { end(); rmSync(home, { recursive: true, force: true }); });
+const proc = Bun.spawn([process.execPath, "-e", "setTimeout(() => {}, 120_000)"],
+  { env: { PATH: process.env.PATH!, HOME: home }, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+agent = proc;
+const pid = proc.pid;
 mkdirSync(join(home, ".claude", "sessions"), { recursive: true });
 mkdirSync(join(home, ".claude", "projects", "-work-demo"), { recursive: true });
-writeFileSync(join(home, ".claude", "sessions", "4242.json"), JSON.stringify({ pid: 4242, sessionId: "0000aaaa-1111-2222-3333-444455556666" }));
+writeFileSync(join(home, ".claude", "sessions", `${pid}.json`), JSON.stringify({ pid, sessionId: "0000aaaa-1111-2222-3333-444455556666" }));
 const log = join(home, ".claude", "projects", "-work-demo", "0000aaaa-1111-2222-3333-444455556666.jsonl");
 writeFileSync(log, JSON.stringify({ type: "user", uuid: "u1", timestamp: "2026-01-01T00:00:00Z", message: { role: "user", content: "hello there" } }) + "\n");
 
@@ -47,7 +58,7 @@ test("a followed chat finds the log of an agent that starts in its terminal late
   chats.watch("t7", (r) => seen.push(String(r.state)));
   await Bun.sleep(300);
   expect(chats.reader("t7")!.state).toBe("none");
-  feed(h, "foreground", "t7", { name: "claude", pid: 4242, argv: ["claude"], cwd: "/work/demo" });
+  feed(h, "foreground", "t7", { name: "claude", pid, argv: ["claude"], cwd: "/work/demo" });
   for (let i = 0; i < 30 && chats.reader("t7")!.state !== "ready"; i++) await Bun.sleep(100);
   const r = chats.reader("t7")!;
   expect(r.state).toBe("ready");
@@ -73,7 +84,7 @@ test("a followed task chat moves to its worker's new terminal by itself", async 
   expect(got.at(-1)?.state).toBe("none");
   // herdr-task restarts the worker as a new terminal running the agent; the next snapshot maps the key there
   feed(h, "lost", "t1y", { state: "ended" });
-  feed(h, "restarted", "t1z", { address: "t1z", state: "live", argv: ["claude"], cwd: "/work/demo", labels: {}, foreground: { name: "claude", pid: 4242, argv: ["claude"], cwd: "/work/demo" } });
+  feed(h, "restarted", "t1z", { address: "t1z", state: "live", argv: ["claude"], cwd: "/work/demo", labels: {}, foreground: { name: "claude", pid, argv: ["claude"], cwd: "/work/demo" } });
   map.set("DEMO-1/worker", "t1z");
   live.setSnapshot({ tasks: [{ id: "DEMO-1" }] });
   for (let i = 0; i < 30 && got.at(-1)?.state !== "ready"; i++) await Bun.sleep(100);
