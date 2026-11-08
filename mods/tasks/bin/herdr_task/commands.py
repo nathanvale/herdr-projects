@@ -417,8 +417,11 @@ def cmd_ready(args):
             nothing = wt and t.get("start") and in_base(s, t) and not merged_here(s, t)
             # Its work already in its base (SHEP-59: its pull request squash-merged, or nothing left
             # to merge): done at once, never a second pull request. finish() still removes its branch
-            # only at what merged (PR 19).
-            gone = already_merged(s, t) if wt and t.get("start") and not nothing else None
+            # only at what merged (PR 19). An adopted pull request is never finished here (PR 19):
+            # publication refuses (pr_open()), and the tick finishes it on its base or holds it off
+            # it (merged_elsewhere()).
+            adopted = (t.get("pr") or {}).get("adopted")
+            gone = already_merged(s, t) if wt and t.get("start") and not nothing and not adopted else None
             if nothing:
                 t["nothing_to_merge"] = True
                 finish(s, t, even_if_busy=True)
