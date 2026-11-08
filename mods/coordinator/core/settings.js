@@ -84,6 +84,55 @@ export const LOADING_AGENTS = "Loading agents…";
 // An unset Reviewer's button: what runs, the other CLI.
 export const otherCliWords = (cli) => `Other CLI (${NAMES[cli] ?? cli})`;
 export const otherCli = (worker) => (worker === "codex" ? "claude" : "codex");
+// Reactions (herdr-task's reactions.py): every agent (Assistants, task workers, automation runs, agent tabs) reacts to
+// some of your messages with an emoji; off, none does. Kept as agents.reactions; SHEP-42 kept it as assistant.reactions
+// (upgradeReactions moves it).
+export const REACTIONS = { title: "Reactions", about: "Agents react to some of your messages with an emoji, as a person would." };
+// A settings file's layers (everywhere, machines, spaces) with SHEP-42's assistant.reactions moved to agents.reactions
+// (a layer that has both keeps agents'). Changes cfg in place and returns it; true when anything moved.
+export function upgradeReactions(cfg) {
+  const layers = [cfg?.everywhere, ...Object.values(cfg?.machines ?? {}), ...Object.values(cfg?.spaces ?? {})];
+  for (const l of layers) {
+    const old = l && typeof l === "object" ? l.assistant : null;
+    if (!old || typeof old !== "object" || !("reactions" in old)) continue;
+    if (typeof old.reactions === "boolean" && typeof l.agents?.reactions !== "boolean") l.agents = { ...(l.agents ?? {}), reactions: old.reactions };
+    delete old.reactions;
+    if (!Object.keys(old).length) delete l.assistant;
+  }
+  return cfg;
+}
+// Ask for a star (SHEP-79, herdr-task's star.py): once, ever, after things went well, an Assistant may show a small
+// card with a plain link to Shepherdr on GitHub. Everywhere only; kept as star_prompt ({ off } before it shows, then
+// { asked, answer }). Once asked it never shows again, whatever the switch says.
+export const STAR = {
+  title: "Ask for a GitHub star",
+  about: "Once, ever, after things go well, your Assistant may show a small card with a link to Shepherdr on GitHub.",
+  asked: (at, answer) => `Asked on ${new Date(at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}${answer === "github" ? " (you opened GitHub)" : answer === "no" ? " (no thanks)" : ""}. It won't ask again.`,
+};
+// What Everywhere's star_prompt says: whether the switch is on (off: never asks) and the line under it once asked.
+export function starState(cfg) {
+  const s = cfg?.everywhere?.star_prompt;
+  const v = s && typeof s === "object" ? s : {};
+  return { on: !v.off && !v.asked, asked: Number.isFinite(v.asked) ? v.asked : null, answer: v.answer ?? null,
+    about: Number.isFinite(v.asked) ? `${STAR.about}\n${STAR.asked(v.asked, v.answer)}` : STAR.about };
+}
+// Feedback offers (herdr-task's feedback.py, SHEP-78): an agent that hits a problem in Shepherdr itself offers once to
+// file it as a GitHub issue, filed only on your yes. Kept as agents.feedback (on unless turned off) and, Everywhere's
+// only, agents.feedback_repo (the repo it files to; empty: upstream Shepherdr's).
+export const FEEDBACK = {
+  title: "Feedback offers",
+  about: "When Shepherdr itself misbehaves, agents offer once to file it as a GitHub issue, only with your yes.",
+  repoTitle: "Feedback repo",
+  repoAbout: "Where feedback issues go, as owner/name. Empty: Shepherdr's own repo.",
+  repo: "eliasstravik/shepherdr",
+  bad: "Write it as owner/name, like eliasstravik/shepherdr.",
+};
+// owner/name from what was typed (owner/name or a github.com link), "" for empty, null when it isn't one.
+export function feedbackRepo(v) {
+  const s = String(v ?? "").trim().replace(/^(?:https?:\/\/)?(?:www\.)?github\.com\//, "").replace(/\/+$/, "").replace(/\.git$/, "");
+  if (!s) return "";
+  return /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(s) ? s : null;
+}
 export const BACKUP = { title: "Backup agent", about: "The other CLI takes over a task once when its agent can't go on." };
 // The machines where the other CLI can't take over (herdr-task's check, ~/.herdr/cli-check.json's machines: this
 // computer is ""), in one line. m: the scope's machine ("local" or its name), null for Everywhere (every machine).
@@ -94,7 +143,8 @@ export function backupProblem(checks, m, cli) {
 }
 
 // The model menu's words (mods/chat-models, settings mode) and its button's: "Opus 5.5 · 1M · High".
-export const MODEL_MENU = { model: "Model", reasoning: "Reasoning", fast: "Fast", permissions: "Permissions" };
+// the model list's headings come from core/agents.js modelSections (Pinned, Recent, Models)
+export const MODEL_MENU = { reasoning: "Reasoning", fast: "Fast", permissions: "Permissions" };
 const modelOf = (menus, sel) => menus?.[sel?.agent]?.models?.find((m) => m.id === sel.model) ?? null;
 export function modelLabel(menus, sel) {
   const m = modelOf(menus, sel);
@@ -130,7 +180,7 @@ export function chooseModel(menus, permDefault, sel, agent, id) {
   if (agent !== sel.agent) {
     const full = sel.perm === "bypassPermissions" || sel.perm === "full";
     next.perm = full ? (agent === "claude" ? "bypassPermissions" : "full") : permDefault?.[agent] ?? null;
-    next.fast = Boolean(menus[agent]?.fastLocked);
+    next.fast = false;
   }
   return next;
 }
@@ -165,6 +215,23 @@ export const BASE = {
 };
 // A branch name git could have (before asking git whether it is there).
 export const branchShape = (b) => !/^-|[\s~^:?*[\\]|\.\.|@\{/.test(b);
+// Branch names (tasks.branch, #570): a folder's new task branches, Everywhere's or a space's own; herdr-task fills
+// it in (settings.py BRANCH_PATTERN, branch_pattern_problem). A task's own --branch wins.
+export const BRANCH = {
+  title: "Branch names",
+  about: "New tasks' branches. {n} is its number, {key} its id (SHEP-4), {slug} its title.",
+  pattern: "task/{n}-{slug}",
+};
+// Why a Branch names pattern can't be used, or "" (herdr-task's branch_pattern_problem says the same).
+export function branchPattern(pattern) {
+  const p = String(pattern ?? "").trim();
+  if (!p) return "";
+  if (!p.includes("{n}") && !p.includes("{key}")) return "Put {n} or {key} in it, so each task's branch is its own.";
+  if (/\{(?!(?:n|key|slug)\})[^}]*\}/.test(p)) return "Only {n}, {key} and {slug} can be filled in.";
+  const sample = p.replaceAll("{n}", "4").replaceAll("{key}", "ABC-4").replaceAll("{slug}", "fix-login");
+  if (/^[-/]|[/.]$|\.lock$|[\s~^:?*[\\]|\.\.|@\{|\/\/|\/\./.test(sample)) return "That isn't a name git allows for a branch.";
+  return "";
+}
 
 // ---- Notify ----------------------------------------------------------------------------------------------------
 export const NOTIFY_ABOUT = "What reaches you from a space's Assistant. Tasks always alert.";
@@ -186,6 +253,21 @@ export const SECRETS = {
   keptNote: (name, where) => `Kept ${name} for ${where}.`,
   removedNote: (name, where) => `Removed ${name} from ${where}.`,
   pasteNew: (name) => `Paste the new value for ${name}.`,
+  // Kept on: the machine whose vault every machine's agents and voice calls use (shepherdr secrets move-to)
+  keptOn: "Kept on", keptHere: "This computer", thisOne: "this computer",
+  keptAbout: "Every machine's agents and voice calls get them from there. Pick an always-on machine.",
+  // nobody picked one: they follow Serve from (core/secrets.js followTo)
+  sameAsServe: (name) => `Same as Serve from: ${name}`,
+  sameAbout: "They stay with the machine serving the web app, and move with it. Every machine's agents and voice calls get them from there. Pick another machine to keep them there instead.",
+  forNow: (name) => `${name}, for now`,
+  following: (to) => `They follow Serve from: they move to ${to} on their own, with a backup, once both machines are on.`,
+  unreachable: (name) => `Can't reach ${name}, which keeps them: agents on other machines can't get secrets until it's back.`,
+  notLinked: "A machine not linked from here keeps them.",
+  moveConfirm: (name) => `Keep secrets on ${name}?`,
+  moveDetail: (name, from) => `Every secret is copied to ${name}, checked, and then used from there by every machine. ${from} keeps a backup copy; moving them back brings back what was added since.`,
+  moveVerb: "Move them",
+  moving: (name) => `Moving them to ${name}…`,
+  offline: "offline",
 };
 // A scope in words, for the list and the For picker: "Everywhere", a machine's name, "Space web".
 export const secretWhere = (scope, machine, spaceName) =>
@@ -209,7 +291,7 @@ export const MACHINES = {
 export const OLD_NAMES = { coordinator: "Assistant", worker: "Workers", reviewer: "Reviewer", backup: "Backup agent",
   automations: "Run automations", merge: "Merge", review_rounds: "Review", must_fix: "Must fix", proof: "Proof",
   max_running: "Tasks at once", archive_after: "Archive Done after", worktrees: "Worktrees",
-  start_notes: "When a task starts", finish_notes: "When a task finishes", base: "Base branch" };
+  start_notes: "When a task starts", finish_notes: "When a task finishes", base: "Base branch", branch: "Branch names", agents: "Reactions" };
 // Home Assistant's line: on or off, and what herdr-task's home round last found there (~/.herdr/tasks/.home.json).
 export function homeAbout(on, st) {
   return !on ? "Off: nobody watches its disk, load and processes."
@@ -264,7 +346,8 @@ export const ROUNDS = [[0, "Off"], [1, "1 round"], [2, "2 rounds"], [3, "3 round
 export const ARCHIVE = [[0, "Off"], [1, "1 day"], [3, "3 days"], [7, "1 week"], [30, "1 month"]];
 export const ONOFF = [[true, "On"], [false, "Off"]];
 
-export const DEFAULTS = { tasks: { merge: "ask", review_rounds: 0, must_fix: "major", max_running: 10, worktrees: true, archive_after: 7, proof: true }, automations: { enabled: true } };
+export const DEFAULTS = { tasks: { merge: "ask", review_rounds: 0, must_fix: "major", max_running: 10, worktrees: true, archive_after: 7, proof: true }, automations: { enabled: true },
+  agents: { reactions: true, feedback: true, feedback_repo: "" } };
 
 // [section, field, label, choices | { min, max }]
 export const TASK_ROWS = [

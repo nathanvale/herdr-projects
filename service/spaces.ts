@@ -11,11 +11,14 @@ import { HOME } from "./paths.ts";
 import { exec } from "./model.ts";
 import * as NS from "../core/newspace.js";
 import * as SP from "../core/spaces.js";
+import { cleanCommand } from "../core/clean-env.js";
 
-const APP = process.env.HERDR_APP_HOME || join(HOME, ".config", "herdr-app");
-export const withWindow = () => existsSync(join(APP, "mods", "spaces-chat"));
+export const withWindow = () => existsSync(join(process.env.HERDR_APP_HOME || join(HOME, ".config", "herdr-app"), "mods", "spaces-chat"));
 
 async function run(cmd: string[]) {
+  // the window's herdr-app: SHEPHERDR_HERDR_APP in tests (as service/actions.ts)
+  if (cmd[0] === "herdr-app" && process.env.SHEPHERDR_HERDR_APP) cmd = [process.env.SHEPHERDR_HERDR_APP, ...cmd.slice(1)];
+  if (cmd[0] === "hc" && process.env.SHEPHERDR_HC) cmd = [process.env.SHEPHERDR_HC, ...cmd.slice(1)];
   const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
   const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
   return { code: await p.exited, out, err };
@@ -57,24 +60,29 @@ export async function newSpaceInfo(hub: Hub, machine: string | null, at: string 
   return { home, recent, start: NS.startFolder(at, recent, home) };
 }
 
-/** The template to start an Assistant from on machine. There hc runs a template's command under sh -c, and where sh is
- *  dash (Debian, Ubuntu) the shell stays the terminal's program, so no chat would know its CLI: as the window's chat
- *  (mods/chat startAgent), a one-off copy whose command execs it, removed by done() once it has started. Here: name.
- *  words: the template's own words (its first message), when read. */
+/** The template to start an Assistant from on machine (null: here): as the window's chat (mods/chat startAgent), a
+ *  one-off copy, removed by done() once it has started, whose command first clears a parent Claude Code session's
+ *  markers the holder may carry (SHEP-86, core/clean-env.js), then execs it: hc runs a template's command under sh -c,
+ *  and where sh is dash (Debian, Ubuntu) the shell would stay the terminal's program, so no chat would know its CLI.
+ *  words: the template's own words (its first message), when read. Unreadable: the template itself. */
 export async function execTemplate(hub: Hub, name: string, machine: string | null): Promise<{ name: string; words: string; done: () => void }> {
   const plain = { name, words: "", done: () => {} };
-  if (!machine) return plain;
   const DIR = 'dir="$HOME/.config/herdr-core/templates"; ';
   const src = (await exec(hub, ["sh", "-c", DIR + 'cat "$dir/$1.md"', "x", name], machine).catch(() => null))?.stdout ?? "";
   const head = /^---\n([\s\S]*?)\n---\n?/.exec(src);
   const cmd = /^command:[ \t]*(.+)$/m.exec(head?.[1] ?? "")?.[1]?.trim();
-  if (!head || !cmd || /^exec\s/.test(cmd)) return plain;
+  if (!head || !cmd) return plain;
   const one = `herdr-${name}-${Date.now().toString(36)}`;
-  const file = `---\nname: ${one}\ndescription: A one-off ${name} start that execs its command (Shepherdr's service), removed after use.\ncommand: exec ${cmd}\n---\n${src.slice(head[0].length)}`;
+  const file = `---\nname: ${one}\ndescription: A one-off ${name} start that execs its command (Shepherdr's service), removed after use.\ncommand: ${cleanCommand(cmd)}\n---\n${src.slice(head[0].length)}`;
   const w = await exec(hub, ["sh", "-c", DIR + 'printf "%s" "$2" > "$dir/$1.md"', "x", one, file], machine).catch(() => null);
   if (w?.code !== 0) return plain;
   return { name: one, words: src.slice(head[0].length).trim(), done: () => void exec(hub, ["sh", "-c", DIR + 'rm -f "$dir/$1.md"', "x", one], machine).catch(() => null) };
 }
+
+/** The web's id for the space the window made: Herdr already answers another machine's as "<machine>/<id>" (its
+ *  ids are qualified, as its tabs'); kept as it is, never "<machine>/<machine>/<id>" (SHEP-56: the page then waited
+ *  for a space that never came). */
+export const placeId = (space: string, machine: string | null) => (!machine || space.startsWith(`${machine}/`) ? space : `${machine}/${space}`);
 
 /** Makes a space at path on machine (null: here), as the window's New space (mods/newspace, coordinator.js
  *  createSpace): a missing folder is made, makeRepo makes a folder outside git a repo (main, an empty first commit), it
@@ -105,8 +113,9 @@ export async function newSpace(hub: Hub, opts: { machine: string | null; path: s
     const r = await run(["herdr-app", "do", "space.new", "--folder", abs, ...(opts.unnamed ? [] : ["--name", name]), ...(machine ? ["--machine", machine] : [])]);
     let out: any = {};
     try { out = JSON.parse(r.out || "{}"); } catch {}
+    if (out.error) throw new Error(`Herdr couldn't make it: ${out.error}`);
     if (r.code !== 0 || !out.space) throw new Error("A new space opens in the Herdr window: it needs the window open.");
-    const place = machine ? `${machine}/${out.space}` : out.space as string;
+    const place = placeId(String(out.space), machine);
     await iconOf(place);
     return place;
   }

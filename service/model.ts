@@ -9,6 +9,7 @@ import type { Live } from "./live.ts";
 import { HOME } from "./paths.ts";
 import { READ_LISTS, taskLists, fileIn } from "../core/tasklists.js";
 import * as T from "../core/tasks.js";
+import { isHelper, subagentsOf } from "../core/chat-view.js";
 // The core is plain JavaScript; its defaults read as narrow types to TypeScript.
 const { place, refOf, taskKey, autoPrefix, reportOf, secondLine, leftOf, queueReason, machineOf } = T as any;
 import * as S from "../core/spaces.js";
@@ -74,22 +75,17 @@ export class Model {
   private spaces: any[] = [];
   /** Each space folder's git, as the window's sidebar reads it: { name (the repo), linked (a worktree), repo }, null:
    *  not a repo. Read once, then again each minute. */
-  private git = new Map<string, { info: { name: string; linked: boolean; repo: string; branch?: string | null; ahead?: number; behind?: number } | null; at: number }>();
+  private git = new Map<string, { info: { name: string; linked: boolean; repo: string; branch?: string | null } | null; at: number }>();
   private async readGit(spaces: any[]) {
     const due = spaces.filter((s) => s.folder && Date.now() - (this.git.get(`${s.machine ?? ""}|${s.folder}`)?.at ?? 0) > 60_000);
     await Promise.all(due.slice(0, 12).map(async (s) => {
       const key = `${s.machine ?? ""}|${s.folder}`;
       this.git.set(key, { info: this.git.get(key)?.info ?? null, at: Date.now() });
-      // as the window's sidebar reads it: its repo, and its branch and ahead/behind (no optional locks: reads only)
-      const r = await exec(this.hub, ["sh", "-c", 'cd "$1" 2>/dev/null && git rev-parse --show-toplevel --path-format=absolute --git-common-dir 2>/dev/null && git --no-optional-locks -c core.fsmonitor=false status --porcelain=v2 --branch -uno 2>/dev/null | grep "^# branch\\."', "git", s.folder], s.machine ?? null, 20).catch(() => null);
-      const [top, repo, ...rest] = (r?.stdout ?? "").trim().split("\n");
+      // as the window's sidebar reads it: its repo and its branch (reads only: nothing under .git is written)
+      const r = await exec(this.hub, ["sh", "-c", 'cd "$1" 2>/dev/null && git rev-parse --show-toplevel --path-format=absolute --git-common-dir 2>/dev/null && { git symbolic-ref --short -q HEAD 2>/dev/null || echo; }', "git", s.folder], s.machine ?? null, 20).catch(() => null);
+      const [top, repo, head] = (r?.stdout ?? "").split("\n").map((l) => l.trim());
       const name = repo ? (repo.endsWith("/.git") ? repo.slice(0, -5) : repo.replace(/\.git$/, "")).split("/").pop()! : "";
-      let branch: string | null = null, ahead = 0, behind = 0;
-      for (const l of rest) {
-        if (l.startsWith("# branch.head ")) branch = l.slice(14) === "(detached)" ? null : l.slice(14);
-        else if (l.startsWith("# branch.ab ")) { const [a, b] = l.slice(12).split(" "); ahead = Math.abs(parseInt(a, 10)) || 0; behind = Math.abs(parseInt(b, 10)) || 0; }
-      }
-      this.git.set(key, { info: top && repo ? { name, linked: repo !== `${top}/.git`, repo, branch, ahead, behind } : null, at: Date.now() });
+      this.git.set(key, { info: top && repo ? { name, linked: repo !== `${top}/.git`, repo, branch: head || null } : null, at: Date.now() });
     }));
     if (due.length) this.soon();
   }
@@ -102,6 +98,18 @@ export class Model {
 
   /** Builds again soon (something the snapshot shows changed outside: an ask). */
   rebuild() { this.soon(); }
+
+  /** A space just made (New space): its machine's spaces read again until it is among them (up to `ms`; another
+   *  machine's document can land a moment after the window answers), the snapshot built with it. Whether it showed. */
+  async waitSpace(id: string, ms = 4000) {
+    const end = Date.now() + ms;
+    for (;;) {
+      await this.readDocs();
+      this.build();
+      if (this.spaces.some((s) => s.id === id) || Date.now() >= end) return this.spaces.some((s) => s.id === id);
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
 
   private async refresh() {
     try {
@@ -160,7 +168,7 @@ export class Model {
       // with no heartbeat in Settings it works from its machine's file, made with the starter when switched on
       const file = this.pilots.get(id.slice(0, cut)) ?? {};
       const a = pilotFor({ ...file, spaces: { [id]: file.spaces?.[id.slice(cut + 1)] ?? {} } }, id, this.settings);
-      const words = levelOf(this.settings, id).heartbeat ?? levelOf(this.settings).heartbeat ?? STARTER;
+      const words = currentBeat(levelOf(this.settings, id).heartbeat ?? levelOf(this.settings).heartbeat ?? STARTER);
       return { ...a, words };
     }
     const a = this.autopilot[id] ?? pilotFor({ everywhere: this.pilotEverywhere }, id);
@@ -205,10 +213,21 @@ export class Model {
       if (k.state !== "live" || k.labels?.["herdr.task"] !== key || machineOf(k.address) !== (list.machine ?? null)) continue;
       const st = typeof k.status === "object" ? k.status?.state ?? null : null;
       if (!st && SHELL.test(String((k as any).foreground?.name ?? ""))) continue;
+      // its worker's own helper (SHEP-54: its reviewer, an hc child): never one of its agents (helpersOf)
+      if (isHelper(k)) continue;
       // turn: its finished turns, for a Ready task back at work (core busyAgain())
       out.push({ address: k.address, status: st, role: k.labels?.["herdr.role"] ?? "worker", turn: Number((k as any).turn) || 0 });
     }
     return out;
+  }
+
+  /** Its worker's own helper agents now (SHEP-54): core place() counts one at work as the task at work. */
+  private helpersOf(list: List, task: any, live: { address: string }[]) {
+    const key = `${list.slug}#${task.id}`, mine = new Set(live.map((a) => a.address.split("/").pop()));
+    // on the folder's machine, a child of one of its agents
+    return [...this.hub.terminals.values()].filter((k: any) => k.state === "live" && k.labels?.["herdr.task"] === key && isHelper(k)
+      && machineOf(k.address) === (list.machine ?? null) && mine.has(String(k.parent).split("/").pop()))
+      .map((k: any) => ({ address: k.address, status: typeof k.status === "object" ? k.status?.state ?? null : null }));
   }
 
   private build() {
@@ -219,11 +238,12 @@ export class Model {
 
     const rows = lists.flatMap((list) => list.tasks.map((task: any) => {
       const live = this.agentsOf(list, task);
-      const p = place(list, task, { live });
+      const p = place(list, task, { live, helpers: this.helpersOf(list, task, live) });
       const own = live.map((a) => (this.hub.terminals.get(a.address) as any)?.report).find((r) => typeof r?.progress === "number" && r.progress >= 0);
       const w = reportOf(task, p.section, own ? { pct: own.progress, msg: own.msg || null } : null);
       const running = p.section === "queued" ? list.tasks.filter((x: any) => x.state === "running" && this.agentsOf(list, x).length).length : 0;
-      const worker = live.find((a) => a.role !== "reviewer" && a.status === "blocked")?.address ?? live.find((a) => a.role !== "reviewer")?.address ?? live[0]?.address ?? null;
+      const mine = live.filter((a) => a.role !== "reviewer" && a.role !== "helper");
+      const worker = mine.find((a) => a.status === "blocked")?.address ?? mine[0]?.address ?? null;
       const last = task.agents?.[task.agents.length - 1];
       return {
         key: taskKey(list, task), ref: refOf(list, task), title: task.title, section: p.section, needs: p.needs,
@@ -235,10 +255,17 @@ export class Model {
         // the space whose Assistant started it (herdr-task keeps it): the window counts and lists it there
         space: task.space ? (list.machine ? `${list.machine}/${task.space}` : task.space) : null,
         worker, archived: !!task.archived, pinned: pins.has(taskKey(list, task)),
+        scheduled_for: task.state === "scheduled" ? task.scheduled_for ?? null : null,
         started: task.started ?? null, ready_at: task.ready_at ?? null, done_at: task.done_at ?? null,
-        summary: task.summary ?? null, pr: task.pr ?? null, prompt: String(task.prompt ?? "").slice(0, 500), why: p.why ?? null,
+        summary: task.summary ?? null, details: task.details ?? null, pr: task.pr ?? null, prompt: String(task.prompt ?? "").slice(0, 500), why: p.why ?? null,
         worktree: task.worktree ?? list.folder, base: task.base ?? null, start: task.start ?? null, branch: task.branch ?? null,
         lastLog: !worker && last?.log ? { path: last.log, kind: last.agent ?? "claude" } : null,
+        // its worker's own helper agents (SHEP-54), for the task's detail
+        subagents: worker ? subagentsOf(terminals as any[], worker) : [],
+        // what finds its artifacts (core/task-artifacts.js): its proof, its agents' terminals while they ran, their logs
+        proof: task.proof?.id ?? null,
+        agents: (Array.isArray(task.agents) ? task.agents : []).map((a: any) => ({ address: a.address ?? null, at: a.at ?? 0, ended: a.ended ?? null })),
+        logs: (Array.isArray(task.agents) ? task.agents : []).map((a: any) => a.log).filter((x: unknown) => typeof x === "string"),
       };
     }));
     this.live.put("tasks", rows);
@@ -258,7 +285,7 @@ export class Model {
         // Jump's newest-first spaces
         changedAt: Math.max(0, ...(s.tabs ?? []).flatMap((t: any) => t.terminals ?? []).map((a: string) => Number((this.hub.terminals.get(a) as any)?.status_ms) || 0)),
         section: bar.sections.find((x: any) => (x.spaces ?? []).includes(s.id))?.id ?? null,
-        assistant: k?.address ?? null, assistantStatus: (k as any)?.status?.state ?? null,
+        assistant: k?.address ?? null, turn: (k as any)?.turn ?? 0, assistantStatus: (k as any)?.status?.state ?? null,
         autopilot: this.pilotOf(s.id).on ? { next: this.pilotOf(s.id).next_run ?? null } : null,
         git: this.gitOf(s),
         pilot: this.pilotOf(s.id),

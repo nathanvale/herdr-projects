@@ -1,20 +1,10 @@
 import { useEffect, useState } from 'react'
 import { definePlugin, openLink, setPushEndpoint, useSnap, useStore, visibleChats } from '@client/kernel.ts'
 import { keptTags, waiting } from '@shared/alerts.ts'
+import { BellIcon } from '@heroicons/react/24/outline'
 import { Toasts } from './toasts.tsx'
-
-/** Ask this device for push alerts (the app must be installed to the home screen on an iPhone). */
-export async function subscribePush(): Promise<string> {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return 'This browser has no push alerts. On an iPhone, add Shepherdr to the home screen first.'
-  const reg = await navigator.serviceWorker.register('sw.js')
-  const perm = await Notification.requestPermission()
-  if (perm !== 'granted') return 'Alerts are off for this device.'
-  const { key } = await fetch('api/push/key').then((r) => r.json())
-  const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key })
-  await fetch('api/push/subscribe', { method: 'POST', headers: { 'content-type': 'application/json', 'x-shepherdr': '1' }, body: JSON.stringify({ sub, device: navigator.userAgent }) })
-  setPushEndpoint(sub.endpoint)
-  return 'Alerts are on for this device.'
-}
+import { DeviceAlerts } from './device.tsx'
+import { registerWorker } from './worker.ts'
 
 const TITLE = 'Shepherdr'
 
@@ -58,12 +48,12 @@ function Keeper() {
 export default definePlugin({
   name: 'alerts',
   setup(reg) {
-    reg.settingActions.alerts = subscribePush
+    // Settings › Notify: this device's alerts, on top of the page (its real state, Turn on/off, a test, what it hears)
+    reg.settingsPages.push({ name: 'Alerts on this device', into: 'Notify', Icon: BellIcon, when: () => true, View: DeviceAlerts })
     // the window's toasts while the app is on screen (push alerts while it isn't)
     reg.overlays.push(Keeper, Toasts)
     if (!('serviceWorker' in navigator)) return
-    navigator.serviceWorker
-      .register('sw.js')
+    registerWorker()
       // tell the server which push subscription is this screen, so it sends none while the app is on screen
       .then((r) => r.pushManager?.getSubscription())
       .then((s) => s && setPushEndpoint(s.endpoint))

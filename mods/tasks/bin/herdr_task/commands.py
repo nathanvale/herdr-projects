@@ -22,12 +22,13 @@ from .agents import (
 from .sessions import refresh_sessions
 from .providers import admit_launch
 from .github import (
-    adopt_existing, base_commit, finish, gh, GH_ACCESS, GhFailed, github, local_base, merge_into_branch, merged_here, NO_ASK,
-    no_local_merge, own_work, plain, pr_adopt, pr_open, pr_pending, pr_problem, pr_read, pr_view, STAYS, update_main, watch_main,
+    adopt_existing, already_merged, base_commit, finish, gh, GH_ACCESS, GhFailed, github, local_base, merge_into_branch,
+    merged_here, NO_ASK, no_local_merge, own_work, plain, pr_adopt, pr_open, pr_pending, pr_problem, pr_read, pr_view, STAYS,
+    update_main, watch_main,
 )
 from .launch import (
     base_ref, brief, caller_labels, caller_space, current_base, default_space, folder_for, handoff, launch, name_tabs,
-    own_path, parent_for, resume_argv, retag_tabs, tab_title, task_tabs,
+    own_path, parent_for, resume_argv, retag_tabs, set_branch, tab_title, task_tabs,
 )
 from .store import is_task_list, locate, open_store, prefixes_in_use, read_list, Store, store_files
 from .queues import after_refs, parse_after, queue_reason, set_after
@@ -35,6 +36,7 @@ from .archive import unarchive
 from .output import line, minutes, say, view
 from .scheduler import ensure_scheduler
 from .proof import evidence, find_proof
+from .when import when_from
 
 
 # ---- commands -------------------------------------------------------------------------------
@@ -110,6 +112,7 @@ def cmd_add(args):
     if args.prompt_file:
         with open(args.prompt_file) as f:
             prompt = f.read()
+    at = scheduled_at(args)  # refused before anything is added
     with open_store(args) as s:
         repo = s.loc["kind"] == "repo"
         if args.worktree and not repo:
@@ -120,10 +123,58 @@ def cmd_add(args):
         set_opts(t, args)
         space = bare(args.space) if args.space else caller_space()
         set_base(s, t, args.base, space, new=True)
+        set_branch(s, t, getattr(args, "branch", None))
         set_notes(t, args)
         if args.after:
             set_after(s, t, *parse_after(s, args.after))
-        say(args, view(s, t), s.ref(t))
+        if at:
+            # Started later by the scheduler, with no caller to ask: its space is kept now.
+            schedule(s, t, at, {"space": space or default_space()})
+        v = view(s, t)
+    if at:
+        ensure_scheduler_quietly()
+    say(args, v, s.ref(t) + (f": {v['why']}" if at else ""))
+
+
+# ---- scheduled (SHEP-38) -----------------------------------------------------------------------
+# A task that starts by itself at a time (--at "fri 9:00", --in 6h): state "scheduled" with
+# scheduled_for (ms) and what start would use (queue: argv, space, parent). The scheduler's tick
+# (tick.py's due_pass) queues it once that time comes, also a time passed while the machine was
+# off, and the queue starts it as any queued task (after its --after tasks, when there's room).
+
+def scheduled_at(args):
+    """--at / --in as a moment (ms), or None when neither was given."""
+    at, within = getattr(args, "at", None), getattr(args, "in_", None)
+    if at is None and within is None:
+        return None
+    return when_from(at, within)
+
+
+def schedule(s, t, at, plan=None):
+    if t["state"] not in ("todo", "scheduled", "queued"):
+        raise Fail(f"{s.ref(t)} has already started ({STATUSES.get(t['state'], t['state'])}); only a task not started yet can be scheduled.")
+    t["state"], t["scheduled_for"] = "scheduled", at
+    if plan is not None:
+        t["queue"] = plan
+    for k in ("queued_at", "held"):
+        t.pop(k, None)
+    s.dirty = True
+
+
+def unschedule(t):
+    """Back to To do, as if never scheduled (a task that isn't scheduled is left as it is)."""
+    if t["state"] != "scheduled":
+        return
+    t["state"] = "todo"
+    for k in ("scheduled_for", "queue", "queued_at", "held"):
+        t.pop(k, None)
+
+
+def ensure_scheduler_quietly():
+    try:
+        ensure_scheduler(quiet=True)
+    except Exception:
+        pass
 
 
 def set_base(s, t, base, space=None, new=False):
@@ -195,6 +246,8 @@ def cmd_show(args):
     text = [line(v), f"folder: {v['folder']}"]
     if v.get("worktree"):
         text.append(f"worktree: {v['worktree']} (branch {v['branch']}, base {v.get('base')})")
+    elif v.get("branch") and v.get("mode") == "worktree":
+        text.append(f"branch: {v['branch']} (set for this task)")
     if v.get("base_set"):
         text.append(f"merges into: {v['base']} (" + {"space": "its space's base branch", "pull-request": "its pull request's base"}.get(v.get("base_by"), "set for this task") + ")")
     if v.get("adopted_from"):
@@ -232,7 +285,7 @@ def begin(s, t, argv, space, parent=None):
     t["state"], t["started"] = "running", now()
     # Its brief teaches `reviewed`: ready waits for a review of its final commit (review_refusal).
     t["review_gate"] = True
-    for k in ("queue", "queued_at", "attention", "held"):
+    for k in ("queue", "queued_at", "attention", "held", "scheduled_for"):
         t.pop(k, None)
     if t.get("mode") == "worktree" and not t.get("worktree") and not worktrees_on(s, space):
         t["mode"] = "here"
@@ -253,17 +306,26 @@ def cmd_start(args):
             t["mode"] = "here"
         elif args.worktree and worktrees_on(s):
             t["mode"] = "worktree"
+        set_branch(s, t, getattr(args, "branch", None))
         q = t.get("queue") or {}
         space = bare(args.space) if args.space else (q.get("space") or default_space())
         argv = agent_argv(None, args.argv) if args.argv else worker_argv(s, t, space, args.agent) if args.agent else \
             (q.get("argv") or worker_argv(s, t, space))
         admit_launch(s, argv, space)  # before it is queued too
         parent = args.parent or q.get("parent")
-        # A queued task started again goes now; otherwise it waits its turn.
-        reason = None if (t["state"] == "queued" or args.now) else queue_reason(s, t)
-        if reason:
+        plan = {"argv": argv, "space": space, "parent": parent, **({"custom": True} if args.argv else {})}
+        at = scheduled_at(args)
+        if at:
+            # start --at / --in: it starts by itself then, as this start would now.
+            schedule(s, t, at, plan)
+            v = view(s, t)
+            reason = "scheduled"
+        # A queued task started again goes now; otherwise it waits its turn. A scheduled one
+        # started now waits only for the queue (start --now: not even that).
+        elif (reason := None if (t["state"] == "queued" or args.now) else queue_reason(s, t)):
             t["state"], t["queued_at"] = "queued", now()
-            t["queue"] = {"argv": argv, "space": space, "parent": parent, **({"custom": True} if args.argv else {})}
+            t.pop("scheduled_for", None)
+            t["queue"] = plan
             s.dirty = True
             v = view(s, t)
         else:
@@ -274,6 +336,9 @@ def cmd_start(args):
         ensure_scheduler(quiet=True)
     except Exception:
         pass
+    if reason == "scheduled":
+        say(args, v, f"{s.ref(t)} is scheduled: {v['why']}. It starts by itself then.")
+        return
     if reason:
         say(args, {**v, "queued": True, "reason": reason}, f"{s.ref(t)} is queued ({reason}). It starts by itself when it can.")
         return
@@ -339,7 +404,7 @@ def cmd_ready(args):
                 # "For AGENTS.md": what the next agent would need about setting up or testing this
                 # repo; the Assistant decides whether it goes into the repo's AGENTS.md.
                 t["agents_md"] = note[:300]
-            for k in ("attention", "fix_requested", "progress", "retry", "review_out", "back"):
+            for k in ("attention", "attention_at", "handed_at", "fix_requested", "progress", "retry", "review_out", "back"):
                 t.pop(k, None)
             # Its agents' turns now: a later turn of theirs takes it back to work (busy_again()).
             t["ready_turns"] = ready_turns(live_agents(s.key(t)))
@@ -349,10 +414,23 @@ def cmd_ready(args):
             # starts no reviewers). A worktree branch with nothing beyond its base (none of its own,
             # or only its base caught up with): nothing to merge, so done at once with its summary
             # (as Shepherdr); no Accept needed. Tasks in the folder itself still land in Ready.
-            if wt and t.get("start") and in_base(s, t) and not merged_here(s, t):
+            nothing = wt and t.get("start") and in_base(s, t) and not merged_here(s, t)
+            # Its work already in its base (SHEP-59: its pull request squash-merged, or nothing left
+            # to merge): done at once, never a second pull request. finish() still removes its branch
+            # only at what merged (PR 19).
+            gone = already_merged(s, t) if wt and t.get("start") and not nothing else None
+            if nothing:
                 t["nothing_to_merge"] = True
                 finish(s, t, even_if_busy=True)
                 msg = f"{s.ref(t)}: nothing to merge (no commits beyond its base); done."
+            elif gone is not None:
+                t["merged"] = True
+                if gone:
+                    watch_main(s, t, (gone.get("mergeCommit") or {}).get("oid"))
+                    update_main(s, t)
+                finish(s, t, even_if_busy=True)
+                how = f"pull request #{gone['number']} is merged" if gone else f"its work is already in {t.get('base') or 'main'}"
+                msg = f"{s.ref(t)}: {how}; done."
             else:
                 msg = finalize(s, t)
                 if proof:
@@ -400,8 +478,8 @@ def review_refusal(s, t, wt):
 
 
 def cmd_reviewed(args):
-    """A task's agent records one review round of its current commit (its own review: a subagent
-    or a headless CLI, as its brief says). Uses one of its Review rounds; `ready` then accepts that
+    """A task's agent records one review round of its current commit (its own review: a helper agent
+    it started as its hc child, as its brief says). Uses one of its Review rounds; `ready` then accepts that
     commit. Out of rounds it is refused: only the Assistant adds one (review-more)."""
     with open_store(args) as s:
         t = s.find(args.id)
@@ -555,7 +633,8 @@ def back_to_work(s, t, why, said=WORKING_AGAIN):
     for k in ("ready_turns", "merge_requested"):
         t.pop(k, None)
     t["back"] = {"at": now(), "why": why}
-    t["progress"] = {"text": fit(said), "at": now(), "set": now()}
+    # by: Herdr's words, not its agent's (on_it() counts only an agent's own line).
+    t["progress"] = {"text": fit(said), "at": now(), "set": now(), "by": "herdr"}
     s.dirty = True
     return True
 
@@ -669,8 +748,8 @@ def cmd_state(args, state):
     with open_store(args) as s:
         t = s.find(args.id)
         if state == "reopen":
-            state = "running" if t.get("started") and t["state"] != "queued" else "todo"
-            for k in ("reviews", "review", "auto_merge", "merged", "nothing_to_merge", "accepted_at", "merged_head", "kept"):
+            state = "running" if t.get("started") and t["state"] not in ("queued", "scheduled") else "todo"
+            for k in ("reviews", "review", "auto_merge", "merged", "nothing_to_merge", "accepted_at", "merged_head", "kept", "landed"):
                 t.pop(k, None)
         if state == "done" and t.get("worktree") and merged_here(s, t):
             t["merged"] = True
@@ -678,7 +757,7 @@ def cmd_state(args, state):
         t[{"done": "done_at", "running": "reopened_at", "todo": "reopened_at"}[state]] = now()
         if state != "done":
             unarchive(s, t)
-        for k in ("merge_requested", "attention", "queue", "queued_at", "progress", "retry") if state != "running" else ("attention",):
+        for k in ("merge_requested", "attention", "queue", "queued_at", "progress", "retry", "scheduled_for", "held") if state != "running" else ("attention", "scheduled_for"):
             t.pop(k, None)
         s.dirty = True
         v = view(s, t)
@@ -717,17 +796,27 @@ def cmd_edit(args):
         set_notes(t, args)
         if args.after is not None:
             set_after(s, t, *parse_after(s, args.after))
+        at = scheduled_at(args) if (args.at or "").strip() or args.in_ is not None else None
+        if at:
+            schedule(s, t, at)
+        elif args.at is not None:
+            unschedule(t)  # --at "": back to To do
         if args.here or args.worktree:
-            if t["state"] not in ("todo", "queued"):
+            if t["state"] not in ("todo", "scheduled", "queued"):
                 raise Fail("Where a task works can only change before it starts.")
             if args.worktree and s.loc["kind"] != "repo":
                 raise Fail("Worktrees need a git repo.")
             t["mode"] = "here" if args.here else "worktree"
+        if t["mode"] != "worktree" and not t.get("worktree"):
+            t.pop("branch", None)
+        set_branch(s, t, getattr(args, "branch", None))
         s.dirty = True
         tabs = task_tabs(s, t) if t["title"] != old else []
         v = view(s, t)
     left = name_tabs([(tab, tab_title(s, t)) for tab in tabs])
-    say(args, {**v, "rename": left}, f"{s.ref(t)} saved.")
+    if at:
+        ensure_scheduler_quietly()
+    say(args, {**v, "rename": left}, f"{s.ref(t)} saved" + (f": {v['why']}." if v["status"] == "scheduled" else "."))
 
 
 def cmd_config(args):
@@ -795,7 +884,7 @@ def cmd_resume(args):
         live = [k for k in map(detail, live_agents(s.key(t))) if agent_running(k)]
         if live:
             raise Fail(f"{s.ref(t)} still has an agent ({live[0]['address']}). Use switch to replace it.")
-        if t["state"] in ("todo", "queued"):
+        if t["state"] in ("todo", "scheduled", "queued"):
             raise Fail(f"{s.ref(t)} hasn't started. Use start.")
         space = bare(args.space) if args.space else (t.get("space") or default_space())
         if t["state"] == "done":
@@ -816,10 +905,11 @@ def cmd_switch(args):
         labels = (old or {}).get("labels") or {}
         space = (labels.get("herdr.task.space") or labels.get("herdr.space") or (bare(args.space) if args.space else None)
                  or t.get("space") or default_space())
-        if t["state"] in ("todo", "queued", "done"):
+        if t["state"] in ("todo", "scheduled", "queued", "done"):
             t["state"] = "running"
             t.setdefault("started", now())
             t.pop("queue", None)
+            t.pop("scheduled_for", None)
         a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent)
         v = view(s, t)
     ended = []
@@ -932,7 +1022,7 @@ def merge_now(s, t):
     if v.get("state") != "MERGED":
         problem = pr_problem(v) or adopted_moved(s, t, v)
         if problem:
-            t["attention"] = problem
+            t["attention"], t["attention_at"] = problem, now()
             return problem
         if pr_pending(v):
             return "Checks are still running."
@@ -944,7 +1034,7 @@ def merge_now(s, t):
         if not ok and (again or {}).get("state") == "MERGED":
             v = again
         elif not ok:
-            t["attention"] = f"{MERGE_FAILED}: {plain(err)}"
+            t["attention"], t["attention_at"] = f"{MERGE_FAILED}: {plain(err)}", now()
             # The next tick reads the pull request at once (merged by hand meanwhile: done).
             t["pr"]["checked"] = 0
             return t["attention"]
@@ -1136,7 +1226,8 @@ def cmd_fix(args):
         msg = (f"Task {s.ref(t)} \"{t['title']}\" can't merge yet: {problem}\n"
                f"Fix it in {wt}: for conflicts, rebase {br} onto {base}; for failing checks, find out why and fix them. "
                f"Run the checks, commit, then run `herdr-task ready {t['id']} --folder {shlex.quote(main)}` to push the fix.")
-        t["fix_requested"] = now()
+        # Handed the problem: someone is on it while its agent starts (on_it()).
+        t["fix_requested"] = t["handed_at"] = now()
         s.dirty = True
         sent, started = tell(s, t, msg, args)
         back_to_work(s, t, f"asked to fix: {problem}", f"Fixing: {problem}")

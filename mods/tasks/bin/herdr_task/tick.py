@@ -12,8 +12,8 @@ from .base import Fail, guard, hc_json, now, PR_EVERY, run, SHELLS, STORE
 from .settings import machine_name, worker_argv
 from .agents import agent_log, agent_running, busy_again, detail, held_ask, live_agents, status_word, task_status
 from .provider import NUDGE, provider_cut, provider_error, PROVIDER_WAITS
-from .sessions import refresh_sessions, session_of
-from .github import finish, merged_here, pr_pending, pr_problem, pr_view, watch_main
+from .sessions import find_lost_logs, refresh_sessions, session_of
+from .github import already_merged, finish, github, merged_here, pr_merged, pr_pending, pr_problem, pr_view, watch_main
 from .launch import default_space
 from .store import locate, read_list, Store, store_files
 from .queues import machine_hold, refresh_ext, running_count, set_hold, waiting_ext, waiting_for
@@ -61,15 +61,19 @@ def facts(s, t, report):
             finish(s, t)
             report["done"].append(t["id"])
             return
-        problem = pr_problem(v) or adopted_moved(s, t, v)
+        # An adopted pull request's moved head matters once it is Ready (N1); while its agent still
+        # works, its commits move the branch, so only the pull request's own problems count then.
+        problem = pr_problem(v) or (adopted_moved(s, t, v) if t["state"] == "ready" else None)
         t["_pr_fresh"] = not problem and not pr_pending(v)
         try:
             pr_news(s, t, v, report)
         except Exception as e:  # never stops the tick
             report.setdefault("github_error", []).append(f"{s.ref(t)}: {e}")
-        if t["state"] == "ready" and problem != t.get("attention"):
+        # Kept up to date while it is back at work too (a fix pushed: the problem goes away), so its
+        # agent going quiet with the problem still there reads Needs you (on_it()).
+        if t["state"] in ("ready", "running") and problem != t.get("attention"):
             if problem:
-                t["attention"] = problem
+                t["attention"], t["attention_at"] = problem, now()
                 report["attention"].append(t["id"])
             elif t.get("attention", "").startswith(("Checks failing", "It conflicts", "The pull request was closed", MERGE_FAILED, MOVED)):
                 t.pop("attention")
@@ -77,6 +81,29 @@ def facts(s, t, report):
         t["merged"] = True
         finish(s, t)
         report["done"].append(t["id"])
+    elif t.get("own") and not at_work(s, t) and now() - t.get("gh_checked", 0) >= PR_EVERY:
+        # SHEP-59: its pull request squash-merged without the task knowing (opened by its agent), or a
+        # Ready one whose work is already in its base: done, as ready would.
+        t["gh_checked"] = now()
+        s.dirty = True
+        gone = already_merged(s, t) if t["state"] == "ready" else squash_merged(s, t)
+        if gone is not None:
+            t["merged"] = True
+            if gone:
+                watch_main(s, t, (gone.get("mergeCommit") or {}).get("oid"))
+            finish(s, t)
+            report["done"].append(t["id"])
+
+
+def squash_merged(s, t):
+    """A Working task's branch whose pull request (opened by its agent) merged at its tip: that
+    pull request, recorded on the task, or None."""
+    repo = github(s)
+    found = pr_merged(t, repo) if repo else None
+    if not found or found.get("headRefOid") != (t.get("own") or t.get("head")):
+        return None
+    t["pr"] = {"number": found["number"], "url": found["url"], "repo": repo}
+    return {**t["pr"], "mergeCommit": found.get("mergeCommit")}
 
 
 def back_pass(s, t, report):
@@ -87,6 +114,18 @@ def back_pass(s, t, report):
     if any(status_word(k) == "working" for k in live) and busy_again(t, [detail(k) for k in live]):
         back_to_work(s, t, "its agent is at work again")
         report.setdefault("working_again", []).append(s.ref(t))
+
+
+def due_pass(s, report):
+    """Scheduled tasks whose time has come (SHEP-38), a time passed while the machine was off too, join
+    the queue in the order they were due: the queue below starts them (after their --after tasks,
+    when there's room), each once."""
+    for t in s.data["tasks"]:
+        if t["state"] == "scheduled" and (t.get("scheduled_for") or 0) <= now():
+            t["state"], t["queued_at"] = "queued", t.get("scheduled_for") or now()
+            t.pop("scheduled_for", None)
+            s.dirty = True
+            report.setdefault("due", []).append(s.ref(t))
 
 
 def tick_store(s, report):
@@ -106,6 +145,7 @@ def tick_store(s, report):
                 if not merge_now(s, t):
                     report["done"].append(t["id"])
             t.pop("_pr_fresh", None)
+    due_pass(s, report)
     queued = sorted((t for t in s.data["tasks"] if t["state"] == "queued"), key=lambda t: t.get("queued_at") or 0)
     n = running_count(s) if queued else 0
     budget = [3]  # other machines asked this pass, at most
@@ -142,6 +182,27 @@ def tick_store(s, report):
             main_pass(s, report)
         except Exception as e:  # never stops the tick
             report["main_error"] = str(e)
+
+
+def lost_log(t, a):
+    """An agent of task t that ended with no log recorded, not looked for yet (find_lost_logs())."""
+    gone = a.get("ended") or (t.get("state") == "done" and (t.get("ended_at") or 0) > (t.get("done_at") or 0))
+    return bool(gone and not a.get("log") and not a.get("log_looked"))
+
+
+def lost_logs_pass(report, folder=None):
+    """Finds the log of every ended task agent here whose session no pass saw (a short run), so its
+    chat reads back after its terminal is gone (SHEP-26). Cheap once each was looked for."""
+    for p in store_files(folder):
+        d = read_list(p)
+        tasks = (d or {}).get("tasks") or []
+        if not d or not os.path.isdir(d.get("folder") or "") or not any(lost_log(t, a) for t in tasks for a in t.get("agents") or []):
+            continue
+        with Store(locate(d["folder"])) as s:
+            for t in s.data["tasks"]:
+                if any(lost_log(t, a) for a in t.get("agents") or []):
+                    find_lost_logs(s, t)
+                    report.setdefault("logs_found", []).append(s.ref(t))
 
 
 # ---- Done tasks end their agents (as Shepherdr) -----------------------------------------------
@@ -397,7 +458,7 @@ def cmd_tick(args):
         d = read_list(p)
         tasks = (d or {}).get("tasks") or []
         if not d or not os.path.isdir(d.get("folder") or "") or not (d.get("main_watch") or any(
-                t.get("state") in ("queued", "ready") or (t.get("worktree") and t.get("state") == "running") for t in tasks)):
+                t.get("state") in ("queued", "scheduled", "ready") or (t.get("worktree") and t.get("state") == "running") for t in tasks)):
             continue
         with Store(locate(d["folder"])) as s:
             tick_store(s, report)
@@ -410,6 +471,10 @@ def cmd_tick(args):
         memory_guard(report)
     except Exception as e:  # never stops the queue
         report["ended_error"] = str(e)
+    try:
+        lost_logs_pass(report, args.folder)
+    except Exception as e:  # never stops the queue
+        report["logs_error"] = str(e)
     try:
         browser_pass(report)
     except Exception as e:  # never stops the queue

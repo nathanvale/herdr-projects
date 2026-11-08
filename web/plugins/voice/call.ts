@@ -50,19 +50,40 @@ let sources: AudioBufferSourceNode[] = []
 /** the agent's first words, when they come before the microphone is through */
 let waiting: ArrayBuffer[] = []
 
-export async function startCall(chatKey: string, onError: (message: string) => void = () => undefined) {
+/** what the voice agent asked to show (service/voice-tools.ts Nav), done by the page */
+export type Nav = { kind: string; [k: string]: unknown }
+
+/** what the page shows now, for the voice agent's "here" and "this task" (sent as it changes) */
+export function sendWhere(where: Record<string, unknown>) {
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'where', ...where }))
+}
+
+/** what this page did with an open: it shows it now (ok), or why not; and what it shows now */
+export type NavAck = { ok: boolean; why?: string; where?: Record<string, unknown>; did?: string; ask?: string; screen?: string }
+
+export async function startCall(chatKey: string, onError: (message: string) => void = () => undefined, onNav: (nav: Nav) => NavAck | Promise<NavAck> = () => ({ ok: false, why: 'this page can\'t open things' }), onOpen: () => void = () => undefined, onEnded: () => void = () => undefined) {
   stopCall()
+  /** the voice agent ended the call (the person said yes, or a long silence): no error, its last words play out */
+  let over = false
   const url = new URL(`api/voice?chat=${encodeURIComponent(chatKey)}`, location.href)
   url.protocol = url.protocol.replace('http', 'ws')
   ws = new WebSocket(url)
   ws.binaryType = 'arraybuffer'
-  ws.onmessage = (e) => {
+  ws.onopen = () => onOpen()
+  ws.onmessage = async (e) => {
     if (e.data instanceof ArrayBuffer) {
       phase = 'listening'
       if (!play(e.data)) { stopCall(); onError('Voice audio could not keep up. Start a new call.') }
       return
     }
-    const m = JSON.parse(String(e.data)) as { type: string; message?: string; state?: typeof phase }
+    const m = JSON.parse(String(e.data)) as { type: string; id?: number; message?: string; state?: typeof phase; nav?: Nav }
+    // the voice agent asked to show something: shown here, on this very page, and said back (the agent says it's on
+    // screen only then)
+    if (m.type === 'nav' && m.nav) {
+      let ack: NavAck
+      try { ack = await onNav(m.nav) } catch (err) { ack = { ok: false, why: (err as Error)?.message || 'it failed on the page' } }
+      if (typeof m.id === 'number' && ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'navved', id: m.id, ...ack }))
+    }
     if (m.type === 'state' && m.state) {
       phase = m.state
       phaseAt = Date.now()
@@ -76,11 +97,18 @@ export async function startCall(chatKey: string, onError: (message: string) => v
       phase = 'listening'
     }
     if (m.type === 'error') onError(m.message ?? 'The voice call could not start.')
+    if (m.type === 'ended') over = true
   }
   // The microphone first, then the audio: an iPhone sets its sound up for playing only when the audio comes first,
   // and the microphone then sends silence. Its voice waits until the audio is there.
   const call = ws
-  call.onclose = () => { if (ws === call) { stopCall(); onError('The voice call disconnected. Start a new call.') } }
+  call.onclose = () => {
+    if (ws !== call) return
+    if (!over) { stopCall(); onError('The voice call disconnected. Start a new call.'); return }
+    muted = true
+    const left = ctx ? Math.max(0, playAt - ctx.currentTime) : 0
+    setTimeout(() => { if (ws === call) { stopCall(); onEnded() } }, Math.min(10000, left * 1000 + 300))
+  }
   call.onerror = () => { if (ws === call) { stopCall(); onError('The voice connection failed. Start a new call.') } }
   let stream: MediaStream | null = null
   try {

@@ -2,6 +2,7 @@
 """Shepherdr's installer: puts the Shepherdr layout, its mods and helpers into a Herdr app home.
 
   shepherdr install    [--root DIR] [--adopt] [--guard] [--keys ask|keep|ours] [--no-hooks] [--dry-run] [--yes]
+                       [--port N]: the service's port on 127.0.0.1 when another app holds 7788 (updates keep it)
   shepherdr update     the same, from the checkout it was installed from (git pull it first); web only too
   (a fresh clone has no web app built: install and update build it with Bun, installing Bun first when it's missing)
   shepherdr install --web               web only: herdr-core, herdr-task, the helpers, the service and the web app
@@ -9,6 +10,10 @@
   shepherdr web serve-from <machine|here> [--take-link]   serve the web app from another machine linked over
                                         herdr-core (an always-on Mac mini or cloud VM), installing it there; here: back
   shepherdr web status                  which machine serves it, and its link
+  shepherdr secrets move-to <machine|here> [--restore]   the machine that keeps the secrets (the vault agents use by
+                                        name): moves them there, with a backup on both; --restore: the old one takes its
+                                        backup back when the other is gone for good
+  shepherdr secrets where               which machine keeps them
   shepherdr uninstall  [--root DIR] [--dry-run]
   shepherdr doctor     [--root DIR]: checks the install; once it's whole, lets the sync to other machines go
   shepherdr version
@@ -48,7 +53,7 @@ import sys
 import tempfile
 import time
 
-VERSION = "3.1.3"
+VERSION = "3.1.16"
 HERDR_APP_MIN = "0.1.12"
 HC_MIN = "0.1.17"
 
@@ -75,6 +80,9 @@ HOOKS = [  # (file under home, event, entry): the question and permission cards 
      {"hooks": [{"type": "command", "command": "sh '{app}/mods/chat/ask-hook.sh'", "timeout": 1800}]}),
     (".codex/hooks.json", "SessionStart",
      {"hooks": [{"type": "command", "command": "sh '{app}/mods/chat/session-note.sh'", "timeout": 10}]}),
+    # Codex's approvals on the chat's card too (SHEP-91); a task worker's own hook hands them on instead
+    (".codex/hooks.json", "PermissionRequest",
+     {"hooks": [{"type": "command", "command": "sh '{app}/mods/chat/ask-hook.sh'", "timeout": 1800}]}),
 ]
 
 
@@ -318,12 +326,14 @@ def bun_path():
     return None
 
 
-def unit_text(root, bun):
-    """The user service that keeps Shepherdr's service running (Linux), or its launchd agent (macOS)."""
+def unit_text(root, bun, port=None):
+    """The user service that keeps Shepherdr's service running (Linux), or its launchd agent (macOS). port: install's
+    --port (SHEPHERDR_PORT; none: the service's own 7788). The window and the CLI read the port the service really took
+    from ~/.herdr/shepherdr/service.json, so this is the only place it is set."""
     main = os.path.join(root, SHARE, "service", "main.ts")
     # hc, herdr-task and the helpers live in ~/.local/bin, which a user service's PATH lacks; and the tools herdr-task
     # and the agents run (gh, git, node, agent-browser, the CLIs…) where this install finds them (mise, nvm, brew…)
-    tools = ["gh", "git", "node", "agent-browser", "claude", "codex", "python3", "tailscale", "whisper-cli", "pw-record", "pw-play", "jq"]
+    tools = ["gh", "git", "node", "agent-browser", "claude", "codex", "python3", "tailscale", "pw-record", "pw-play", "jq"]
     found = [os.path.dirname(os.path.realpath(p)) if os.path.basename(os.path.realpath(p)) == t else os.path.dirname(p)
              for t in tools for p in [shutil.which(t)] if p]
     dirs = [os.path.join(root, BIN), os.path.dirname(bun), *found, "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
@@ -335,7 +345,7 @@ def unit_text(root, bun):
 <dict>
   <key>Label</key><string>{AGENT}</string>
   <key>ProgramArguments</key><array><string>{bun}</string><string>{main}</string></array>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>{path}</string></dict>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>{path}</string>{f"<key>SHEPHERDR_PORT</key><string>{port}</string>" if port else ""}</dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>{os.path.join(root, HERDR, "shepherdr", "service.log")}</string>
@@ -350,12 +360,69 @@ After=network-online.target
 [Service]
 ExecStart={bun} {main}
 Environment=PATH={path}
-Restart=always
+{f"Environment=SHEPHERDR_PORT={port}{chr(10)}" if port else ""}Restart=always
 RestartSec=2
 
 [Install]
 WantedBy=default.target
 """
+
+
+DEFAULT_PORT = 7788
+
+
+def has_unit(root):
+    """the service is installed to run here (its systemd unit or launchd agent)"""
+    return os.path.isfile(os.path.join(root, PLIST if sys.platform == "darwin" else UNIT))
+
+
+def json_file(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def our_port(root):
+    """The port this machine's service took (service.json), else the one install set, else the default."""
+    try:
+        return int(json_file(os.path.join(root, HERDR, "shepherdr", "service.json"))["port"])
+    except (KeyError, TypeError, ValueError):
+        rec = load_record(root) or json_file(os.path.join(root, WEB_RECORD)) or {}
+        return rec.get("port") or DEFAULT_PORT
+
+
+def service_answers(root):
+    """Shepherdr's own service answers here (its health says the id it wrote in service.json, not another app on its
+    port): (True, port), or (False, why)."""
+    try:
+        f = json_file(os.path.join(root, HERDR, "shepherdr", "service.json"))
+        port, sid = int(f["port"]), f["id"]
+    except (ValueError, KeyError, TypeError):
+        return False, "the Shepherdr service hasn't started here (no ~/.herdr/shepherdr/service.json)"
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=3) as res:
+            h = json.load(res)
+    except (OSError, ValueError):
+        return False, f"the Shepherdr service isn't answering on port {port}"
+    if not isinstance(h, dict) or h.get("id") != sid:
+        return False, f"another app answers on port {port}, not the Shepherdr service: install again with --port <a free one>"
+    return True, port
+
+
+def set_port(a, rec):
+    """install --port: kept in the record, so an update keeps it; 7788 goes back to the default."""
+    p = getattr(a, "port", None)
+    if p is None:
+        return
+    if not 1024 <= p <= 65535:
+        raise Stop(f"--port {p}: pick one from 1024 to 65535")
+    if p == DEFAULT_PORT:
+        rec.pop("port", None)
+    else:
+        rec["port"] = p
 
 
 def install_service(r, rec, home):
@@ -366,7 +433,7 @@ def install_service(r, rec, home):
         return
     if not os.path.isfile(r.p(f"{SHARE}/web/dist/index.html")) and not r.dry:
         r.notes.append("the web app isn't built, so the service serves no page yet (./install.sh builds it)")
-    rel, text = unit_text(r.root, bun)
+    rel, text = unit_text(r.root, bun, rec.get("port"))
     data = text.encode()
     if read(r.p(rel)) != data:
         if r.dry:
@@ -394,7 +461,17 @@ def install_service(r, rec, home):
         subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
         ok = subprocess.run(["systemctl", "--user", "enable", "shepherdr.service"], capture_output=True).returncode == 0
         ok = ok and subprocess.run(["systemctl", "--user", "restart", "shepherdr.service"], capture_output=True).returncode == 0
-    r.notes.append("the Shepherdr service is running" if ok else "couldn't start the Shepherdr service: `shepherdr doctor` says why")
+    if ok:
+        # started is not answering: another app may hold its port (GitHub #635), and the service then stops at once
+        for _ in range(20):
+            ok = service_answers(r.root)[0]
+            if ok:
+                break
+            time.sleep(0.5)
+    port = rec.get("port") or DEFAULT_PORT
+    r.notes.append("the Shepherdr service is running" if ok else
+                   f"the Shepherdr service isn't answering on port {port}: another app may hold it (install again with "
+                   "--port <a free one>); `shepherdr doctor` says more")
 
 
 # ---- the record ---------------------------------------------------------------------------------
@@ -663,7 +740,12 @@ def check_tools(root_is_home):
         if not shutil.which(name):
             bad.append(f"{name} isn't on the PATH")
     optional = {"gh": "pull requests (tasks)", "agent-browser": "the task browser (0.41.1)", "node": "the task browser",
-                "bun": "voice calls and dictation", "pw-record": "dictation", "whisper-cli": "dictation"}
+                "bun": "voice calls and dictation"}
+    # the window's mic and speaker: PipeWire on Linux; on a Mac its own audio, through a helper built with swiftc
+    if sys.platform == "darwin":
+        optional["swiftc"] = "the mic and speaker in the window: xcode-select --install"
+    else:
+        optional.update({"pw-record": "dictation and voice calls in the window", "pw-play": "voice calls in the window"})
     for name, what in optional.items():
         if not shutil.which(name):
             notes.append(f"optional: {name} isn't on the PATH ({what})")
@@ -748,6 +830,7 @@ def cmd_install(a, update=False):
     rec["mods"] = {m: True for m in mods}
     rec["keys"], keys_changed = merge_keys(r, src, rec, a.keys, a.yes)
     rec["links"] = link_helpers(r, rec)
+    set_port(a, rec)
     install_service(r, rec, home)
     if a.guard:
         install_guard(r, src, rec)
@@ -839,6 +922,7 @@ def cmd_install_web(a, update=False):
     # what this run replaced (an older herdr-task, the helpers…): uninstall puts it back
     if r.backed:
         rec["backups"] = [*rec.get("backups", []), r.backup_dir]
+    set_port(a, rec)
     install_service(r, rec, home)
     if not a.dry_run:
         atomic_write(r.p(WEB_RECORD), (json.dumps(rec, indent=2, sort_keys=True) + "\n").encode())
@@ -911,7 +995,7 @@ def serve_check(root):
         p = subprocess.run([tailscale, "serve", "status", "--json"], capture_output=True, text=True)
         try:
             for web in (json.loads(p.stdout or "{}").get("Web") or {}).values():
-                if ((web.get("Handlers") or {}).get("/shepherdr") or {}).get("Proxy", "").endswith(":7788"):
+                if ((web.get("Handlers") or {}).get("/shepherdr") or {}).get("Proxy", "").endswith(f":{our_port(root)}"):
                     bad.append(f"/shepherdr is still shared from here while {host} serves it: two links")
         except ValueError:
             pass
@@ -941,6 +1025,9 @@ def cmd_doctor(a):
         bad += [f"link {BIN}/{n} doesn't lead to {d}" for n, d in rec.get("links", {}).items()
                 if not os.path.islink(r.p(f"{BIN}/{n}")) or os.path.realpath(r.p(f"{BIN}/{n}")) != os.path.realpath(d)]
         s_bad, s_notes = serve_check(root) if home else ([], [])
+        if home and has_unit(root):
+            up, why = service_answers(root)
+            s_bad += [] if up else [why]
         say(f"Shepherdr {rec.get('version')} (web only) under {root} (from {rec.get('source')}, {rec.get('at')})")
         for x in bad + s_bad:
             say(f"  ✗ {x}")
@@ -988,10 +1075,11 @@ def cmd_doctor(a):
     if home:
         s_bad, s_notes = serve_check(root)
         bad += s_bad
+        # installed but not answering (a busy port crash-loops it, GitHub #635): not whole
+        if has_unit(root):
+            up, why = service_answers(root)
+            bad += [] if up else [why]
         t_notes += s_notes
-    model = r.p(f"{APP}/data/whisper/ggml-base.bin")
-    if not os.path.isfile(model):
-        warn.append(f"dictation's model isn't there: `shepherdr whisper` downloads it ({APP}/data/whisper/ggml-base.bin, 148 MB)")
     say(f"Shepherdr {rec.get('version')} under {root} (from {rec.get('source')}, {rec.get('at')})")
     for x in bad:
         say(f"  ✗ {x}")
@@ -1122,29 +1210,6 @@ def cmd_uninstall(a):
     return 0
 
 
-# ---- whisper ------------------------------------------------------------------------------------
-
-def cmd_whisper(a):
-    """Dictation's model (lib/addons.json, the voice add-on): downloaded once, checked by its sha256."""
-    root = os.path.realpath(a.root or real_home())
-    m = next(x for x in json.load(open(os.path.join(find_source(a.source, load_record(root)), "lib", "addons.json")))["addons"] if x["id"] == "voice")["model"]
-    dest = os.path.join(root, APP, m["path"])
-    if os.path.isfile(dest) and sha_bytes(read(dest)) == m["sha256"]:
-        say(f"already there: {dest}")
-        return 0
-    tmp = dest + ".part"
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
-    say(f"downloading {m['url']} ...")
-    if subprocess.run(["curl", "-fL", "--retry", "3", "-o", tmp, m["url"]]).returncode != 0:
-        raise Stop("download failed")
-    if sha_bytes(read(tmp)) != m["sha256"]:
-        os.remove(tmp)
-        raise Stop("the download's sha256 doesn't match: not kept")
-    os.replace(tmp, dest)
-    say(f"kept: {dest}")
-    return 0
-
-
 # ---- web: Serve from --------------------------------------------------------------------------------
 
 def restore_share(root):
@@ -1248,6 +1313,20 @@ def cmd_web(a):
     raise Stop("shepherdr web serve-from <machine|here> [--take-link] | shepherdr web status")
 
 
+def cmd_secrets(a):
+    if a.action == "move-to" and not (a.machine or a.to_id):
+        raise Stop("which machine? shepherdr secrets move-to <machine|here> (hc machine ls lists them)")
+    bun = bun_path()
+    script = next((p for p in (os.path.join(real_home(), SHARE, "service", "secrets-move.ts"),
+                               os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "service", "secrets-move.ts"))
+                   if os.path.isfile(p)), None)
+    if not bun or not script:
+        raise Stop("Shepherdr's service isn't installed here (it needs Bun): ./install.sh first")
+    argv = [bun, script, a.action] + ([a.machine] if a.machine else []) + (["--to-id", a.to_id] if a.to_id else []) \
+        + (["--restore"] if a.restore else []) + (["--json"] if a.json else [])
+    return subprocess.run(argv).returncode
+
+
 def hand_over(a, argv):
     """`shepherdr update` runs the installed copy, which a pull doesn't change: installing with it wrote the old version
     (and its old steps), so it took a second run to say the new one. When the source's own installer is another, it
@@ -1281,7 +1360,7 @@ def hand_over(a, argv):
 def main(argv):
     ap = argparse.ArgumentParser(prog="shepherdr", description="Install, update, check or remove Shepherdr in Herdr.")
     sub = ap.add_subparsers(dest="cmd")
-    for name in ("install", "update", "uninstall", "doctor", "whisper"):
+    for name in ("install", "update", "uninstall", "doctor"):
         c = sub.add_parser(name)
         c.add_argument("--root", help="install under this folder instead of your home (a scratch try: it mirrors "
                                       ".config/herdr-app, .local/bin and .config/herdr-core/templates)")
@@ -1296,12 +1375,20 @@ def main(argv):
             c.add_argument("--yes", action="store_true", help="ask nothing (keys: keep yours unless --keys ours)")
             c.add_argument("--force", action="store_true", help="install although a check failed")
             c.add_argument("--web", action="store_true", help="web only: no herdr-app (the service, the web app, herdr-task and the helpers)")
+            c.add_argument("--port", type=int, help=f"the port Shepherdr's service listens on, on 127.0.0.1 (default {DEFAULT_PORT}; "
+                                                    "kept for updates): when another app already uses it")
             c.add_argument("--no-build", action="store_true", help="install the web app as it is in the checkout: no build, even when it's missing or old")
     w = sub.add_parser("web", help="where the web app is served from (Serve from)")
     w.add_argument("action", choices=["serve-from", "status", "install-on"])
     w.add_argument("machine", nargs="?", help="a machine linked over herdr-core (hc machine ls), or here")
     w.add_argument("--take-link", action="store_true", help="that machine's /shepherdr is shared to something else: set it aside (moving away puts it back)")
     w.add_argument("--json", action="store_true")
+    s = sub.add_parser("secrets", help="which machine keeps the secrets (Settings › Secrets › Kept on)")
+    s.add_argument("action", choices=["move-to", "where"])
+    s.add_argument("machine", nargs="?", help="a machine linked over herdr-core (hc machine ls), or here")
+    s.add_argument("--restore", action="store_true", help="here: take this machine's backup back (the other one is gone for good)")
+    s.add_argument("--to-id", help=argparse.SUPPRESS)
+    s.add_argument("--json", action="store_true")
     sub.add_parser("version")
     a = ap.parse_args(argv)
     try:
@@ -1318,10 +1405,10 @@ def main(argv):
             return cmd_uninstall(a)
         if a.cmd == "doctor":
             return cmd_doctor(a)
-        if a.cmd == "whisper":
-            return cmd_whisper(a)
         if a.cmd == "web":
             return cmd_web(a)
+        if a.cmd == "secrets":
+            return cmd_secrets(a)
         if a.cmd == "version":
             say(f"shepherdr {VERSION}")
             return 0

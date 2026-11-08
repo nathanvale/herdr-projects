@@ -126,7 +126,7 @@ hub.emit({ type: "labels", terminal: "vm/t3" });
 out.first = await until(() => fresh("t1") && sentTo("t2").length > 0);
 stale("t1");
 out.kept = await until(() => fresh("t1"));
-out.ticked = await until(() => called().length >= 5);
+out.ticked = await until(() => called().length >= 4);
 finish();
 `, { terminals: [claude("t1"), claude("vm/t2"), { address: "vm/t3", state: "live", labels: { "herdr.secret.want": "w1", "herdr.role": "coordinator" } }], follow: ["t1", "vm/t2"] },
 { SHEPHERDR_JOBS: "on" });
@@ -208,7 +208,8 @@ test("a page that stops following: its flag isn't touched again and goes stale",
   expect(r.sentAfterLeaving).toBe(0);
 }, T);
 
-test("background work on: as before, the tick and scheduler here and on the other machine, secrets served, and the flag kept", async () => {
+// v3.1.16 (SHEP-33) removed secret serving from the service's jobs: they no longer run herdr-secret.
+test("background work on: as before, the tick and scheduler here and on the other machine, and the flag kept", async () => {
   const r = await on;
   expect(r.errors).toEqual([]);
   expect(r.ticked).toBe(true);
@@ -216,7 +217,7 @@ test("background work on: as before, the tick and scheduler here and on the othe
   expect(r.called).toContain("herdr-task scheduler --ensure --json");
   expect(r.called).toContain("herdr-task --on vm tick --json");
   expect(r.called).toContain("herdr-task --on vm scheduler --ensure --json");
-  expect(r.called).toContain("herdr-secret serve vm/t3");
+  expect(r.called.filter((c: string) => c.startsWith("herdr-secret"))).toEqual([]);
   expect(r.first).toBe(true);
   expect(r.kept).toBe(true);
   expect(flagArgv(r.sent).map((c: any) => [c.on, c.argv.at(-1)])).toContainEqual(["vm", "t2"]);

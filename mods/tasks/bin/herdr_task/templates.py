@@ -66,13 +66,40 @@ LEFT_OLD = ("Leave out `--left` at the start: add about how long is left only on
             "estimate, never a first guess.")
 LEFT_RULE = ("Always add `--left` with your best estimate of how long is left (like 20m or 2h), from your very first status "
              "on, and update it at every step as you learn more. A rough guess beats none.")
-WORKER_MD = WORKER_MD_BEFORE_LEFT.replace(LEFT_OLD, LEFT_RULE)
+WORKER_MD_BEFORE_SUBAGENTS = WORKER_MD_BEFORE_LEFT.replace(LEFT_OLD, LEFT_RULE)
+# Since a review runs as a helper agent people see, an hc child of the worker, never headless (SHEP-54).
+SUBAGENTS_OLD = ("read-only: a subagent, or a headless run of the Reviewer line's CLI with its model and effort (`codex exec "
+                 "--sandbox read-only \"<prompt>\" < /dev/null`, `claude -p --permission-mode plan \"<prompt>\" < /dev/null`: "
+                 "without `< /dev/null` they wait for input forever), your choice. Give it the brief, the diff against the base "
+                 "branch and ~/.config/herdr-core/templates/reviewer.md. It reports")
+SUBAGENTS_RULE = ("read-only, as your own helper agent that people can watch and open: the Reviewer line's CLI with its model "
+                  "and effort, interactive, started as your child with `hc run --bg --name <your task id, lower case>-review "
+                  "--label \"herdr.task=$HERDR_BROWSER_TASK\" --label herdr.role=reviewer --label herdr.agent=<codex or "
+                  "claude> -- <its command> \"<prompt>\"`, its command `codex --sandbox read-only --ask-for-approval never` "
+                  "or `claude --permission-mode plan` (never `codex exec` or `claude -p`: nobody sees those). Its prompt gives "
+                  "it the brief, the diff against the base branch and ~/.config/herdr-core/templates/reviewer.md, and asks for "
+                  "its findings as its last message. It shows in your chat as a subagent and ends with you. Wait for it with "
+                  "`hc wait <its name> --timeout 600` (again on a timeout, or while it says turn 0: it hadn't started), read its report with `hc read <its name> --lines "
+                  "400`, then end it with `hc kill <its name>`. Any other helper agent you want (research, a second opinion) "
+                  "goes the same way, labelled herdr.role=helper. The reviewer reports")
+WORKER_MD_BEFORE_FEEDBACK = WORKER_MD_BEFORE_SUBAGENTS.replace(SUBAGENTS_OLD, SUBAGENTS_RULE)
+# Since agents offer feedback for Shepherdr itself through their Assistant (SHEP-78).
+FEEDBACK_RULE = ("- Shepherdr itself misbehaving, not your task's own code (a Shepherdr, herdr-task, web app or window feature that doesn't work as meant, a Herdr command failing like a bug, the person frustrated with Shepherdr, or a \"Shepherdr feedback:\" line in your reviewer's findings): run the `herdr-task feedback` command given at the end of your brief, once per problem, then carry on. It returns at once and your Assistant asks the person whether to file it; never file an issue yourself, and put no secrets, private paths or whole logs in it.\n")
+WORKER_MD = WORKER_MD_BEFORE_FEEDBACK + FEEDBACK_RULE
 
-REVIEWER_MD = """You review one Herdr task's work before it can merge. Read only: never edit files, commit or push.
+REVIEWER_MD_BEFORE_SUBAGENT = """You review one Herdr task's work before it can merge. Read only: never edit files, commit or push.
 - Read the task, then the diff of its branch against its base, and run the project's checks.
 - Report each finding with a level: blocker (wrong, breaks something, or unsafe), major (should be fixed before merging), minor (a nit or a later improvement).
 - Be concrete: file, line, what is wrong and what to do instead. No praise, no summaries of the diff.
 """
+# Since the reviewer is its worker's helper agent in a chat of its own (SHEP-54): its report is its last message.
+REVIEWER_MD_BEFORE_FEEDBACK = REVIEWER_MD_BEFORE_SUBAGENT + ("- You run as the worker's helper agent, in a chat people can watch. Your findings are your last message: "
+                                             "the worker reads them there. Write them as a plain message, never as a plan to approve, "
+                                             "and start no other agents.\n")
+# Since agents offer feedback for Shepherdr itself (SHEP-78): a reviewer's goes through its worker.
+REVIEWER_FEEDBACK = ("- Shepherdr itself misbehaving while you review (a Herdr command or feature failing like a bug, not the task's code): "
+                     "one line in your findings starting \"Shepherdr feedback:\", what happened and what you expected; your worker passes it on.\n")
+REVIEWER_MD = REVIEWER_MD_BEFORE_FEEDBACK + REVIEWER_FEEDBACK
 
 
 # Earlier worker defaults: a file still saying one, unedited, gets today's.
@@ -85,7 +112,7 @@ OLD_WORKER_READY = """You work on one Herdr task. Stay within the task's scope a
 - When the work is finished, run the `herdr-task ready` command given at the end of your brief, with a short summary. That puts the task in Ready for the person, who accepts it. Never mark a task done yourself.
 """
 OLD_WORKER_MD = OLD_WORKER_READY.split("- When the work is finished")[0]
-OLD_WORKERS = (WORKER_MD_BEFORE_LEFT, WORKER_MD_BEFORE_DETAILS, WORKER_MD_BEFORE_CUT, WORKER_MD_BEFORE_ESTIMATE, WORKER_MD_BEFORE_SUMMARY, WORKER_MD_BEFORE_GATE, WORKER_MD_BEFORE_TEMPLATES, WORKER_MD_BEFORE_NEWS, OLD_WORKER_READY, OLD_WORKER_MD, OLD_WORKER_MD.replace(OLD_WORKER_MD.split("\n")[0], OLD_WORKER_FIRST), OLD_WORKER_REVIEW)
+OLD_WORKERS = (WORKER_MD_BEFORE_FEEDBACK, WORKER_MD_BEFORE_SUBAGENTS, WORKER_MD_BEFORE_LEFT, WORKER_MD_BEFORE_DETAILS, WORKER_MD_BEFORE_CUT, WORKER_MD_BEFORE_ESTIMATE, WORKER_MD_BEFORE_SUMMARY, WORKER_MD_BEFORE_GATE, WORKER_MD_BEFORE_TEMPLATES, WORKER_MD_BEFORE_NEWS, OLD_WORKER_READY, OLD_WORKER_MD, OLD_WORKER_MD.replace(OLD_WORKER_MD.split("\n")[0], OLD_WORKER_FIRST), OLD_WORKER_REVIEW)
 
 
 TEMPLATE_HEADS = {
@@ -117,7 +144,8 @@ def instructions(role):
         except OSError:
             body = None
         text = None
-    if body is None or (role == "worker" and body.strip() in [x.strip() for x in OLD_WORKERS]):
+    if body is None or (role == "worker" and body.strip() in [x.strip() for x in OLD_WORKERS]) \
+            or (role == "reviewer" and body.strip() in (REVIEWER_MD_BEFORE_SUBAGENT.strip(), REVIEWER_MD_BEFORE_FEEDBACK.strip())):
         body = WORKER_MD if role == "worker" else REVIEWER_MD
     new = head + body.strip() + "\n"
     if text is None or new.strip() != text.strip():

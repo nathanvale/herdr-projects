@@ -25,9 +25,11 @@ import { h_flex, v_flex } from "gpui-base";
 import { shared, setShared, run, theme, exec, appHome, home, readTextFile, writeTextFile, notify, layout, openOverlay } from "herdr";
 import { terminals, agents } from "./live.js";
 import { taskDot, ownProgress, estimated } from "./dot.js";
-import { busyAgain } from "./core/tasks.js";
+import { busyAgain, onIt } from "./core/tasks.js";
 import { button, segmented, TEXT, RADIUS, toast, plainError } from "./ui.js";
 import { on as addonOn } from "./addons.js";
+import { artifactCli } from "./artview.js";
+import { GREP, publishedIds, taskArtifacts } from "./core/task-artifacts.js";
 
 // The task header's shared left edge, and task ids in the Tasks list's monospace (mods/tasks).
 const EDGE = 12, ID_FONT = "JetBrains Mono";
@@ -36,6 +38,10 @@ export const STACK = "tasks", LIST = "tasks-list", THREAD = "tasks-thread";
 export const BODY = "tasks-thread-body", CHAT = "tasks-thread-chat", TERM = "tasks-thread-term";
 export const FILES = "tasks-thread-files", CHANGES = "tasks-thread-changes", PR = "tasks-thread-pr";
 export const BROWSER = "tasks-thread-browser";
+// The task's Artifacts (mods/task-artifacts, SHEP-60): what its agent and its helpers made.
+export const ARTIFACTS = "tasks-thread-artifacts";
+// How often its artifacts are looked for again while it shows (a python start and a grep of its logs).
+const ARTS_EVERY = 15000;
 
 function find(node, id) {
   if (!node || typeof node !== "object") return null;
@@ -142,6 +148,33 @@ export class PanelHost {
       if (JSON.stringify(w) !== JSON.stringify(shared("tasks.thread.where") ?? null)) setShared("tasks.thread.where", w);
     }
     if (JSON.stringify(rec) !== JSON.stringify(this.rec)) { this.rec = rec; cx.notify(); }
+    if (this.head && rec && find(layout(), ARTIFACTS) && addonOn("artifacts")) this.loadArts(rec, addr, cx);
+  }
+
+  // Its artifacts (core/task-artifacts.js, as the web's Artifacts tab finds them): its folder's list (herdr-artifact,
+  // on its machine), and what its agents' chat logs say they published (grep there), for shared
+  // "tasks.thread.artifacts" = { terminal, ref, machine, list: [{ id, title, v, at, proof }] }: the header counts
+  // them, mods/task-artifacts lists them. Again every ARTS_EVERY while the task shows; at once for another task.
+  async loadArts(rec, addr, cx) {
+    const key = `${rec.machine ?? ""}|${rec.folder}|${rec.ref}`;
+    if (this.artsBusy || (this.artsKey === key && Date.now() - this.artsAt < ARTS_EVERY)) return;
+    this.artsBusy = true;
+    try {
+      const on = rec.machine ?? null;
+      const out = await artifactCli(on, ["list", "--folder", rec.folder]).catch(() => null);
+      const arts = Array.isArray(out?.artifacts) ? out.artifacts : [];
+      const logs = (Array.isArray(rec.agents) ? rec.agents : []).map((a) => a.log).filter((x) => typeof x === "string");
+      const said = logs.length ? await exec("grep", ["-ohE", GREP, ...logs], on ? { on } : {}).catch(() => null) : null;
+      const ids = taskArtifacts(arts, { ref: rec.ref, folder: rec.folder, machine: null, agents: rec.agents, proof: rec.proof?.id ?? null }, publishedIds(said?.stdout));
+      const list = ids.map((id) => arts.find((a) => a.id === id)).map((a) => ({ id: a.id, title: a.title, v: a.version, at: a.at, proof: a.id === rec.proof?.id }));
+      const v = { terminal: addr ?? null, ref: rec.ref, machine: on, list };
+      if (this.cur?.terminal === v.terminal && JSON.stringify(v) !== JSON.stringify(shared("tasks.thread.artifacts") ?? null)) setShared("tasks.thread.artifacts", v);
+      this.artsKey = key;
+      this.artsAt = Date.now();
+    } finally {
+      this.artsBusy = false;
+    }
+    cx.notify();
   }
 
   // Ready and nothing in the way (as the list's Ready group): not asking, no problem, not already merging, not
@@ -196,8 +229,12 @@ export class PanelHost {
     const live = terminals().find((x) => x.address === addr)?.state === "live";
     const last = r.agents?.[r.agents.length - 1];
     const starting = !last?.ended && Date.now() - Math.max(0, ...[r.started, last?.at].filter((x) => typeof x === "number")) < 90000;
-    const s = ["todo", "queued", "done"].includes(r.state) ? r.state
-      : r.attention || st === "blocked" || r.retry?.over ? "needs"
+    // A problem (failing checks) its worker is on (core/tasks.js onIt()): Working; nobody on it: Needs you.
+    const k = addr ? terminals().find((x) => x.address === addr) : null;
+    const fixing = r.attention && onIt(r, live ? [{ address: addr, status: st, turn: k?.turn, role: k?.labels?.["herdr.role"] ?? "worker" }] : []);
+    const s = ["todo", "queued", "scheduled", "done"].includes(r.state) ? r.state
+      : (r.attention && !fixing) || st === "blocked" || r.retry?.over ? "needs"
+      : fixing ? "working"
       : r.state === "ready" && !this.again(st, addr) ? ((r.merge_requested && live) || (r.auto_merge && r.pr && !r.merged) ? "merging" : "ready")
       : st === "working" || r.retry || starting ? "working" : "needs";
     return taskDot(s, { pct: ownProgress([addr])?.pct ?? r.progress?.done, halo: true });
@@ -229,30 +266,10 @@ export class PanelHost {
     });
   }
 
-  // Pin / Unpin the task: a view choice in shared "tasks.pinned", keyed as the Tasks list keys it
-  // ("<machine, empty here>:<folder>#<id>", mods/tasks). Pinned, it sits pressed in.
-  pinButton(t) {
-    const r = this.rec, key = `${r.machine ?? ""}:${r.folder}#${r.id}`;
-    const pins = Array.isArray(shared("tasks.pinned")) ? shared("tasks.pinned") : [];
-    const on = pins.includes(key);
-    return h_flex().id("thread-pin").size(24).flex_none().items_center().justify_center().rounded(RADIUS.control).cursor_pointer()
-      .when(on, (el) => el.bg(t.selected)).text_color(on ? t.foreground : t.dim)
-      .hover((s) => s.bg(on ? t.selected : t.hover).text_color(t.foreground))
-      .tooltip(on ? "Unpin" : "Pin")
-      .on_click((_e, cx) => {
-        cx.stop_propagation();
-        const now = shared("tasks.pinned");
-        const rest = (Array.isArray(now) ? now : []).filter((k) => k !== key);
-        setShared("tasks.pinned", on ? rest : [...rest, key]);
-        cx.notify();
-      })
-      .child(svg("mods/workspace-chrome/pin.svg").size(14).flex_none());
-  }
-
   // Chat | Terminal | Files | Changes | Pull request | Browser: the main chat's header switch
-  // (ui.js segmented, as mods/pane-chat). segs: { key, label, on, dead (can't open now), tip, fn }.
+  // (ui.js segmented, as mods/pane-chat). segs: { key, label, on, dead (can't open now), fn }.
   switcher(t, segs) {
-    return segmented("thread-mode", segs.map((x) => [x.key, x.label, { disabled: x.dead, tip: x.tip }]),
+    return segmented("thread-mode", segs.map((x) => [x.key, x.label, { disabled: x.dead }]),
       segs.find((x) => x.on)?.key ?? null, (v, _e, cx) => segs.find((x) => x.key === v)?.fn(cx));
   }
 
@@ -348,14 +365,16 @@ export class PanelHost {
     if (shownNow === PR && !hasPr && this.rec) cx.timer.after(0, () => showWorkerChat());
     const segs = [
       { key: "chat", label: "Chat", on: shownNow === CHAT, fn: () => showWorkerChat() },
-      { key: "term", label: "Terminal", on: shownNow === TERM, dead: !live, tip: live ? null : "Not running", fn: (cx) => this.toTerminal(addr, cx) },
+      { key: "term", label: "Terminal", on: shownNow === TERM, dead: !live, fn: (cx) => this.toTerminal(addr, cx) },
       { key: "files", label: "Files", on: shownNow === FILES, fn: pick(FILES) },
       { key: "changes", label: "Changes", on: shownNow === CHANGES, fn: pick(CHANGES) },
       ...(hasPr ? [{ key: "pr", label: "Pull request", on: shownNow === PR, fn: pick(PR) }] : []),
       // The task's own browser, watched live (mods/task-browser), when the layout has it.
       ...(find(layout(), BROWSER) && addonOn("browser") ? [{ key: "browser", label: "Browser", on: shownNow === BROWSER, fn: pick(BROWSER) }] : []),
+      // What its agent made (mods/task-artifacts): always there, counted once it has some.
+      ...(find(layout(), ARTIFACTS) && addonOn("artifacts") ? [{ key: "artifacts", label: this.artsLabel(want), on: shownNow === ARTIFACTS, fn: pick(ARTIFACTS) }] : []),
     ];
-    // Three rows on one left edge (EDGE): a slim bar (‹ Tasks; base, Pin, Accept), the task (its
+    // Three rows on one left edge (EDGE): a slim bar (‹ Tasks; base, Accept), the task (its
     // dot, id and title, and under them what its agent is doing), then the switcher.
     // Their height is the "tasks-thread-head" block's size in layouts/shepherdr.json (127): keep them in step.
     return v_flex().id("thread-head-rows").size_full().pt(8).pb(12).gap(12).bg(t.background).border_b(1).border_color(t.border)
@@ -366,8 +385,16 @@ export class PanelHost {
         .child(this.switcher(t, segs)));
   }
 
+  // "Artifacts", with how many once the shown task has some ("Artifacts 3").
+  artsLabel(want) {
+    const a = shared("tasks.thread.artifacts");
+    const n = a && a.terminal === (want?.terminal ?? null) && (want?.terminal || a.ref === want?.task) ? a.list.length : 0;
+    return n ? `Artifacts ${n}` : "Artifacts";
+  }
+
   // The slim bar: ‹ Tasks back to the list on the left (its chevron on the shared edge, its hover
-  // reaching past it), and on the right the task's base, Pin and Accept.
+  // reaching past it), and on the right the task's base and Accept
+  // (no Pin: the task's row menu pins it, SHEP-62).
   barRow(t, st, addr) {
     return h_flex().id("thread-bar").h(24).flex_none().pl(EDGE - 6).pr(EDGE).gap(4).items_center()
       .child(h_flex().id("thread-back").h(24).pl(2).pr(8).gap(2).flex_none().items_center().rounded(RADIUS.control).cursor_pointer()
@@ -378,11 +405,9 @@ export class PanelHost {
       .child(div().flex_1())
       // A task's own base (herdr-task add --base), where it merges into; the folder's default isn't shown.
       .when(Boolean(this.rec?.base_set && this.rec?.base), (el) => el.child(div().id("thread-base").flex_none().max_w(160).truncate().pr(4)
-        .text_size(TEXT.label).text_color(t.muted).tooltip(`Merges into ${this.rec.base}`).child(`→ ${this.rec.base}`)))
-      // Pin / Unpin, as the task's row in the list (not an archived task's).
-      .when(Boolean(this.rec && !(this.rec.archived && this.rec.state === "done")), (el) => el.child(this.pinButton(t)))
-      // Accept: the header's one primary button (merges first when there's something to merge).
-      .when(this.acceptable(st, addr), (el) => el.child(button("thread-accept", this.accepting ? "Accepting…" : "Accept",
+        .text_size(TEXT.label).text_color(t.muted).child(`→ ${this.rec.base}`)))
+      // Review: the header's one primary button, opens the Accept card (its Accept merges first when there's something to merge).
+      .when(this.acceptable(st, addr), (el) => el.child(button("thread-accept", this.accepting ? "Accepting…" : "Review",
         { kind: "primary", disabled: this.accepting, onClick: (_e, cx) => this.accept(cx) })));
   }
 
@@ -399,8 +424,7 @@ export class PanelHost {
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(h_flex().h(22).min_w(0).gap(8).items_center()
           .when(Boolean(want?.task), (el) => el.child(div().flex_none().font_family(ID_FONT).text_size(TEXT.label).text_color(t.dim).child(want.task)))
-          .child(div().id("thread-title").flex_1().min_w(0).truncate().text_size(TEXT.title).font_medium()
-            .when(Boolean(title), (el) => el.tooltip(title)).child(title)))
+          .child(div().id("thread-title").flex_1().min_w(0).truncate().text_size(TEXT.title).font_medium().child(title)))
         .child(h_flex().h(16).min_w(0).items_center()
           .child(div().flex_1().min_w(0).when(Boolean(report), (el) => el.child(report)))));
   }

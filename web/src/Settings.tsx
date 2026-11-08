@@ -540,8 +540,11 @@ function groupsOf(sections: SettingSection[], ui: UI): { name: string; pages: Pa
   const pages = [...sections.filter((x) => x.level === level && !x.global), ...(space ? [] : sections.filter((x) => x.global))]
     .filter((x) => ORDER.includes(x.name) && (!space || SPACE_PAGES.has(x.name)))
     .sort((a, b) => ORDER.indexOf(a.name) - ORDER.indexOf(b.name))
-  const own = registry.settingsPages.filter((x) => x.when(ui)).map(({ name, about, Icon, View }): Page => ({ name, about, Icon, View, device: true, rows: [] }))
-  return [{ name: space ? ST.SPACE_TITLE : ST.TITLE, pages: [...pages, ...own] }].filter((g) => g.pages.length)
+  const plugged = registry.settingsPages.filter((x) => x.when(ui))
+  const own = plugged.filter((x) => !x.into).map(({ name, about, Icon, View }): Page => ({ name, about, Icon, View, device: true, rows: [] }))
+  // a plugin's part of one of the server's pages (Notify's: alerts on this device), drawn on top of it, Everywhere only
+  const withParts = pages.map((p) => ({ ...p, View: space ? undefined : plugged.find((x) => x.into === p.name)?.View }))
+  return [{ name: space ? ST.SPACE_TITLE : ST.TITLE, pages: [...withParts, ...own] }].filter((g) => g.pages.length)
 }
 
 /** where a page sits in the list of them (for ui.settings.section), or -1 where it doesn't show */
@@ -549,6 +552,21 @@ export const sectionOf = (name: string, sections: SettingSection[], ui: UI) =>
   groupsOf(sections, ui)
     .flatMap((g) => g.pages)
     .findIndex((p) => p.name === ({ 'Alerts and voice': 'Voice' }[name] ?? name))
+
+/** the pages' names in order (a section's index is its place here) */
+export const pageNames = (sections: SettingSection[], ui: UI) => groupsOf(sections, ui).flatMap((g) => g.pages).map((p) => p.name)
+
+/** a page as said ("secrets", "the window page"): its index, its name exactly, else case and words aside, else -1 */
+export function sectionLike(said: string, sections: SettingSection[], ui: UI) {
+  const exact = sectionOf(said, sections, ui)
+  if (exact >= 0) return exact
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '')
+  const want = norm(said.replace(/\b(the|page|settings|section|tab)\b/gi, ''))
+  if (!want) return -1
+  const names = pageNames(sections, ui).map(norm)
+  const i = names.indexOf(want)
+  return i >= 0 ? i : names.findIndex((n) => n.startsWith(want) || (want.length > 3 && n.includes(want)))
+}
 
 /** a machine's own Machine page (to open Settings on it): its section and level */
 export function settingsPageOf(sections: SettingSection[], machine: string, ui: UI) {
@@ -562,13 +580,13 @@ export function settingsPageOf(sections: SettingSection[], machine: string, ui: 
 const iconOf = (p: Page) => p.Icon ?? ICONS[p.name] ?? CogIcon
 
 /** a phone's rounded group of rows, a shade lighter than the page under it in dark mode, as iOS's */
-const card = 'rounded-box bg-bg dark:bg-bubble'
+export const card = 'rounded-box bg-bg dark:bg-bubble'
 /** a row's look: in a phone's group its line starts where its words do, as iOS's; on a wider screen a line between rows */
 export const rowLook = (phone: boolean) =>
   phone
     ? 'relative flex min-h-12 items-center justify-between gap-3 px-4 py-2.5 not-first:before:absolute not-first:before:inset-x-0 not-first:before:top-0 not-first:before:left-4 not-first:before:h-px not-first:before:bg-line'
     : 'flex min-h-12 items-center justify-between gap-3 py-2 not-first:border-t not-first:border-line'
-const heading = (phone: boolean) => (phone ? 'px-4 pb-1.5 text-[0.8125rem] text-fg2' : 'pb-1 text-[0.75rem] font-medium text-fg3')
+export const heading = (phone: boolean) => (phone ? 'px-4 pb-1.5 text-[0.8125rem] text-fg2' : 'pb-1 text-[0.75rem] font-medium text-fg3')
 
 /** the window's stepper: − its value + (a count, a percent, a size), stepping through the row's choices; a value off
  *  the list (Off) steps from where the row says */
@@ -688,7 +706,7 @@ function PageBody({ page, phone, set, refused, clear, hint }: { page: Page; phon
         <Small className="flex flex-wrap items-center gap-1 text-pretty">
           <span className="text-fg2">{row.key.startsWith('machine.') ? ST.SET_FOR_MACHINE : ST.CHANGED_HERE}</span>
           <span aria-hidden>·</span>
-          <button type="button" title={ST.RESET_TIP(row.inherits.from)} onClick={() => set(row.key, null)}
+          <button type="button" aria-label={`${ST.RESET}: ${ST.RESET_TIP(row.inherits.from)}`} onClick={() => set(row.key, null)}
             className="press-dim relative font-medium text-accent after:absolute after:-inset-x-1 after:-inset-y-1.5 coarse:after:-inset-y-3">
             {ST.RESET}
           </button>
@@ -883,6 +901,65 @@ function NoteBox({ row, under, save, mono = false }: { row: SettingRow; under: R
   )
 }
 
+/** Secrets › Kept on: the machine that keeps them, a list of the others to move them to, and a confirm before the move
+ *  (shepherdr secrets move-to, run by the service; the page sees it go in the next snapshots). */
+function KeptOn({ kept, phone }: { kept: NonNullable<Page['kept']>; phone: boolean }) {
+  const W = ST.SECRETS
+  const [open, setOpen] = useState(false)
+  const [sure, setSure] = useState<string | null>(null)
+  const [err, setErr] = useState('')
+  const where = kept.here ? ST.THIS_COMPUTER : kept.name || W.notLinked
+  // following Serve from: kept there already, or still where they were (they move on their own)
+  const serve = kept.serve === null ? W.thisOne : kept.serve || ''
+  const same = !!kept.auto && (kept.serve === null ? kept.here : !!kept.serve && kept.serve === kept.name)
+  const now = !kept.auto ? where : same ? W.sameAsServe(where) : W.forNow(where)
+  const move = async (m: string) => {
+    setSure(null)
+    const r = (await act({ type: 'secrets-move', machine: m } as never).catch((e: Error) => ({ ok: false, error: e.message }))) as { ok?: boolean; error?: string }
+    setErr(r?.ok === false ? r.error ?? "That didn't go through." : '')
+  }
+  const status = kept.moving ? W.moving(kept.moving) : kept.error || err || (!kept.reachable && kept.name ? W.unreachable(kept.name) : !kept.auto ? W.keptAbout : same || !serve ? W.sameAbout : W.following(serve))
+  return (
+    <>
+      <h3 className={clsx(heading(phone), 'pt-4')}>{W.keptOn}</h3>
+      <div className={clsx('flex flex-col gap-2 py-3', phone ? clsx(card, 'px-4') : 'border-b border-line')}>
+        <div className="relative flex items-center gap-2">
+          <MachineIcon className={clsx(ic, 'text-fg3')} />
+          <span className="min-w-0 flex-1 truncate">{now}</span>
+          <Ghost aria-haspopup="menu" aria-expanded={open} disabled={!!kept.moving} onClick={() => setOpen(!open)} className="pr-1.5">
+            <span>{W.moveVerb}</span><DownIcon className={ic} />
+          </Ghost>
+          {open ? (
+            <Menu label={W.keptOn} select onClose={() => setOpen(false)} className="absolute top-full right-0 z-10 mt-1 max-h-[300px] w-[240px] max-w-[calc(100vw-2rem)] origin-top-right overflow-y-auto">
+              {kept.choices.map((c) => {
+                const on = c.here ? kept.here : c.name === kept.name
+                return (
+                  <MenuItem key={c.name || 'here'} role="menuitemradio" aria-checked={on} icon={on ? <CheckIcon className={ic} /> : null}
+                    hint={c.state !== 'connected' ? W.offline : undefined} disabled={on || c.state !== 'connected'}
+                    onClick={() => { setOpen(false); setSure(c.here ? '' : c.name) }}>
+                    {c.here ? ST.THIS_COMPUTER : c.name}
+                  </MenuItem>
+                )
+              })}
+            </Menu>
+          ) : null}
+        </div>
+        {sure !== null ? (
+          <div className="flex flex-col gap-2 rounded-row border border-line p-3">
+            <span className="font-medium">{W.moveConfirm(sure || W.thisOne)}</span>
+            <Small className="text-pretty">{W.moveDetail(sure || W.thisOne, kept.here ? W.thisOne : where)}</Small>
+            <span className="flex justify-end gap-1">
+              <Ghost className="shadow-none!" onClick={() => setSure(null)}>{W.keep}</Ghost>
+              <Ghost onClick={() => void move(sure || 'here')} className="bg-fg text-bg! shadow-none! enabled:hover:bg-fg">{W.moveVerb}</Ghost>
+            </span>
+          </div>
+        ) : null}
+        <Small role="status" className={clsx('text-pretty', (kept.error || err || (!kept.reachable && kept.name)) && 'text-need-fg!')}>{status}</Small>
+      </div>
+    </>
+  )
+}
+
 /** Secrets, as the window's page (secrets-section.js): what it is, the agents waiting on one (Give it fills the form
  *  in), Add (Name, Value, For: Everywhere, a machine or a space; a space's own page starts on that space), and every
  *  kept secret with where it is, each to Replace or Remove. Values never come here: they only go, once, to the vault on
@@ -937,6 +1014,7 @@ function SecretsPage({ level, page, phone }: { level: string; page: Page; phone:
   return (
     <div className="flex w-full flex-col">
       <p className={clsx('text-pretty text-fg3', phone ? 'px-4 text-[0.9375rem]' : 'text-[0.8125rem]')}>{W.about}</p>
+      {page.kept && level === 'all' ? <KeptOn kept={page.kept} phone={phone} /> : null}
       {asks.length ? (
         <>
           <h3 className={sub}>{W.asked}</h3>

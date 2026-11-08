@@ -32,10 +32,10 @@ import { useMotion } from '@client/motion.ts'
 import { isDark, useDark } from '@client/theme.ts'
 import {
   BackIcon,
+  CheckIcon,
   NextIcon,
   dimmed,
   FilterBox,
-  Ghost,
   ic,
   IconButton,
   List,
@@ -49,7 +49,8 @@ import {
   UpIcon,
   XIcon,
 } from '@client/ui.tsx'
-import type { Artifact, ArtifactVersion, Chat, Message } from '@shared/types.ts'
+import type { Artifact, ArtifactVersion, Chat, Message, Task } from '@shared/types.ts'
+import { titleInTask } from '@core/task-artifacts.js'
 
 const { withIds } = R as any
 const { MARKUP, markupHint, markupSent, describe } = M as any
@@ -69,9 +70,8 @@ export function ago(ms: number) {
 /** which version, who made it and when: "v3 · Claude Code · 2h ago" (the window's) */
 const detailOf = (a: Artifact) => [`v${a.v}`, a.by, a.at ? ago(a.at) : null].filter(Boolean).join(' · ')
 
-/** the version stepper the window's artifact bars have: ‹ v2 of 5 ›, then "· Latest ›" while an older one shows (its
- *  tooltip the latest's number); one version only: "v3" in the sidebar's head (when it came on hover), "v3 · 2h ago" in
- *  the viewer's bar */
+/** the version stepper the window's artifact bars have: ‹ v2 of 5 ›, then "· Latest ›" while an older one shows; one
+ *  version only: "v3" in the sidebar's head, "v3 · 2h ago" in the viewer's bar */
 function Stepper({ art, shown, onStep, bar }: { art: Artifact; shown: number; onStep: (n: number | undefined) => void; bar: 'sidebar' | 'viewer' }) {
   const kept = [...art.versions.map((x) => x.n)].sort((a, b) => a - b)
   const latest = art.v
@@ -81,20 +81,20 @@ function Stepper({ art, shown, onStep, bar }: { art: Artifact; shown: number; on
   const me = art.versions.find((x) => x.n === shown)
   const when = me?.at ? ago(me.at) : undefined
   if (kept.length <= 1 && !older)
-    return <div title={bar === 'sidebar' ? when : undefined} className="shrink-0 text-xs text-fg2 tabular-nums phone:text-[0.8125rem]">v{shown}{bar === 'viewer' && when ? ` · ${when}` : ''}</div>
+    return <div className="shrink-0 text-xs text-fg2 tabular-nums phone:text-[0.8125rem]">v{shown}{bar === 'viewer' && when ? ` · ${when}` : ''}</div>
   return (
     <div className="flex shrink-0 items-center text-xs tabular-nums phone:text-[0.8125rem]">
       <IconButton label={prev ? `v${prev}` : `v${shown}`} disabled={!prev} className="rounded-full! disabled:opacity-40" onClick={() => prev && onStep(prev)}>
         <BackIcon className={ic} />
       </IconButton>
-      <span title={when} className={clsx('px-0.5', older ? 'text-fg' : 'text-fg2')}>v{shown} of {latest}</span>
+      <span className={clsx('px-0.5', older ? 'text-fg' : 'text-fg2')}>v{shown} of {latest}</span>
       <IconButton label={next ? `v${next}` : `v${shown}`} disabled={!next} className="rounded-full! disabled:opacity-40" onClick={() => next && onStep(next === latest ? undefined : next)}>
         <NextIcon className={ic} />
       </IconButton>
       {older ? (
         <>
           <span className="px-1 text-fg3">·</span>
-          <button type="button" title={`v${latest}`} className="press-dim rounded-full px-1.5 py-1 font-medium text-focus hover:bg-hover" onClick={() => onStep(undefined)}>Latest ›</button>
+          <button type="button" className="press-dim rounded-full px-1.5 py-1 font-medium text-focus hover:bg-hover" onClick={() => onStep(undefined)}>Latest ›</button>
         </>
       ) : null}
     </div>
@@ -217,7 +217,6 @@ function MarkupLayer({ art, v, onEnd }: { art: Artifact; v: number; onEnd: () =>
             <button
               type="button"
               aria-label="Send"
-              title="Send  Enter"
               disabled={!text.trim() || sending}
               onClick={() => void send()}
               className={clsx('press-dim relative grid size-8 shrink-0 place-items-center rounded-row bg-fg text-bg after:absolute after:-inset-1.5 phone:size-11', dimmed)}
@@ -286,6 +285,29 @@ export function showInPanel(id: string) {
   setUI(ui.device === 'phone' ? { task: null, tab: 'artifacts', pick: null, plus: null, menu: false } : { task: ui.task && !taskInMiddle(ui, snap) ? null : ui.task, side: 'artifacts' })
 }
 
+/** Mark up / Done, one look in the viewer's bar and the panel's (and the window's, mods/artifacts/main.js and
+ *  chat-image/artifact-bar.js): a pointer clicking a spot and its name, round like every header button. round: on a
+ *  phone's bar it is a grey circle with only the pointer, like Close beside it. While marking it says Done with a tick,
+ *  tinted the blue of the frame round what you mark. */
+function MarkUpButton({ on, onClick, round }: { on: boolean; onClick: () => void; round?: boolean }) {
+  return (
+    <button
+      type="button"
+      aria-label={on ? 'Done' : 'Mark up'}
+      aria-pressed={on}
+      onClick={onClick}
+      className={clsx(
+        'hit press-dim inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full pr-2.5 pl-2 text-[0.8125rem] font-medium whitespace-nowrap coarse:h-9 phone:h-11 phone:gap-2 phone:pr-4 phone:pl-3.5 phone:text-[0.9375rem]',
+        on ? 'bg-[color-mix(in_srgb,var(--focus)_14%,var(--bg))] text-fg' : 'text-fg2 hover:bg-hover hover:text-fg',
+        round && !on && 'phone:w-11 phone:justify-center phone:bg-bubble phone:px-0',
+      )}
+    >
+      {on ? <CheckIcon className={clsx(ic, 'text-focus')} /> : <MarkUpIcon className={ic} />}
+      <span className={clsx(round && !on && 'phone:hidden')}>{on ? 'Done' : 'Mark up'}</span>
+    </button>
+  )
+}
+
 /** An artifact in the side panel, under the window's sidebar bar: ‹ Artifacts back to the list, its title, which
  *  version (‹ v2 of 5 ›, · Latest ›), and Mark up / Done, which marks it up right there */
 function PanelArtifact({ art, onBack }: { art: Artifact; onBack: () => void }) {
@@ -301,9 +323,7 @@ function PanelArtifact({ art, onBack }: { art: Artifact; onBack: () => void }) {
         </button>
         <div className="min-w-0 flex-1 truncate font-semibold">{art.title}</div>
         <Stepper art={art} shown={shown} bar="sidebar" onStep={(n) => { setMarking(false); setV(n) }} />
-        <Ghost aria-pressed={marking} onClick={() => setMarking(!marking)} className="shrink-0 aria-pressed:bg-sel aria-pressed:text-fg">
-          <MarkUpIcon /> {marking ? 'Done' : 'Mark up'}
-        </Ghost>
+        <MarkUpButton on={marking} onClick={() => setMarking(!marking)} />
       </div>
       <div className="relative min-h-0 flex-1">
         <div className="absolute inset-0">
@@ -576,25 +596,18 @@ function Viewer() {
     <ViewerShell label={art.title} phone={phone}>
       {/* the whole screen is the page's, but for a slim bar on top (the window's artifact viewer bar) */}
       <div className="flex w-full min-w-0 flex-col overflow-hidden pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]">
-        <div className="flex shrink-0 items-center gap-1.5 border-b border-line pt-[calc(env(safe-area-inset-top)+--spacing(1))] pr-2 pb-1 pl-4 phone:gap-2 phone:px-3">
+        <div className="flex shrink-0 items-center gap-1.5 border-b border-line pt-[calc(env(safe-area-inset-top)+--spacing(1))] pr-2 [[data-topbar]~*_&]:pt-1 pb-1 pl-4 phone:gap-2 phone:px-3">
           <PageIcon className={clsx(ic, 'shrink-0 text-fg2 phone:hidden')} />
           <div className="min-w-0 flex-1 truncate font-medium">{art.title || 'Artifact'}</div>
           <Stepper art={art} shown={shown} bar="viewer" onStep={(n) => openArtifact(art.id, n)} />
-          <IconButton
-            label={markup ? 'Done' : 'Mark up'}
-            pressed={markup}
-            className={clsx(barBtn, 'w-auto! px-2 gap-1 inline-flex! aria-pressed:bg-[color-mix(in_srgb,var(--accent)_16%,var(--bg))]')}
-            onClick={() => setMarkup(!markup)}
-          >
-            <MarkUpIcon /><span className="phone:hidden">{markup ? 'Done' : 'Mark up'}</span>
-          </IconButton>
+          <MarkUpButton on={markup} onClick={() => setMarkup(!markup)} round />
           {/* beside the chat, in the Artifacts panel */}
           {phone ? null : (
             <IconButton label="Open in sidebar" onClick={() => showInPanel(art.id)} className="rounded-full!">
               <PanelIcon className={ic} />
             </IconButton>
           )}
-          <IconButton label="Close" title="Close  Esc" onClick={closeArtifact} className={barBtn}>
+          <IconButton label="Close" onClick={closeArtifact} className={barBtn}>
             <XIcon className={ic} />
           </IconButton>
         </div>
@@ -717,9 +730,53 @@ function ArtifactList(_: { placeId: string }) {
   )
 }
 
+/** A task's Artifacts tab (SHEP-60): what its agent and its helpers made or updated (the service finds them:
+ *  core/task-artifacts.js), its proof first and marked so, then newest first; each with its title (without the task's
+ *  id in front), how many versions and when. A tap opens it in the viewer (its versions, Mark up). None: a quiet line. */
+function TaskArtifacts({ task }: { task: Task; chatKey: string }) {
+  const snap = useSnap()!
+  // "2h ago" moves on by the minute
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 60000)
+    return () => clearInterval(t)
+  }, [])
+  const ref = task.id.slice(task.id.lastIndexOf(':') + 1)
+  const all = snap.artifacts ?? []
+  const list = (task.artifacts ?? []).map((id) => all.find((a) => a.id === id)).filter((a): a is Artifact => !!a)
+  if (!list.length)
+    return (
+      <div className="flex flex-col items-center gap-1.5 px-5 pt-10 pb-4 text-center">
+        <PageIcon className={clsx(ic, 'text-fg3')} />
+        <p className="pt-1 font-medium">No artifacts yet</p>
+        <p className="max-w-64 text-[0.8125rem] text-pretty text-fg2 phone:text-[0.9375rem]">Reports and proofs this task's agent makes show here.</p>
+      </div>
+    )
+  return (
+    <List className="py-1.5">
+      {list.map((a) => {
+        const proof = a.id === task.proof
+        return (
+          <Row key={a.id} two onActivate={() => openArtifact(a.id)} data-task-artifact={a.id} className="gap-3! py-2!">
+            <PageIcon className={clsx(ic, 'mt-0.5 shrink-0 self-start', proof ? 'text-focus' : 'text-fg3')} />
+            <RowText sub={[`${a.v} ${a.v === 1 ? 'version' : 'versions'}`, a.at ? ago(a.at) : null].filter(Boolean).join(' · ')}>
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="min-w-0 truncate">{titleInTask(a.title, ref, proof)}</span>
+                {proof ? <span className="shrink-0 rounded-full bg-sel px-2 py-px text-[0.6875rem]/4 font-medium text-fg2 phone:text-[0.75rem]/4">Proof</span> : null}
+              </span>
+            </RowText>
+          </Row>
+        )
+      })}
+    </List>
+  )
+}
+
 export default definePlugin({
   name: 'artifacts',
   setup(reg) {
+    // a task's own: the last of its tabs, always there (its place never moves), counted once it has some
+    reg.taskPanel.push({ id: 'artifacts', order: 60, label: 'Artifacts', Icon: PageIcon, count: (t) => t.artifacts?.length ?? 0, View: TaskArtifacts })
     reg.views.artifacts = ArtifactList
     reg.views.artifact = SplitArtifact
     reg.messageParts.push({ order: 50, View: ArtifactCard })

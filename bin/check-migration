@@ -10,7 +10,8 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 INPUTS = {
     'F': '4f0236f03a88c5e9fa344475d90d3a20ef418481',
-    'U': 'dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc',
+    # U is the exact upstream parent the native foundation equals: v3.1.16 since its merge (S0 merged v3.1.3, dc018f2a).
+    'U': '57302497117183a1772464b31751da12a1c03e4a',
     'P': '074dec5ea0bf0a057f520fa50497bf9e1b696ad9',
     'B': 'de8e17957efb4aa016d7e4d652f397aaa95f0880',
 }
@@ -39,7 +40,7 @@ test/test_native_publication.py'''.split()),
     'C1': frozenset('''core/agents.js core/chat-find.test.js core/chat-log.js mods/chat/core/agents.js
 mods/chat/core/chat-log.js mods/chat/main.js mods/coordinator/core/agents.js mods/newspace/core/agents.js
 mods/shepherdr-settings/core/agents.js mods/tasks/bin/herdr_task/news.py mods/tasks/bin/herdr_task/sessions.py
-service/actions.ts service/agents.ts service/watch.ts test/test_session_discovery.py'''.split()),
+service/actions.ts service/agents.ts service/watch.ts test/test_session_discovery.py mods/chat-models/core/agents.js'''.split()),
     'W1': frozenset('docs/web.md service/jobs-flags.test.ts service/jobs.ts'.split()),
     'H1': frozenset('''.github/workflows/private-domain.yml docs/adr/0004-private-custom-domain.md docs/private-domain.md
 docs/web.md scripts/private-domain-proof.ts service/auth.ts service/main.ts service/private-domain.test.ts

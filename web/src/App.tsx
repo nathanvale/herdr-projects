@@ -30,7 +30,6 @@ import {
   taskInMiddle,
   taskOf,
   togglePin,
-  pinTask,
   useSnap,
   useUI,
   type Pane,
@@ -60,20 +59,17 @@ import {
   Head,
   IconButton,
   Menu,
-  MOD,
   MenuIcon,
   MenuSeparator,
   MoreIcon,
   PageIcon,
   PhoneTop,
-  PinTaskIcon,
-  UnpinIcon,
   Primary,
   KeepFiltersIcon,
   PlaceIcon,
   RoundButton,
+  HeadButton,
   SearchIcon,
-  shortcut,
   Tab,
   Tabs,
   TasksIcon,
@@ -173,7 +169,7 @@ export function Brand() {
 /** the brand row's search: Jump (core keys' Ctrl+K), as the window's magnifier */
 function SearchButton() {
   return (
-    <IconButton label="Search" title={`Search · ${shortcut(MOD, 'K')}`} onClick={() => setUI({ search: true, searchScope: undefined, drawer: false })}>
+    <IconButton label="Search" onClick={() => setUI({ search: true, searchScope: undefined, drawer: false })}>
       <SearchIcon className={ic} />
     </IconButton>
   )
@@ -229,7 +225,7 @@ function Drawer() {
       onOpen={(drawer) => setUI({ drawer })}
       can={can}
       label="Spaces"
-      panel={phone ? 'w-[84%] pt-[env(safe-area-inset-top)]' : 'w-[320px]'}
+      panel={phone ? 'w-[84%] pt-[env(safe-area-inset-top)] [[data-topbar]~*_&]:pt-0' : 'w-[320px]'}
     >
       <Brand />
       {P ? <P /> : null}
@@ -303,12 +299,13 @@ function PlaceColumn({ place, pane }: { place: Place; pane?: number }) {
   const snap = useSnap()!
   const Chat = registry.views.chat
   const term = useUI((u) => u.term)
-  // 3.0's pane header: what runs in the shown tab ("Assistant · Claude Code"; another tab's program) and its folder,
-  // then the Autopilot switch; past the gap its status, × and Chat | Terminal (placeHeader, by order). The space is
-  // named by the sidebar and the tab bar, as in the window.
+  // the pane header: the space's name, its folder (and machine) quieter under it; another tab shown names its program
+  // ("Shell", "Codex") and folder. Then plugins' marks (placeHeader order ≤ 10); past the gap, right-aligned, its
+  // status in words, the Autopilot pill and Chat | Terminal (placeHeader, by order). Never the Assistant's role or
+  // agent (SHEP-36): the composer's model menu says which agent.
   const tab = term?.startsWith('t:') ? place.tabs?.find((t) => t.term === term) : undefined
-  const name = tab ? (tab.prog ?? 'Shell') : (place.header ?? 'Assistant')
-  const where = tab ? tab.where : place.cwd ?? place.where
+  const name = tab ? (tab.prog ?? 'Shell') : place.name
+  const where = tab ? tab.where : placeKind(snap, place)
   // another agent tab switched to Chat shows its own chat (its terminal otherwise: the terminal plugin's chatBody)
   const tabChat = useUI((u) => (tab && u.tabView?.[tab.term] === 'chat' ? tab.term : null))
   return (
@@ -316,8 +313,8 @@ function PlaceColumn({ place, pane }: { place: Place; pane?: number }) {
       <Head conversation className="group/head">
         <MenuButton />
         {pane ? null : <PlacesToggle when="closed" />}
-        <div className="flex min-w-0 shrink items-center gap-2.5">
-          <Who name={name} kind={where || undefined} />
+        <div className="flex min-w-24 shrink-[100] items-center">
+          <Who name={name} kind={where ? <PaneWhere where={where} /> : undefined} />
         </div>
         {registry.placeHeader.filter((h) => h.order <= 10).map(({ View }, i) => (
           <View key={i} place={place} />
@@ -333,6 +330,17 @@ function PlaceColumn({ place, pane }: { place: Place; pane?: number }) {
         tabChat ? <Chat key={tabChat} chatKey={tabChat} placeholder={`Message ${tab?.prog ?? 'the agent'}`} /> : <Chat chatKey={place.chat} placeholder="Message the Assistant" unreachable={unreachable(place, snap)} />
       ) : null}
     </section>
+  )
+}
+
+/** a pane header's quiet line: the folder, which gives way from its start so its own name stays ("…/dev/shepherdr") */
+function PaneWhere({ where }: { where: string }) {
+  return (
+    <span className="flex min-w-0">
+      <span className="min-w-0 truncate text-fg3 [direction:rtl]">
+        <bdi>{where}</bdi>
+      </span>
+    </span>
   )
 }
 
@@ -410,6 +418,22 @@ function SideList({ snap }: { snap: Snapshot }) {
   )
 }
 
+/** A task that ran but whose chat is no longer kept (its agent's log is gone): what it said when it was ready, its
+ *  details as their lines, and a quiet line saying why there's no chat (SHEP-26) */
+function ChatGone({ task }: { task: Task }) {
+  return (
+    <div data-chat-gone className="flex flex-col gap-2 px-4 py-3 text-[0.8125rem] text-pretty phone:px-5 phone:text-[0.9375rem]">
+      {task.summary ? <p className="text-fg">{task.summary}</p> : null}
+      {task.details ? (
+        <ul className="flex flex-col gap-1 text-fg2">
+          {task.details.split('\n').map((l) => l.trim().replace(/^[-*•]\s*/, '')).filter(Boolean).map((l, i) => <li key={i} className="flex gap-1.5"><span aria-hidden className="text-fg3">·</span><span className="min-w-0">{l}</span></li>)}
+        </ul>
+      ) : null}
+      <p className="text-fg3">Its chat is no longer kept.</p>
+    </div>
+  )
+}
+
 /** An open task is its one agent's chat; until its agent starts there is no chat yet. In the middle (the lists pinned),
  *  it has what the place's chat there has to bring places back. */
 function TaskPage({ task, middle, pane }: { task: Task; middle?: boolean; pane?: number }) {
@@ -417,63 +441,49 @@ function TaskPage({ task, middle, pane }: { task: Task; middle?: boolean; pane?:
   const g = task.agent ?? null
   const Chat = registry.views.chat
   const finished = useStore((s) => s.chats[g?.chat ?? '']?.finished)
+  // its agent's saved log is gone (deleted since): what it said when it was ready instead
+  const gone = useStore((s) => s.chats[g?.chat ?? '']?.notice === 'gone')
   const back = () => setUI({ task: null })
   const phone = useUI((u) => u.device === 'phone')
   const desktop = useUI((u) => u.device === 'desktop')
   const keyboard = useUI((u) => u.keyboard)
   const coordinator = placeOf(snap, task.place).name
   const accepting = useAccepting(task.id) || !!task.accepting
-  // as 3.0's task header (mods/chat/panel.js barRow): where it merges, Pin / Unpin (not an archived task's), and Accept
-  // once it is Ready ("Accepting…" while its accept runs); then its tabs (TaskTabs)
-  const target = task.base ? <span className="max-w-40 shrink-0 truncate text-[0.8125rem] text-fg2 phone:text-[0.875rem]" title={`Merges into ${task.base}`}>→ {task.base}</span> : null
-  const tools = (
-    <>
-      {target}
-      {task.archived && task.status === 'done' ? null : (
-        <IconButton label={task.pinned ? 'Unpin' : 'Pin'} pressed={!!task.pinned} onClick={() => void pinTask(task, !task.pinned).catch(() => undefined)}>
-          {task.pinned ? <UnpinIcon className={ic} /> : <PinTaskIcon className={ic} />}
-        </IconButton>
-      )}
-      {task.status === 'ready' && !task.archived ? <Primary soft disabled={accepting} onClick={() => openAccept(task.id)}>{accepting ? 'Accepting…' : 'Accept'}</Primary> : null}
-    </>
-  )
-  // its id, in the list's monospace, before its title (as the window's), and under them what its agent is doing
+  // as 3.0's task header (mods/chat/panel.js barRow): Review (opens the Accept card) once it is Ready ("Accepting…" while
+  // its accept runs), sized as the header's other buttons; then its tabs (TaskTabs). No Pin here (SHEP-62): the task row's
+  // menu pins it
+  const tools = task.status === 'ready' && !task.archived ? <HeadButton disabled={accepting} onClick={() => openAccept(task.id)}>{accepting ? 'Accepting…' : 'Review'}</HeadButton> : null
+  // its title alone on the first line, so it keeps the room; under it, quieter, its id in the list's monospace, then what
+  // its agent is doing (working with no % yet, or a provider retry's line: its row's words, as the window's header says
+  // them), else where it merges
   const ref = task.id.slice(task.id.lastIndexOf(':') + 1)
-  const named = (
-    <span className="flex min-w-0 items-baseline gap-2">
-      <span className="shrink-0 font-mono text-[0.8125rem] font-normal text-fg3">{ref}</span>
-      <span className="min-w-0 truncate">{task.name}</span>
+  const doing = task.report ? <ReportLine w={task.report} head /> : task.status === 'work' && task.sub ? <span className="truncate">{task.sub}</span> : null
+  // its helper agent at work or asking (SHEP-54: its reviewer), named after what it does; its row is over the box
+  const helper = [...(task.subagents ?? [])].reverse().find((s) => s.status !== 'done')
+  const sub = (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span className="shrink-0 font-mono text-[0.75rem] text-fg3 phone:text-[0.8125rem]">{ref}</span>
+      {doing ? <span className="flex min-w-0 items-center gap-1.5"><span aria-hidden className="text-fg3">·</span>{doing}</span> : task.base ? <span className="min-w-0 truncate"><span aria-hidden className="text-fg3">· </span>→ {task.base}</span> : null}
+      {helper ? <span data-task-subagent className="flex min-w-0 shrink-[4] items-center gap-1.5 whitespace-nowrap"><span aria-hidden className="text-fg3">·</span><span className="truncate">{`${helper.title} ${helper.status === 'needs' ? 'needs it' : 'at work'}`}</span></span> : null}
     </span>
   )
-  // (working with no % yet, or a provider retry's line: its row's words, as the window's header says them)
-  const said = task.report ? <ReportLine w={task.report} head /> : task.status === 'work' && task.sub ? <span className="truncate">{task.sub}</span> : undefined
   // in focus it sits at the window's edge: no line there
   const focus = useStore((s) => focusHere(s.ui, s.snap))
   // split, a click on the open task on the right gives it the focus (the keys work on its chat)
   const split = useUI((u) => panesHere(u).length > 0)
-  const body = g ? (
+  const body = g && !gone ? (
     Chat ? <Chat chatKey={g.chat} placeholder={agentPlaceholder(task, g.status === 'done' || finished)} /> : null
+  ) : g || task.started || task.summary ? (
+    // it ran, but no log of its chat is left (its terminal and log are gone): its summary, and why there's no chat
+    <ChatGone task={task} />
   ) : (
     // never started: why it waits, as the window's (a queued one's reason, else that it hasn't started)
-    <Empty>{task.status === 'queued' && task.sub ? capital(task.sub) : "This task hasn't started."}</Empty>
+    <Empty>{(task.status === 'queued' || task.status === 'scheduled') && task.sub ? capital(task.sub) : "This task hasn't started."}</Empty>
   )
   if (phone)
     return (
       <section className="flex min-h-0 flex-1 flex-col">
-        <PhoneTop
-          left={
-            <RoundButton label="Tasks" onClick={back}>
-              <BackIcon className={ic} />
-            </RoundButton>
-          }
-          dot={task.status}
-          p={task.report?.progress}
-          name={task.name}
-          expandName
-          kind={<span className="font-mono">{ref}</span>}
-          right={tools}
-          report={task.report}
-        />
+        <TaskTop back={back} task={task} sub={sub} tools={tools} />
         <TaskTabs task={task} />
         {/* no bar under a task's chat: the message box keeps clear of the home indicator itself */}
         <div className={clsx('flex min-h-0 flex-1 flex-col', !keyboard && 'pb-[env(safe-area-inset-bottom)]')}>
@@ -493,7 +503,7 @@ function TaskPage({ task, middle, pane }: { task: Task; middle?: boolean; pane?:
             <PaneButtons i={pane} />
           </div>
         </Head>
-        <Scroll chat={!!g}>{body}</Scroll>
+        <Scroll chat={!!g && !gone}>{body}</Scroll>
       </section>
     )
   return (
@@ -501,7 +511,7 @@ function TaskPage({ task, middle, pane }: { task: Task; middle?: boolean; pane?:
       data-drawer-from={middle || undefined}
       onPointerDownCapture={split && !middle ? () => focusPane(-1) : undefined}
       onFocusCapture={split && !middle ? () => focusPane(-1) : undefined}
-      className={clsx('flex min-h-0 min-w-0 flex-1 flex-col border-line', !focus && !middle && 'border-l')}
+      className={clsx('@container/task flex min-h-0 min-w-0 flex-1 flex-col border-line', !focus && !middle && 'border-l')}
     >
       <Head conversation>
         {middle ? (
@@ -510,13 +520,13 @@ function TaskPage({ task, middle, pane }: { task: Task; middle?: boolean; pane?:
             <PlacesToggle when="closed" />
           </>
         ) : null}
-        <button type="button" onClick={back} className="press-dim inline-flex h-7 shrink-0 items-center gap-0.5 rounded-full pr-2.5 pl-1.5 text-[0.8125rem] text-fg2 hover:bg-hover hover:text-fg">
+        {/* in a narrow column (the side's) Back is its arrow alone, so the title keeps the room */}
+        <button type="button" onClick={back} aria-label="Tasks" className="press-dim relative inline-flex h-7 shrink-0 items-center gap-0.5 rounded-full px-1.5 text-[0.8125rem] text-fg2 after:absolute after:-inset-y-2 after:inset-x-0 hover:bg-hover hover:text-fg @lg/task:pr-2.5">
           <BackIcon className={ic} />
-          Tasks
+          <span aria-hidden className="hidden @lg/task:inline">Tasks</span>
         </button>
         <Dot s={task.status} p={task.report?.progress} halo />
-        {/* its id and title, the words a narrow column has room for; what its agent is doing under them (the window's) */}
-        <Who name={named} kind={said} />
+        <Who name={task.name} kind={sub} />
         {/* its buttons close together, as a toolbar's, so the name keeps the room */}
         <div className="flex shrink-0 items-center gap-1">
           {tools}
@@ -525,6 +535,26 @@ function TaskPage({ task, middle, pane }: { task: Task; middle?: boolean; pane?:
       <TaskTabs task={task} />
       <Scroll chat><TabBody task={task} chatKey={g?.chat ?? ''}>{body}</TabBody></Scroll>
     </section>
+  )
+}
+
+/** A task's top on a phone, as the desktop's header: Back, its status, its title on one line (a tap shows it whole) over
+ *  its id and what it is doing, then its buttons, each as tall as Back */
+function TaskTop({ back, task, sub, tools }: { back: () => void; task: Task; sub: ReactNode; tools: ReactNode }) {
+  const [whole, setWhole] = useState(false)
+  return (
+    // under a bar at the top (offline, a call) the notch is already kept clear
+    <div data-kb data-chrome className="relative flex shrink-0 items-center gap-2 border-b border-line px-3 pt-[calc(env(safe-area-inset-top)+6px)] pb-1.5 [[data-topbar]~*_&]:pt-1.5">
+      <RoundButton label="Tasks" onClick={back}>
+        <BackIcon className={ic} />
+      </RoundButton>
+      <Dot s={task.status} p={task.report?.progress} halo />
+      <button type="button" aria-expanded={whole} onClick={() => setWhole(!whole)} className="min-w-0 flex-1 py-0.5 text-left">
+        <span className={clsx('block text-base/5 font-semibold', whole ? 'break-words' : 'truncate')}>{task.name}</span>
+        <span className="mt-0.5 block text-[0.8125rem]/[18px] text-fg2">{sub}</span>
+      </button>
+      <div className="flex shrink-0 items-center gap-1">{tools}</div>
+    </div>
   )
 }
 

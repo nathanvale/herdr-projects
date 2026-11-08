@@ -12,7 +12,7 @@ picker, peek, help, ...) are read-only: clone them first.
 | What | Value |
 |---|---|
 | `H.sm` / `H.lg` | buttons 24 in panels, rows and headers; 32 in dialogs and cards |
-| `H.xs` | 20: a button inside a row's 16 tall second line (a Ready row's Accept), so the row keeps its height |
+| `H.xs` | 20: a button inside a row's 16 tall second line (a Ready row's Review), so the row keeps its height |
 | `TEXT.id` 11 | IDs, times, badges |
 | `TEXT.label` 12 | second lines, labels, small headings, button words (24) |
 | `TEXT.body` 13 | body, row titles, menu rows, button words (32) |
@@ -62,8 +62,8 @@ dark, the same as the task dots (`dot.js` uses them). `onStatus()` is text on on
 - Labels are capitalized and sentence case; short labels have no period, full sentences do.
 - No emojis in chrome. Icons are line SVGs.
 - Size controls to their words: never truncate a short label.
-- Tooltips are short or absent: at most a few words naming the thing or its shortcut ("Autopilot", "Stop · Esc"),
-  never sentences that explain how it works. None where the name already shows, nor on a control that's off.
+- No tooltips: nothing pops up on hover (SHEP-25; `test/test_repo.py` checks). What people need shows as words; an
+  icon-only control on the web keeps an `aria-label`.
 
 Already on these parts: the count badges (`tabs-tasks`, `spaces-chat`), the task dots
 (`dot.js`), the New space dialog's footer (`newspace`). Everything else moves area by area.

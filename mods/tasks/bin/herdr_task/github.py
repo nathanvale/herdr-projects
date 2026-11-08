@@ -235,6 +235,12 @@ def pr_open(s, task, repo, summary=None):
         if summary:
             gh("pr", "comment", str(task["pr"]["number"]), "--repo", repo, "--body", summary)
         return task["pr"]
+    # SHEP-59: never a second pull request for a branch that already had one merged (one at its tip
+    # is done before this: already_merged()); commits made since go on a new branch.
+    done = pr_merged(task, repo)
+    if done:
+        raise Fail(f"Pull request #{done['number']} for {br} is already merged, and {br} has commits since. "
+                   f"Put them on a new branch (a new task) rather than a second pull request.")
     body = (task.get("prompt") or "").strip() or task["title"]
     if summary:
         body += "\n\n## Summary\n\n" + summary.strip()
@@ -415,6 +421,66 @@ def adopt_existing(s, task, given):
     return True
 
 
+def pr_merged(task, repo):
+    """The merged pull request for the task's branch (from this repo, into its base), or None
+    (SHEP-59: a squash merge leaves the branch's commits out of the base)."""
+    ok, out, _ = gh("pr", "list", "--repo", repo, "--head", task["branch"], "--state", "merged",
+                    "--json", "number,url,isCrossRepository,baseRefName,headRefOid,mergeCommit")
+    try:
+        return next((p for p in json.loads(out) if not p.get("isCrossRepository")
+                     and p.get("baseRefName") == (task.get("base") or "main")), None) if ok and out else None
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def landed(s, task):
+    """Its own work is in its base branch, though not as its commits (squash-merged, SHEP-59):
+    merging its tip into the base, here or on its remote, would change nothing. Only a branch with
+    work of its own (own_work()): one that just caught up with its base is never merged."""
+    if not own_work(s, task):
+        return False
+    main, base = s.loc["folder"], task.get("base") or "main"
+    ok, tip, _ = git(main, "rev-parse", "--verify", "--quiet", f"refs/heads/{task.get('branch')}")
+    tip = tip if ok and tip else task.get("head")
+    # The base by its full names, as a same-named tag would otherwise be read first (PR 19).
+    for ref in (local_base(base), f"refs/remotes/{remote_of(main)}/{base}"):
+        ok, tree, _ = git(main, "merge-tree", "--write-tree", ref, tip)
+        has, have, _ = git(main, "rev-parse", "--verify", "--quiet", f"{ref}^{{tree}}")
+        if ok and has and tree and tree.split()[0] == have:
+            return True
+    return False
+
+
+def already_merged(s, task):
+    """SHEP-59: its work is already in its base (its pull request merged, squash too, or nothing left
+    to merge): ready and the tick mark it done instead of opening a pull request. Returns the merged
+    pull request ({} when merged without one), or None. Its pull request is recorded on the task."""
+    if merged_here(s, task):
+        return {}
+    repo = github(s)
+    tip = task.get("head")
+    if repo:
+        main, base = s.loc["folder"], task.get("base") or "main"
+        remote = remote_of(main)
+        # Fetched as a branch: a bare name reads the remote's same-named tag first (as update_main()).
+        git(main, "fetch", "--quiet", remote, f"+refs/heads/{base}:refs/remotes/{remote}/{base}")
+        tip = git(main, "rev-parse", "--verify", "--quiet", f"refs/heads/{task.get('branch')}")[1] or tip
+        if task.get("pr"):
+            v = pr_view(task)
+            if v and v.get("state") == "MERGED" and v.get("headRefOid") == tip:
+                return {**task["pr"], "mergeCommit": v.get("mergeCommit")}
+        found = pr_merged(task, repo)
+        if found and found.get("headRefOid") == tip:
+            task["pr"] = {"number": found["number"], "url": found["url"], "repo": repo}
+            return {**task["pr"], "mergeCommit": found.get("mergeCommit")}
+    if landed(s, task):
+        # Squashed in with no pull request to read: finish() keeps the branch (its tip isn't in the
+        # base), and its note says the work landed (kept_because()).
+        task["landed"] = True
+        return {}
+    return None
+
+
 BAD = {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"}
 PENDING = {"QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED", "EXPECTED"}
 
@@ -563,6 +629,9 @@ def kept_because(s, task):
     if not head:
         if task.get("pr"):
             return f"{kept}: gh didn't confirm which commit of pull request #{task['pr'].get('number')} merged, so nothing was removed."
+        if task.get("landed"):
+            return (f"{kept}: its work is in {task.get('base') or 'main'} as other commits (squashed), not as {br} at "
+                    f"{tip[:7]}, so nothing was removed.")
         return f"{kept}: {br} at {tip[:7]} isn't in {task.get('base') or 'main'}, so it holds work that didn't merge."
     if tip != head:
         # Ahead of it, beside it or behind it (GitHub's "Update branch", a committed suggestion): not

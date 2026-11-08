@@ -7,7 +7,8 @@
 // heartbeat" follows it while the heartbeat is empty. Every word is core/menus.js's or core/confirm.js's, as the window's.
 // On a phone the tabs, the shown tab's menu and the + menu's items are in the header's ⋯.
 import clsx from 'clsx'
-import { useEffect, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type ReactNode, type WheelEvent } from 'react'
+import { PlayIcon } from '@heroicons/react/16/solid'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type ReactNode, type WheelEvent } from 'react'
 import { attentionCounts } from '@client/attention.ts'
 import { openRole } from '@client/screens/Role.tsx'
 import { openWorktree } from '@client/screens/Worktree.tsx'
@@ -38,20 +39,57 @@ function openAutopilot(place: Place) {
   setUI({ settings: { section: Math.max(0, i), level }, drawer: false, menu: false })
 }
 
-/** The header's Autopilot switch (3.0's): flips at once, herdr-task's answer says the rest (a refusal goes back, with a
- *  toast). "Autopilot" and what it waits for beside it (core/autopilot.js headerDetail: "Next 10:00", "Queued",
- *  "Waking", "On events", "Run now only") where the header is 480px or wider, else the switch alone; "Write a
- *  heartbeat" after it while on with its heartbeat still empty. The Assistant's tab only, in every space on every
+/** Run now (herdr-task autopilot run-now): queued until the Assistant is idle, which the words then say ("Queued",
+ *  "Waking"); it waits while one is already queued or running. The header's button and the phone's ⋯ item share it. */
+function useRunNow(place: Place) {
+  const [running, setRunning] = useState(false)
+  const a = place.pilot
+  const busy = running || !!a?.pending || !!a?.inflight
+  const run = async () => {
+    if (busy) return
+    setRunning(true)
+    try {
+      const r = await act({ type: 'autopilot-run', place: place.id })
+      if (r.error) throw new Error(r.error)
+    } catch (e) {
+      failed("Autopilot didn't wake")(e as Error)
+    } finally {
+      setRunning(false)
+    }
+  }
+  return { running, busy, run }
+}
+
+/** The header's Autopilot (3.0's switch), one group: what it waits for (core/autopilot.js
+ *  headerDetail: "Next in 7 min", "Queued", "Waking", "On events", "No schedule") and Run now (a ▶, its name in its
+ *  label), then the switch and "Autopilot", on one quiet pill as tall as Chat | Terminal. It flips at once, herdr-task's
+ *  answer says the rest (a refusal goes back, with a toast). It sits on the header's right with the other controls;
+ *  switched on, its words and Run now slide open to the switch's LEFT (SHEP-81), so the switch and "Autopilot" never move. As the column
+ *  narrows "Autopilot" goes (under 36rem, on or off alike, so the switch stays put), then what it waits for (under
+ *  32rem). On a phone the switch alone, on a round pill as tall as the header's buttons: Run now is in its ⋯. "Write a
+ *  heartbeat" before it while on with its heartbeat still empty. The Assistant's tab only, in every space on every
  *  machine (another machine's is switched and woken there). */
 function AutopilotHeader({ place }: { place: Place }) {
   const a = place.pilot
   const phone = useUI((u) => u.device === 'phone')
   const other = useUI((u) => !!u.term?.startsWith('t:'))
   const [want, setWant] = useState<boolean | null>(null)
+  const lastWords = useRef('')
+  // the status's own width, so it slides open and shut (and from "Waking" to "Next in 7 min") rather than jumping
+  const [statusW, setStatusW] = useState<number | null>(null)
+  const statusObs = useRef<ResizeObserver | null>(null)
+  const measureStatus = useCallback((el: HTMLDivElement | null) => {
+    statusObs.current?.disconnect()
+    statusObs.current = null
+    if (!el) return
+    statusObs.current = new ResizeObserver(() => setStatusW(el.offsetWidth))
+    statusObs.current.observe(el)
+  }, [])
+  const { running, busy, run } = useRunNow(place)
   const [, setNow] = useState(0)
-  // "Next 10:00" becomes a weekday further off than a day, and back: looked at again now and then
+  // "Next in 7 min" counts down, "Next 10:00" becomes a weekday further off than a day: looked at again each 15 s
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 30000)
+    const t = setInterval(() => setNow(Date.now()), 15000)
     return () => clearInterval(t)
   }, [])
   useEffect(() => {
@@ -59,7 +97,8 @@ function AutopilotHeader({ place }: { place: Place }) {
   }, [a?.on, want])
   if (!a || other || !has('autopilot')) return null
   const on = want ?? a.on
-  const shown = want === null ? a : { ...a, on, ...(on ? {} : { next_run: null, pending: false, inflight: false }) }
+  // flipped this moment: on says "Waking" (it wakes at once), off nothing, until the snapshot catches up
+  const shown = want === null ? a : AP.flipped(a, on)
   const flip = async () => {
     if (want !== null) return
     const next = !on
@@ -72,20 +111,73 @@ function AutopilotHeader({ place }: { place: Place }) {
       failed(`Autopilot didn't turn ${next ? 'on' : 'off'}`)(e as Error)
     }
   }
-  const words = clsx('@max-[30rem]/place:hidden', phone && 'hidden')
-  return (
-    <div data-autopilot className="flex shrink-0 items-center gap-2 text-[0.8125rem]" title={phone ? AP.TITLE : undefined}>
-      <Switch label={AP.TITLE} on={on} onChange={() => void flip()} />
-      <button type="button" tabIndex={-1} aria-hidden="true" onClick={() => void flip()} className={clsx('shrink-0 font-medium', on ? 'text-fg' : 'text-fg2', words)}>
-        {AP.TITLE}
+  const heartbeat =
+    on && a.blank ? (
+      <button type="button" onClick={() => openAutopilot(place)} className="press-dim shrink-0 text-[0.8125rem] whitespace-nowrap text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
+        Write a heartbeat
       </button>
-      {on ? <span className={clsx('min-w-0 truncate text-fg3 tabular-nums', shown.inflight && 'animate-pulse', words)}>{AP.headerDetail(shown)}</span> : null}
-      {on && a.blank ? (
-        <button type="button" onClick={() => openAutopilot(place)} className="press-dim shrink-0 text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
-          Write a heartbeat
-        </button>
-      ) : null}
-    </div>
+    ) : null
+  if (phone)
+    return (
+      <div data-autopilot className="flex h-11 shrink-0 items-center rounded-full bg-bubble px-2">
+        <Switch label={AP.TITLE} on={on} onChange={() => void flip()} />
+      </div>
+    )
+  // what it waits for, kept while it slides shut so switching off folds it away rather than blanking it first
+  const words = on ? (running && !shown.pending && !shown.inflight ? 'Queuing…' : AP.headerDetail(shown)) : lastWords.current
+  if (on) lastWords.current = words
+  return (
+    <>
+      {heartbeat}
+      <div data-autopilot className="flex h-8 shrink-0 items-center rounded-full bg-hover p-0.5 pr-1.5 text-[0.8125rem] coarse:h-10 @min-[36rem]/place:pr-3">
+        {/* What it waits for and Run now, left of the switch: they open leftwards, the switch and "Autopilot" never move */}
+        <div data-autopilot-status inert={!on} style={{ width: on ? (statusW ?? 'auto') : 0 }} className="shrink-0 overflow-clip transition-[width] duration-200 ease-out [overflow-clip-margin:0.375rem] motion-reduce:transition-none">
+          <div ref={measureStatus} className="flex w-max items-center gap-1 pr-1 pl-1.5">
+            <span className={clsx('whitespace-nowrap text-fg3 tabular-nums @max-[32rem]/place:hidden', shown.inflight && 'animate-pulse')}>{words}</span>
+            <button
+              type="button"
+              data-run-now
+              disabled={busy || want !== null}
+              onClick={() => void run()}
+              aria-label="Run Autopilot now"
+              className="press-dim relative grid size-7 shrink-0 place-items-center rounded-full text-fg2 coarse:size-9 enabled:hover:bg-seg-on enabled:hover:text-fg enabled:hover:shadow-[0_0_0_1px_var(--line2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-default disabled:opacity-50"
+            >
+              <PlayIcon aria-hidden className="size-3.5 shrink-0" />
+              <span aria-hidden className="absolute top-1/2 left-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden" />
+            </button>
+          </div>
+        </div>
+        <div className="ml-1 flex shrink-0 items-center gap-2">
+          <Switch label={AP.TITLE} on={on} onChange={() => void flip()} />
+          <button type="button" tabIndex={-1} aria-hidden="true" onClick={() => void flip()} className={clsx('shrink-0 font-medium @max-[36rem]/place:hidden', on ? 'text-fg' : 'text-fg2')}>
+            {AP.TITLE}
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+/** On a phone, Run now is the shown tab's first item in ⋯ while Autopilot is on (the header has the switch alone) */
+function PhoneRunNow({ place }: { place: Place }) {
+  const phone = useUI((u) => u.device === 'phone')
+  const other = useUI((u) => !!u.term?.startsWith('t:'))
+  const { running, busy, run } = useRunNow(place)
+  const a = place.pilot
+  if (!phone || other || !a?.on || !has('autopilot')) return null
+  return (
+    <MenuItem
+      icon={<PlayIcon aria-hidden className="size-4" />}
+      disabled={busy}
+      hint={running && !a.pending && !a.inflight ? 'Queuing…' : AP.headerDetail(a)}
+      className="disabled:opacity-50"
+      onClick={() => {
+        void run()
+        setUI({ menu: false })
+      }}
+    >
+      Run Autopilot now
+    </MenuItem>
   )
 }
 
@@ -104,6 +196,9 @@ function shownTab(place: Place, term: string | null) {
   return term?.startsWith('t:') ? (place.tabs ?? []).find((t) => t.term === term) ?? null : null
 }
 
+/** The pane header's status, in words: "Working…" with its spinner while its agent works, "Needs you" while it waits
+ *  on you, nothing at rest (idle or done is the normal state). Never a control: ending or closing is the tab's (its ×
+ *  and its menu in the tab bar). */
 function StatusMark({ place }: { place: Place }) {
   const term = useUI((u) => u.term)
   // a phone's header is the window's narrow pane: only the switch shows there
@@ -111,47 +206,20 @@ function StatusMark({ place }: { place: Place }) {
   const tab = shownTab(place, term)
   if (phone) return null
   const state: TabState = tab ? tab.state ?? 'idle' : place.assistantTab?.state ?? (place.status === 'need' ? 'blocked' : place.status === 'work' ? 'working' : 'idle')
-  if (state === 'working') return <Spin />
-  if (state === 'blocked')
-    return <span className="inline-flex h-[18px] shrink-0 items-center rounded-md bg-need/15 px-1.5 text-[0.6875rem] font-semibold text-need-fg">Needs you</span>
-  if (state === 'done') return <Dot s="done" className="shrink-0" />
-  return null
-}
-
-/** the header's own buttons on hover (3.0's): × ends its agent, asking first in the header ("End Claude Code?" Cancel,
- *  End agent); another tab's × closes it. Splitting and zooming a pane are the window's: the web's tabs have one pane. */
-function PaneEnd({ place }: { place: Place }) {
-  const term = useUI((u) => u.term)
-  const phone = useUI((u) => u.device === 'phone')
-  const [ending, setEnding] = useState(false)
-  useEffect(() => setEnding(false), [term, place.id])
-  const tab = shownTab(place, term)
-  // the window asks first on an agent's chat (an Assistant's, Claude Code's or Codex's in Chat); a terminal just closes
-  const live = useUI((u) => (tab ? !!tab.cli && u.tabView?.[tab.term] === 'chat' : !!place.assistantTab?.live && u.term !== place.chat))
-  if (phone) return null
-  const prog = tab ? tab.prog ?? 'Shell' : (place.header ?? 'Assistant').replace(/^Assistant · /, '')
-  const words = MN.endAgent(prog)
-  const end = () => {
-    setEnding(false)
-    if (tab) return void act({ type: 'tab-end', tab: tab.id ?? '', chat: tab.term } as never).catch(failed("The tab didn't close"))
-    const id = place.assistantTab?.id
-    void (id ? act({ type: 'tab-end', tab: id, chat: place.chat } as never) : act({ type: 'assistant-close', place: place.id, mode: 'keep' } as never)).catch(failed("The tab didn't close"))
-  }
-  if (ending)
+  if (state === 'working')
     return (
-      <div className="flex shrink-0 items-center gap-2 text-[0.8125rem]">
-        <span className="whitespace-nowrap">{words.ask}</span>
-        <button type="button" onClick={() => setEnding(false)} className="press-dim h-7 rounded-full px-2.5 text-fg2 hover:bg-hover hover:text-fg">{words.cancel}</button>
-        <Primary onClick={end}>{words.verb}</Primary>
-      </div>
+      <span role="status" className="flex h-8 shrink-0 items-center gap-1.5 text-[0.8125rem] text-fg2">
+        <Spin />
+        <span className="whitespace-nowrap @max-[34rem]/place:sr-only">Working…</span>
+      </span>
     )
-  return (
-    <span className="flex shrink-0 opacity-0 transition-opacity group-hover/head:opacity-100 focus-within:opacity-100 coarse:opacity-100">
-      <IconButton label={live ? words.tip : 'Close pane'} title={live ? words.tip : undefined} onClick={() => (live ? setEnding(true) : end())}>
-        <XIcon className={ic} />
-      </IconButton>
-    </span>
-  )
+  if (state === 'blocked')
+    return (
+      <span role="status" className="inline-flex h-6 shrink-0 items-center rounded-full bg-need/15 px-2 text-[0.75rem] font-semibold whitespace-nowrap text-need-fg">
+        Needs you
+      </span>
+    )
+  return null
 }
 
 /* ---------- the tab bar's + (3.0's new-menu) ---------- */
@@ -437,7 +505,7 @@ function TabBar({ place }: { place: Place }) {
   }
   return (
     <div ref={bar} data-chrome data-tabbar onWheel={wheel} onContextMenu={appMenu} onPointerUp={() => setTimeout(() => (drag.current = null))} className="flex h-11 shrink-0 items-center gap-1 border-b border-line bg-well px-2.5 coarse:h-13">
-      <div role="tablist" aria-label="Tabs" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none]">
+      <div role="tablist" aria-label="Tabs" className="scroll-x flex min-w-0 flex-1 items-center gap-1 py-1">
         {shownTabs ? tabs.map((t, i) => <Tab key={t.key} place={place} t={t} i={i} on={t === shown} drag={drag} />) : null}
       </div>
       <PlusButton place={place} />
@@ -620,6 +688,7 @@ function PhoneTabItems({ place }: { place: Place }) {
   const close = () => setUI({ menu: false })
   return (
     <>
+      <PhoneRunNow place={place} />
       <TabMenuItems place={place} tab={tab} close={close} />
       <MenuSeparator />
       <PlusItems place={place} done={close} />
@@ -759,9 +828,9 @@ function CloseAssistant() {
 export default definePlugin({
   name: 'coordinators',
   setup(reg) {
-    // the pane header (3.0's): Autopilot after the name and folder; then, past the gap, the status, × on hover and (the
-    // terminal plugin's, order 15) Chat | Terminal
-    reg.placeHeader.push({ order: 10, View: AutopilotHeader }, { order: 12, View: StatusMark }, { order: 13, View: PaneEnd })
+    // the pane header: the name and folder on the left; on the right, in one row of 32px controls, the status in words,
+    // the Autopilot pill and (the terminal plugin's, order 15) Chat | Terminal
+    reg.placeHeader.push({ order: 12, View: StatusMark }, { order: 14, View: AutopilotHeader })
     reg.views.tabBar = TabBar
     reg.views.spacePanel = SpacePanel
     reg.overlays.push(CloseAssistant, TabRename, TabMenu, CloseSpace)

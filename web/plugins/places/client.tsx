@@ -4,7 +4,7 @@
 // red dot when its health couldn't be read; not: "Offline" or "Connecting…", dimmed and folded until tapped open), its
 // spaces in no section, then its sections. A space's row: its # (or emoji), its name (bold while its Assistant has
 // something new, dimmed with a crossed-out bell when muted), after it only what's unusual (its machine in Pinned, its
-// folder where another space there has its name, its repo and branch, ↑ahead ↓behind), and its red and green counts.
+// folder where another space there has its name, its repo and branch), and its red and green counts.
 // Worktree spaces nest under their repo's own. A folded section (Pinned too) still shows the space you're in and its
 // unread ones, and adds up its counts on its heading. Menus are core/menus.js's, the window's too: a right click (or a
 // finger held) opens them, no ⋯ on the rows. Spaces drag among their own, into a section or Pinned, or back to their machine's
@@ -12,9 +12,9 @@
 import clsx from 'clsx'
 import { openWorktree } from '@client/screens/Worktree.tsx'
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type LiHTMLAttributes, type ReactNode } from 'react'
-import { act, counts, definePlugin, getState, goPlace, manyMachines, openSplit, placeOf, removeSpace, setUI, splitClick, useSnap, useUI, type Pane, type UI } from '@client/kernel.ts'
+import { act, chatPlace, chatName, counts, definePlugin, goChat, getState, goPlace, manyMachines, openSplit, placeOf, removeSpace, setUI, splitClick, useSnap, useUI, type Pane, type UI } from '@client/kernel.ts'
 import { Dialog, RowMenu, useRowMenu } from '@client/rowmenu.tsx'
-import { BackIcon, BellIcon, CogIcon, BellSlashIcon, AttentionBadge, attentionWords, DeleteIcon, DownIcon, HashIcon, ic, IconButton, List, MenuItem, MenuLabel, MenuSeparator, MenuSetting, Meta, ModelIcon, MonitorIcon, NextIcon, PinnedIcon, PinTaskIcon, PlusIcon, Primary, ReadIcon, RemoveProjectIcon, RenameIcon, rowClass, RowText, SectionIcon, ServerIcon, SplitIcon, TasksIcon, UnpinIcon } from '@client/ui.tsx'
+import { AutopilotIcon, BackIcon, BellIcon, CogIcon, BellSlashIcon, AttentionBadge, attentionWords, DeleteIcon, DownIcon, HashIcon, ic, IconButton, List, MenuItem, MenuLabel, MenuSeparator, MenuSetting, Meta, ModelIcon, MonitorIcon, NextIcon, PinnedIcon, PinTaskIcon, PlusIcon, Primary, ReadIcon, RemoveProjectIcon, RenameIcon, rowClass, RowText, SectionIcon, ServerIcon, SplitIcon, TasksIcon, UnpinIcon, useElapsed, Waves } from '@client/ui.tsx'
 import { HealthDot, MachineMeter } from '@plugins/health/client.tsx'
 import { toast } from '@plugins/alerts/toasts.tsx'
 import { MarkRead, markPlaceRead, muted, placeUnread } from '@client/unread.ts'
@@ -314,22 +314,28 @@ function usePlaceRow({ p, snap, where }: { p: Place; snap: Snapshot; where?: str
   const fresh = placeUnread(snap, p) && snap.look?.unread !== false
   const quiet = muted(snap, p.id)
   const off = p.status === 'off' && !p.connecting
-  // 3.0's row: no Autopilot mark (the chat's header has its switch); after the name only what's unusual: its machine
-  // (in Pinned), its folder where another space on its machine has its name, its repo and branch, ↑ahead ↓behind
-  // (core/spaces.js gitTail, as the window's)
-  const pilot = false
+  // its Autopilot (SHEP-5): a small mark before the name while on, pulsing while a wake runs (its turn) or waits for
+  // its Assistant; after the name only what's unusual: its machine (in Pinned), its folder where another space on its
+  // machine has its name, its repo and branch (core/spaces.js gitTail, as the window's)
+  const pilot = !!p.pilot?.on
+  // a voice call in this space (its Assistant's or one of its tasks'): a green mark after the name that goes back to it
+  const call = useUI((u) => (u.call && chatPlace(snap, u.call) === p.id ? u.call : null))
+  const waking = pilot && !!(p.pilot?.inflight || p.pilot?.pending)
   const label = [where, sharedNames(snap).has(p.id) && p.where ? (SPc.tilde as (x: string) => string)(p.where) : null].filter(Boolean).join(' · ') || null
-  const tail = p.git ? (SPc.gitTail as (g: object, o: object) => { where: string; ahead: number; behind: number })({ name: p.gitName, branch: p.branch, ahead: p.ahead, behind: p.behind }, { name: p.name, tree: !!treeMark.get(p.id), tag: label }) : { where: label ?? '', ahead: 0, behind: 0 }
+  const tail = p.git ? (SPc.gitTail as (g: object, o: object) => { where: string })({ name: p.gitName, branch: p.branch }, { name: p.name, tree: !!treeMark.get(p.id), tag: label }) : { where: label ?? '' }
   return {
     sel,
     // what the row says aloud, its count and offline too
-    said: `${p.name}${where ? ` on ${where}` : ''}${p.home ? ', home space' : ''}${p.connecting ? ', connecting' : off ? ", can't reach" : n ? `, ${c.ownNeed} need you, ${c.ownReady} ready here` : ''}${fresh && !off ? ', unread' : ''}${pilot ? ', on Autopilot' : ''}${quiet ? ', muted' : ''}`,
+    said: `${p.name}${where ? ` on ${where}` : ''}${p.home ? ', home space' : ''}${p.connecting ? ', connecting' : off ? ", can't reach" : n ? `, ${c.ownNeed} need you, ${c.ownReady} ready here` : ''}${fresh && !off ? ', unread' : ''}${pilot ? (waking ? ', Autopilot waking' : ', on Autopilot') : ''}${quiet ? ', muted' : ''}${call ? ', on a voice call' : ''}`,
     fresh,
     // the Autopilot mark, then the space's # before the name, as Slack's channels have: grey, lit with the name where
     // it is open or something is new
     mark: (
       <>
-        <span aria-hidden data-autopilot={pilot || undefined} className={clsx('mode-pill mark', !pilot && 'invisible')} />
+        <span aria-hidden data-autopilot={pilot || undefined} data-waking={waking || undefined}
+          className={clsx('pilot-mark grid size-3.5 shrink-0 place-items-center', !pilot && 'invisible', waking ? 'text-work' : 'text-fg3')}>
+          <AutopilotIcon className="size-3" />
+        </span>
         {/* Shepherdr 3: a space's own icon (an emoji) where it has one */}
         {treeMark.get(p.id) ? <BranchIcon className={clsx(icon, 'text-fg3')} /> : p.emoji ? <span aria-hidden className={clsx(icon, 'grid place-items-center text-[0.9375rem] leading-none', quiet && 'opacity-50')}>{p.emoji}</span> : <HashIcon className={clsx(icon, fresh ? 'text-fg' : sel && !quiet ? 'text-fg2' : 'text-fg3')} />}
       </>
@@ -341,18 +347,35 @@ function usePlaceRow({ p, snap, where }: { p: Place; snap: Snapshot; where?: str
     ),
     end: (
       <>
-        {tail.where || tail.ahead || tail.behind ? (
-          <span className="flex min-w-0 shrink items-center gap-1 text-[0.75rem] text-fg3 tabular-nums phone:text-[0.8125rem]">
-            {tail.where ? <span className="min-w-0 truncate">{tail.where}</span> : null}
-            {tail.ahead ? <span className="shrink-0 text-ready-fg">↑{tail.ahead}</span> : null}
-            {tail.behind ? <span className="shrink-0 text-need-fg">↓{tail.behind}</span> : null}
-          </span>
+        {tail.where ? (
+          <span className="min-w-0 shrink truncate text-[0.75rem] text-fg3 phone:text-[0.8125rem]">{tail.where}</span>
         ) : null}
         {quiet ? <BellSlashIcon aria-hidden className={clsx(ic, 'text-fg3')} /> : null}
+        {call ? <CallMark call={call} snap={snap} /> : null}
         <AttentionBadge need={c.ownNeed} ready={c.ownReady} scope="here" />
       </>
     ),
   }
+}
+
+/** SHEP-51: the voice call going on in a space, in its row: a soft green pill with the call's wave and clock. It takes
+ *  you back to the call's chat (its box is the call: Mute and End are there), from anywhere the sidebar shows. */
+function CallMark({ call, snap }: { call: string; snap: Snapshot }) {
+  const t = useElapsed(useUI((u) => u.callStarted))
+  return (
+    <button
+      type="button"
+      data-call-mark
+      aria-label={`Back to the voice call with ${chatName(snap, call)}, ${t}`}
+      onPointerDown={(e) => e.stopPropagation()}
+      // its chat, not the terminal or artifacts it was flipped to
+      onClick={(e) => { e.stopPropagation(); goChat(call); setUI({ term: null, arts: null }) }}
+      className="press-dim relative z-1 flex h-5 shrink-0 items-center gap-1 rounded-full bg-ready/15 py-0.5 pr-2 pl-1.5 text-[0.75rem] font-medium text-ready-fg tabular-nums after:absolute after:-inset-1.5 phone:h-6 phone:text-[0.8125rem]"
+    >
+      <Waves className="h-3 scale-75" />
+      {t}
+    </button>
+  )
 }
 
 /** a row's icon: a hair under the name's 15px, tucked 2px nearer the name */
@@ -422,7 +445,7 @@ function PlaceMenu({ p, snap, menu, unread, onClose }: { p: Place; snap: Snapsho
   const then = (f: () => void) => () => { menu.close(); setTimeout(f) }
   const items = (MN.spaceMenu as (o: object) => CoreItem[])({ unread, pinned, git: p.git ?? null, assistant: !!(p.assistantTab?.id || p.assistantTab?.live) })
   return (
-    <RowMenu menu={menu} label={p.name} className="min-w-[min(17rem,calc(100%-0.5rem))]!">
+    <RowMenu menu={menu} label={p.name} className="min-w-[min(17rem,calc(100vw-1rem))]!">
       <CoreMenuItems items={items}
         setting={<MenuSetting name="Notify" named icon={now === 'Off' ? <BellSlashIcon className={ic} /> : <BellIcon className={ic} />}
           note={items.find((x) => x.setting)?.note}
@@ -496,7 +519,6 @@ function RenameBox({ name, problem, onSave, onCancel }: { name: string; problem:
         name="place-name"
         aria-label={`New name for ${name}`}
         aria-invalid={!!bad || undefined}
-        title={bad}
         enterKeyHint="done"
         autoComplete="off"
         autoCapitalize="none"
@@ -824,7 +846,6 @@ function AddButton({ machine, name, label }: { machine: string; name: string; la
       <button
         type="button"
         aria-label={label ?? `New space or section on ${name}`}
-        title="New space or section"
         aria-haspopup="menu"
         aria-expanded={!!menu.open}
         onClick={(e) => {

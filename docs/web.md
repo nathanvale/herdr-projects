@@ -21,7 +21,10 @@ connection it came on). A page from anywhere else can't change anything: writes 
 ## How it runs
 
 - One always-on service, `~/.local/share/shepherdr/service/main.ts` on Bun, kept running by `systemctl --user`
-  (`shepherdr.service`) or launchd (`dev.shepherdr.service`). It listens on `127.0.0.1:7788` only.
+  (`shepherdr.service`) or launchd (`dev.shepherdr.service`). It listens on `127.0.0.1:7788` only
+  (another port: `./install.sh --port <n>`, kept for updates). Once the port is its own, it writes the port and a fresh
+  id into `~/.herdr/shepherdr/service.json`; the window (`lib/local.js`), the CLI and a voice call read the port there
+  and send the token or the shared state only when `/api/health` answers that id, never to another app on the port.
 - It reads what the window reads, through herdr-core (`hc`): the spaces, Assistants, chats and task lists of every
   connected machine, and herdr-task's files. Shared choices (pins, sidebar sections, Notify, the Window switches)
   live in its shared document, which the window keeps in step (`lib/bridge.js`).
@@ -42,7 +45,38 @@ connection it came on). A page from anywhere else can't change anything: writes 
   `herdr-artifact convert` turns an older drawn artifact into a recipe.
 - The task browser: Kitty in the window, a live view of the same browser on the web.
 - Voice calls and dictation: the machine's microphone in the window, the phone's on the web, through the service
-  (the same ElevenLabs voice agent, `core/voice.js`; whisper.cpp for dictation).
+  (the same ElevenLabs voice agent, `core/voice.js`; ElevenLabs speech to text, Scribe, for dictation, with the
+  same key). Dictation writes the words while you speak (realtime Scribe: the page with a single-use token from
+  `/api/dictate/live`, the window's `record.ts` with the key in memory), so Done lands them in about 0.2 s; the
+  recording is uploaded to `/api/dictate` only when the live words can't come. The voice agent has four Shepherdr tools (`core/voice.js` TOOLS), answered by the service with the web app's
+  reach (`service/voice-tools.ts`): `look` reads anything (the call's context, any chat or a search in it, spaces,
+  machines, tasks, a task's summary and checks, Needs you, news, Autopilot, automations, settings, secret names,
+  artifacts), `open` shows something in the app the call runs in: the very page or window that started it (the page gets
+  a `nav` message on its call socket and answers `navved` with what it shows; the window's chat mod gets `nav/*.json`
+  in the call folder and answers `navved/*.json`). The agent hears it's on screen only after that answer, else why
+  not (`navWords`). Spaces are found with their machine's names, the serving one's key too ("Mac mini Home" while it
+  calls itself This computer); several that fit make it ask which. `send` writes as the person to any chat, and `act` runs one of the web app's
+  actions only after the person said yes out loud (`confirmed`). The window's call asks its own machine's service
+  (`POST /api/voice/tool`, local token); without it only its own chat works. Both sides tell the call what the app shows
+  (the page's `where` message, the window's `where.json`). The agent's spec carries a fingerprint (`SPEC`): an agent
+  made from an older one is PATCHed on the next call (`ensureAgent`).
+  It speaks briefly (one or two short sentences), stays quiet through silence (`turn_timeout` -1; only 15 minutes
+  of silence or an hour-long call ends it) and ends the call itself with ElevenLabs' `end_call` after the person's
+  yes to "Are you sure you want to end the call?": the socket closes cleanly, so the page (an `ended` message) and the window let its "Bye."
+  play out and close without an error.
+  A fifth tool, `screen` (SHEP-51, `core/screen.js`), is the fallback for what those four can't do: the app that
+  started the call reads what it shows as numbered things, as a screen reader would (`e7 tab "Artifacts" selected`),
+  and does one action on one (click, type, select, scroll, a key, back, close), then answers with its screen again.
+  The page reads its own DOM (`web/plugins/voice/screen.ts`: roles, names, states; only the top modal dialog while one
+  is open; refs stay with their element for the whole call); the window reads its frame (`mods/chat/call-screen.js`:
+  spaces, tabs, the side panel's and a task's tabs, a few commands, the call's chat scrolls) and says what it can't
+  reach (inside another mod's drawing, its dialogs, keys). A click on something that deletes, merges, stops or ends
+  the call is held until the agent says the person said yes (`risky`). The prompt has the agent use look, open, send and
+  act first. `open` also shows the shown space's Artifacts, Files and Changes panels and its Assistant's terminal (a
+  space named: that space first, then its panel), Tasks filtered by a state and words, and a Settings page by its
+  spoken name. A call going on shows as a green mark with its clock on its space's row in the sidebar; where the sidebar can't be
+  seen (a phone, a tablet, a shut sidebar) a slim soft-green band at the very top shows the call's space and clock, and a
+  tap goes back to it.
 - Keys: 3.0's keys work in the web app too (Settings → Keyboard shortcuts on a desktop).
 
 ## Install

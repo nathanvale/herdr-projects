@@ -12,7 +12,7 @@ import * as HC from "../core/host.js";
 import * as APc from "../core/autopilot.js";
 import type { SettingRow, SettingSection } from "../web/shared/types.ts";
 
-const { TASK_ROWS, DEFAULTS, wordFor, valueFor, ROLES: CORE_ROLES, NOTES: CORE_NOTES, ABOUT, BACKUP, BASE, MACHINES, OLD_NAMES, SECTIONS,
+const { TASK_ROWS, DEFAULTS, wordFor, valueFor, ROLES: CORE_ROLES, NOTES: CORE_NOTES, ABOUT, BACKUP, REACTIONS, STAR, starState, FEEDBACK, feedbackRepo, upgradeReactions, BASE, BRANCH, branchPattern, MACHINES, OLD_NAMES, SECTIONS,
   WEB, modelLabel, roleSel, otherCli, otherCliWords, backupProblem, homeAbout, webState, fromWord, LOADING_AGENTS, RESET, machineLabel } = C as any;
 const AP = APc as any;
 /** Autopilot as Everywhere has it now (herdr-task's view: what Settings keeps, else what it kept before, else the
@@ -68,7 +68,8 @@ export function pushBody(file: any, m: string) {
 export function readSettings(): any {
   let text: string;
   try { text = readFileSync(FILE, "utf8"); } catch (e: any) { if (e?.code === "ENOENT") return {}; throw new Error("The settings file can't be read now. Try again."); }
-  try { const f = JSON.parse(text); if (f && typeof f === "object" && !Array.isArray(f)) return f; } catch {}
+  // SHEP-42's assistant.reactions comes back as agents.reactions, so a change writes it there
+  try { const f = JSON.parse(text); if (f && typeof f === "object" && !Array.isArray(f)) return upgradeReactions(f); } catch {}
   throw new Error("The settings file can't be read now (~/.herdr/shepherdr.json isn't valid JSON).");
 }
 const SAFE = (k: string) => !["__proto__", "constructor", "prototype"].includes(k);
@@ -97,7 +98,7 @@ export class Settings {
 
   private read() {
     let next: any = {};
-    try { next = JSON.parse(readFileSync(FILE, "utf8")); } catch {}
+    try { next = upgradeReactions(JSON.parse(readFileSync(FILE, "utf8")) ?? {}); } catch {}
     if (JSON.stringify(next) === JSON.stringify(this.file)) return;
     this.file = next;
     for (const fn of this.listeners) fn();
@@ -202,6 +203,26 @@ export class Settings {
     const problem = on ? backupProblem(this.checks, s ? b.machine : null, b.value && b.value !== "off" ? b.value : otherCli(worker)) : "";
     rows.push({ label: BACKUP.title, key: "backup.agent", value: ON(on), options: ["on", "off"], hint: problem ? `${BACKUP.about}\n${problem}` : BACKUP.about,
       ...this.follows(s, b, (v) => ON(v !== "off"), "backup", "agent") });
+    // Reactions, for every agent: each reacts to some of your messages with an emoji (herdr-task's reactions.py)
+    const re = this.pick(scope, "agents", "reactions");
+    rows.push({ label: REACTIONS.title, key: "agents.reactions", value: ON(re.value !== false), options: ["on", "off"], hint: REACTIONS.about,
+      ...this.follows(s, re, (v) => ON(v !== false), "agents", "reactions") });
+    // Feedback offers: agents offer once to file a problem in Shepherdr itself, only on your yes (herdr-task's feedback.py);
+    // the repo it files to is Everywhere's only
+    const fb = this.pick(scope, "agents", "feedback");
+    rows.push({ label: FEEDBACK.title, key: "agents.feedback", value: ON(fb.value !== false), options: ["on", "off"], hint: FEEDBACK.about,
+      ...this.follows(s, fb, (v) => ON(v !== false), "agents", "feedback") });
+    if (!s) {
+      const repo = this.pick(null, "agents", "feedback_repo");
+      rows.push({ label: FEEDBACK.repoTitle, key: "agents.feedback_repo", value: String(repo.value ?? ""), text: true, hint: FEEDBACK.repoAbout,
+        placeholder: FEEDBACK.repo } as SettingRow);
+    }
+    // Ask for a star (herdr-task's star.py), Everywhere only: a switch until it has asked, then just when it did
+    if (!s) {
+      const st = starState(this.file);
+      rows.push(st.asked ? { label: STAR.title, key: "star_prompt", value: "Asked", fixed: true, hint: st.about }
+        : { label: STAR.title, key: "star_prompt", value: ON(st.on), options: ["on", "off"], hint: st.about });
+    }
     return { name: title("agents"), level: scope ?? "all", rows };
   }
 
@@ -229,6 +250,13 @@ export class Settings {
       rows.splice(at, 0, { label: BASE.title, key: "tasks.base", value: String(p.value ?? "").trim(), text: true, hint: BASE.about,
         placeholder: BASE.empty(this.branches[s.id] ?? ""), ...this.follows(s, p, (v) => v || BASE.follows, "tasks", "base") });
     }
+    // Branch names (#570): Everywhere's or a space's own pattern for new task branches; empty: task/{n}-{slug}
+    {
+      const p = this.pick(scope, "tasks", "branch");
+      const at = rows.findIndex((r) => r.key === "automations.enabled");
+      rows.splice(at, 0, { label: BRANCH.title, key: "tasks.branch", value: String(p.value ?? "").trim(), text: true, hint: BRANCH.about,
+        placeholder: BRANCH.pattern, ...this.follows(s, p, (v) => v || BRANCH.pattern, "tasks", "branch") });
+    }
     for (const n of NOTES) {
       const p = this.pick(scope, "tasks", `${n.id}_notes`);
       rows.push({ label: n.title, key: `tasks.${n.id}_notes`, value: p.value ?? "", multiline: true, hint: n.about, placeholder: n.example, ...this.follows(s, p, (v) => v ?? "", "tasks", `${n.id}_notes`) });
@@ -241,7 +269,9 @@ export class Settings {
    *  of it, unless the file says newer). A space switches it on in its Assistant's header. */
   private pilot(s: Scope | null, e: PilotEverywhere, trigger?: (space: string) => string | undefined): SettingSection {
     const every = AP.levelOf(this.file), own = s ? AP.levelOf(this.file, s.id) : {};
-    const parent: Record<string, any> = { heartbeat: every.heartbeat ?? e.words ?? "", every: every.every ?? e.every ?? "", events: every.events ?? e.events ?? [] };
+    const parent: Record<string, any> = { heartbeat: AP.currentBeat(every.heartbeat ?? e.words ?? ""), every: every.every ?? e.every ?? "", events: every.events ?? e.events ?? [],
+      direction: every.direction ?? "" };
+    if (typeof own.heartbeat === "string") own.heartbeat = AP.currentBeat(own.heartbeat);
     const pick = (f: string) => ({ value: f in own ? own[f] : parent[f], own: f in own, parent: parent[f], level: "everywhere", machine: null });
     const others = (f: string) => (s ? {} : (() => {
       const list = this.scopes.filter((sc) => f in AP.levelOf(this.file, sc.id)).map((sc) => ({ id: sc.id, name: sc.name }));
@@ -257,6 +287,9 @@ export class Settings {
     const words = (s ? trigger?.(s.id) : e.trigger) ?? ([ew.trim() ? everyWord(ew) : "", named ? `On ${named}` : ""].filter(Boolean).join(" · ") || "Only Run now");
     const R = AP.ROWS;
     const rows: SettingRow[] = [
+      // a space's Direction: the one line it steers toward (Everywhere has none to give: it works out its own)
+      ...(s ? [{ label: R.direction.label, key: "autopilot.direction", value: String(pick("direction").value ?? ""), text: true, hint: R.direction.about,
+        placeholder: AP.DIRECTION_PLACEHOLDER } as SettingRow] : []),
       { label: R.heartbeat.label, key: "autopilot.heartbeat", value: String(pick("heartbeat").value ?? ""), doc: true, hint: R.heartbeat.about,
         ...under("heartbeat", (v) => String(v ?? "")) } as SettingRow,
       { label: R.every.label, key: "autopilot.every", value: ew, text: true, hint: R.every.about,
@@ -391,6 +424,12 @@ export class Settings {
       // a space's own (the service checked the branch is there first); empty: back to the folder's branch
       if (!space) throw new Error("A base branch is set per space.");
       put("tasks", "base", word?.trim() ? word.trim() : null);
+    } else if (key === "tasks.branch") {
+      // a pattern herdr-task can fill in (core/settings.js branchPattern); empty: back to the level above
+      const v = word?.trim() ?? "";
+      const why = branchPattern(v);
+      if (why) throw new Error(why);
+      put("tasks", "branch", v || null);
     } else if (section === "tasks" && /^(start|finish)_notes$/.test(field)) {
       put("tasks", field, word === null ? null : word.slice(0, 8000));
     } else if (section === "role" && ROLES.some((r) => r.id === field)) {
@@ -415,8 +454,35 @@ export class Settings {
         const on = word.split(",").map((x) => x.trim()).filter(Boolean);
         if (on.some((x) => !AP.EVENTS.some(([e]: string[]) => e === x))) throw new Error("Not an event Autopilot knows.");
         v = AP.eventsIn(on);
-      } else if (word !== null) v = word.slice(0, 8000);
+      } else if (word !== null && field === "direction") v = AP.directionOf(word) || null;
+      else if (word !== null) v = word.slice(0, 8000);
       put("autopilot", field, v);
+    } else if (key === "agents.reactions" || key === "assistant.reactions") {
+      // on or off (assistant.reactions: its key before it was for every agent); the same as what this level would
+      // inherit unsets it, so it follows again (as the window's)
+      if (word !== null && word !== "on" && word !== "off") throw new Error("Not one of its choices.");
+      const parent = space ? file.everywhere?.agents?.reactions ?? DEFAULTS.agents.reactions : DEFAULTS.agents.reactions;
+      put("agents", "reactions", word === null || (word === "on") === parent ? null : word === "on");
+    } else if (key === "star_prompt") {
+      // Everywhere only; once asked it stays asked, whatever the switch (never a second ask)
+      if (space) throw new Error("This one is the same for every space.");
+      if (word !== null && word !== "on" && word !== "off") throw new Error("Not one of its choices.");
+      const was = file.everywhere?.star_prompt;
+      if (was?.asked) throw new Error("It already asked once, and won't ask again.");
+      next.everywhere ??= {};
+      if (word === "off") next.everywhere.star_prompt = { off: true };
+      else delete next.everywhere.star_prompt;
+    } else if (key === "agents.feedback") {
+      // on or off; the same as what this level would inherit unsets it, so it follows again (as Reactions)
+      if (word !== null && word !== "on" && word !== "off") throw new Error("Not one of its choices.");
+      const parent = space ? file.everywhere?.agents?.feedback ?? DEFAULTS.agents.feedback : DEFAULTS.agents.feedback;
+      put("agents", "feedback", word === null || (word === "on") === parent ? null : word === "on");
+    } else if (key === "agents.feedback_repo") {
+      // Everywhere's only: owner/name (a github.com link is made one); empty goes back to Shepherdr's own repo
+      if (space) throw new Error("The feedback repo is set for every space at once.");
+      const repo = feedbackRepo(word ?? "");
+      if (repo === null) throw new Error(FEEDBACK.bad);
+      put("agents", "feedback_repo", repo || null);
     } else if (key === "backup.agent") {
       // off is "off"; on follows what it would get anyway when that is on, else names the other CLI (as the window's)
       const parent = space ? file.everywhere?.backup?.agent ?? null : null;

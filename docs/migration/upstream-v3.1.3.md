@@ -14,7 +14,8 @@ pass. Imported installer/service code is source input, not authority to run it.
 | Input | Exact commit |
 | --- | --- |
 | F, reserved fork parent | `4f0236f03a88c5e9fa344475d90d3a20ef418481` |
-| U, upstream v3.1.3 parent | `dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc` |
+| U, upstream v3.1.16 parent (since its merge) | `57302497117183a1772464b31751da12a1c03e4a` |
+| Upstream v3.1.3, S0's U (history) | `dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc` |
 | P, required Bitbucket contract source | `074dec5ea0bf0a057f520fa50497bf9e1b696ad9` |
 | B, actual common ancestor | `de8e17957efb4aa016d7e4d652f397aaa95f0880` |
 
@@ -52,6 +53,38 @@ owners, not implemented interfaces.
 | L2 | A2, L1 | Native revive/watch/manual restart through that owner; independent qualification and conditional retirement. |
 | Q | B2, A2, L2 | Exact candidate CI/public process proof; all required ports and old proof obligations resolved. |
 | R | Q, human state choices | Separately admitted rehearsal and matching executable/state rollback. |
+
+### Upstream v3.1.16 merge
+
+The local candidate `integrate/upstream-v3.1.16` starts at `83417614`, merges PRs 19 to
+22 and the private HTTPS commits (H1), each with `--no-ff`, then merges upstream v3.1.16
+(`57302497`, from the annotated tag `e6c52e6b`, which is unsigned) the way S0 merged
+v3.1.3. No published commit is rebased. U now names v3.1.16: every U path outside the
+phase table and the overrides is byte-identical to it, and each row's `upstream_blob` is
+its v3.1.16 blob. The file names keep `v3.1.3`, as every reference names them; F, P and B
+and the file dispositions don't change. The gate's checks are unchanged.
+
+Where the two sides met:
+
+- SHEP-59 (a squash-merged pull request is done, never a second one) goes through N1's
+  `finish()`: the branch goes only at the head gh says merged (`headRefOid == tip`). Its
+  bare base names are read as branches (`local_base()`, a `refs/heads/` fetch). A squash
+  with no pull request to read keeps the branch and worktree, and its note says the work
+  landed. `ready` takes SHEP-59's step after nothing-to-merge and before publishing.
+- The tick now reads a running task's pull request too (SHEP-8, `2a3c5e13`); N1's adopted-head check
+  stays for a Ready task, as a working agent's commits move the branch.
+- SHEP-86's clean-environment start is on every start path C1 guards (launch, revive,
+  `restart.sh`, the one-off templates); C1 only refuses before them.
+  `mods/chat-models/core/agents.js`, a copy new in v3.1.16, carries C1's `core/agents.js`
+  and is admitted under C1.
+- SHEP-33 removed secret serving from the service's jobs; W1's flags-first start and its
+  test follow that.
+- H1's listener shares the service's handlers; the main listener takes SHEP-93's
+  `idleTimeout: 180`, and the private listener keeps Bun's default (not changed here).
+- Taken as they are and held before any activation: SHEP-33's automatic vault move,
+  SHEP-78's feedback issues (on by default, filed to upstream's repository on a yes) and
+  SHEP-79's star card. SHEP-26's lost-log search reads only the default `~/.claude`.
+- Our `AGENTS.md` and `docs/develop.md` stay overrides.
 
 ### A1 provider checkpoint
 
@@ -198,8 +231,9 @@ touched it, and only with background work on, so with `SHEPHERDR_JOBS=off`, or a
 window keeping that work, a web page got no cards. W1 starts that flag's round before
 the background work's gate. Nothing else moves.
 
-- Background work keeps its gate: the task tick, `scheduler --ensure`, other machines'
-  ticks and `herdr-secret serve` run only as before. `/api/health`'s `jobs` is unchanged.
+- Background work keeps its gate: the task tick, `scheduler --ensure` and other machines'
+  ticks run only as before. `/api/health`'s `jobs` is unchanged. (v3.1.16's SHEP-33 removed
+  secret serving from the service's jobs.)
 - The flag is kept only for a live Claude agent's chat that a page follows, as before.
   Another machine's agent keeps its flag there through `machine.exec`, the same one
   `touch` with background work on or off; the cards there are already read and answered
@@ -233,7 +267,7 @@ the background work's gate. Nothing else moves.
 ### H1 private custom-domain checkpoint
 
 The private HTTPS commits (`f8c43a60` to `c8217c0b`, kept at
-`refs/archive/private-https-c8217c0b`) were made on U and are what the live release runs.
+`refs/archive/private-https-c8217c0b`) were made on v3.1.3 and are what the live release runs.
 H1 admits them unchanged: `service/private-domain.ts` and its test, the listener's
 wiring in `service/auth.ts` and `service/main.ts`, `docs/private-domain.md`, ADR 0004,
 `scripts/private-domain-proof.ts`, a line in `docs/web.md` and the workflow

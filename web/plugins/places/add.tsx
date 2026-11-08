@@ -1,17 +1,21 @@
-// New space, as the window's (mods/newspace; its words and rules core/newspace.js): on the machine it was opened for (a
-// machine's + › New space; else the shown space's), "Icon and folder": the space's icon ("#" until an emoji is picked),
+// New space, as the window's (mods/newspace; its words and rules core/newspace.js): with two or more machines on, a
+// Machine choice first (only those on and reachable), starting on the one it was opened for (a machine's + › New space;
+// else the shown space's); changing it starts the folder over from that machine's home and recent folders. Then
+// "Icon and folder": the space's icon ("#" until an emoji is picked),
 // the field holding the folder it is made in, and Browse…. The field starts where the person works (the shown space's
-// folder, as its repo's top) and typing in it suggests that machine's recent folders (arrows walk them, Enter picks,
-// Esc closes them first). Browse… lists the field's folder's subfolders under it, the folder above first, a click going
-// on into one: the web has no system folder picker, so it lists them as the window does on another machine. Under the
+// folder, as its repo's top) and its list follows what's typed, as a shell completes a path: a path with a / lists the
+// subfolders of the folder up to its last / (that machine's, asked once per folder) matching the word after it, the
+// folder above first; else that machine's recent folders matching what's typed. Arrows walk the list, Enter or Tab
+// picks, a click too: a picked folder goes in the field as `<folder>/`, its subfolders listed. Esc closes the list
+// first. Browse… lists the field's folder (else home): the web has no system folder picker. Under the
 // field: a folder that isn't there yet is made on Create, one outside git is offered "Make it a git repo" (on), one in
 // git says so. Create space makes it, named as Herdr names it, and opens it.
 import clsx from 'clsx'
 import { useEffect, useId, useRef, useState } from 'react'
 import { goPlace, placeOf, setUI, useSnap, useUI } from '@client/kernel.ts'
 import { Sheet, SheetClose } from '@client/Stack.tsx'
-import { CheckIcon, FolderIcon, Ghost, ic, Primary, Who } from '@client/ui.tsx'
-import type { Folders } from '@shared/types.ts'
+import { CheckIcon, FolderIcon, Ghost, MonitorIcon, Primary, ServerIcon, Who, ic } from '@client/ui.tsx'
+import type { Folders, Machine } from '@shared/types.ts'
 import * as NS from '@core/newspace.js'
 import { IconChoice, IconPicker } from './section.tsx'
 
@@ -38,6 +42,9 @@ type Info = { home: string; recent: string[]; start: string }
 /** what the field's folder is: there (a folder) or not yet, and in a git repo (null: couldn't ask) */
 type Known = { exists: boolean; repo: boolean | null }
 type Row = { path: string; up?: boolean }
+/** a folder as asked: its answer, or 'error' (couldn't ask) */
+type Seen = Folders | 'error'
+
 
 /** the folder above, while browsing ("..") */
 function UpIcon({ className }: { className?: string }) {
@@ -65,16 +72,25 @@ function NewSpaceDialog() {
   const snap = useSnap()!
   const ui = useUI()
   const listId = useId()
-  // the machine: the one it was opened for, else the shown space's (Ctrl+Shift+N, the + menu), else this computer
-  const [machine] = useState(() => (typeof ui.adding === 'string' ? ui.adding : (placeOf(snap, ui.place)?.machine ?? snap.host)))
+  // the machines it can make a space on (on and reachable); the Machine choice shows for two or more
+  const on = (snap.machines ?? []).filter((m) => m.status !== 'off' && !m.connecting)
+  const keys: string[] = NS.reachable(on.map((m) => ({ key: m.machine, on: true })))
+  const choosing = NS.choosesMachine(keys)
+  // the machine: the one it was opened for, else the shown space's (Ctrl+Shift+N, the + menu), else the first on
+  const [machine, setMachine] = useState<string>(
+    () => NS.startMachine(keys, typeof ui.adding === 'string' ? ui.adding : undefined, placeOf(snap, ui.place)?.machine) ?? (typeof ui.adding === 'string' ? ui.adding : snap.host),
+  )
   const remote = machine !== snap.host ? machine : null
+  // the machine the answers in flight are for: one asked before a change is dropped
+  const asking = useRef(machine)
+  asking.current = machine
   const [place] = useState(ui.place)
   const [info, setInfo] = useState<Info | null>(null)
   const [text, setText] = useState('')
-  const [known, setKnown] = useState<Record<string, Known | undefined>>({})
+  const [seen, setSeen] = useState<Record<string, Seen | undefined>>({})
+  const asked = useRef(new Set<string>())
   const [listOpen, setListOpen] = useState(false)
   const [hi, setHi] = useState(-1)
-  const [browse, setBrowse] = useState<{ dir: string; rows: Row[] | null } | null>(null)
   const [makeRepo, setMakeRepo] = useState(true)
   const [icon, setIcon] = useState('')
   const [picking, setPicking] = useState(false)
@@ -86,6 +102,7 @@ function NewSpaceDialog() {
   // the machine's home, recent folders and where the field starts, first (the window finds them before it opens)
   useEffect(() => {
     let live = true
+    setInfo(null)
     get<Info>(`api/newspace?machine=${encodeURIComponent(machine)}&place=${encodeURIComponent(place ?? '')}`).then(
       (i) => {
         if (!live) return
@@ -100,17 +117,28 @@ function NewSpaceDialog() {
 
   const home = info?.home ?? ''
   const field = info ? NS.pathOf(text, home) : null
-  // whether the field's folder exists, and whether it's in a git repo, asked once per path
+  // the folder the typed path is inside (up to its last /) and the word after it
+  const typed: { dir: string; word: string } | null = info ? NS.typedDir(text, home) : null
+  // the field's folder (does it exist, is it in a repo) and the typed folder (its subfolders), each asked once per
+  // path, a moment after typing stops; an answer only fills its own path's entry, so a late one never shows elsewhere
   useEffect(() => {
-    if (!field || field in known) return
+    const want = [...new Set([field, typed?.dir].filter((p): p is string => !!p && !asked.current.has(p)))]
+    if (!want.length) return
     const t = setTimeout(() => {
-      get<Folders>(`api/folders?machine=${encodeURIComponent(machine)}&path=${encodeURIComponent(field)}`).then(
-        (f) => setKnown((k) => ({ ...k, [field]: { exists: f.dir, repo: f.dir ? !!f.repo : false } })),
-        () => setKnown((k) => ({ ...k, [field]: { exists: false, repo: null } })),
-      )
+      for (const p of want) {
+        asked.current.add(p)
+        get<Folders>(`api/folders?machine=${encodeURIComponent(machine)}&path=${encodeURIComponent(p)}`).then(
+          (f) => asking.current === machine && setSeen((s) => ({ ...s, [p]: f })),
+          () => asking.current === machine && setSeen((s) => ({ ...s, [p]: 'error' })),
+        )
+      }
     }, 150)
     return () => clearTimeout(t)
-  }, [field, known, machine])
+  }, [field, typed?.dir, machine])
+  const knownOf = (p: string | null): Known | undefined => {
+    const f = p ? seen[p] : undefined
+    return !f ? undefined : f === 'error' ? { exists: false, repo: null } : { exists: f.dir, repo: f.dir ? !!f.repo : false }
+  }
 
   // once it is made, wait for the new space to show, then open it
   useEffect(() => {
@@ -120,51 +148,55 @@ function NewSpaceDialog() {
       goPlace(opening)
       return
     }
-    const giveUp = setTimeout(close, 10_000)
-    return () => clearTimeout(giveUp)
+    // not there yet: say so (never a silent close), and keep waiting; Cancel closes
+    const slow = setTimeout(() => setError(W.notShown(remote)), 8_000)
+    return () => clearTimeout(slow)
   }, [opening, snap])
 
-  const now = field ? known[field] : undefined
+  const now = knownOf(field)
   // the folder Create space makes the space in: the field's, once it's known whether it exists
   const folder = now ? field : null
   const offers = NS.offersRepo(folder, now?.repo, home)
-  const rows: Row[] = !listOpen || !info ? [] : browse ? (browse.rows ?? []) : NS.suggestions(info.recent, text, home).map((path: string) => ({ path }))
-  const empty = listOpen && browse && !rows.some((r) => !r.up) ? (browse.rows ? W.empty : W.loading) : ''
+  // the list: the typed folder's subfolders matching the word after its last / (the folder above first while no word
+  // is typed); without a /, the recent folders matching what's typed
+  const listing = typed ? seen[typed.dir] : undefined
+  let all: Row[] = []
+  let empty = ''
+  if (info && typed) {
+    if (!listing) empty = W.loading
+    else if (listing === 'error') empty = W.cantList(NS.tilde(typed.dir, home), remote)
+    else if (listing.dir) {
+      const kids = NS.matching(listing.entries.map((e) => NS.untilde(e.path, home)), typed.word)
+      all = [...(typed.word || typed.dir === '/' ? [] : [{ path: NS.parent(typed.dir), up: true }]), ...kids.map((path: string) => ({ path }))]
+      if (!kids.length) empty = typed.word ? W.noMatch : W.empty
+    }
+  } else if (info) all = NS.suggestions(info.recent, text, home).map((path: string) => ({ path }))
+  const rows = listOpen ? all : []
+  if (!listOpen) empty = ''
 
   const shut = () => {
     setListOpen(false)
-    setBrowse(null)
     setHi(-1)
   }
-  // a folder into the field, the suggestions closed
-  const set = (path: string) => {
-    setText(NS.tilde(path, home))
-    shut()
-    setError('')
-    input.current?.focus({ preventScroll: true })
-  }
-  // Browse…: `dir` in the field, its subfolders under it (the folder above first), the list kept open
+  // a folder into the field as `<folder>/`, its subfolders listed under it (Browse…, a pick, the folder above)
   const list = (dir: string) => {
-    setText(NS.tilde(dir, home))
-    setBrowse({ dir, rows: null })
+    setText(NS.asDir(dir, home))
     setListOpen(true)
     setHi(-1)
     setError('')
     input.current?.focus({ preventScroll: true })
-    get<Folders>(`api/folders?machine=${encodeURIComponent(machine)}&path=${encodeURIComponent(dir)}`).then(
-      (f) => {
-        if (!f.dir) throw new Error()
-        const kids = f.entries.map((e) => NS.untilde(e.path, home))
-        setKnown((k) => ({ ...k, [dir]: { exists: true, repo: !!f.repo } }))
-        setBrowse((b) => (b?.dir === dir ? { dir, rows: [...(dir === '/' ? [] : [{ path: NS.parent(dir), up: true }]), ...kids.map((path) => ({ path }))] } : b))
-      },
-    ).catch(() => {
-      setBrowse((b) => (b?.dir === dir ? null : b))
-      setListOpen(false)
-      setError(W.cantList(NS.tilde(dir, home), remote))
-    })
   }
-  const pick = (path: string) => (browse ? list(path) : set(path))
+  // another machine: the folder starts over from its home and recent folders
+  const switchTo = (m: string) => {
+    if (m === machine || busy) return
+    shut()
+    setMachine(m)
+    setText('')
+    setSeen({})
+    asked.current = new Set()
+    setMakeRepo(true)
+    setError('')
+  }
   const choose = () => list(field && now?.exists ? field : home)
 
   const create = async () => {
@@ -196,14 +228,20 @@ function NewSpaceDialog() {
       else close()
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
-      const all = listOpen ? rows : NS.suggestions(info?.recent ?? [], text, home)
       if (!listOpen) setListOpen(true)
       const n = all.length
       if (n) setHi(e.key === 'ArrowDown' ? (hi + 1) % n : hi <= 0 ? n - 1 : hi - 1)
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      if (hi >= 0 && rows[hi]) pick(rows[hi].path)
+      if (hi >= 0 && rows[hi]) list(rows[hi].path)
       else void create()
+    } else if (e.key === 'Tab' && !e.shiftKey) {
+      // completes, as a shell does: the folder on, else the first match of what's typed after the last /
+      const r = hi >= 0 ? rows[hi] : typed?.word ? rows.find((x) => !x.up) : undefined
+      if (r) {
+        e.preventDefault()
+        list(r.path)
+      }
     }
   }
 
@@ -211,10 +249,11 @@ function NewSpaceDialog() {
   return (
     <Sheet label={W.title} onClose={close} panel="max-w-[460px]">
       <div className="flex min-h-[52px] shrink-0 items-center gap-2.5 border-b border-line pr-3 pl-4">
-        <Who name={W.title} kind={remote ? W.on(remote) : undefined} />
+        <Who name={W.title} kind={remote && !choosing ? W.on(remote) : undefined} />
         <SheetClose onClose={close} />
       </div>
       <div className="flex min-h-0 flex-col px-4 pt-3.5 pb-4" onPointerDown={(e) => listOpen && !(e.target as HTMLElement).closest('[data-folders]') && e.target !== input.current && shut()}>
+        {choosing ? <MachineChoice id={`${listId}-machine`} machines={on} value={machine} onChange={switchTo} label={label} /> : null}
         <label htmlFor={`${listId}-path`} className={label}>
           {W.label}
         </label>
@@ -240,7 +279,6 @@ function NewSpaceDialog() {
               onChange={(e) => {
                 setText(e.target.value)
                 setListOpen(true)
-                setBrowse(null)
                 setHi(-1)
                 setError('')
               }}
@@ -268,7 +306,7 @@ function NewSpaceDialog() {
                 role="option"
                 aria-selected={i === hi}
                 onPointerMove={() => setHi(i)}
-                onClick={() => pick(r.path)}
+                onClick={() => list(r.path)}
                 className={clsx('press flex min-h-8 cursor-pointer items-center gap-2.5 rounded-row px-2 coarse:min-h-11', i === hi && 'bg-hover')}
               >
                 {r.up ? <UpIcon className={clsx(ic, 'text-fg3')} /> : <FolderIcon className={clsx(ic, 'text-fg3')} />}
@@ -303,7 +341,7 @@ function NewSpaceDialog() {
           ) : null}
         </div>
         <div className="mt-4 flex items-center justify-end gap-2 phone:flex-wrap phone:*:justify-center">
-          <p role={error ? 'alert' : undefined} className="min-w-0 flex-1 truncate text-[0.75rem] text-need-fg phone:basis-full phone:whitespace-normal phone:text-[0.875rem]">{error}</p>
+          <p role={error ? 'alert' : undefined} className="min-w-0 flex-1 text-[0.75rem] text-need-fg [overflow-wrap:anywhere] phone:basis-full phone:text-[0.875rem]">{error}</p>
           <Ghost className="h-[34px] text-sm! phone:h-11 phone:flex-1 phone:text-base!" onClick={close}>
             {W.cancel}
           </Ghost>
@@ -313,6 +351,40 @@ function NewSpaceDialog() {
         </div>
       </div>
     </Sheet>
+  )
+}
+
+/** the Machine choice, over the folder: a native select (the phone's own picker), each machine's icon beside its name */
+function MachineChoice({ id, machines, value, onChange, label }: { id: string; machines: Machine[]; value: string; onChange: (m: string) => void; label: string }) {
+  const m = machines.find((x) => x.machine === value)
+  const Icon = m?.here ? MonitorIcon : ServerIcon
+  return (
+    <div className="mb-3.5 flex flex-col phone:mb-4">
+      <label htmlFor={id} className={label}>
+        {W.machine}
+      </label>
+      <div className="mt-1.5 grid grid-cols-[2.25rem_1fr_2rem] phone:grid-cols-[2.5rem_1fr_2.25rem]">
+        <select
+          id={id}
+          name="machine"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="col-span-full row-start-1 h-9 w-full appearance-none rounded-full bg-bg pr-8 pl-9 text-fg shadow-[inset_0_0_0_1px_var(--line2)] outline-none focus:shadow-box-focus phone:h-11 phone:pl-10 phone:text-[1rem]"
+        >
+          {machines.map((x) => (
+            <option key={x.machine} value={x.machine}>
+              {x.name}
+            </option>
+          ))}
+        </select>
+        <span className="pointer-events-none col-start-1 row-start-1 grid place-items-center text-fg3">
+          {m?.emoji ? <span className="text-[0.875rem] leading-none">{m.emoji}</span> : <Icon className={ic} />}
+        </span>
+        <svg viewBox="0 0 8 5" width="8" height="5" fill="none" aria-hidden className="pointer-events-none col-start-3 row-start-1 place-self-center text-fg3">
+          <path d="M.5.5 4 4 7.5.5" stroke="currentcolor" />
+        </svg>
+      </div>
+    </div>
   )
 }
 
