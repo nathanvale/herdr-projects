@@ -109,10 +109,10 @@ def binding(seen):
              for line in seen[view].splitlines()]
     for configured, url in views:
         if re.match(r"https://", url, re.I):
-            u = urllib.parse.urlsplit(url)
             try:
+                u = urllib.parse.urlsplit(url)
                 port = u.port
-            except ValueError:
+            except ValueError:  # not a URL at all (an unbalanced "[" among others): binds nothing
                 return None
             if (u.hostname or "").lower() != HOST or port not in (None, 443) or u.password or u.query or u.fragment:
                 return None

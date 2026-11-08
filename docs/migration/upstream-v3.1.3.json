@@ -302,7 +302,7 @@
       "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/bitbucket_http.py",
       "upstream_blob": null,
-      "sha256": "1665e0f7cf232461c3f726ca5bf69600c21964d99fbeec86b78b77f82312100a"
+      "sha256": "a5d4b3d784343c54b408553cc3aa4d1f26825e2b5ea73e7a60382ae4b548f090"
     },
     {
       "phase": "B1",
@@ -320,7 +320,7 @@
       "phase": "B1",
       "path": "test/test_bitbucket.py",
       "upstream_blob": null,
-      "sha256": "94cc98328db478e693c20c549305cc2338a4a9c84782b14fca2b5a8b90dee3c2"
+      "sha256": "23a4e1d64982a9e71b04212b628f8d5dce1720ef2c2e0aee04ff6de7e746e8f5"
     }
   ],
   "requirements": [
