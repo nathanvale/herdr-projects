@@ -332,7 +332,7 @@
       "phase": "B2",
       "path": "test/test_bitbucket_publication.py",
       "upstream_blob": null,
-      "sha256": "3829d11da56adf030f08226ab1ded209fff8548877a007f14a164544ab43710c"
+      "sha256": "e58611687e7c1eca2fbda340673e0d13db42bf2fd381a23b8692efcdb90b3240"
     }
   ],
   "requirements": [

@@ -37,8 +37,8 @@ KEY = "bitbucket.org/o/r:task/1"
 # git's SSH command for the alias: its last word is git's own (git-receive-pack 'o/r.git'), run as
 # `git receive-pack 'o/r.git'` in the folder that holds o/r.git.
 SSH = '''#!/bin/sh
-[ -z "$FAKE_SSH_FAIL" ] || exit 255
 for last; do :; done
+case "$last" in git-receive-pack*) [ -z "$FAKE_SSH_FAIL" ] || exit 255;; esac  # a push fails; reads still go
 cd "$FAKE_SSH_ROOT" || exit 1
 exec sh -c "git ${last#git-}"
 '''
@@ -160,10 +160,12 @@ def fixture(test):
     os.makedirs(os.path.dirname(f.bare_bb))
     f.git(f.tmp, "init", "-q", "--bare", "-b", "main", f.bare_bb)
     f.git(f.repo, "push", "-q", f.bare_bb, "main")
-    # Every ref update the server makes, as git's own update hook sees it: "<ref> <old> <new>".
+    # Every ref update the server committed, as git's own post-receive hook sees it (never one its ref
+    # transaction refused): "<ref> <old> <new>".
     f.ref_log = os.path.join(f.tmp, "ref-updates.log")
     open(f.ref_log, "w").close()
-    f.program(os.path.join(f.bare_bb, "hooks", "update"), '#!/bin/sh\n[ -z "$FAKE_REF_LOG" ] || echo "$1 $2 $3" >> "$FAKE_REF_LOG"\n')
+    f.program(os.path.join(f.bare_bb, "hooks", "post-receive"),
+              '#!/bin/sh\nwhile read old new ref; do\n  [ -z "$FAKE_REF_LOG" ] || echo "$ref $old $new" >> "$FAKE_REF_LOG"\ndone\n')
     f.env["FAKE_REF_LOG"] = f.ref_log
     f.program(os.path.join(f.bare_bb, "hooks", "pre-receive"), PRE_RECEIVE)
     f.git(f.repo, "remote", "add", "origin", bb.REMOTE)
