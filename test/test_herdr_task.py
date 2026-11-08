@@ -949,8 +949,9 @@ class BackToWork(unittest.TestCase):
             calls.append(a[:2])
             if a[:2] == ("pr", "list"):
                 state = a[a.index("--state") + 1]
-                return True, json.dumps([] if state == "open" else [{"number": 704, "url": "u", "isCrossRepository": False,
-                                                                     "baseRefName": "main", "headRefOid": "old"}]), ""
+                return True, json.dumps([] if state == "open" else [{"number": 704, "url": "https://github.com/o/r/pull/704",
+                                                                     "isCrossRepository": False, "baseRefName": "main",
+                                                                     "headRefOid": "old"}]), ""
             if a[:1] == ("api",):
                 return False, "", "gh: Not Found (HTTP 404)"  # as gh: the branch isn't on GitHub yet
             return True, "", ""
@@ -1471,7 +1472,8 @@ class MergedOnlyWithOwnWork(unittest.TestCase):
         tip = self.change(self.task["worktree"], "reactions on the left")
         self.assertEqual(self.tick_once(), ("running", False))
         self.squash_into_main()
-        self.github([{"number": 704, "url": "u", "isCrossRepository": False, "baseRefName": "main", "headRefOid": tip}])
+        self.github([{"number": 704, "url": "https://github.com/o/r/pull/704", "isCrossRepository": False, "baseRefName": "main",
+                      "headRefOid": tip}])
         self.working()
         self.assertEqual(self.tick_once(), ("running", False))  # never under a working agent
         self.live, self.task["gh_checked"] = [], 0  # GitHub asked at most once a minute
@@ -3515,6 +3517,8 @@ class CycleTwo(unittest.TestCase):
         f = publication.Fixture(self)
         f.git(f.repo, "remote", "set-url", "origin", publication.ENTERPRISE)
         f.git(f.repo, "config", "--add", f"url.{f.bare}.insteadOf", publication.ENTERPRISE)
+        # gh sent to that host, as one set up for an Enterprise remote is (GH_HOST: S1's forge reaches only it).
+        f.env["GH_HOST"] = publication.ENTERPRISE.split("/")[2]
         f.github(prs=[], fail=publication.NOT_GITHUB)
         f.ready()
         self.assertEqual((f.task()["state"], json.loads(f.saved())["github"]["repo"]), ("ready", None))

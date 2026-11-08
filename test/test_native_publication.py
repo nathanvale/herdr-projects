@@ -55,6 +55,8 @@ else:
 # the bare remote itself, every call logged. `fail` fails every call, or only those of `fail_on`;
 # `create` and `merge` refuse those two; `answer` is what `pr view` prints instead of a pull request;
 # `merge_moves` is what `pr merge` does to the pull request, in place of merging it, before any refusal.
+# `repo view` links the repository on the host gh resolves from the folder's remote, or on `host`, as gh
+# resolves an SSH alias; `repo_url` replaces that link (None: none).
 FAKE_GH = '''#!/usr/bin/env python3
 import json, os, subprocess, sys
 path = os.environ["FAKE_GH_STATE"]
@@ -88,7 +90,15 @@ def pr():
 if st.get("fail") and st.get("fail_on") in (None, argv[0]):
     refuse(st["fail"])
 if argv[:2] == ["repo", "view"]:
-    show({"nameWithOwner": st["repo"]})
+    # As gh: its link is on the host gh resolves from this folder's remote (`host` stands in for an
+    # SSH alias's, which gh resolves through ssh's configuration).
+    remote = subprocess.run(["git", "config", "--get", "remote.origin.url"], stdout=subprocess.PIPE,
+                            universal_newlines=True).stdout.strip()
+    import re
+    m = re.match(r"(?:[a-z][a-z0-9+.-]*://)?(?:[^@/]+@)?([^/:]+)", remote)
+    host = st.get("host") or (m.group(1).lower() if m else "github.com")
+    host = "github.com" if host == "ssh.github.com" else host
+    show({"nameWithOwner": st["repo"], "url": st["repo_url"] if "repo_url" in st else "https://%s/%s" % (host, st["repo"])})
 elif argv[:2] == ["pr", "list"]:
     # As gh v2.101.0 (pkg/cmd/pr/shared/lister.go): --state defaults to open, and closed includes merged.
     states = {"open": ["OPEN"], "closed": ["CLOSED", "MERGED"], "merged": ["MERGED"],
@@ -103,7 +113,7 @@ elif argv[:2] == ["pr", "view"]:
 elif argv[:2] == ["pr", "create"]:
     if st.get("create"):
         refuse(st["create"])
-    print("https://github.com/o/r/pull/9")
+    print("https://%s/o/r/pull/9" % (os.environ.get("GH_HOST") or "github.com"))  # on the host gh is sent to
 elif argv[:2] == ["pr", "comment"]:
     pr()
 elif argv[:2] == ["pr", "merge"]:
@@ -968,6 +978,8 @@ class OnlyGhsOwnNoIsANo(unittest.TestCase):
         if url != URL:
             f.git(f.repo, "remote", "set-url", "origin", url)
             f.git(f.repo, "config", "--add", f"url.{f.bare}.insteadOf", url)
+            # gh sent to that host, as one set up for an Enterprise remote is (GH_HOST: S1's forge reaches only it).
+            f.env["GH_HOST"] = url.split("/")[2]
         f.ready()
         self.assertEqual(json.loads(f.saved())["github"]["repo"], "o/r")
         f.edit(lambda d: (d["tasks"][0].pop("pr"), d["tasks"][0].update(state="running")))
@@ -1494,7 +1506,8 @@ class AMergeOffTheTasksBase(unittest.TestCase):
     def test_an_answer_with_no_base_at_all_holds_until_one_says(self):
         f = self.f
         f.ready()
-        f.github(prs=[f.pr()], answer=json.dumps({"state": "MERGED"}))
+        # As gh answers: which pull request it is, and no base at all.
+        f.github(prs=[f.pr()], answer=json.dumps({"state": "MERGED", "url": "https://github.com/o/r/pull/7"}))
         self.assertEqual(self.tick()["attention"], [1])
         self.held(self.UNSAID)
         self.merged(baseRefName="target")

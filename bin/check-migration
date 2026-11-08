@@ -50,7 +50,7 @@ service/private-domain.ts'''.split()),
     # and github.py is its GitHub adapter. Its owners that earlier phases admitted are S1's from here.
     'S1': frozenset('''mods/tasks/bin/herdr_task/__init__.py mods/tasks/bin/herdr_task/commands.py
 mods/tasks/bin/herdr_task/forge.py mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/proof.py
-mods/tasks/bin/herdr_task/tick.py test/test_forge.py test/test_herdr_task.py'''.split()),
+mods/tasks/bin/herdr_task/tick.py test/test_forge.py test/test_herdr_task.py test/test_native_publication.py'''.split()),
 }
 # The shared table's second half (PR 19 decision D5, issue #7): what accepted changes add beyond exact
 # U and outside every phase's owners, admitted by name and left to review for content. With U's paths

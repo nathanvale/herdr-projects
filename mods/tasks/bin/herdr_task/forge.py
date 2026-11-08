@@ -45,7 +45,7 @@ def route(pr):
     there = host_of(pr)
     if there and there != a.host():
         raise Fail(f"This task's pull request {mine(pr)} is on {there}, and herdr-task reaches {a.NAME} at {a.host()} here; "
-                   "nothing was sent to either.")
+                   f"nothing was sent to either. If {there} is where it should go, set GH_HOST to {there}.")
     return a
 
 
@@ -76,10 +76,12 @@ def mismatch(saved, seen, name):
 # ---- the folder's repository ----------------------------------------------------------------
 
 def repository(s, fresh=False):
-    """The forge repository a folder's tasks publish to: {provider, repo}; None: they merge here.
-    As github.github(): asked again when fresh, and s.github_saved says whether it was a saved answer."""
+    """The forge repository a folder's tasks publish to: {provider, repo, host}; None: they merge here.
+    host: the one the forge itself places the folder on (gh resolves the remote, aliases included);
+    None when it didn't say. As github.github(): asked again when fresh, and s.github_saved says
+    whether it was a saved answer."""
     repo = github.github(s, fresh=True) if fresh else github.github(s)
-    return {"provider": GITHUB, "repo": repo} if repo else None
+    return {"provider": GITHUB, "repo": repo, "host": github.host_of(s)} if repo else None
 
 
 def no_local_merge(s, task):
@@ -94,6 +96,15 @@ def pr_open(s, task, where, summary=None):
     when it is another provider's, host's or repository's, its forge doesn't answer (the adapter's
     own refusal), or answers for another pull request."""
     saved, state = task.get("pr"), None
+    # gh is sent `--repo owner/name` alone, so it goes to its default host, not necessarily the folder's:
+    # refused, never skipped, when they differ or the folder's host is unknown.
+    there, w = where.get("host"), adapter_of(where)
+    if not there:
+        raise Fail(f"{w.NAME} didn't say which host {where['repo']} is on, so its pull request can't be kept to {w.host()}; "
+                   "nothing was pushed. Try again; if it says the same, set GH_HOST to that repository's host.")
+    if there != w.host():
+        raise Fail(f"This folder's repository is on {there}, and herdr-task reaches {w.NAME} at {w.host()} here, so its pull "
+                   f"request would go to the wrong host; nothing was pushed. Set GH_HOST to {there}, then run ready again.")
     if saved:
         a = route(saved)
         if provider_of(saved) != provider_of(where) or saved.get("repo") not in (None, where["repo"]):

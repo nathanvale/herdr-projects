@@ -289,8 +289,8 @@ wiring in `service/auth.ts` and `service/main.ts`, `docs/private-domain.md`, ADR
 
 S1 is re-applied on this candidate after H1 as its own row in `PHASES`. Its owners are
 `T/__init__.py`, `T/commands.py`, `T/forge.py`, `T/github.py`, `T/proof.py`, `T/tick.py`,
-`test/test_forge.py` and `test/test_herdr_task.py`; those earlier phases admitted are
-S1's from here, and their pins are S1's.
+`test/test_forge.py`, `test/test_herdr_task.py` and `test/test_native_publication.py`;
+those earlier phases admitted are S1's from here, and their pins are S1's.
 
 - `T/forge.py` is the single route from Ready, review, Accept, merge, adopt, the tick and
   the Accept card to a task's pull request and its folder's repository. `T/github.py` is
@@ -309,15 +309,24 @@ S1's from here, and their pins are S1's.
   request. No answer refuses, as N1 does, and an answer whose link, host, repository or
   number differs from the record refuses. Reads for Ready's SHEP-59 check, Accept,
   merge, the tick and the Accept card refuse the same way; nothing reads a refused view
-  as merged, open or checked. Adoption from a list takes only a pull request whose own
-  link is in the folder's repository; `adopt` refuses a link or answer on another host.
-- Not covered: `pr_merged()`'s merged list (SHEP-59) records a merged pull request
-  without checking its link, as N1 does; read-only presentation in `service/worktree.ts`
-  and `mods/task-pr/main.js`, and GitHub news (`T/ghnews.py`), still read the saved
-  `repo` (B1/B2). Host-qualified GitHub transport is not added.
-- Regression: `test/test_forge.py` runs `ready` and `merge` as processes on the N1
-  fixture. Existing `test_herdr_task.py` assertions are unchanged; its patch points moved
-  to the seam, and the merge fake answers only `gh pr merge`.
+  as merged, open or checked. A pull request from a list, open (adoption) or merged
+  (SHEP-59's `pr_merged()`), counts only when its own link is in the folder's repository
+  on that host; `adopt` refuses a link or answer on another host.
+- The folder's host is gh's own: `gh repo view --json nameWithOwner,url` in the folder,
+  the one lookup `github()` makes, gives the link on the host gh resolves from the remote,
+  SSH aliases included. Publication refuses before any push when that host differs from
+  the one `--repo owner/name` reaches, or when gh gave none, saying to set `GH_HOST`.
+- Not covered: read-only presentation in `service/worktree.ts` and `mods/task-pr/main.js`,
+  and GitHub news (`T/ghnews.py`), still read the saved `repo` (B1/B2); Ready's SHEP-59
+  read and the tick read the merged list before publication's host check (their answers
+  must still be on the reached host, at the task's tip). Host-qualified GitHub transport
+  is not added.
+- Regression: `test/test_forge.py` runs `ready`, `merge` and `tick` as processes on the N1
+  fixture. Existing assertions are unchanged; `test_herdr_task.py`'s patch points moved
+  to the seam, and the merge fake answers only `gh pr merge`. Fixtures answer as gh does:
+  merged-list links in the fixture repository, a pull request view naming itself, the
+  folder's link on the host gh resolves, and `GH_HOST` set where an Enterprise remote
+  publishes.
 - The shared table (PR 19 decision D5's deferred enumeration, issue #7): every path a
   commit could hold, tracked or new and not ignored, must be U's, an admitted phase
   owner's (A1, N1, C1, W1, H1, S1) or an addition named in `NAMED` by the accepted change

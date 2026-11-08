@@ -120,7 +120,8 @@ def github(s, fresh=False):
     or a saved name, and is taken as a no otherwise; a gh that is there and can't run isn't that (gh()).
     fresh: gh is asked whatever was saved. s.github_saved says whether this answer was a saved one:
     an answer gh gave earlier in this same command isn't, so a recheck of a saved no (no_local_merge(),
-    Ready's) asks gh once per command, never twice; one saved by an earlier command still is."""
+    Ready's) asks gh once per command, never twice; one saved by an earlier command still is. With the
+    name, gh's link for it gives the host gh itself places this folder on, aliases included (host_of())."""
     s.github_saved = False
     if s.loc["kind"] != "repo":
         return None
@@ -130,20 +131,38 @@ def github(s, fresh=False):
             s.dirty = True
         return None
     mark = hashlib.sha256("\n".join(urls).encode()).hexdigest()[:16]
-    if not fresh and g.get("remotes") == mark and now() - g.get("at", 0) < 3600000:
+    # A name saved without its host (an older version's, or gh gave none) is asked again by a later
+    # command: the host is part of the answer. Within this command, gh's answer stands (once per command).
+    known = g.get("host") or not g.get("repo") or getattr(s, "github_asked", False)
+    if not fresh and g.get("remotes") == mark and now() - g.get("at", 0) < 3600000 and known:
         s.github_saved = not getattr(s, "github_asked", False)
         return g.get("repo")
-    ok, out, err = gh("repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner", cwd=s.loc["folder"])
+    ok, out, err = gh("repo", "view", "--json", "nameWithOwner,url", cwd=s.loc["folder"])
+    name = there = None
+    if ok and out:
+        try:
+            d = json.loads(out)
+            name, there = d.get("nameWithOwner") or None, link_host(d.get("url"))
+        except (ValueError, AttributeError):
+            pass
+        if not isinstance(name, str):
+            raise GhFailed("say which GitHub repository this folder is", "an answer it couldn't read")
     named = any(GITHUB_URL.match(url) for url in urls)
     confirmed = g.get("repo") and g.get("remotes") in (None, mark)
     said_no = NOT_GITHUB in err and not (named or confirmed)
     absent = err == GH_MISSING and not (named or g.get("repo"))
-    if not (ok and out) and not said_no and not absent:
+    if not (ok and name) and not said_no and not absent:
         raise GhFailed("say which GitHub repository this folder is", err or "no answer")
-    s.data["github"] = {"repo": out if ok and out else None, "at": now(), "remotes": mark}
+    s.data["github"] = {"repo": name, "host": there, "at": now(), "remotes": mark}
     s.dirty = True
     s.github_asked = True  # gh's answer in this command: fresh while it runs (above)
     return s.data["github"]["repo"]
+
+
+def host_of(s):
+    """The host gh placed this folder's repository on, from its link (github()'s answer); None when
+    it gave none."""
+    return (s.data.get("github") or {}).get("host")
 
 
 def no_local_merge(s, task):
@@ -448,7 +467,8 @@ def pr_merged(task, repo):
     if not ok:
         raise GhFailed(f"list the merged pull requests for {task['branch']}", err or "no answer")
     try:
-        return next((p for p in json.loads(out) if not p.get("isCrossRepository")
+        # Only one whose own link is in this repo, on the host gh is sent to (answered_in()).
+        return next((p for p in json.loads(out) if not p.get("isCrossRepository") and answered_in(p, repo)
                      and p.get("baseRefName") == (task.get("base") or "main")), None) if ok and out else None
     except (ValueError, TypeError, AttributeError):
         return None
@@ -540,9 +560,9 @@ def pr_identity(v):
 
 
 def answered_in(p, repo):
-    """GitHub's answer is that pull request in `repo`, by its own link."""
+    """GitHub's answer is that pull request in `repo` on the host gh is sent to, by its own link."""
     i = pr_identity(p)
-    return bool(i) and i["repo"] == repo and i["number"] == p.get("number")
+    return bool(i) and i["host"] == host() and i["repo"] == repo and i["number"] == p.get("number")
 
 
 def pr_merge(pr, v):
