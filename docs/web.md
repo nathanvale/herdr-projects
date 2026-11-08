@@ -6,6 +6,11 @@ on a phone, a tablet or another computer's browser, on the same data. Its look i
 
 ## Where it is
 
+An optional [private custom-domain listener](private-domain.md) can serve a
+domain you control using the actual Tailscale peer's ownership. It needs its
+own certificate, private DNS answer and unoccupied TLS port. This is explicit
+opt-in; the ordinary route below retains its defaults.
+
 `https://<this machine's tailnet name>/shepherdr/`, shared only on your tailnet with `tailscale serve` (never funnel,
 never the open internet); or the always-on machine you serve it from (below). Shepherdr settings → Web shows the link and a QR code for your phone. It needs Tailscale
 running here; without it the service still runs, with no web app.
