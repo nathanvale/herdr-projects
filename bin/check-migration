@@ -41,6 +41,9 @@ mods/chat/core/chat-log.js mods/chat/main.js mods/coordinator/core/agents.js mod
 mods/shepherdr-settings/core/agents.js mods/tasks/bin/herdr_task/news.py mods/tasks/bin/herdr_task/sessions.py
 service/actions.ts service/agents.ts service/watch.ts test/test_session_discovery.py'''.split()),
     'W1': frozenset('docs/web.md service/jobs-flags.test.ts service/jobs.ts'.split()),
+    'H1': frozenset('''.github/workflows/private-domain.yml docs/adr/0004-private-custom-domain.md docs/private-domain.md
+docs/web.md scripts/private-domain-proof.ts service/auth.ts service/main.ts service/private-domain.test.ts
+service/private-domain.ts'''.split()),
 }
 
 

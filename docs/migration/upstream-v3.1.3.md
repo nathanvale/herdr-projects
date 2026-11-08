@@ -3,8 +3,8 @@
 S0 is a source-only foundation; A1 adds provider launch plans and deployment discovery
 owners on it, with Azure dispatch held, N1 adds native pull request adoption and
 fail-closed publication, C1 finds a Claude Code session under its own agent's
-folder, and W1 keeps a web page's chat flag apart from background work. Required
-Bitbucket, Azure and lifecycle ports are
+folder, W1 keeps a web page's chat flag apart from background work, and H1 adds an
+opt-in private custom-domain listener. Required Bitbucket, Azure and lifecycle ports are
 pending. This checkpoint is not deployable or ready for application use. Check's
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
@@ -44,6 +44,7 @@ owners, not implemented interfaces.
 | A1 | Reviewed S0 | New `T/providers.py` and `service/azure-deployments.ts`; nonsecret bindings, supported authentication and discovery custody. |
 | C1 | S0, separately authorized | `core/chat-log.js` FIND and `T/sessions.py`; a Claude Code session is found under its own process's folder, for reading only, and nothing starts such an agent again. Not a port. |
 | W1 | S0, separately authorized | `service/jobs.ts`; a chat a web page follows keeps its ask flag with background work off, and nothing else runs. Not a port. |
+| H1 | S0, separately authorized | `service/private-domain.ts`, `service/auth.ts`, `service/main.ts`; an opt-in HTTPS listener for a domain you control, admitting Tailscale peers by owner. Not a port. |
 | B1 | S1 | New `T/bitbucket.py`, `T/bitbucket_http.py`; qualified identity, host credentials and complete exact-head reads. |
 | B2 | B1 | New `T/publications.py`, commands/output/CLI; durable claims, publication/readiness and current admission. |
 | A2 | A1 | Shared settings/agents, desktop/web controls, `T/settings.py`, launch/resume; discovery, selectors and binding parity. |
@@ -229,6 +230,24 @@ the background work's gate. Nothing else moves.
   herdr-task, herdr-secret and the hub. A real Claude, its hook and a real page are not run.
 - This fix is not a required port. No inventory requirement changes status.
 
+### H1 private custom-domain checkpoint
+
+The private HTTPS commits (`f8c43a60` to `c8217c0b`, kept at
+`refs/archive/private-https-c8217c0b`) were made on U and are what the live release runs.
+H1 admits them unchanged: `service/private-domain.ts` and its test, the listener's
+wiring in `service/auth.ts` and `service/main.ts`, `docs/private-domain.md`, ADR 0004,
+`scripts/private-domain-proof.ts`, a line in `docs/web.md` and the workflow
+`.github/workflows/private-domain.yml`.
+
+- Set only through `SHEPHERDR_PRIVATE_DOMAIN` (a local JSON file outside synchronized
+  settings). Unset, there is no listener and no extra lookup, and Tailscale Serve and
+  local token access keep their defaults ([Private custom domains](../private-domain.md)).
+- `docs/web.md` is W1's too: one row, under H1, pins its combined content.
+- The workflow runs only on pushes to `feat/private-custom-domain` or by hand, so it
+  doesn't run for this branch; its owner and sensitivity checks need a reviewer's look.
+  `service/private-domain.test.ts` runs with the service suite in Check.
+- This fix is not a required port. No inventory requirement changes status.
+
 ### Bitbucket contract
 
 Port P's behavior into native owners, not its old server paths. GitHub retains
@@ -330,7 +349,8 @@ Root runs `python3 bin/check-migration`, its public-CLI checkpoint tests
 (`test/test_migration.py`), the A1 provider and discovery tests (`test/test_providers.py`,
 `service/azure-deployments.test.ts`), the N1 publication tests (`test/test_native_publication.py`),
 the C1 discovery tests (`core/chat-find.test.js`, `test/test_session_discovery.py`),
-the W1 flag tests (`service/jobs-flags.test.ts`) and every native Check command. CI owns
+the W1 flag tests (`service/jobs-flags.test.ts`), the H1 listener tests
+(`service/private-domain.test.ts`) and every native Check command. CI owns
 frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.

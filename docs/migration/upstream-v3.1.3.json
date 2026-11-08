@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "phase": "W1",
+  "phase": "H1",
   "architecture": "full-upstream-3.x",
   "candidate_readiness": "blocked",
   "inputs": {
@@ -198,12 +198,6 @@
     },
     {
       "phase": "W1",
-      "path": "docs/web.md",
-      "upstream_blob": "70eb15e77333c77d108784a2172ef1d571efc226",
-      "sha256": "257dd73978610069e6dc066d92b8ce8597190f32ce153feca308a36d3c970198"
-    },
-    {
-      "phase": "W1",
       "path": "service/jobs-flags.test.ts",
       "upstream_blob": null,
       "sha256": "90581587e1174b5a94c5ac33646043ba5d8c8d0a45069f7688656b2c25b9eb74"
@@ -213,6 +207,60 @@
       "path": "service/jobs.ts",
       "upstream_blob": "49126d5ddb6d2f360bfbfd2c7cc5b4e1644e0802",
       "sha256": "1684b5bf3d72e7f2bf54174b344b59c2534e1c08ea9e6b72463fa4c66b3d4e66"
+    },
+    {
+      "phase": "H1",
+      "path": ".github/workflows/private-domain.yml",
+      "upstream_blob": null,
+      "sha256": "090e30cf1950384f48e03332f29770bb4f5b3165f2a013cdcc9a49d179b567fb"
+    },
+    {
+      "phase": "H1",
+      "path": "docs/adr/0004-private-custom-domain.md",
+      "upstream_blob": null,
+      "sha256": "2773477ef8789f0aa3fe740d4c3af01e3f9a0f55837dd4a82efca385ad2e3cf1"
+    },
+    {
+      "phase": "H1",
+      "path": "docs/private-domain.md",
+      "upstream_blob": null,
+      "sha256": "19e0f87c689d737b8950450322590f67cc85523e032b0ae09e47d941d7c93602"
+    },
+    {
+      "phase": "H1",
+      "path": "docs/web.md",
+      "upstream_blob": "70eb15e77333c77d108784a2172ef1d571efc226",
+      "sha256": "f420893ccfae066fdf0426485f664d543ea8c767179c5727e53c96069e87a958"
+    },
+    {
+      "phase": "H1",
+      "path": "scripts/private-domain-proof.ts",
+      "upstream_blob": null,
+      "sha256": "ad78954618541ef954db345a8f6d8de0f0fe17bff0b32b8865b82beb9df758df"
+    },
+    {
+      "phase": "H1",
+      "path": "service/auth.ts",
+      "upstream_blob": "5d6f5d5d485481ea7b5ccec6b4deeaffde728232",
+      "sha256": "aa85c25b166731667961771f9b858629038980deac9bbc3204e2e22e3571c6d9"
+    },
+    {
+      "phase": "H1",
+      "path": "service/main.ts",
+      "upstream_blob": "d2522eb0e532d9683aa4bee00588ce3048617e63",
+      "sha256": "24d60a7772bf438cf949ee5fb37b5c61b0c12f512051c9816c8832ac32c22894"
+    },
+    {
+      "phase": "H1",
+      "path": "service/private-domain.test.ts",
+      "upstream_blob": null,
+      "sha256": "3a8ac42d44a67b2cba3db9003bda52c2588e005906382683aab064a6198e8dab"
+    },
+    {
+      "phase": "H1",
+      "path": "service/private-domain.ts",
+      "upstream_blob": null,
+      "sha256": "011960742225c910b2654c9ed3873b425aa3b4b983fb205b531e45bf936ab3ea"
     }
   ],
   "requirements": [
@@ -1132,7 +1180,7 @@
     }
   ],
   "inventory": "upstream-v3.1.3-files.json",
-  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held, N1 native pull request adoption and fail-closed publication, the C1 session discovery under each agent's own folder, and the W1 web chat flag kept apart from background work; no required fork port is complete, CI-proved or runtime-qualified",
+  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held, N1 native pull request adoption and fail-closed publication, the C1 session discovery under each agent's own folder, the W1 web chat flag kept apart from background work, and the H1 opt-in private custom-domain listener; no required fork port is complete, CI-proved or runtime-qualified",
   "azure_cli_design": {
     "skill": "my-second-brain-playground:cli-design",
     "route": "maintain/extend existing-project",
