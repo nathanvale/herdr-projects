@@ -103,7 +103,7 @@ export async function voiceNav(nav: Nav): Promise<NavAck> {
     setUI(LAYERS_OFF)
     goPlace(id)
     const now = getState().ui
-    return check(now.place === placeOf(snap, id).id && !now.task, 'the space didn\'t open')
+    return check(now.place === placeOf(snap, id)?.id && !now.task, 'the space didn\'t open')
   }
   if (nav.kind === 'chat' && str(nav.chat)) {
     setUI(LAYERS_OFF)
@@ -139,6 +139,7 @@ export async function voiceNav(nav: Nav): Promise<NavAck> {
     const panel = str(nav.panel)
     setUI(LAYERS_OFF)
     const p = placeOf(snap, ui.place)
+    if (!p) return no('there are no spaces yet')
     if (panel === 'terminal' || panel === 'chat') {
       // the space's Assistant: Chat | Terminal
       setUI({ task: null, tab: 'chat', term: panel === 'terminal' ? p.chat : null, arts: null })

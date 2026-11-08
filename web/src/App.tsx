@@ -18,6 +18,7 @@ import {
   sizePanes,
   focusHere,
   getState,
+  has,
   useStore,
   placeKind,
   chipName,
@@ -405,14 +406,14 @@ function SideList({ snap }: { snap: Snapshot }) {
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <h2 className="min-w-0 truncate font-semibold">{title}</h2>
         </div>
-        {side === 'tasks' && TasksMenu ? <TasksMenu key={view.key} place={place} /> : null}
+        {side === 'tasks' && TasksMenu && place ? <TasksMenu key={view.key} place={place} /> : null}
       </Head>
-      {herdr && Space ? (
+      {herdr && Space && place ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <Space place={place} what={herdr} />
         </div>
       ) : (
-        <div className="min-h-0 flex-1 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain">{side === 'needs' && Needs ? <Needs /> : side === 'artifacts' && Artifacts ? <Artifacts placeId={place.id} /> : Tasks ? <Tasks placeId={place.id} /> : null}</div>
+        <div className="min-h-0 flex-1 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain">{side === 'needs' && Needs ? <Needs /> : side === 'artifacts' && Artifacts ? <Artifacts placeId={place?.id ?? ''} /> : Tasks ? <Tasks placeId={place?.id ?? ''} /> : null}</div>
       )}
     </section>
   )
@@ -447,7 +448,7 @@ function TaskPage({ task, middle, pane }: { task: Task; middle?: boolean; pane?:
   const phone = useUI((u) => u.device === 'phone')
   const desktop = useUI((u) => u.device === 'desktop')
   const keyboard = useUI((u) => u.keyboard)
-  const coordinator = placeOf(snap, task.place).name
+  const coordinator = placeOf(snap, task.place)?.name ?? ''
   const accepting = useAccepting(task.id) || !!task.accepting
   // as 3.0's task header (mods/chat/panel.js barRow): Review (opens the Accept card) once it is Ready ("Accepting…" while
   // its accept runs), sized as the header's other buttons; then its tabs (TaskTabs). No Pin here (SHEP-62): the task row's
@@ -573,8 +574,8 @@ function Middle({ snap }: { snap: Snapshot }) {
     <ChatColumn>
       {/* 3.0's tab bar over it: the shown space's tabs, its + and the side panels' buttons */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {TabBar ? <TabBar place={place} /> : null}
-        {panes.length ? <Split snap={snap} panes={panes} /> : task ? <TaskPage key={task.id} task={task} middle /> : <PlaceColumn place={place} />}
+        {TabBar && place ? <TabBar place={place} /> : null}
+        {panes.length ? <Split snap={snap} panes={panes} /> : task ? <TaskPage key={task.id} task={task} middle /> : place ? <PlaceColumn place={place} /> : <NoSpaces />}
       </div>
     </ChatColumn>
   )
@@ -616,8 +617,11 @@ function Split({ snap, panes }: { snap: Snapshot; panes: Pane[] }) {
 }
 
 function PaneView({ snap, p, i }: { snap: Snapshot; p: Pane; i: number }) {
-  if (p.kind === 'place') return <PlaceColumn place={placeOf(snap, p.id)} pane={i} />
-  if (p.kind === 'tasks') return <TasksPane place={placeOf(snap, p.id)} i={i} />
+  if (p.kind === 'place' || p.kind === 'tasks') {
+    const place = placeOf(snap, p.id)
+    if (!place) return <GonePane i={i} what="That space is gone." />
+    return p.kind === 'place' ? <PlaceColumn place={place} pane={i} /> : <TasksPane place={place} i={i} />
+  }
   if (p.kind === 'artifact') return <ArtifactPane id={p.id} i={i} />
   const task = taskOf(snap, p.id)
   return task ? <TaskPage key={task.id} task={task} pane={i} /> : <GonePane i={i} what={`${p.id} is gone.`} />
@@ -670,13 +674,26 @@ function ArtifactPane({ id, i }: { id: string; i: number }) {
       <Head>
         {i ? null : <PlacesToggle when="closed" />}
         <PageIcon className={clsx(ic, 'text-fg2')} />
-        <Who name={art.title} kind={`${placeOf(snap, art.place).name} · v${art.v} · ${art.when}`} />
+        <Who name={art.title} kind={[placeOf(snap, art.place)?.name, `v${art.v}`, art.when].filter(Boolean).join(' · ')} />
         <IconButton label="Open full screen" onClick={() => openArtifact(art.id)}>
           <OpenIcon className={ic} />
         </IconButton>
         <PaneButtons i={i} />
       </Head>
       <div className="relative min-h-0 flex-1">{View ? <View artifactId={art.id} /> : null}</div>
+    </section>
+  )
+}
+
+/** No space at all (a first run, or the last one closed: GitHub #747): said so, with New space, as the sidebar's +
+ *  opens it. Nothing starts until the person makes one. */
+function NoSpaces() {
+  return (
+    <section aria-label="No spaces" className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+      <p className="font-medium">No spaces yet.</p>
+      {has('places') ? (
+        <Primary onClick={() => setUI({ adding: true, drawer: false, menu: false, plus: null, search: false })}>New space</Primary>
+      ) : null}
     </section>
   )
 }
@@ -846,12 +863,12 @@ function PhoneHome({ snap }: { snap: Snapshot }) {
       <PhoneTop
         left={<MenuButton />}
         // as 3.0's panels: the chat names its space; Tasks and Artifacts are their panels, everything in them
-        name={tab === 'tasks' ? 'Tasks' : tab === 'artifacts' ? 'Artifacts' : place.name}
-        icon={tab === 'chat' ? <PlaceIcon level={2} className="text-fg2" /> : undefined}
-        kind={tab === 'chat' ? placeKind(snap, place) : undefined}
-        mark={tab === 'chat' ? <PlaceMarks place={place} /> : undefined}
+        name={tab === 'tasks' ? 'Tasks' : tab === 'artifacts' ? 'Artifacts' : place?.name ?? 'Spaces'}
+        icon={tab === 'chat' && place ? <PlaceIcon level={2} className="text-fg2" /> : undefined}
+        kind={tab === 'chat' && place ? placeKind(snap, place) : undefined}
+        mark={tab === 'chat' && place ? <PlaceMarks place={place} /> : undefined}
         right={
-          tab === 'chat' ? (
+          !place ? null : tab === 'chat' ? (
             <>
               {registry.placeHeader.map(({ View }, i) => (
                 <View key={i} place={place} />
@@ -863,14 +880,16 @@ function PhoneHome({ snap }: { snap: Snapshot }) {
           )
         }
       />
-      {tab === 'chat' ? (
+      {tab === 'chat' && !place ? (
+        <NoSpaces />
+      ) : tab === 'chat' && place ? (
         <div className="flex min-h-0 flex-1 flex-col">
           {Chat ? (
             tabChat ? <Chat key={tabChat} chatKey={tabChat} placeholder={`Message ${place.tabs?.find((t) => t.term === tabChat)?.prog ?? 'the agent'}`} /> : <Chat chatKey={place.chat} placeholder="Message the Assistant" unreachable={unreachable(place, snap)} />
           ) : null}
         </div>
       ) : (
-        <div className="min-h-0 flex-1 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain">{tab === 'needs' && registry.views.needs ? <registry.views.needs /> : tab === 'artifacts' && Artifacts ? <Artifacts placeId={place.id} /> : Tasks ? <Tasks placeId={place.id} /> : null}</div>
+        <div className="min-h-0 flex-1 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain">{tab === 'needs' && registry.views.needs ? <registry.views.needs /> : tab === 'artifacts' && Artifacts ? <Artifacts placeId={place?.id ?? ''} /> : Tasks ? <Tasks placeId={place?.id ?? ''} /> : null}</div>
       )}
       {/* the keyboard is up: the message box sits right on it, so more of the chat shows */}
       {keyboard ? null : <PhoneBar />}

@@ -399,7 +399,9 @@ export default definePlugin({
             requestAnimationFrame(() => document.querySelector<HTMLElement>(SCREEN)?.focus())
             return true
           }
-          const c = placeOf(snap, ui.place).chat
+          // (no space at all: no Assistant's terminal to show)
+          const c = placeOf(snap, ui.place)?.chat
+          if (!c) return false
           setUI({ term: ui.term === c ? null : c, arts: null, kb: true })
           return true
         }

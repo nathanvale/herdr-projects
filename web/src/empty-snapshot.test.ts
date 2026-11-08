@@ -78,4 +78,94 @@ finish()
   expect(r.watch?.chats).toEqual([])
 }, 30_000)
 
+
+/** One space, as compat.snapshot() makes it, for the cases that have one (a test fixture: nothing real) */
+const ONE = { ...EMPTY, places: [{ id: 'p1', name: 'proj', machine: 'm1', level: 2, status: 'idle', mode: 'regular', chat: 'p1', where: '~/proj', tabs: [] }] }
+
+test('first run: nothing kept and the empty snapshot: the page has it, no space is picked, and no chat is watched', async () => {
+  const r = await page(`
+K.connect()
+sock().onopen()
+out.handled = run('snapshot', () => deliver({ type: 'snapshot', snapshot: ${JSON.stringify(EMPTY)} }))
+const st = K.getState()
+out.place = st.ui.place
+out.placeOf = K.placeOf(st.snap, st.ui.place) ?? null
+out.watch = sock().sent.filter((m) => m.type === 'watch').pop() ?? null
+finish()
+`)
+  expect(r.handled).toEqual({ ok: true })
+  expect(r.placeOf).toBeNull()
+  expect(r.place).toBe('')
+  expect(r.watch?.chats).toEqual([])
+}, 30_000)
+
+test('closing the last space: its snapshot, then the empty one: no error, the space goes, and its chat is no longer watched', async () => {
+  const r = await page(`
+K.connect()
+sock().onopen()
+out.one = run('one', () => deliver({ type: 'snapshot', snapshot: ${JSON.stringify(ONE)} }))
+out.first = sock().sent.filter((m) => m.type === 'watch').pop()?.chats ?? null
+out.placeBefore = K.getState().ui.place
+out.none = run('empty', () => deliver({ type: 'snapshot', snapshot: ${JSON.stringify(EMPTY)} }))
+out.last = sock().sent.filter((m) => m.type === 'watch').pop()?.chats ?? null
+out.placeAfter = K.getState().ui.place
+finish()
+`)
+  expect([r.one, r.none]).toEqual([{ ok: true }, { ok: true }])
+  expect([r.placeBefore, r.first]).toEqual(['p1', ['p1']])
+  expect([r.placeAfter, r.last]).toEqual(['', []])
+}, 30_000)
+
+test('with no spaces, navigation and New space still work: picking a place, the keys, a split and New space throw nothing', async () => {
+  const r = await page(`
+K.connect()
+sock().onopen()
+deliver({ type: 'snapshot', snapshot: ${JSON.stringify(EMPTY)} })
+out.pick = run('pick', () => K.setUI({ place: 'gone' }))
+out.keys = run('keys', () => K.keysChat(K.getState().ui, K.getState().snap))
+out.split = run('split', () => K.openSplit({ kind: 'artifact', id: 'a1' }))
+out.add = run('add', () => K.setUI({ adding: true, drawer: false, menu: false, plus: null, search: false }))
+out.adding = K.getState().ui.adding
+out.ladder = run('ladder', () => K.ladder(K.getState().snap, 'gone'))
+out.name = run('name', () => K.chatName(K.getState().snap, 'gone'))
+finish()
+`)
+  for (const k of ['pick', 'split', 'add']) expect(r[k].ok).toBe(true)
+  expect(r.keys).toEqual({ ok: true, value: null })
+  expect(r.adding).toBe(true)
+  expect(r.ladder).toEqual({ ok: true, value: '' })
+  expect(r.name).toEqual({ ok: true, value: 'gone' })
+}, 30_000)
+
+test('no place to show: no chat is visible, on a desktop or a phone, whichever tab is open', async () => {
+  const r = await page(`
+const ui = K.getState().ui
+const snap = ${JSON.stringify(EMPTY)}
+out.desktop = run('desktop', () => K.visibleChats({ ...ui, device: 'desktop' }, snap))
+out.phoneChat = run('phone chat', () => K.visibleChats({ ...ui, device: 'phone', tab: 'chat', task: null }, snap))
+out.phoneTasks = run('phone tasks', () => K.visibleChats({ ...ui, device: 'phone', tab: 'tasks', task: null }, snap))
+finish()
+`)
+  for (const k of ['desktop', 'phoneChat', 'phoneTasks']) expect(r[k]).toEqual({ ok: true, value: [] })
+}, 30_000)
+
+test('a space as before: it is found, a name it does not have falls back to it, and its chat is watched', async () => {
+  const r = await page(`
+K.connect()
+sock().onopen()
+out.handled = run('snapshot', () => deliver({ type: 'snapshot', snapshot: ${JSON.stringify(ONE)} }))
+const snap = K.getState().snap
+out.found = K.placeOf(snap, 'p1')?.id ?? null
+out.fallback = K.placeOf(snap, 'unknown')?.id ?? null
+out.name = K.chatName(snap, 'p1')
+out.ladder = K.ladder(snap, 'p1')
+out.keys = K.keysChat(K.getState().ui, snap)
+out.watch = sock().sent.filter((m) => m.type === 'watch').pop()?.chats ?? null
+finish()
+`)
+  expect(r.handled).toEqual({ ok: true })
+  expect([r.found, r.fallback, r.name, r.ladder, r.keys]).toEqual(['p1', 'p1', 'proj', 'proj', 'p1'])
+  expect(r.watch).toEqual(['p1'])
+}, 30_000)
+
 process.on('exit', () => rmSync(root, { recursive: true, force: true }))

@@ -115,19 +115,20 @@ export default definePlugin({
         }
         // 3.0's window keys that work while typing too
         const chatNow = () => keysChat(ui, snap)
-        if (e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'KeyD') {
+        // (no space at all: no chat for them, and the keys do nothing)
+        if (e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'KeyD' && chatNow()) {
           e.preventDefault()
-          toggleDictation(chatNow())
+          toggleDictation(chatNow()!)
           return true
         }
-        if (e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'Space' && has('voice')) {
+        if (e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'Space' && has('voice') && chatNow()) {
           e.preventDefault()
-          toggleCall(chatNow())
+          toggleCall(chatNow()!)
           return true
         }
-        if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyF') {
+        if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyF' && chatNow()) {
           e.preventDefault()
-          openFind(chatNow())
+          openFind(chatNow()!)
           return true
         }
         if (e.shiftKey && e.key === 'F2') {
