@@ -374,6 +374,10 @@ def cmd_ready(args):
         if t["state"] == "done":
             raise Fail(f"{s.ref(t)} is already done.")
         worktree_here(s, t)
+        # A saved pull request its forge can't publish from here (Bitbucket's, until B2) refuses first,
+        # before any read, fetch or finish: nothing is asked of any host and the task stays as it was.
+        admit(t)
+        publication(t)
         wt = t.get("worktree") if t.get("mode") == "worktree" else None
         if wt and os.path.isdir(wt):
             if git(wt, "status", "--porcelain", "--untracked-files=no")[1]:

@@ -38,7 +38,7 @@
       "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "d2463e1a37c0aeefaee51eec7480d3de3df1f40d",
-      "sha256": "70ef77db3b80e87f24c07de32843b801c8efb36d7066297a5a4f7d9fb7477334"
+      "sha256": "96925bc3ab0489904f0d48f62bb106769d81b113268cc1ca859cb6b17d66cbd5"
     },
     {
       "phase": "B1",
@@ -296,31 +296,31 @@
       "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/bitbucket.py",
       "upstream_blob": null,
-      "sha256": "0831569a8178fb963a4700e5f4709bb747bdc2e00a36dbb04985d000418cd46f"
+      "sha256": "55efe9bc756bf7ef6edb98125837ba5b72a6bf44853324296c8ac3b34c404b47"
     },
     {
       "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/bitbucket_http.py",
       "upstream_blob": null,
-      "sha256": "674d7e490b061eeee85931f3a9bc214d9c0342ce6664e7a22c87fa3b68f766c5"
+      "sha256": "a6b5952d8fa6619e779a4983dd7249dcc95347ee53d3cb400486bf52d5945e6b"
     },
     {
       "phase": "B1",
       "path": "mods/task-pr/main.js",
       "upstream_blob": "757874bfd87b6fe27c58a4d09be69536978ef527",
-      "sha256": "7d979e8e7b927d974301baaaf6ce2e61884a2d5a1b27e1d63b662bebb6ef13ca"
+      "sha256": "00ebc2702dab15afb253b93b793097ae0576165321187e79679f5d0ff0dc09e4"
     },
     {
       "phase": "B1",
       "path": "service/worktree.ts",
       "upstream_blob": "ea79e8b16d6ffb0e3e39ca22167a9129b800da6c",
-      "sha256": "57734c80bc74e56837a34ebf15673275cddf57c0b82ab70909f69221085eb802"
+      "sha256": "e2783e28630f3633e5fd926190ba90a426eece83ba3d61276b24a1293819aeb3"
     },
     {
       "phase": "B1",
       "path": "test/test_bitbucket.py",
       "upstream_blob": null,
-      "sha256": "2442905d184c39b5d92dea921cfdb50dc2ee9883818ce5644939c7a63dc32c03"
+      "sha256": "67327021fb8c63f7824f9faacbcf840d4fdf7ae3ee9c725ab7c61457beea3434"
     }
   ],
   "requirements": [
@@ -376,7 +376,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; S1 refuses another provider or host before any gh call and checks the answered link, host, repository and number before any write (test/test_forge.py authored, CI pending); B1 reads a Bitbucket record only from a checkout whose remote binds that repository, and the service's and window's Pull request views refuse any record not GitHub's without a gh call (test/test_bitbucket.py authored, CI pending); Bitbucket folder identity and records are B2's; native qualification pending"
+      "evidence": "source-inspected; S1 refuses another provider or host before any gh call and checks the answered link, host, repository and number before any write (test/test_forge.py authored, CI pending); B1 reads a Bitbucket record only from a checkout whose remote binds that repository in every configured and derived URL view and whose pull request is from the task's branch into its base, and the service's and window's Pull request views refuse any record not GitHub's without a gh call (test/test_bitbucket.py authored, CI pending); Bitbucket folder identity and records are B2's; native qualification pending"
     },
     {
       "id": "bitbucket-credentials",

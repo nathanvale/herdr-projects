@@ -32,7 +32,7 @@ export async function worktree(hub: Hub, w: Where, what: string, path?: string):
     // as the window's Pull request (mods/task-pr ask()): { pr }, or { why } there's none, or { error }
     if (!w.pr?.number && !w.branch) return { why: VIEW_WORDS.noBranch };
     // Only GitHub's are asked of gh: another forge's saved repository name would be read as GitHub's (B1).
-    if (w.pr?.provider && w.pr.provider !== "github") return { error: OTHER_FORGE };
+    if (w.pr?.provider && w.pr.provider !== "github") return { why: OTHER_FORGE };
     const r = w.pr?.number && w.pr.repo ? await sh(["gh", "pr", "view", String(w.pr.number), "--repo", w.pr.repo, "--json", PR_FIELDS])
       : await sh(["gh", "pr", "view", w.branch!, "--json", PR_FIELDS]).catch(() => null);
     if (!r) return { why: VIEW_WORDS.noPr };

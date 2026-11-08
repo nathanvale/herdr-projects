@@ -64,6 +64,14 @@ def pr_read(task):
         r = http.read_pull_request(wt, remote, pr["number"])
     except http.Failure as e:
         return None, Why(e.category, http.WORDS.get(e.category, http.WORDS["unavailable"]))
+    except (TypeError, KeyError, AttributeError, IndexError, RecursionError):
+        return None, Why("malformed-response", http.WORDS["malformed-response"])
+    # The task's own candidate: its branch into its base. Another source or destination is never read
+    # as this task's, so nothing finishes on it and no card counts its checks (as GitHub's adoption).
+    branch, base = task.get("branch"), task.get("base") or "main"
+    if r["source"] != branch or r["base"] != base:
+        raise Fail(f"Bitbucket's pull request {r['url']} is from {r['source']} into {r['base']}, and this task is {branch} "
+                   f"into {base}, so it isn't read as this task's; nothing was changed.")
     view = {"provider": PROVIDER, "host": http.HOST, "repo": r["repo"], "number": r["number"], "url": r["url"],
             "state": r["state"], "draft": r["draft"], "title": r["title"], "headRefOid": r["head"],
             "headRefName": r["source"], "baseRefName": r["base"], "checks": {"head": r["head"], "complete": True, "items": r["checks"]}}

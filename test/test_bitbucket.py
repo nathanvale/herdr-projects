@@ -15,9 +15,11 @@ answers as its documentation shows them; Bitbucket's own answers, a real credent
 real account are native qualification, not this.
 
 Runs only on CI, as the other command-line tests."""
+import atexit
 import http.server
 import json
 import os
+import shutil
 import ssl
 import subprocess
 import sys
@@ -48,8 +50,16 @@ if sys.argv[1:] == ["get"] and answer is not None:
 '''
 
 
-def cert(folder):
-    """A throwaway CA and api.bitbucket.org's certificate from it: (ca.pem, leaf.pem, leaf.key)."""
+CERTS = []
+
+
+def cert():
+    """A throwaway CA and api.bitbucket.org's certificate from it, made once per run: (ca.pem, leaf.pem,
+    leaf.key) in a folder removed when the run ends."""
+    if CERTS:
+        return CERTS[0]
+    folder = tempfile.mkdtemp()
+    atexit.register(shutil.rmtree, folder, True)
     p = lambda name: os.path.join(folder, name)
     with open(p("ca.cnf"), "w") as f:
         f.write("[req]\ndistinguished_name=dn\nx509_extensions=v3\nprompt=no\n[dn]\nCN=herdr-task test CA\n"
@@ -67,7 +77,8 @@ def cert(folder):
                  ["x509", "-req", "-in", p("leaf.csr"), "-CA", p("ca.pem"), "-CAkey", p("ca.key"), "-set_serial", "1",
                   "-out", p("leaf.pem"), "-days", "2", "-extfile", p("leaf.ext")]):
         subprocess.run(["openssl", *argv], check=True, capture_output=True)
-    return p("ca.pem"), p("leaf.pem"), p("leaf.key")
+    CERTS.append((p("ca.pem"), p("leaf.pem"), p("leaf.key")))
+    return CERTS[0]
 
 
 class Api(http.server.BaseHTTPRequestHandler):
@@ -132,8 +143,8 @@ class Bitbucket:
     """The test's Bitbucket: routes {path: (status, body[, headers]) or [answers in turn]}; seen: what
     Api answered; connects: every target anything asked the proxy for."""
 
-    def __init__(self, test, folder):
-        ca, leaf, key = cert(folder)
+    def __init__(self, test):
+        ca, leaf, key = cert()
         self.context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         self.context.load_cert_chain(leaf, key)
         self.routes, self.seen, self.connects = {}, [], []
@@ -174,11 +185,11 @@ class Bitbucket:
             self.routes[path] = (200, body)
 
 
-def fixture(test, helper=True):
+def fixture(test, helper=True, remote=REMOTE):
     """A task in a folder whose remote is on bitbucket.org, Ready with its Bitbucket pull request saved,
     and Bitbucket answering as the test says (bb). The helper answers with TOKEN unless told otherwise."""
     f = publication.Fixture(test, github=False)
-    f.git(f.repo, "remote", "add", "origin", REMOTE)
+    f.git(f.repo, "remote", "add", "origin", remote)
     empty = os.path.join(f.tmp, "gitconfig")
     open(empty, "w").close()
     f.credential_log = os.path.join(f.tmp, "credential.log")
@@ -190,7 +201,7 @@ def fixture(test, helper=True):
     if helper:
         f.git(f.repo, "config", "credential.helper", f.program(os.path.join(f.tmp, "bin", "credential-helper"), HELPER))
         f.git(f.repo, "config", "credential.useHttpPath", "true")
-    f.bb = Bitbucket(test, tempfile.mkdtemp(dir=f.tmp))
+    f.bb = Bitbucket(test)
     f.env.update(f.bb.env)
     f.seed(state="ready", ready_at=1, pr=dict(RECORD))
     return f
@@ -242,6 +253,15 @@ class ExactHeadChecks(unittest.TestCase, Quiet):
         self.assertIn("host=bitbucket.org", lines)
         self.assertIn("path=o/r.git", lines)
         self.assertFalse(any(x.startswith("username=") for x in lines))  # no account herdr-task chose
+
+    def test_an_ssh_remote_reads_on_the_same_https_lookup(self):
+        f = fixture(self, remote="git@bitbucket.org:o/r.git")
+        f.bb.answers(f.tip, [f.bb.status("a", "SUCCESSFUL")])
+        self.assertEqual(self.run_show(f)["result"], "passed")
+        (argv, request), = asked(f)
+        lines = request.splitlines()
+        self.assertIn("path=o/r.git", lines)
+        self.assertFalse(any(x.startswith("username=") for x in lines))  # ssh's transport user "git" is no account
 
     def outcome(self, statuses=(), **over):
         f = fixture(self)
@@ -298,6 +318,20 @@ class ExactHeadChecks(unittest.TestCase, Quiet):
         checks = self.run_show(f)
         self.assertEqual((checks["state"], checks["result"], checks["head"]), ("unknown", "other-head", f.start))
 
+    def test_another_source_or_destination_is_not_this_tasks(self):
+        for over in ({"base": "release"}, {"source": "task/2"}):
+            with self.subTest(**over):
+                f = fixture(self)
+                f.bb.answers(f.tip, [f.bb.status("a", "SUCCESSFUL")], pr=f.bb.pull_request(f.tip, state="MERGED", **over))
+                checks = self.run_show(f)
+                self.assertEqual((checks["state"], checks["result"]), ("unknown", "refused"))
+                self.assertIn("isn't read as this task's", checks["text"])
+                p = f.run("tick", "--folder", f.repo, "--json")  # merged, but not as this task: nothing finishes
+                self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+                self.quiet(f, p.stdout, p.stderr)
+                self.assertEqual((f.task()["state"], json.loads(p.stdout)["done"]), ("ready", []))
+                self.assertTrue(os.path.isdir(f.wt))
+
     def test_a_fork_or_another_repositorys_answer_is_not_this_pull_request(self):
         other = {"full_name": "someone/r", "links": {"html": {"href": "https://bitbucket.org/someone/r"}}}
         f = fixture(self)
@@ -312,7 +346,8 @@ class ExactHeadChecks(unittest.TestCase, Quiet):
 class HostCredentials(unittest.TestCase, Quiet):
     def test_no_usable_answer_from_the_helper_sends_nothing(self):
         cases = {"no helper": None, "no password": "username=x-token-auth\n",
-                 "a password that isn't a token": "username=x\npassword=two words\n"}
+                 "a password that isn't a token": "username=x\npassword=two words\n",
+                 "a negotiated credential": f"authtype=Bearer\ncredential={TOKEN}\n"}
         for name, answer in cases.items():
             with self.subTest(name):
                 f = fixture(self, helper=name != "no helper")
@@ -343,6 +378,8 @@ class HostCredentials(unittest.TestCase, Quiet):
     def test_a_remote_that_doesnt_bind_the_saved_repository_reaches_nobody(self):
         cases = {"another repository": lambda f: f.seed(pr={**RECORD, "repo": "o/other", "url": "https://bitbucket.org/o/other/pull-requests/7"}),
                  "a push URL elsewhere": lambda f: f.git(f.repo, "remote", "set-url", "--push", "origin", "https://bitbucket.org/o/fork.git"),
+                 "an SSH push URL on another host": lambda f: f.git(f.repo, "remote", "set-url", "--push", "origin", "git@github.com:o/r.git"),
+                 "a second URL on another host": lambda f: f.git(f.repo, "config", "--add", "remote.origin.url", "git@example.com:o/r.git"),
                  "a fetch URL rewritten elsewhere": lambda f: f.git(f.repo, "config", "url.https://example.com/.insteadOf", "https://bitbucket.org/")}
         for name, change in cases.items():
             with self.subTest(name):
@@ -390,6 +427,30 @@ class NothingMergesOrPublishes(unittest.TestCase, Quiet):
         self.assertEqual((t["state"], t["merged"], t["pr"]["provider"]), ("done", True, "bitbucket"))
         self.assertNotIn("main_watch", json.loads(f.saved()))  # GitHub's base watch never takes a Bitbucket name
         self.assertFalse(os.path.isdir(f.wt))
+
+    def test_one_merged_at_another_head_keeps_the_branch(self):
+        f = fixture(self)
+        f.bb.answers(f.start, [f.bb.status("a", "SUCCESSFUL")], pr=f.bb.pull_request(f.start, state="MERGED"))
+        p = f.run("tick", "--folder", f.repo, "--json")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.quiet(f, p.stdout, p.stderr)
+        t = f.task()
+        self.assertEqual((t["state"], t["merged_head"]), ("done", f.start))
+        self.assertIn("what merged was", t["kept"])
+        self.assertEqual(f.rev("task/1"), f.tip)
+        self.assertTrue(os.path.isdir(f.wt))
+
+    def test_a_provider_without_an_adapter_reaches_no_host(self):
+        f = fixture(self)
+        f.seed(pr={"provider": "gitlab", "host": "gitlab.com", "repo": "o/r", "number": 7,
+                   "url": "https://gitlab.com/o/r/-/merge_requests/7"})
+        p = f.run("merge", "1", "--folder", f.repo, "--json")
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        error = json.loads(p.stdout)["error"]
+        self.assertIn("gitlab", error)
+        self.assertIn("nothing was sent", error)
+        self.quiet(f, p.stdout, p.stderr)
+        self.assertEqual((f.bb.connects, asked(f), f.task()["state"]), ([], [], "ready"))
 
     def test_ready_refuses_before_anything_is_pushed_or_sent(self):
         f = fixture(self)

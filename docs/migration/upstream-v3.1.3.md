@@ -365,10 +365,13 @@ are B1's from here, and their pins are B1's.
   GitHub's or none: a Bitbucket-only folder still merges locally as N1 decided, and nothing
   writes a Bitbucket record yet. B2 makes Bitbucket folders publish and record one.
 - Binding: the read goes from the task's own checkout. Its remote (`origin`, else its first)
-  must name that same `workspace/repo` on bitbucket.org in all three of git's views: the URL
-  written in its config, the fetch URL after rewrites, and the push URL. A rewrite may reach it
-  through an SSH alias of the same path; an HTTPS view must be bitbucket.org with no password,
-  query or port other than 443. Otherwise nothing is sent, and the view is refused.
+  must name that same `workspace/repo` in every view git has of it: each configured `url` and
+  `pushurl` line, which must be on bitbucket.org itself, and the fetch and push URLs git derives
+  from them, which a rewrite (`url.*.insteadOf`) may take through an SSH alias of the same path. An
+  HTTPS view must be bitbucket.org with no password, query or port other than 443. Otherwise nothing
+  is sent, and the view is refused. The pull request read must then be from the task's branch into
+  its base (none recorded is `main`): another source or destination is a refused view, so nothing
+  finishes on it and no card counts its checks.
 - Credential custody: the execution host's own Git credential helper, through `git credential
   fill` in the checkout, with prompts off (`GIT_TERMINAL_PROMPT=0`, a failing askpass,
   `GCM_INTERACTIVE=never`) and a 5 s bound. The request carries `protocol=https`,
@@ -382,15 +385,16 @@ are B1's from here, and their pins are B1's.
   holding the checkout (`herdr-task --on <machine>` runs it there, with that machine's helper).
   Native 3.x has no contained-repository owner, so nothing here claims one. The service's and the
   window's Pull request views (`service/worktree.ts`, `mods/task-pr/main.js`) ask gh, so for any
-  record not GitHub's they now refuse without a call instead of reading its name as GitHub's.
+  record not GitHub's they now say why there is nothing to show there, without a call, instead of
+  reading its name as GitHub's.
 - Transport (`T/bitbucket_http.py`): fixed GETs under
   `https://api.bitbucket.org/2.0/repositories/<repo>`: the repository (`full_name` and its link),
   the pull request (this repository's own source and destination, its number and link), the
   commit its (often abbreviated) head resolves to, that full commit's statuses page by page, and
   the pull request again. A head, branch or state that moved meanwhile refuses. Pagination
   stays in the same collection on that origin; a foreign, repeated or out-of-collection link,
-  a redirect, a disagreeing `size`, 20 pages, 1000 rows, 1 MiB per body, 8 s per request and 45 s
-  in all each make the read incomplete. TLS uses the system's default verification; proxies
+  a redirect, a disagreeing `size`, 20 pages, 1000 rows, 1 MiB per body, 8 s of wall clock per
+  request (a timeout too) and 45 s in all each make the read incomplete. TLS uses the system's default verification; proxies
   from the environment are honoured as urllib does.
 - Outcomes kept apart: no complete read is no view at all, and `show --evidence` (the Accept
   card) says why in `checks.result`: `missing` (no such pull request, or one the token can't
@@ -406,7 +410,8 @@ are B1's from here, and their pins are B1's.
   A pull request merged on Bitbucket by hand finishes its task through the tick or Accept, with
   `merged_head` taken from that very read, so the branch goes only at that head (`finish()`
   never asks gh about another forge's record). GitHub news and the base watch stay GitHub's.
-- Ready with a saved Bitbucket record refuses before any push or request (`forge.publication()`).
+- Ready with a saved Bitbucket record refuses first, before any read, fetch, push or finish
+  (`forge.publication()` at the top of `cmd_ready`), and the task stays as it was.
 - Regression: `test/test_bitbucket.py` runs `show --evidence`, `tick`, `accept`, `merge` and
   `ready` as processes on the N1 fixture with its remote on bitbucket.org. Bitbucket is a
   test-owned answerer behind a local CONNECT proxy that opens only `api.bitbucket.org:443`, with a

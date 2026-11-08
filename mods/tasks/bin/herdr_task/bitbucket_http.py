@@ -26,6 +26,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import ssl
 import subprocess
 import time
@@ -79,11 +80,13 @@ def git_out(folder, *args):
 
 
 def origins(folder, remote):
-    """Every view git has of the remote's URL: written (config), used (fetch, after rewrites), push."""
+    """Every view git has of the remote's URL: written (its configured url lines), pushurl (configured
+    push URLs, often none), used (fetch, after rewrites) and push (after rewrites)."""
     seen = {"written": git_out(folder, "config", "--get-all", f"remote.{remote}.url"),
+            "pushurl": git_out(folder, "config", "--get-all", f"remote.{remote}.pushurl") or "",
             "used": git_out(folder, "remote", "get-url", "--all", remote),
             "push": git_out(folder, "remote", "get-url", "--push", "--all", remote)}
-    return seen if all(seen.values()) else None
+    return seen if all(seen[k] for k in ("written", "used", "push")) else None
 
 
 SSH = re.compile(r"(?:ssh://)?(?:[^@/:]+@)?([^/:]+)(?::\d+)?[:/]([^?#]+)")
@@ -94,14 +97,17 @@ def _path_repo(path):
 
 
 def binding(seen):
-    """The repository the remote's three views agree on, with the credential lookup it implies:
-    {repo, path, username?}; None when they don't name one Bitbucket repository. The written URL
-    must be on bitbucket.org; a rewrite may reach it through an SSH alias of the same path, and an
-    HTTPS view must be bitbucket.org itself, with no password, query or port but 443."""
+    """The repository the remote's views agree on, with the credential lookup it implies:
+    {repo, path, username?}; None when they don't name one Bitbucket repository. Every configured URL
+    (url and pushurl lines) must be on bitbucket.org itself; only a view git derives from them by a
+    rewrite (url.*.insteadOf) may reach it through an SSH alias of the same path. An HTTPS view must be
+    bitbucket.org itself, with no password, query or port but 443."""
     if not seen:
         return None
     repo, path, user = None, None, None
-    for n, url in enumerate(line for view in ("written", "used", "push") for line in seen[view].splitlines()):
+    views = [(view in ("written", "pushurl"), line) for view in ("written", "pushurl", "used", "push")
+             for line in seen[view].splitlines()]
+    for configured, url in views:
         if re.match(r"https://", url, re.I):
             u = urllib.parse.urlsplit(url)
             try:
@@ -117,7 +123,7 @@ def binding(seen):
             user, path = user or name, here
         else:
             m = SSH.fullmatch(url)
-            if not m or (n == 0 and m.group(1).lower() != HOST):
+            if not m or (configured and m.group(1).lower() != HOST):
                 return None
             here = m.group(2)
         found = _path_repo(here)
@@ -221,9 +227,21 @@ class Reader:
         if left <= 0:
             raise Failure("incomplete-read")
         req = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.token}", "Accept": "application/json"})
+        # A wall-clock bound on the whole request, not only on each socket wait: a body that trickles in
+        # past it is incomplete.
+        deadline = time.monotonic() + min(LIMITS["request_s"], left)
         try:
             with self.opener.open(req, timeout=min(LIMITS["request_s"], left)) as r:
-                body = r.read(LIMITS["body"] + 1)
+                body = b""
+                while len(body) <= LIMITS["body"]:
+                    if time.monotonic() > deadline:
+                        raise Failure("incomplete-read")
+                    chunk = r.read1(65536) if hasattr(r, "read1") else r.read(65536)
+                    if not chunk:
+                        break
+                    body += chunk
+        except Failure:
+            raise
         except urllib.error.HTTPError as e:
             code = e.code
             e.close()
@@ -234,13 +252,17 @@ class Reader:
             if code == 429:
                 raise Failure("rate-limited")
             raise Failure("incomplete-read" if 300 <= code < 400 else "unavailable")
+        except (TimeoutError, socket.timeout):
+            raise Failure("incomplete-read")
+        except urllib.error.URLError as e:
+            raise Failure("incomplete-read" if isinstance(e.reason, (TimeoutError, socket.timeout)) else "unavailable")
         except (OSError, ValueError, http.client.HTTPException):
             raise Failure("unavailable")
         if len(body) > LIMITS["body"]:
             raise Failure("incomplete-read")
         try:
             value = json.loads(body.decode())
-        except (UnicodeDecodeError, ValueError):
+        except (UnicodeDecodeError, ValueError, RecursionError):
             raise Failure("malformed-response")
         if not isinstance(value, dict):
             raise Failure("malformed-response")
@@ -300,7 +322,7 @@ class Reader:
         head = (src.get("commit") or {}).get("hash") if isinstance(src.get("commit"), dict) else None
         source = (src.get("branch") or {}).get("name") if isinstance(src.get("branch"), dict) else None
         base = (dst.get("branch") or {}).get("name") if isinstance(dst.get("branch"), dict) else None
-        if (type(row.get("id")) is not int or row["id"] != number or row.get("state") not in STATES
+        if (type(row.get("id")) is not int or row["id"] != number or not isinstance(row.get("state"), str) or row["state"] not in STATES
                 or not isinstance(row.get("title"), str) or not isinstance(row.get("draft", False), bool)
                 or not isinstance(head, str) or not SHORT.fullmatch(head)
                 or not all(isinstance(b, str) and len(b) <= 255 and BRANCH.fullmatch(b) for b in (source, base))):
@@ -324,7 +346,7 @@ class Reader:
         keys, out = set(), []
         for row in self.pages(f"{self.root}/commit/{full}/statuses?pagelen=100"):
             if (not isinstance(row, dict) or not isinstance(row.get("key"), str) or not row["key"] or row["key"] in keys
-                    or row.get("state") not in STATUS or not all(isinstance(row.get(k), (str, type(None))) for k in ("name", "url"))):
+                    or not isinstance(row.get("state"), str) or row["state"] not in STATUS or not all(isinstance(row.get(k), (str, type(None))) for k in ("name", "url"))):
                 raise Failure("malformed-response")
             keys.add(row["key"])
             commit = (row.get("commit") or {}).get("hash") if isinstance(row.get("commit"), dict) else None
