@@ -8,8 +8,9 @@ import { HOME } from "./paths.ts";
 import { sh } from "./model.ts";
 import * as AG from "../core/agents.js";
 import { kindOf } from "../core/chat-reader.js";
+import { FOLDER } from "../core/chat-log.js";
 
-const { DEFAULTS, parseDefaults, current, menuFor, rowFor, argvFor, sessionOf, NAMES, line } = AG as any;
+const { DEFAULTS, parseDefaults, current, menuFor, rowFor, argvFor, sessionOf, inOtherFolder, OTHER_FOLDER, restartRefusal, lostRefusal, NAMES, line } = AG as any;
 const APP = process.env.HERDR_APP_HOME || join(HOME, ".config", "herdr-app");
 
 async function run(cmd: string[]) {
@@ -104,11 +105,29 @@ export class Agents {
     return { role: t.labels?.["herdr.task"] ? "task" : "coordinator", on, onKnown: true, onWords: line(c), want: on, clis, working: t.status?.state === "working" };
   }
 
+  /** Why a restart would lose the agent's folder, from its own process, as a page's reader may be gone or have no path
+   *  yet. The live list lacks another machine's foreground program, so hc get says. No CLI there: no agent to ask. */
+  private async folderRefusal(addr: string, t: any) {
+    const machine = addr.includes("/") ? addr.split("/")[0] : null;
+    const read = (pid: number) => sh(this.hub, FOLDER, ["folder", String(pid)], machine).then((r: any) => r.stdout, () => "");
+    let k = t;
+    if (machine && !t.foreground?.pid) {
+      const r = await run([process.env.SHEPHERDR_HC || "hc", "get", addr, "--json"]).catch(() => null);
+      try { k = { ...t, foreground: JSON.parse(r?.out || "null")?.foreground ?? null }; } catch {}
+    }
+    const running = kindOf(k);
+    return running ? restartRefusal(running, k.foreground?.pid, read) : lostRefusal("claude", k, read);
+  }
+
   /** Restarts it on the picked CLI, model, effort and speed; resolves with the new agent's address. */
   async restart(addr: string, reader: any, pick: { kind: string; model?: string; effort?: string; speed?: string; perm?: string }) {
     const t: any = this.hub.terminals.get(addr);
     if (!t || t.state !== "live") throw new Error("That agent isn't running.");
     const kind = kindOf(t) ?? "claude";
+    // Both ways below end it and start one without its CLAUDE_CONFIG_DIR, as the window's picker refuses (core/agents.js).
+    if (inOtherFolder(kind, reader?.path ?? null)) throw new Error(OTHER_FOLDER);
+    const why = await this.folderRefusal(addr, t);
+    if (why) throw new Error(why);
     const old = { agent: kind, argv: t.foreground?.argv ?? t.argv ?? [], session: sessionOf(kind, reader?.path ?? null) };
     const built = argvFor({ agent: pick.kind, model: pick.model, effort: pick.effort, fast: pick.speed === "fast", perm: pick.perm ?? current(kind, old.argv, {}, {}).perm }, old);
     const pane = t.labels?.["herdr.chat"] ?? "";

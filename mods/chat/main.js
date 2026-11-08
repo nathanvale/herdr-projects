@@ -27,7 +27,7 @@ import { v_flex, h_flex, TextareaState, Textarea, Scrollbar, VirtualListScrollHa
 import { focused, props, run, theme, home, hc, exec, shared, setShared, watchFolder, window, settings, playSound, notify, appHome, readTextFile, writeTextFile, nextCommand, openOverlay, knownAgents, machines } from "herdr";
 import { agents, panes, terminals, spaces, inRender } from "./live.js";
 import * as fs from "fs/promises";
-import { FIND, LOG, Conversation, records, resultText, summary, excerpt, names } from "./core/chat-log.js";
+import { FIND, FOLDER, LOG, Conversation, records, resultText, summary, excerpt, names } from "./core/chat-log.js";
 import { BgJobs } from "./core/bg-jobs.js";
 import { words, howAnswered } from "./core/asks.js";
 // The rows' words and rules the web app's chat draws by too (core/chat-view.js).
@@ -858,6 +858,12 @@ export default class Chat extends View {
     return Boolean(k) && k.state === "live" && !cliOf(k) && !k.status && !this.lostTried.has(k.address);
   }
 
+  // FOLDER (core/chat-log.js) on the machine of the agent at `addr`, for core/agents.js's refusals.
+  folderReader(addr) {
+    const on = addr.includes("/") ? addr.split("/")[0] : null;
+    return (pid) => exec("sh", ["-c", FOLDER, "folder", String(pid)], { on }).then((r) => r.stdout, () => "");
+  }
+
   // Did the agent at `addr` stop because the session it resumed is gone ("No conversation
   // found")? Then a new one starts by itself. Looked at once per agent.
   async checkLost(addr, cx, t = null) {
@@ -893,6 +899,9 @@ export default class Chat extends View {
     const mine = t.address === this.addr;
     if (mine) { this.note = { id: `note-${Date.now()}`, text: WORDS.sessionGone }; cx.notify(); }
     try {
+      // fresh drops what its launch set, and a new start carries no CLAUDE_CONFIG_DIR (core/agents.js).
+      const why = await agent.lostRefusal(kind, t, this.folderReader(t.address), mine ? this.path : null);
+      if (why) throw new Error(why);
       if (t.state === "live") {
         // hc send pastes the line into the shell and presses Enter.
         const r = await hc(["send", t.address, [...fresh, msg].map(shellWord).join(" ")]);
@@ -1990,7 +1999,7 @@ export default class Chat extends View {
   // A copy of this conversation, continued in a new tab of this space (the CLI's own fork).
   fork(cx) {
     const session = agent.sessionOf(this.kind, this.path);
-    if (!session) { toast({ title: "Can't fork", body: "This conversation has no saved session.", level: "info" }); return; }
+    if (!session) { toast({ title: "Can't fork", body: agent.inOtherFolder(this.kind, this.path) ? agent.OTHER_FOLDER : "This conversation has no saved session.", level: "info" }); return; }
     const tab = panes().find((p) => p.pane === this.myPane())?.tab;
     const space = spaces().find((s) => s.tabs.some((x) => x.id === tab));
     const folder = this.t?.foreground?.cwd ?? this.t?.cwd ?? undefined;
@@ -2267,6 +2276,9 @@ export default class Chat extends View {
 
   // Restarts the agent with what the picker chose; this chat follows the new one.
   applyPick(pick, cx) {
+    // A restart can't carry that agent's folder. A found log says so at once; with no log yet (on
+    // its start screen, locate()) its own process says, below and in switchTask().
+    if (agent.inOtherFolder(this.kind, this.path)) { toast({ title: "The agent didn't restart", body: agent.OTHER_FOLDER, level: "error" }); return; }
     if (this.thread) return this.switchTask(pick, cx);
     const mine = this.myPane();
     if (this.restarting || !mine || !this.t) return;
@@ -2274,6 +2286,8 @@ export default class Chat extends View {
     cx.spawn(async (cx) => {
       try {
         const t = JSON.parse((await hc(["get", this.addr, "--json"])).stdout);
+        const why = await agent.restartRefusal(this.kind, t.foreground?.pid, this.folderReader(this.addr));
+        if (why) throw new Error(why);
         const built = agent.argvFor(pick, { agent: this.kind, argv: t.foreground?.argv ?? [], session: agent.sessionOf(this.kind, this.path) });
         this.swapping = true;
         const next = await agent.restart(t, built, mine);
@@ -2300,6 +2314,8 @@ export default class Chat extends View {
     cx.spawn(async (cx) => {
       try {
         const t = JSON.parse((await hc(["get", this.addr, "--json"])).stdout);
+        const why = await agent.restartRefusal(this.kind, t.foreground?.pid, this.folderReader(this.addr));
+        if (why) throw new Error(why);
         const k = this.taskKey;
         const ref = k?.id != null ? String(k.id) : t.labels?.["herdr.task"];
         const folder = k?.folder ?? t.foreground?.cwd ?? t.cwd;
