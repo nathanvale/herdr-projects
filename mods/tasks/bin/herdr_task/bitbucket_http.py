@@ -1,6 +1,7 @@
-"""Bitbucket Cloud's REST transport, for reads (B1): one repository's pull request and the complete
-statuses of exactly its head commit, on this machine's own Git credentials. bitbucket.py is the
-adapter that reads them for the forge.
+"""Bitbucket Cloud's REST transport: one repository's pull request and the complete statuses of
+exactly its head commit (B1), and the two writes publication makes (B2: opening a draft pull request,
+and preparing it for review), on this machine's own Git credentials. bitbucket.py is the adapter that
+reads for the forge; publications.py owns the writes' claims.
 
 - The folder binds the repository: every view of its remote (the URL written in its config, the one
   git uses after its rewrites, the one it pushes to) names the same Bitbucket repository, or nothing
@@ -10,16 +11,20 @@ adapter that reads them for the forge.
   ask its configured helper, with every prompt off and a short deadline. Only an ordinary username
   and password answer counts; its password is a Bitbucket API or access token and goes as Bearer
   authentication. No other account, store, setting or Basic fallback is tried; herdr-task never
-  approves, rejects or stores a credential. One is asked for each read and dropped after it.
+  approves, rejects or stores a credential. One is asked for each command and dropped after it.
 - Requests go only to https://api.bitbucket.org/2.0/repositories/<that repository>, by fixed paths:
   no caller's URL, header or method. A pagination link must stay in the same collection on that
   origin; redirects, foreign or repeated links, counts that disagree and every bound below make the
   read incomplete, never a shorter complete one.
+- A write is sent once. Bitbucket refusing its token (401, 403: write-refused) is a refusal; anything else that
+  isn't its exact, complete answer (a timeout, a dropped connection, another status, an answer that
+  doesn't read or doesn't match) is uncertain-write: it may have happened, and nothing here sends it
+  again. Only a write the budget stops before any byte leaves is not-sent.
 - Failures are categories (Failure.category), never Bitbucket's or git's own text, so no token, body
   or header reaches output, a task or a log; text taken from Bitbucket (titles, check names) has the
   token removed.
 
-Nothing here writes to Bitbucket: publication, readiness and merging are not this module's."""
+Merging is not this module's: nothing here sends one."""
 
 import http.client
 import json
@@ -37,12 +42,21 @@ import urllib.request
 HOST = "bitbucket.org"
 API = "https://api.bitbucket.org"
 LIMITS = {"body": 1024 * 1024, "pages": 20, "rows": 1000, "request_s": 8, "total_s": 45,
-          "credential_s": 5, "credential_bytes": 16384, "text": 512}
+          "credential_s": 5, "credential_bytes": 16384, "text": 512, "description": 32000, "title": 255,
+          "reviewers": 100, "open": 5}
 
 COMMIT = re.compile(r"[0-9a-f]{40}")
 SHORT = re.compile(r"[0-9a-f]{7,40}")
 REPOSITORY = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9_.-]*/[A-Za-z0-9_-][A-Za-z0-9_.-]*")
 BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9/_.-]*")
+REVIEWER_UUID = re.compile(r"\{?[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\}?", re.I)
+ACCOUNT = re.compile(r"[A-Za-z0-9:_-]{1,128}")
+
+
+def branch_name(name):
+    """A branch name herdr-task sends Bitbucket: one git takes and its query can't misread."""
+    return (isinstance(name, str) and len(name) <= 255 and bool(BRANCH.fullmatch(name)) and ".." not in name
+            and not name.endswith(("/", ".lock")))
 STATES = {"OPEN": "OPEN", "MERGED": "MERGED", "DECLINED": "CLOSED", "SUPERSEDED": "CLOSED"}
 STATUS = {"SUCCESSFUL": "pass", "INPROGRESS": "pending", "FAILED": "fail", "STOPPED": "fail"}
 
@@ -59,6 +73,10 @@ WORDS = {
     "identity-changed": "Bitbucket answered for another repository, pull request or commit, or it moved while it was read",
     "missing": "Bitbucket has no such pull request in this repository (or this token can't see it)",
     "unavailable": "Bitbucket couldn't be reached from this machine",
+    "uncertain-write": "Bitbucket's answer to the write didn't come back whole, so it may or may not have happened",
+    "not-sent": "the write wasn't sent: the time this command may take ran out first",
+    "write-refused": "Bitbucket refused this machine's token for this change (the token needs pull request write access)",
+    "remote-changed": "this folder's remote reads otherwise than when it was bound, so where it goes wasn't checked",
 }
 
 
@@ -315,25 +333,35 @@ class Reader:
         self.link((row.get("links") or {}).get("html") if isinstance(row.get("links"), dict) else None, f"/{self.repo}")
 
     def pull_request(self, number):
-        row = self.get(f"{self.root}/pullrequests/{number}", "missing")
+        return self.parse(self.get(f"{self.root}/pullrequests/{number}", "missing"), number)
+
+    def parse(self, row, number=None):
+        """A pull request row, as this repository's own branch into this repository (a fork's is never the
+        task's): {number, url, state, draft, title, short, source, base, description}; number:
+        the one asked for (another refuses: identity-changed)."""
+        if not isinstance(row, dict):
+            raise Failure("malformed-response")
         src, dst = row.get("source"), row.get("destination")
         if not (isinstance(src, dict) and isinstance(dst, dict)):
             raise Failure("malformed-response")
-        # This repository's own branch into this repository: a fork's pull request is never the task's.
         self.same_repository(src.get("repository"))
         self.same_repository(dst.get("repository"))
         head = (src.get("commit") or {}).get("hash") if isinstance(src.get("commit"), dict) else None
         source = (src.get("branch") or {}).get("name") if isinstance(src.get("branch"), dict) else None
         base = (dst.get("branch") or {}).get("name") if isinstance(dst.get("branch"), dict) else None
-        if (type(row.get("id")) is not int or row["id"] != number or not isinstance(row.get("state"), str) or row["state"] not in STATES
+        n = row.get("id")
+        if (type(n) is not int or n < 1 or (number is not None and n != number) or not isinstance(row.get("state"), str)
+                or row["state"] not in STATES
                 or not isinstance(row.get("title"), str) or not isinstance(row.get("draft", False), bool)
+                or not isinstance(row.get("description", ""), (str, type(None)))
                 or not isinstance(head, str) or not SHORT.fullmatch(head)
                 or not all(isinstance(b, str) and len(b) <= 255 and BRANCH.fullmatch(b) for b in (source, base))):
-            raise Failure("identity-changed" if type(row.get("id")) is int and row["id"] != number else "malformed-response")
+            raise Failure("identity-changed" if type(n) is int and number is not None and n != number else "malformed-response")
         url = self.link((row.get("links") or {}).get("html") if isinstance(row.get("links"), dict) else None,
-                        f"/{self.repo}/pull-requests/{number}")
-        return {"number": number, "url": url, "state": STATES[row["state"]], "draft": row.get("draft", False),
-                "title": self.clean(row["title"]), "short": head, "source": source, "base": base}
+                        f"/{self.repo}/pull-requests/{n}")
+        return {"number": n, "url": url, "state": STATES[row["state"]], "draft": row.get("draft", False),
+                "title": self.clean(row["title"]), "short": head, "source": source, "base": base,
+                "description": row.get("description") or ""}
 
     def commit(self, short):
         """The full commit Bitbucket itself resolves the pull request's (often abbreviated) head to."""
@@ -368,26 +396,184 @@ class Reader:
         return out
 
 
-def read_pull_request(folder, remote, number):
-    """Pull request #number of the folder's bound Bitbucket repository, with the complete statuses of
-    exactly its head: {repo, number, url, state, draft, title, head (full), source, base, checks}.
-    The pull request is read again after its statuses: a head, branch or state that moved meanwhile
-    refuses (identity-changed), so the checks are always the head's that is returned. Failure otherwise."""
+    # ---- publication (B2) ---------------------------------------------------------------------
+
+    def still(self):
+        """Refuses (remote-changed) once the remote reads otherwise than when it was bound: the last check
+        before each effect, so a push or write never goes where the binding wasn't checked."""
+        if origins(self.folder, self.remote) != self.seen:
+            raise Failure("remote-changed")
+
+    def branch(self, name):
+        """The full commit Bitbucket's branch `name` holds, or None when it has no such branch."""
+        try:
+            row = self.get(f"{self.root}/refs/branches/{urllib.parse.quote(name, safe='')}", "missing")
+        except Failure as e:
+            if e.category == "missing":
+                return None
+            raise
+        target = row.get("target")
+        full = target.get("hash") if isinstance(target, dict) else None
+        if not isinstance(row.get("name"), str) or not isinstance(full, str) or not COMMIT.fullmatch(full):
+            raise Failure("malformed-response")
+        if row["name"] != name:
+            raise Failure("identity-changed")
+        return full
+
+    def open_from(self, branch):
+        """Every open pull request from this repository's branch, each read in full, into any base."""
+        q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"', safe="")
+        rows = self.pages(f"{self.root}/pullrequests?q={q}&pagelen=50")
+        if len(rows) > LIMITS["open"]:
+            raise Failure("incomplete-read")
+        out = []
+        for row in rows:
+            n = row.get("id") if isinstance(row, dict) else None
+            if type(n) is not int or n < 1 or any(p["number"] == n for p in out):
+                raise Failure("malformed-response")
+            pr = self.pull_request(n)
+            if pr["source"] != branch or pr["state"] != "OPEN":
+                raise Failure("identity-changed")  # the query answered for another branch or state
+            out.append(pr)
+        return out
+
+    def kept(self, row):
+        """What preparing a pull request keeps exactly as it is now: its title, reviewers, destination and
+        close_source_branch (whatever its value: true asks Bitbucket to close the branch on merge)."""
+        title, close = row.get("title"), row.get("close_source_branch")
+        if not isinstance(title, str) or not title or self.clean(title) != title or not isinstance(close, bool):
+            raise Failure("malformed-response")
+        people = row.get("reviewers", [])
+        if not isinstance(people, list) or len(people) > LIMITS["reviewers"]:
+            raise Failure("malformed-response")
+        reviewers, ids = [], set()
+        for person in people:
+            uid = person.get("uuid") if isinstance(person, dict) else None
+            account = person.get("account_id") if isinstance(person, dict) else None
+            if not isinstance(person, dict) or (uid is None and account is None) \
+                    or (uid is not None and not (isinstance(uid, str) and REVIEWER_UUID.fullmatch(uid))) \
+                    or (account is not None and not (isinstance(account, str) and ACCOUNT.fullmatch(account))):
+                raise Failure("malformed-response")
+            for x in (uid, account):
+                if x is not None:
+                    if x in ids:
+                        raise Failure("malformed-response")
+                    ids.add(x)
+            reviewers.append({"uuid": uid} if uid is not None else {"account_id": account})
+        dst = row.get("destination") if isinstance(row.get("destination"), dict) else {}
+        base = (dst.get("branch") or {}).get("name") if isinstance(dst.get("branch"), dict) else None
+        if not isinstance(base, str) or not BRANCH.fullmatch(base):
+            raise Failure("malformed-response")
+        return {"title": title, "reviewers": reviewers, "close_source_branch": close,
+                "destination": {"branch": {"name": base}, "repository": {"full_name": self.repo}}}
+
+    def current(self, number):
+        """Pull request #number as it is now, and what preparing it keeps: (pr, kept)."""
+        row = self.get(f"{self.root}/pullrequests/{number}", "missing")
+        return self.parse(row, number), self.kept(row)
+
+    def can_send(self):
+        """Whether a write would still be sent: time is left for its whole request."""
+        return LIMITS["total_s"] - (time.monotonic() - self.started) >= LIMITS["request_s"]
+
+    def send(self, method, url, body):
+        """One write, sent once: Bitbucket's answer, or Failure: not-sent (no byte left), write-refused
+        (401, 403: refused) or uncertain-write (anything else: it may have happened)."""
+        if not self.can_send():
+            raise Failure("not-sent")
+        data = json.dumps(body).encode()
+        if self.has_token(data.decode()):
+            raise Failure("not-sent")
+        req = urllib.request.Request(url, data=data, method=method, headers={
+            "Authorization": f"Bearer {self.token}", "Accept": "application/json", "Content-Type": "application/json"})
+        deadline = time.monotonic() + LIMITS["request_s"]
+        try:
+            with self.opener.open(req, timeout=LIMITS["request_s"]) as r:
+                status, raw = r.status, b""
+                while len(raw) <= LIMITS["body"]:
+                    if time.monotonic() > deadline:
+                        raise Failure("uncertain-write")
+                    chunk = r.read1(65536) if hasattr(r, "read1") else r.read(65536)
+                    if not chunk:
+                        break
+                    raw += chunk
+        except Failure:
+            raise
+        except urllib.error.HTTPError as e:
+            code = e.code
+            e.close()
+            raise Failure("write-refused" if code in (401, 403) else "uncertain-write")
+        except (OSError, ValueError, http.client.HTTPException):  # timeouts and dropped connections among them
+            raise Failure("uncertain-write")
+        if status not in (200, 201) or len(raw) > LIMITS["body"]:
+            raise Failure("uncertain-write")
+        try:
+            value = json.loads(raw.decode())
+        except (UnicodeDecodeError, ValueError, RecursionError):
+            raise Failure("uncertain-write")
+        if not isinstance(value, dict):
+            raise Failure("uncertain-write")
+        return value
+
+    def create(self, branch, base, head, title, description):
+        """Opens a draft pull request from branch (at exactly head) into base, close_source_branch false:
+        its parsed answer, which must be exactly that, or Failure (send())."""
+        row = self.send("POST", f"{self.root}/pullrequests", {
+            "title": title, "description": description, "draft": True, "close_source_branch": False,
+            "source": {"branch": {"name": branch}, "commit": {"hash": head}, "repository": {"full_name": self.repo}},
+            "destination": {"branch": {"name": base}, "repository": {"full_name": self.repo}}})
+        try:
+            pr = self.parse(row)
+        except Failure:
+            raise Failure("uncertain-write")
+        if (pr["source"], pr["base"], pr["state"], pr["draft"]) != (branch, base, "OPEN", True) or not head.startswith(pr["short"]):
+            raise Failure("uncertain-write")
+        return pr
+
+    def prepare(self, number, kept, description, branch, base, head):
+        """Marks pull request #number ready for review (draft off) with this description, sending back the
+        fields it keeps as they were read (kept): its parsed answer, which must be exactly that, or Failure."""
+        row = self.send("PUT", f"{self.root}/pullrequests/{number}", {**kept, "description": description, "draft": False})
+        try:
+            pr, again = self.parse(row, number), self.kept(row)
+        except Failure:
+            raise Failure("uncertain-write")
+        if (pr["source"], pr["base"], pr["state"], pr["draft"]) != (branch, base, "OPEN", False) \
+                or not head.startswith(pr["short"]) or again != kept:
+            raise Failure("uncertain-write")
+        return pr
+
+def session(folder, remote):
+    """A Reader for the folder's bound Bitbucket repository on this machine's token, once that token reads
+    this very repository (404: it can't see it). It keeps the remote's views it was bound by (seen), so
+    still() refuses once they change. Failure otherwise."""
     seen = origins(folder, remote)
     bound = binding(seen)
     if not bound:
         raise Failure("not-bitbucket")
     token = credential(folder, remote, seen, bound)
     r = Reader(bound["repo"], token)
-    r.same_repository(r.get(r.root, "missing"))  # the token reads this very repository (404: it can't see it)
+    r.folder, r.remote, r.seen, r.bound = folder, remote, seen, bound
+    r.same_repository(r.get(r.root, "missing"))
+    return r
+
+
+def read_pull_request(folder, remote, number, reader=None):
+    """Pull request #number of the folder's bound Bitbucket repository, with the complete statuses of
+    exactly its head: {repo, number, url, state, draft, title, head (full), source, base, checks}.
+    The pull request is read again after its statuses: a head, branch or state that moved meanwhile
+    refuses (identity-changed), so the checks are always the head's that is returned. Failure otherwise.
+    reader: a session() already open (publication's), else one is opened for this read."""
+    r = reader or session(folder, remote)
     pr = r.pull_request(number)
     head = r.commit(pr["short"])
     checks = r.statuses(head)
     again = r.pull_request(number)
     if any(again[k] != pr[k] for k in ("short", "source", "base", "state")):
         raise Failure("identity-changed")
-    out = {**pr, "repo": bound["repo"], "head": head, "checks": checks}
+    out = {**pr, "repo": r.repo, "head": head, "checks": checks}
     out.pop("short")
+    out.pop("description")
     if r.has_token(json.dumps(out)):
         raise Failure("malformed-response")
     return out

@@ -1,7 +1,7 @@
 """The forge: the one way commands, the tick and the Accept card reach a task's pull request,
 whichever provider hosts it. Each provider's adapter owns its transport and how its answers read
-(GitHub: github.py; Bitbucket Cloud: bitbucket.py, which reads only, B1). Local Git, task state,
-approval and cleanup stay with their own owners.
+(GitHub: github.py; Bitbucket Cloud: bitbucket.py for reads, publications.py for publishing). Local Git,
+task state, approval and cleanup stay with their own owners.
 
 A saved pull request that names no provider ({number, url, repo}: every record written so far) is
 GitHub's. One naming a provider without an adapter here, or saved for a host other than the one its
@@ -9,12 +9,13 @@ adapter reaches, is refused before anything is sent to any host. One its forge a
 another host, repository, number or link is refused before anything is pushed, commented on,
 recorded or merged: never read as someone else's.
 
-A folder's repository is still GitHub's or none (repository()): a Bitbucket pull request is one saved
-as Bitbucket's, read from the task's own checkout, whose remote must bind that repository (B2 makes
-Bitbucket folders publish). Ready refuses one (publication()), and so does a merge (no_merge()): only
-a merge done on Bitbucket by hand finishes its task."""
+A folder's repository for reads (repository()) is still GitHub's or none. Ready publishes to
+publishing_repository(): GitHub's first, else the Bitbucket repository its remote binds (B2), where
+publications.py pushes, opens the draft and prepares it under durable claims. A merge of a Bitbucket
+pull request is refused (no_merge()), and so is a local or agent merge in a Bitbucket folder
+(no_local_merge()): only a merge done on Bitbucket by hand finishes its task."""
 
-from . import bitbucket, github
+from . import bitbucket, github, publications
 from .base import Fail
 
 GITHUB = "github"
@@ -68,14 +69,6 @@ def repair_of(pr, why):
     return bitbucket.repair(why) if provider_of(pr) == BITBUCKET else f"Repair {github.GH_ACCESS}, then try again."
 
 
-def publication(task):
-    """Refuses (Fail) Ready for a task whose saved pull request its forge can't publish from here
-    (Bitbucket's, until B2), before anything is pushed or sent."""
-    pr = task.get("pr")
-    if pr and provider_of(pr) == BITBUCKET:
-        raise Fail(bitbucket.publish_refusal(pr, f"{github.STAYS}: {github.HANDOFF}"))
-
-
 def no_merge(task):
     """Why its forge isn't asked to merge the task's saved pull request at all, for the person; None
     when it is. Bitbucket's merge can't be held to the head that was accepted, so it is never sent."""
@@ -118,8 +111,18 @@ def repository(s, fresh=False):
     return {"provider": GITHUB, "repo": repo, "host": github.host_of(s)} if repo else None
 
 
+def publishing_repository(s, fresh=False):
+    """The repository Ready publishes a folder's tasks to: GitHub's (repository()), else the Bitbucket
+    repository its remote binds (bitbucket.repository_of(), which refuses one written on bitbucket.org
+    that doesn't bind); None: they merge here."""
+    return repository(s, fresh) or bitbucket.repository_of(s.loc["folder"])
+
+
 def no_local_merge(s, task):
-    return github.no_local_merge(s, task)
+    """Refuses (Fail) a merge here of a task whose folder merges through a pull request: GitHub's, or
+    Bitbucket's, where nothing merges but the person on Bitbucket."""
+    github.no_local_merge(s, task)
+    bitbucket.no_local_merge(s, task)
 
 
 def reach(where, nothing="nothing was pushed", then="run ready again"):
@@ -157,13 +160,18 @@ def pr_open(s, task, where, summary=None):
     """Publishes the task's branch as its pull request in `where`. A saved one is read first and kept
     only when its forge answers for exactly it: refused before any push, comment or new pull request
     when it is another provider's, host's or repository's, its forge doesn't answer (the adapter's
-    own refusal), or answers for another pull request."""
+    own refusal), or answers for another pull request. A Bitbucket repository publishes through
+    publications.publish(), which reads and claims it before any push."""
     saved, state = task.get("pr"), None
     reach(where)
     if saved:
         a = route(saved)
         if provider_of(saved) != provider_of(where) or saved.get("repo") not in (None, where["repo"]):
             raise Fail(f"This task's pull request {mine(saved)} isn't in {where['repo']}, this folder's repository; nothing was pushed.")
+    if provider_of(where) == BITBUCKET:
+        # Its own reads, claims and identity checks, before any push (publications.publish()).
+        return publications.publish(s, task, where, summary)
+    if saved:
         if saved.get("number"):
             known = {**saved, "repo": saved.get("repo") or where["repo"]}
             v, why = a.pr_read({**task, "pr": known})

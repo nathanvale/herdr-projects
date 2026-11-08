@@ -51,6 +51,7 @@ if sys.argv[1:] == ["get"] and answer is not None:
 
 
 CERTS = []
+LOST = "lost"
 
 
 def cert():
@@ -82,15 +83,29 @@ def cert():
 
 
 class Api(http.server.BaseHTTPRequestHandler):
-    """Bitbucket's REST API inside the tunnel: routes answer GET; anything else is recorded and refused."""
+    """Bitbucket's REST API inside the tunnel: the fake's handler answers first when it has one (B2's
+    model of a repository), then routes answer GET; anything else is recorded and refused. An answer of
+    LOST closes the connection with no reply, as a reply lost on the way back."""
 
     def log_message(self, *args):
         pass
 
     def answer(self):
         fake = self.server.fake
-        fake.seen.append({"method": self.command, "path": self.path, "auth": self.headers.get("Authorization")})
-        routes = fake.routes.get(self.path) if self.command == "GET" else None
+        body = None
+        if self.command in ("POST", "PUT", "PATCH"):
+            raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            try:
+                body = json.loads(raw or b"null")
+            except ValueError:
+                body = raw.decode(errors="replace")
+        fake.seen.append({"method": self.command, "path": self.path, "auth": self.headers.get("Authorization"),
+                          **({"body": body} if body is not None else {})})
+        handled = fake.handler(self.command, self.path, body) if fake.handler else None
+        if handled == LOST:
+            self.close_connection = True
+            return
+        routes = handled or (fake.routes.get(self.path) if self.command == "GET" else None)
         if isinstance(routes, list):
             route = routes.pop(0) if len(routes) > 1 else routes[0]  # answers in turn, the last one again
         else:
@@ -147,7 +162,7 @@ class Bitbucket:
         ca, leaf, key = cert()
         self.context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         self.context.load_cert_chain(leaf, key)
-        self.routes, self.seen, self.connects = {}, [], []
+        self.routes, self.seen, self.connects, self.handler = {}, [], [], None
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Proxy)
         self.server.daemon_threads = True
         self.server.fake = self
@@ -532,21 +547,22 @@ class NothingMergesOrPublishes(Quiet):
         self.quiet(f, p.stdout, p.stderr)
         self.assertEqual((f.bb.connects, asked(f), f.task()["state"]), ([], [], "ready"))
 
-    def test_ready_refuses_before_anything_is_pushed_or_sent(self):
-        f = self.fresh()
+    def test_ready_on_a_remote_that_doesnt_bind_refuses_before_anything_is_pushed_or_sent(self):
+        f = self.fresh()  # B2 publishes a Bitbucket folder's task (test_bitbucket_publication.py) only on a bound remote
         bare = os.path.join(f.tmp, "remote.git")
         f.git(f.tmp, "init", "-q", "--bare", "-b", "main", bare)
-        f.git(f.repo, "config", f"url.{bare}.insteadOf", REMOTE)  # a push would land here
+        f.git(f.repo, "config", f"url.{bare}.insteadOf", REMOTE)  # a push would land here, off Bitbucket
         f.seed(state="running")
         before = f.saved()
         p = f.run("ready", "1", "--folder", f.repo, "--summary", "Sign-in works again", "--json")
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
-        self.assertIn("doesn't publish to Bitbucket yet", json.loads(p.stdout)["error"])
+        error = json.loads(p.stdout)["error"]
+        self.assertIn("is on Bitbucket", error)
+        self.assertIn("nothing was pushed or sent", error)
         self.quiet(f, p.stdout, p.stderr)
         self.assertEqual((f.saved(), f.bb.connects), (before, []))
         r = subprocess.run(["git", "-C", bare, "rev-parse", "--verify", "--quiet", "refs/heads/task/1"], capture_output=True)
         self.assertNotEqual(r.returncode, 0)
-
 
 if __name__ == "__main__":
     unittest.main()

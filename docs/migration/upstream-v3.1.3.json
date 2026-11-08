@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "phase": "B1",
+  "phase": "B2",
   "architecture": "full-upstream-3.x",
   "candidate_readiness": "blocked",
   "inputs": {
@@ -17,10 +17,10 @@
       "sha256": "fde3f8a8ca8de98d98b66621029b131b2387906c69283a3e5f3290d558527574"
     },
     {
-      "phase": "B1",
+      "phase": "B2",
       "path": "mods/tasks/bin/herdr_task/__init__.py",
       "upstream_blob": "3d166c20ba39b46df4d797acfabeaeac0e28aa21",
-      "sha256": "e86a7bc3e46774d17b6a568a15a0a6c668ad337263ba1d02e9a1f208b7347a5a"
+      "sha256": "3ed07373a6189ed61f62ce6d121732fe6aea0453be33449f39bb71478ad8be27"
     },
     {
       "phase": "A1",
@@ -29,16 +29,16 @@
       "sha256": "624777f186b09dec249ffb11d03aa7480be2e9eb2ad3b2dd7edf3a7aa584ac2e"
     },
     {
-      "phase": "N1",
+      "phase": "B2",
       "path": "mods/tasks/bin/herdr_task/cli.py",
       "upstream_blob": "af0c7d2ee16ea26fa1fa458020f6d9181d78774d",
-      "sha256": "637b1d75478a87121b109eb58db2725fc28ea13d3bcce819fdd9fad4d6d42246"
+      "sha256": "6bc5397f120e623198f68187b1f58106a9b0ab254f7c03ed29780f7fc13f2ded"
     },
     {
-      "phase": "B1",
+      "phase": "B2",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "d2463e1a37c0aeefaee51eec7480d3de3df1f40d",
-      "sha256": "5049ca4e11ae1caf03ba43d3b73b3765e54fc37911f67258908904195e2d1f29"
+      "sha256": "1dd866d2ea50b2cb726de6c88d9086f69510f118f3f13727025c9ab50d861ee1"
     },
     {
       "phase": "B1",
@@ -95,10 +95,10 @@
       "sha256": "fe1b90cef2acb26644dc30cc8caf1ee0b81294eb350b5c37e1e7595dffa4ee36"
     },
     {
-      "phase": "S1",
+      "phase": "B2",
       "path": "test/test_native_publication.py",
       "upstream_blob": null,
-      "sha256": "9fe2a0fcc65eba90e4d4db47a4d4fd87101f7373d6f6e07bd603b97afb7add42"
+      "sha256": "6029cb7c77a0b1c3db33ee76cd88fc264f56f63bf27f44320b3bf9785f851b4b"
     },
     {
       "phase": "A1",
@@ -275,10 +275,10 @@
       "sha256": "b64850658f22915955f13f7901bd5cdf5b00867d60afb77e2e12119528dfcce5"
     },
     {
-      "phase": "B1",
+      "phase": "B2",
       "path": "mods/tasks/bin/herdr_task/forge.py",
       "upstream_blob": null,
-      "sha256": "3779f22df66886a4c6cb2ee133c84f052ec592b5fa29ec8d74322dcaebd4cfbf"
+      "sha256": "145f35d3e159582892c81d071e0761a8b2fda19cee556feccdd15696b88204d2"
     },
     {
       "phase": "B1",
@@ -293,16 +293,16 @@
       "sha256": "9934521733dde37ee0c0e899b06a2f9934db3f06f6379a3de6e575efcf4fc42c"
     },
     {
-      "phase": "B1",
+      "phase": "B2",
       "path": "mods/tasks/bin/herdr_task/bitbucket.py",
       "upstream_blob": null,
-      "sha256": "19d8f4fa386a6bf7cab10132b79a14696df9740b44f09c43b2488261120e9423"
+      "sha256": "ba7887c947354155b635f13322e55473a0057833254e23305542c2c23920968d"
     },
     {
-      "phase": "B1",
+      "phase": "B2",
       "path": "mods/tasks/bin/herdr_task/bitbucket_http.py",
       "upstream_blob": null,
-      "sha256": "a5d4b3d784343c54b408553cc3aa4d1f26825e2b5ea73e7a60382ae4b548f090"
+      "sha256": "53fac30ba9f0b164f0ab73604ec277fba24663a84ada2b48a1db5b890c08ae05"
     },
     {
       "phase": "B1",
@@ -317,10 +317,22 @@
       "sha256": "e2783e28630f3633e5fd926190ba90a426eece83ba3d61276b24a1293819aeb3"
     },
     {
-      "phase": "B1",
+      "phase": "B2",
       "path": "test/test_bitbucket.py",
       "upstream_blob": null,
-      "sha256": "23a4e1d64982a9e71b04212b628f8d5dce1720ef2c2e0aee04ff6de7e746e8f5"
+      "sha256": "b8247e480cea1179ef23691680a16e974189bc2381e5d15cafc3a9e8b13c905f"
+    },
+    {
+      "phase": "B2",
+      "path": "mods/tasks/bin/herdr_task/publications.py",
+      "upstream_blob": null,
+      "sha256": "c2521ffa04bb95c5f09e7364002ad8de9e29a956138f9022b26bab46906fa3b9"
+    },
+    {
+      "phase": "B2",
+      "path": "test/test_bitbucket_publication.py",
+      "upstream_blob": null,
+      "sha256": "faead5a2734c8ef0e60426e864a27817c99640437b808dd9bc136217b06c3850"
     }
   ],
   "requirements": [
@@ -376,7 +388,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; S1 refuses another provider or host before any gh call and checks the answered link, host, repository and number before any write (test/test_forge.py authored, CI pending); B1 reads a Bitbucket record only from a checkout whose remote binds that repository in every configured and derived URL view and whose pull request is from the task's branch into its base, (test/test_bitbucket.py authored, CI pending); the service's and window's Pull request views refuse any record not GitHub's without a gh call (source-inspected only); Bitbucket folder identity and records are B2's; native qualification pending"
+      "evidence": "source-inspected; S1 refuses another provider or host before any gh call and checks the answered link, host, repository and number before any write (test/test_forge.py authored, CI pending); B1 reads a Bitbucket record only from a checkout whose remote binds that repository in every configured and derived URL view and whose pull request is from the task's branch into its base, (test/test_bitbucket.py authored, CI pending); the service's and window's Pull request views refuse any record not GitHub's without a gh call (source-inspected only); B2 places a folder on Bitbucket only when its remote is written on bitbucket.org and binds one repository, records {provider, host, repo, number, url} from Bitbucket's own answer and refuses another operation's pull request (test/test_bitbucket_publication.py authored, CI pending); native qualification pending"
     },
     {
       "id": "bitbucket-credentials",
@@ -437,7 +449,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; B2 (T/publications.py) publishes a Bitbucket folder's task on Ready after a zero-effect preflight (names, exact local head, every remote view binding the repository, one frozen push route, this host's claim, the repository, base and branch on Bitbucket, every open pull request from the branch read in full): a push leased on what Bitbucket said the branch holds, a draft opened from exactly that commit into the task's base, then ready for review at that commit after its checks are read in full; another base, two open, or another operation's pull request refuse with nothing sent (test/test_bitbucket_publication.py authored, CI pending); Bitbucket's real answers are native qualification"
     },
     {
       "id": "bitbucket-current-fields",
@@ -456,7 +468,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; B2 creates with close_source_branch false and draft true, and prepares by reading the pull request just before the write and sending its title, reviewers, destination and close_source_branch back exactly, requiring the answer to give the same (test/test_bitbucket_publication.py authored with a person's title, a reviewer and close_source_branch true kept; CI pending); native qualification pending"
     },
     {
       "id": "bitbucket-push-facts",
@@ -479,7 +491,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; B2 pushes only to the one push URL git derives, which no insteadOf/pushInsteadOf rule rewrites again, re-reads the remote's views as the last check before the push and each write, reads a push git can't confirm back rather than pushing again, and saves a confirmed push in this host's claim at once, kept through later refusals and shown by show and --json (test/test_bitbucket_publication.py authored, CI pending); a real push and Git credential are native qualification"
     },
     {
       "id": "bitbucket-uncertainty",
@@ -498,7 +510,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; B2 saves each write's operation UUID as uncertain (synced) before it is sent, sends it once, and confirms it only on positive exact evidence: one open pull request from the branch into its base at the head sent, whose description carries that same id (and, for ready, draft off); an empty or failed lookup or a changed remote keeps it uncertain and Ready sends nothing that changes anything; 401/403 and a budget stop before sending are refusals (test/test_bitbucket_publication.py authored: lost reply found at once and on reopening with one POST, empty lookups held, uncertain preparation; CI pending); a delayed write landing later and Bitbucket's real answers are native qualification"
     },
     {
       "id": "bitbucket-two-machine",
@@ -521,7 +533,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; B2's claim excludes one execution host's folders, tasks and commands (one claims file under one lock, owner with machine name); herdr-task keeps no shared store, so across hosts only Bitbucket's answers stand: no create while any pull request is open from the branch, and no adoption, reconciliation or preparation of one carrying another operation's id; two hosts creating at the same moment can each open one, refused at the next Ready; the canonical cross-machine claim (service/store.ts) is not built (test/test_bitbucket_publication.py authored with claims of another task and machine; CI pending); two real hosts are native qualification"
     },
     {
       "id": "bitbucket-merge-refusal",
@@ -544,7 +556,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; B1 already refuses Accept (passed and running checks), merge and the tick's auto merge for a saved Bitbucket pull request before any merge request, with no GitHub, local or agent route, and finishes one merged on Bitbucket by hand only at the head that read (test/test_bitbucket.py authored, CI pending); B2 keeps it for published records; native qualification pending"
+      "evidence": "source-inspected; B1 refuses Accept (passed and running checks), merge and the tick's auto merge for a saved Bitbucket pull request before any merge request, with no GitHub, local or agent route, and finishes one merged on Bitbucket by hand only at the head that read (test/test_bitbucket.py authored, CI pending); B2 keeps it for published records and refuses a local or agent merge in a Bitbucket folder with no record (test/test_bitbucket_publication.py authored, CI pending); native qualification pending"
     },
     {
       "id": "public-cli-outcomes",
@@ -567,7 +579,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; B2's refused Ready gives --json publication: result refused, changed (with the confirmed changes: pushed, draft), uncertain or held, with the claim's facts and operation ids; show and show --evidence carry the same as publication (test/test_bitbucket_publication.py authored, CI pending); the Tasks panel's display of it and native qualification pending"
     },
     {
       "id": "approval-exact-head",
@@ -590,7 +602,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; B2's Ready admits exactly the branch's commit here and re-checks it, Bitbucket's head and the remote's views before each effect (test/test_bitbucket_publication.py authored, CI pending); Accept's exact-head admission is B1's and L2's; native qualification pending"
     },
     {
       "id": "request-replay",
@@ -613,7 +625,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; B2's Bitbucket writes have a durable operation UUID bound to the claim's task, route, branch, base and head, and an interrupted one is never sent again (test/test_bitbucket_publication.py authored, CI pending); L1's launch admission part pending; native qualification pending"
     },
     {
       "id": "azure-personal",
@@ -1248,7 +1260,7 @@
     }
   ],
   "inventory": "upstream-v3.1.3-files.json",
-  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held, N1 native pull request adoption and fail-closed publication, the C1 session discovery under each agent's own folder, the W1 web chat flag kept apart from background work, the H1 opt-in private custom-domain listener, the S1 forge seam with GitHub as its first adapter, and the B1 Bitbucket reads (a saved Bitbucket pull request and its head's complete checks on the execution host's own Git credentials, merge and publication refused); no required fork port is complete, CI-proved or runtime-qualified",
+  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held, N1 native pull request adoption and fail-closed publication, the C1 session discovery under each agent's own folder, the W1 web chat flag kept apart from background work, the H1 opt-in private custom-domain listener, the S1 forge seam with GitHub as its first adapter, the B1 Bitbucket reads (a saved Bitbucket pull request and its head's complete checks on the execution host's own Git credentials, merge refused), and the B2 Bitbucket publication (Ready pushes on a frozen route, opens a draft and prepares it for review under this host's durable claims, reconciled only by positive same-id evidence; merge still refused); no required fork port is complete, CI-proved or runtime-qualified",
   "azure_cli_design": {
     "skill": "my-second-brain-playground:cli-design",
     "route": "maintain/extend existing-project",

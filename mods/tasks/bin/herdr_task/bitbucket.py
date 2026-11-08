@@ -1,16 +1,17 @@
-"""Bitbucket Cloud's forge adapter (forge.py reaches it), for reading (B1): a task's saved,
-provider-qualified pull request and the complete checks of exactly its head, through
-bitbucket_http.py on this machine's own Git credentials. Local Git, task state, approval and cleanup
-stay with their owners.
+"""Bitbucket Cloud's forge adapter (forge.py reaches it): a task's saved, provider-qualified pull
+request and the complete checks of exactly its head (B1), and which Bitbucket repository a folder
+publishes to (B2; publications.py publishes), through bitbucket_http.py on this machine's own Git
+credentials. Local Git, task state, approval and cleanup stay with their owners.
 
 A saved Bitbucket pull request is {provider: "bitbucket", host: "bitbucket.org", repo, number, url}.
 It is read only from the task's own checkout, whose remote must bind that same repository: one saved
 for another repository, or a checkout whose remote binds none, refuses before anything is sent.
 
-Not here (B2): opening, preparing or adopting a Bitbucket pull request. Merging one is refused, as
-Bitbucket's merge can't be held to the exact head that was accepted; nothing merges it another way."""
+Merging one is refused, as Bitbucket's merge can't be held to the exact head that was accepted;
+nothing merges it another way (no GitHub, local or agent merge), and `adopt` stays GitHub's."""
 
 import os
+import re
 
 from .base import Fail
 from . import bitbucket_http as http
@@ -22,8 +23,9 @@ MERGE_REFUSED = ("Bitbucket's merge can't be tied to exactly the commit that was
                  "there and doesn't merge it any other way. Merge pull request #{n} on Bitbucket yourself: the tick then "
                  "finishes the task, and removes its branch only if what merged is this branch's commit.")
 SIGN_IN = {"missing-credentials", "permission-refused"}
-PUBLISH_LATER = ("herdr-task doesn't publish to Bitbucket yet, so this task's pull request {pr} can't be opened, prepared or "
-                 "told it's ready from here; nothing was pushed or sent. {stays}")
+NO_LOCAL = ("{ref}'s folder is on Bitbucket ({repo}), where herdr-task merges nothing: not there, not here and not by an "
+            "agent, as Bitbucket's merge can't be tied to exactly the commit that was accepted. Run ready to publish it, then "
+            "merge its pull request on Bitbucket yourself. Nothing was merged.")
 
 
 def host():
@@ -44,6 +46,34 @@ def remote_of(folder):
     out = http.git_out(folder, "remote") or ""
     names = out.split()
     return "origin" if "origin" in names else (names[0] if names else None)
+
+
+def on_bitbucket(url):
+    """A remote URL on bitbucket.org itself, HTTPS or SSH."""
+    m = re.match(r"(?:[a-z][a-z0-9+.-]*://)?(?:[^@/]+@)?([^/:]+)", url.strip(), re.I)
+    return bool(m) and m.group(1).lower() == http.HOST
+
+
+def repository_of(folder):
+    """The Bitbucket repository a folder publishes to, {provider, repo, host}, when its remote (origin,
+    else its first) is written on bitbucket.org; None when it isn't. One written there whose views don't
+    all bind one repository refuses (Fail): it never merges here instead, and nothing is sent."""
+    remote = remote_of(folder)
+    written = (http.git_out(folder, "config", "--get-all", f"remote.{remote}.url") or "") if remote else ""
+    if not any(on_bitbucket(u) for u in written.splitlines()):
+        return None
+    bound = http.binding(http.origins(folder, remote))
+    if not bound:
+        raise Fail(f"This folder's remote {remote} is on Bitbucket, and {http.WORDS['not-bitbucket']}; nothing was pushed or "
+                   "sent and nothing merges here. The task stays as it was.")
+    return {"provider": PROVIDER, "repo": bound["repo"], "host": http.HOST}
+
+
+def no_local_merge(s, task):
+    """Refuses (Fail) a merge here, or by an agent, of a task in a folder on Bitbucket."""
+    where = repository_of(s.loc["folder"])
+    if where:
+        raise Fail(NO_LOCAL.format(ref=s.ref(task), repo=where["repo"]))
 
 
 def pr_read(task):
@@ -135,6 +165,3 @@ def pr_merge(pr, v):
     """Never sent: (False, why)."""
     return False, merge_refusal(pr)
 
-
-def publish_refusal(pr, stays):
-    return PUBLISH_LATER.format(pr=pr.get("url") or f"#{pr.get('number')}", stays=stays)
