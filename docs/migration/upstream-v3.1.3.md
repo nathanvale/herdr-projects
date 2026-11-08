@@ -461,21 +461,26 @@ those earlier phases admitted are B2's from here, and their pins are B2's.
   3. Refused with nothing sent: two pull requests open from the branch, one into another base (no
      second pull request), one whose description carries another operation's id, or this task's own
      not open from the branch into its base now.
-  4. Branch ownership, read-only: a branch that exists on Bitbucket where this host never pushed it
-     (no recorded push of its own) refuses, never pushed over and with no pull request opened; one
-     moved since this host's own last push refuses too.
+  4. Branch ownership, read-only, from the branch as git reads it on the frozen route (`ls-remote`, the
+     view the push's expectation is checked against): a branch that exists where this host never pushed
+     it (no recorded push of its own) refuses, never pushed over and with no pull request opened; one
+     moved since this host's own last push, or removed since, refuses too.
      The push, unless Bitbucket's branch holds the commit already: one atomic ref update on the
      server, `git push --porcelain --force-with-lease=refs/heads/<branch>:<expect>` to the frozen URL,
      prompts off. The first push is create-if-absent (`<expect>` empty: the ref must not exist), so
      exactly one push ever creates the branch; later ones expect this host's own last push (as P leases
      on its own pushed head). Its operation id, commit and expectation are saved in the claim before
-     git runs. git's own line for the ref decides: moved (done), rejected or already there when it had
-     to be absent (lost: another push created it, refused), or no line (`uncertain`, kept). An
-     uncertain push is settled from the branch next time: as its expectation, it didn't land and may go
-     again; at its commit as an update of this host's branch, it landed; at its commit as the first push,
-     held, as another host's push of the same commit looks the same. A confirmed push is saved in the
+     git runs. git's own line for the ref decides: moved (done); `[rejected]`, `[remote rejected]` with
+     the branch now holding something else, or already there when it had to be absent (lost: another
+     push got there first, refused); `[remote rejected]` with the branch as expected (declined: a branch
+     permission or hook, refused as that); a remote failure or no line (`uncertain`, kept). An uncertain
+     push is settled from git's view of the branch next time: as its expectation, it didn't land and may
+     go again; at its commit as an update of this host's branch, it landed; at its commit as the first
+     push, held, as another host's push of the same commit looks the same. A confirmed push is saved in the
      claim at once.
-  5. The draft: the task's saved record, or one opened by hand at exactly that head carrying no
+  5. The draft: the task's saved record (only reached once this host's own push owns the branch, so a
+     task whose claims file is lost, or whose folder moved to another host, can't publish its pull
+     request again), or one opened by hand at exactly that head carrying no
      operation id (adopted, as GitHub's SHEP-13), or a new one: `POST` with `draft: true`,
      `close_source_branch: false`, the source branch at exactly that commit, the title
      `<ref> <title>` and the brief as description, ending with `Herdr-Operation: <uuid>`.
@@ -533,8 +538,10 @@ those earlier phases admitted are B2's from here, and their pins are B2's.
   reopening (no second `POST`, same id), an empty lookup that never releases, an uncertain preparation,
   a refused write that keeps its push, zero-effect refusals, a branch this host never pushed never
   pushed over, its own last push the only one rewritten, a push git doesn't answer for, two simulated
-  hosts publishing the same task (one branch creation, one pull request, the other refused; after, and
-  racing with the same or another commit), merge settings that promise nothing, a fork's branch
+  hosts publishing the same task (one branch creation, one pull request, the other refused: after the
+  first, and racing with the same or another commit, where the second's push waits in the server's
+  `pre-receive` hook while the first's whole ready runs, so the server's own ref update refuses it), a
+  push the server declines, merge settings that promise nothing, a fork's branch
   left out, a remote changed before the push and before the write, a push URL git would rewrite,
   claims of another task or machine, and an unreadable claims file.
 - Not covered: Bitbucket's real answers (the list query's `q`, a `/` in `refs/branches/<name>`

@@ -215,21 +215,44 @@ def quiet_git(wt, *args, timeout):
     return r.returncode == 0, r.stdout.strip()
 
 
+def look(wt, url, branch):
+    """The commit the route's branch holds, as git reads it there (the view git's lease is checked
+    against): the commit, "" for none, None when git couldn't say."""
+    ok, out = quiet_git(wt, "ls-remote", "--heads", url, f"refs/heads/{branch}", timeout=PUSH_S)
+    if not ok:
+        return None
+    rows = [line.split("\t") for line in out.splitlines()]
+    if not rows:
+        return ""
+    if len(rows) == 1 and len(rows[0]) == 2 and rows[0][1] == f"refs/heads/{branch}" and http.COMMIT.fullmatch(rows[0][0]):
+        return rows[0][0]
+    return None
+
+
 def push(wt, url, branch, head, expect):
     """Pushes head to the route's branch as one atomic ref update on the server, only if that branch is
-    exactly `expect` there ("": it must not exist, so only one push ever creates it). "done": git says
-    the ref moved to head. "lost": the server kept the ref as it was (rejected, or it already held head
-    when it had to be absent: someone else's push made it). None: git couldn't say (no answer for it)."""
+    exactly `expect` there ("": it must not exist, so only one push ever creates it), as git's own line
+    for the ref says: "done" (it moved to head), "lost" (it isn't what was expected: git's own check, or
+    the server's ref update, refused, or it already held head when it had to be absent: another push
+    made it), "declined" (the server kept it exactly as expected and said no: a branch permission or a
+    hook) or None (git couldn't say: no line for it, or a remote failure, which may have applied)."""
     ref = f"refs/heads/{branch}"
     ok, out = quiet_git(wt, "push", "--porcelain", f"--force-with-lease={ref}:{expect}", url, f"{head}:{ref}", timeout=PUSH_S)
     rows = [line.split("\t") for line in out.splitlines()]
     mine = [row for row in rows if len(row) >= 2 and row[1] == f"{head}:{ref}"]
     if len(mine) != 1 or not mine[0][0]:
         return None
-    flag = mine[0][0][0]
-    if flag == "!" or (flag == "=" and not expect):
+    flag, summary = mine[0][0][0], (mine[0][2] if len(mine[0]) > 2 else "")
+    if flag == "=":
+        return "lost" if not expect else ("done" if ok else None)
+    if flag in "*+ ":
+        return "done" if ok else None
+    if flag == "!" and summary.startswith("[rejected]"):
         return "lost"
-    return "done" if ok and flag in "*+ =" else None
+    if flag == "!" and summary.startswith("[remote rejected]"):
+        seen = look(wt, url, branch)
+        return None if seen is None else "declined" if seen == expect else "lost"
+    return None
 
 
 # ---- what is sent -----------------------------------------------------------------------------
@@ -338,10 +361,16 @@ def publish(s, t, where, summary=None):
         if not r.branch(base):
             refuse(f"{base}, this task's base, isn't a branch on Bitbucket, so there's nothing to open a pull request into; "
                    f"nothing was pushed or sent. {stays}.")
-        there = r.branch(br)
         opened = r.open_from(br)
     except http.Failure as e:
         refuse(said(e.category, "nothing was pushed or sent"), "held" if held_of(claim) else "refused")
+    # The branch as git reads it on the frozen route: the view the push's expectation is checked against.
+    there = look(wt, url, br)
+    if there is None:
+        refuse(f"git couldn't read {br} on {url}, so who owns that branch can't be told; nothing was pushed or sent. git works "
+               "with this machine's own Git credentials, and they're the person's to repair: say why in your chat and end your "
+               "turn.", "held" if held_of(claim) else "refused")
+    there = there or None
 
     # 3. An uncertain step is reconciled first, by positive exact evidence only, before anything is sent:
     # its own operation id in the description of the one open pull request from the branch, into its
@@ -368,7 +397,7 @@ def publish(s, t, where, summary=None):
     mine_last = (claim.get("pushed") or {}).get("head")
     intent = claim.get("push")
     if intent:
-        if there == intent["head"] and intent["expect"]:  # an update of this host's own branch: it landed
+        if there == intent["head"] and intent["expect"]:  # an update of this host's own branch (git's view): it landed
             save(lambda c: {**c, "push": None, "pushed": {"head": intent["head"], "to": url, "at": now(), "id": intent["id"]}})
             mine_last = intent["head"]
         elif there == (intent["expect"] or None):  # as before it: it didn't land (one atomic update), so it may go again
@@ -376,19 +405,25 @@ def publish(s, t, where, summary=None):
         elif there == intent["head"]:
             refuse(f"git didn't answer whole for this machine's first push of {br} (operation {intent['id']}), and Bitbucket's "
                    f"{br} is now at exactly {there[:7]}: that push made it, or another machine's push of the same commit did, "
-                   "and nothing here can tell which. Nothing more was pushed or sent and no pull request was opened. The person "
-                   "decides: say why in your chat and end your turn.", "held")
+                   "and nothing here can tell which. Nothing more was pushed or sent and no pull request was opened. If it was "
+                   f"this machine's, the person removes {br} on Bitbucket (its commits are all here) and ready pushes it again; "
+                   "say why in your chat and end your turn.", "held")
         else:
             save(lambda c: {**c, "push": None})  # the branch holds another commit: whatever that push did, it isn't there
     if there is not None and there != mine_last and not (mine_last and there == head):
         if not mine_last:
             refuse(f"Bitbucket already has {br} (at {there[:7]}), and this machine never pushed it there: another machine's "
                    f"publication of this task, or someone's own push, created it first, and only the push that creates a branch "
-                   f"publishes it. Nothing was pushed or sent and no pull request was opened. {stays}: say why in your chat and "
-                   "end your turn.")
+                   f"publishes it. Nothing was pushed or sent and no pull request was opened. {stays}. If it is no publication's, "
+                   f"the person removes or renames {br} on Bitbucket; say why in your chat and end your turn.")
         refuse(f"Bitbucket's {br} is at {there[:7]}, not {mine_last[:7]} where this machine last pushed it, so someone pushed "
                f"since and pushing would drop their commits; nothing was pushed or sent. Bring them into {br} here (git fetch, "
-               f"then merge or rebase), then run ready again.")
+               f"then merge or rebase), then run ready again; if they're here already, the person resets {br} on Bitbucket to "
+               f"{mine_last[:7]}.")
+    if mine_last and there is None:
+        refuse(f"Bitbucket's {br} is gone, where this machine last pushed it at {mine_last[:7]}, and herdr-task doesn't publish a "
+               f"branch again that someone removed; nothing was pushed or sent. Whether to is the person's call: say why in your "
+               "chat and end your turn.")
     pr = (d or {}).get("pr") or saved
     others = [p for p in opened if not pr or p["number"] != pr["number"]]
     if others:
@@ -429,6 +464,11 @@ def publish(s, t, where, summary=None):
             refuse(f"git couldn't push {br} to {url}, or didn't say whether it did (operation {op}), so the push may or may not "
                    f"have happened. No pull request was opened or changed. {stays}. git push works with this machine's own Git "
                    "credentials, and they're the person's to repair: say why in your chat and end your turn.", "uncertain")
+        if pushed == "declined":
+            save(lambda c: {**c, "push": None})
+            refuse(f"Bitbucket's server declined the push of {br} (a branch permission or a hook there), and the branch is as it "
+                   f"was. No pull request was opened or changed. {stays}. Who may push it is the person's to settle: say why in your "
+                   "chat and end your turn.")
         if pushed == "lost":
             save(lambda c: {**c, "push": None})
             if not expect:

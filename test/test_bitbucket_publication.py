@@ -44,6 +44,26 @@ exec sh -c "git ${last#git-}"
 '''
 
 
+# The server's own hook before it updates any ref: FAKE_DECLINE declines the push, as a branch permission
+# would; FAKE_RACE names a command (another host's whole ready) run while this push waits, so that host's
+# push lands first and this one's ref update meets a branch that exists.
+PRE_RECEIVE = '''#!/usr/bin/env python3
+import json, os, subprocess, sys
+sys.stdin.read()
+if os.environ.get("FAKE_DECLINE"):
+    print("branch permissions: pushes to this branch are restricted", file=sys.stderr)
+    sys.exit(1)
+race = os.environ.get("FAKE_RACE")
+if race and os.path.exists(race):
+    with open(race) as f:
+        spec = json.load(f)
+    os.remove(race)
+    r = subprocess.run(spec["argv"], env=spec["env"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    with open(spec["out"], "w") as f:
+        json.dump([r.returncode, r.stdout, r.stderr], f)
+'''
+
+
 class Model:
     """The test's Bitbucket repository o/r. Its branches are the bare repository's; its pull requests
     are prs. create and prepare say how a write goes: ok, lost (done, its reply lost), dropped (not
@@ -53,7 +73,6 @@ class Model:
         self.f, self.bare, self.prs, self.statuses, self.next = f, bare, {}, {}, 7
         self.create = self.prepare = "ok"
         self.listing = "ok"
-        self.stale = False  # reads that predate another host's push: no task/1 branch and no pull request yet
         self.after_create, self.touch = None, {}
 
     def head(self, ref):
@@ -88,14 +107,13 @@ class Model:
                 return (200, REPOSITORY)
             if p.startswith(ROOT + "/refs/branches/"):
                 name = urllib.parse.unquote(p[len(ROOT + "/refs/branches/"):])
-                full = None if self.stale and name == "task/1" else self.head(f"refs/heads/{name}")
+                full = self.head(f"refs/heads/{name}")
                 return (200, {"name": name, "target": {"hash": full}}) if full else (404, {"type": "error"})
             if p == ROOT + "/pullrequests":
                 if self.listing == "unavailable":
                     return (503, {"type": "error"})
                 m = re.fullmatch(r'source\.branch\.name="([^"]+)" AND state="OPEN"', urllib.parse.parse_qs(u.query)["q"][0])
-                rows = [self.row(x) for x in self.prs.values()
-                        if x["source"] == m.group(1) and x["state"] == "OPEN" and not self.stale]
+                rows = [self.row(x) for x in self.prs.values() if x["source"] == m.group(1) and x["state"] == "OPEN"]
                 return (200, {"values": rows, "size": len(rows), "page": 1, "pagelen": 50})
             m = re.fullmatch(re.escape(ROOT) + r"/pullrequests/(\d+)", p)
             if m:
@@ -147,6 +165,7 @@ def fixture(test):
     open(f.ref_log, "w").close()
     f.program(os.path.join(f.bare_bb, "hooks", "update"), '#!/bin/sh\n[ -z "$FAKE_REF_LOG" ] || echo "$1 $2 $3" >> "$FAKE_REF_LOG"\n')
     f.env["FAKE_REF_LOG"] = f.ref_log
+    f.program(os.path.join(f.bare_bb, "hooks", "pre-receive"), PRE_RECEIVE)
     f.git(f.repo, "remote", "add", "origin", bb.REMOTE)
     f.git(f.repo, "config", "url.bbtest:.insteadOf", "https://bitbucket.org/")
     empty = os.path.join(f.tmp, "gitconfig")
@@ -346,8 +365,10 @@ class Publishing(unittest.TestCase):
     def test_two_hosts_publishing_the_same_task_create_its_branch_and_pull_request_once(self):
         cases = {
             "the second reads after the first": (False, False, "this machine never pushed it there"),
-            "both read before either pushed, the same commit": (True, False, "refused to create task/1"),
-            "both read before either pushed, another commit": (True, True, "refused to create task/1"),
+            # Both find no branch; the second's push waits in the server while the first's whole ready runs, so
+            # the server's own ref update (expecting none) is what refuses it.
+            "both find no branch, the same commit": (True, False, "refused to create task/1"),
+            "both find no branch, another commit": (True, True, "refused to create task/1"),
         }
         for name, (racing, own_commit, words) in cases.items():
             with self.subTest(name):
@@ -355,10 +376,20 @@ class Publishing(unittest.TestCase):
                 b = self.second_host()
                 if own_commit:
                     b.tip = b.commit(b.wt, "host b's own")
-                self.ready()  # host A publishes
-                a.model.stale = racing
-                out = self.as_host(b, 1)
-                a.model.stale = False
+                if racing:
+                    spec, said = os.path.join(a.tmp, "race.json"), os.path.join(a.tmp, "race.out")
+                    with open(spec, "w") as fh:
+                        json.dump({"argv": [sys.executable, os.path.join(publication.BIN, "herdr-task"), "ready", "1", "--folder",
+                                            a.repo, "--summary", "Sign-in works again", "--json"], "env": a.env, "out": said}, fh)
+                    b.env = {**b.env, "FAKE_RACE": spec}
+                    out = self.as_host(b, 1)
+                    with open(said) as fh:
+                        code, stdout, stderr = json.load(fh)
+                    self.assertEqual(code, 0, stdout + stderr)  # host A, meanwhile, published
+                    self.quiet(stdout, stderr)
+                else:
+                    self.ready()  # host A publishes first
+                    out = self.as_host(b, 1)
                 self.assertIn(words, out["error"])
                 self.assertEqual((out["publication"]["result"], out["publication"]["changed"]), ("refused", []))
                 created = [u for u in self.updates() if u.startswith("refs/heads/task/1 " + "0" * 40)]
@@ -367,6 +398,13 @@ class Publishing(unittest.TestCase):
                                  ("running", None, "ready", 7))
                 with open(b.claims_path) as fh:
                     self.assertEqual(json.load(fh)["claims"], {})  # the loser holds nothing
+
+    def test_a_push_the_server_declines_is_refused_as_that(self):
+        f = self.f
+        f.env["FAKE_DECLINE"] = "1"
+        out = self.ready(1)
+        self.assertIn("declined the push of task/1", out["error"])
+        self.assertEqual((out["publication"]["result"], self.there(), self.writes("POST"), self.claim()), ("refused", None, [], None))
 
     def test_merge_stays_refused_once_published(self):
         f = self.f

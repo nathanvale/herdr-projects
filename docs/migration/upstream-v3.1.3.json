@@ -38,7 +38,7 @@
       "phase": "B2",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "d2463e1a37c0aeefaee51eec7480d3de3df1f40d",
-      "sha256": "19f9da009b5d0dd8293cd6f65049d0c287d43e17a617a534f29cf97d067d6b83"
+      "sha256": "bd3c82098eaba1d7000c5d61092eaf038e0d804794078eba2b197826b2b51787"
     },
     {
       "phase": "B1",
@@ -326,13 +326,13 @@
       "phase": "B2",
       "path": "mods/tasks/bin/herdr_task/publications.py",
       "upstream_blob": null,
-      "sha256": "71933866152b9dacf345ab4f3cdd0bdbbcb286ab9132eb25880a50f4d0aa7dcc"
+      "sha256": "326cd8cc6d676f7b71bc048e50564179f184046056defca25ba8e8252b5bff8e"
     },
     {
       "phase": "B2",
       "path": "test/test_bitbucket_publication.py",
       "upstream_blob": null,
-      "sha256": "ad1f9ede7c6916a2d2b97712a2ee22677ecf50766005535608c83aaceae4c04c"
+      "sha256": "3829d11da56adf030f08226ab1ded209fff8548877a007f14a164544ab43710c"
     }
   ],
   "requirements": [

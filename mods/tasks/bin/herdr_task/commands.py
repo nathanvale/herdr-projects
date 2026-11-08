@@ -275,7 +275,7 @@ def cmd_show(args):
         text.append(f"publication: {v['publication']['unreadable']}")
     elif v.get("publication"):
         p = v["publication"]
-        steps = [f"{name} {p[name]['state']} ({p[name]['operation']})" for name in ("draft", "ready") if p.get(name)]
+        steps = [f"{name} {p[name]['state']} ({p[name]['operation']})" for name in ("push", "draft", "ready") if p.get(name)]
         pushed = f"pushed {p['pushed']['head'][:7]}" if p.get("pushed") else "not pushed"
         text.append(f"publication: {', '.join([pushed, *steps])}")
     if v.get("why") and v["status"] == "needs":
