@@ -3570,3 +3570,66 @@ class CycleTwo(unittest.TestCase):
         t = f.task()
         self.assertEqual((t["state"], os.path.isdir(f.wt)), ("done", True))
         self.assertTrue(t["kept"].startswith(f"Kept the worktree {f.wt}: its branch task/1 isn't here"), t["kept"])
+
+
+# A stand-in gh route that answers as the recording one does, but fails a merged pull request list (SHEP-59's
+# pr_merged()), as gh signed out or offline would; everything else reaches the recording one.
+MERGED_LIST_FAILS = '''#!/usr/bin/env python3
+import os, sys
+a = sys.argv[1:]
+if a[:2] == ["pr", "list"] and "--state" in a and a[a.index("--state") + 1] == "merged":
+    print("error connecting to api.github.com", file=sys.stderr)
+    sys.exit(1)
+os.execv(sys.executable, [sys.executable, os.environ["REAL_GH_ROUTE"]] + a)
+'''
+
+
+@publication.ON_CI
+class UpstreamReconciled(unittest.TestCase):
+    """The v3.1.16 merge keeps PR 19's rules beside upstream's: an adopted head that moved stays said while its agent
+    works, and gh failing to list merged pull requests refuses Ready and only skips the tick."""
+
+    def tick(self, f):
+        f.edit(lambda d: d["tasks"][0].get("pr", {}).update(checked=0))
+        return f.ok("tick", "--folder", f.repo)
+
+    def test_a_running_adopted_task_keeps_its_moved_head_note(self):
+        f = publication.Fixture(self)
+        f.github(prs=[f.pr()])
+        f.adopt()
+        # Seeded Ready rather than through ready, so SHEP-59's merged check (the stand-in gh doesn't model
+        # --state merged) stays out of a test of the tick's moved-head note.
+        f.seed(state="ready", ready_at=1)
+        f.github(prs=[f.pr(headRefOid=f.first)])  # GitHub's head moved off what adoption verified
+        self.tick(f)
+        self.assertIn(NOT_VERIFIED, f.task()["attention"])
+        f.seed(state="running")  # its agent back at work
+        self.tick(f)
+        self.assertIn(NOT_VERIFIED, f.task().get("attention") or "")
+        self.assertEqual(f.calls("pr", "merge"), [])
+
+    def failing_merged_list(self, f):
+        f.env["REAL_GH_ROUTE"] = f.gh_route
+        f.env["HERDR_TASK_GH"] = f.program(os.path.join(f.tmp, "bin", "gh-merged-list-fails"), MERGED_LIST_FAILS)
+
+    def test_ready_refuses_when_gh_cant_list_merged_pull_requests(self):
+        f = publication.Fixture(self)
+        f.github(prs=[])
+        self.failing_merged_list(f)
+        before = f.saved()
+        error = f.no_ready()
+        self.assertIn("gh couldn't list the merged pull requests for task/1", error)
+        self.assertEqual((f.saved(), f.task()["state"]), (before, "running"))
+        self.assertEqual((f.calls("pr", "create"), f.remote_tip("task/1")), ([], None))
+
+    def test_the_tick_skips_when_gh_cant_list_merged_pull_requests(self):
+        for state in ("running", "ready"):
+            with self.subTest(state=state):
+                f = publication.Fixture(self)
+                f.github(prs=[])
+                f.seed(state=state, ready_at=1)
+                self.failing_merged_list(f)
+                out = f.ok("tick", "--folder", f.repo)
+                t = f.task()
+                self.assertEqual((out["done"], t["state"], t.get("pr")), ([], state, None))
+                self.assertEqual(t["own"], f.tip)  # it looked, and goes on looking next pass

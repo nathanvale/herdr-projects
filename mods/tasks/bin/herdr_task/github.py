@@ -423,9 +423,12 @@ def adopt_existing(s, task, given):
 
 def pr_merged(task, repo):
     """The merged pull request for the task's branch (from this repo, into its base), or None
-    (SHEP-59: a squash merge leaves the branch's commits out of the base)."""
-    ok, out, _ = gh("pr", "list", "--repo", repo, "--head", task["branch"], "--state", "merged",
-                    "--json", "number,url,isCrossRepository,baseRefName,headRefOid,mergeCommit")
+    (SHEP-59: a squash merge leaves the branch's commits out of the base). gh failing refuses
+    (GhFailed), never read as "none merged" (N1): Ready's callers refuse, the tick skips a pass."""
+    ok, out, err = gh("pr", "list", "--repo", repo, "--head", task["branch"], "--state", "merged",
+                      "--json", "number,url,isCrossRepository,baseRefName,headRefOid,mergeCommit")
+    if not ok:
+        raise GhFailed(f"list the merged pull requests for {task['branch']}", err or "no answer")
     try:
         return next((p for p in json.loads(out) if not p.get("isCrossRepository")
                      and p.get("baseRefName") == (task.get("base") or "main")), None) if ok and out else None

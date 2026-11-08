@@ -13,7 +13,7 @@ from .settings import machine_name, worker_argv
 from .agents import agent_log, agent_running, busy_again, detail, held_ask, live_agents, status_word, task_status
 from .provider import NUDGE, provider_cut, provider_error, PROVIDER_WAITS
 from .sessions import find_lost_logs, refresh_sessions, session_of
-from .github import already_merged, finish, github, merged_here, pr_merged, pr_pending, pr_problem, pr_view, watch_main
+from .github import GhFailed, already_merged, finish, github, merged_here, pr_merged, pr_pending, pr_problem, pr_view, watch_main
 from .launch import default_space
 from .store import locate, read_list, Store, store_files
 from .queues import machine_hold, refresh_ext, running_count, set_hold, waiting_ext, waiting_for
@@ -61,10 +61,12 @@ def facts(s, t, report):
             finish(s, t)
             report["done"].append(t["id"])
             return
-        # An adopted pull request's moved head matters once it is Ready (N1); while its agent still
-        # works, its commits move the branch, so only the pull request's own problems count then.
-        problem = pr_problem(v) or (adopted_moved(s, t, v) if t["state"] == "ready" else None)
-        t["_pr_fresh"] = not problem and not pr_pending(v)
+        # An adopted pull request's moved head (N1) is read in both states, as PR 19 does, and shown
+        # on Ready terms: while its agent still works, only the pull request's own problems are shown
+        # (upstream), and a moved-head note already there stays while the head is still moved.
+        issue, moved = pr_problem(v), adopted_moved(s, t, v)
+        problem = issue or (moved if t["state"] == "ready" else None)
+        t["_pr_fresh"] = not (issue or moved) and not pr_pending(v)
         try:
             pr_news(s, t, v, report)
         except Exception as e:  # never stops the tick
@@ -75,7 +77,8 @@ def facts(s, t, report):
             if problem:
                 t["attention"], t["attention_at"] = problem, now()
                 report["attention"].append(t["id"])
-            elif t.get("attention", "").startswith(("Checks failing", "It conflicts", "The pull request was closed", MERGE_FAILED, MOVED)):
+            elif t.get("attention", "").startswith(("Checks failing", "It conflicts", "The pull request was closed", MERGE_FAILED, MOVED)) \
+                    and not (t["state"] == "running" and moved and t["attention"].startswith(MOVED)):
                 t.pop("attention")
     elif merged_here(s, t) and not at_work(s, t):
         t["merged"] = True
@@ -86,7 +89,10 @@ def facts(s, t, report):
         # Ready one whose work is already in its base: done, as ready would.
         t["gh_checked"] = now()
         s.dirty = True
-        gone = already_merged(s, t) if t["state"] == "ready" else squash_merged(s, t)
+        try:
+            gone = already_merged(s, t) if t["state"] == "ready" else squash_merged(s, t)
+        except GhFailed:
+            gone = None  # gh couldn't say (pr_merged()): the next pass looks again; the tick goes on
         if gone is not None:
             t["merged"] = True
             if gone:
@@ -99,7 +105,10 @@ def squash_merged(s, t):
     """A Working task's branch whose pull request (opened by its agent) merged at its tip: that
     pull request, recorded on the task, or None."""
     repo = github(s)
-    found = pr_merged(t, repo) if repo else None
+    try:
+        found = pr_merged(t, repo) if repo else None
+    except GhFailed:
+        return None  # gh couldn't say: this pass skips it, the next looks again
     if not found or found.get("headRefOid") != (t.get("own") or t.get("head")):
         return None
     t["pr"] = {"number": found["number"], "url": found["url"], "repo": repo}
