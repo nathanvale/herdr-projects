@@ -13,7 +13,10 @@ before it:
                Foundry from nonsecret settings; credentials are named, never read.
   sessions     Agent sessions: the Claude Code or Codex session a task's agent runs, so it can
                resume.
-  github       GitHub and merging: pull requests, checks, and finishing a merged task.
+  github       GitHub and merging: pull requests, checks, and finishing a merged task; GitHub's
+               forge adapter.
+  forge        The forge: the one way commands, the tick and the Accept card reach a task's pull
+               request, whichever provider hosts it; identity checked before anything is sent.
   launch       Starting agents: their argv, labels, brief, tab and coordinator.
   takeover     The backup agent: a task whose CLI can't go on is taken over, once, by the other
                CLI; and which CLIs each machine has installed and signed in.

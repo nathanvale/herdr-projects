@@ -46,6 +46,24 @@ service/chats.test.ts'''.split()),
     'H1': frozenset('''.github/workflows/private-domain.yml docs/adr/0004-private-custom-domain.md docs/private-domain.md
 docs/web.md scripts/private-domain-proof.ts service/auth.ts service/main.ts service/private-domain.test.ts
 service/private-domain.ts'''.split()),
+    # The forge seam: commands, the tick and the Accept card reach a pull request only through forge.py,
+    # and github.py is its GitHub adapter. Its owners that earlier phases admitted are S1's from here.
+    'S1': frozenset('''mods/tasks/bin/herdr_task/__init__.py mods/tasks/bin/herdr_task/commands.py
+mods/tasks/bin/herdr_task/forge.py mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/proof.py
+mods/tasks/bin/herdr_task/tick.py test/test_forge.py test/test_herdr_task.py'''.split()),
+}
+# The shared table's second half (PR 19 decision D5, issue #7): what accepted changes add beyond exact
+# U and outside every phase's owners, admitted by name and left to review for content. With U's paths
+# and the admitted owners above, these are the only paths a commit here may hold.
+NAMED = {
+    'S0': '''CODING_STANDARDS.md GLOSSARY.md bin/check-migration docs/adr/0001-protected-preview-update-admission.md
+docs/adr/0002-bitbucket-rest-transport.md docs/adr/0003-operator-boot-fenced-launch-recovery.md docs/agents/README.md
+docs/agents/domain.md docs/agents/issue-tracker.md docs/agents/triage-labels.md docs/azure-foundry.md
+docs/core/launch-recovery.md docs/forge-adapter-reference.md docs/forge-adapters.md docs/forge-bitbucket-transport.md
+docs/forge-review-map.md docs/migration/upstream-v3.1.3-files.json docs/migration/upstream-v3.1.3.json
+docs/migration/upstream-v3.1.3.md test/test_migration.py''',
+    'A1': 'docs/azure-launch-plans.md',
+    'PR 20': '.claude/.gitignore .claude/checkout-access.json bin/checkout-access test/test_checkout_access.py',
 }
 
 
@@ -164,6 +182,13 @@ def validate_foundation(deltas):
     actual_hc = {path.relative_to(ROOT).as_posix() for path in (ROOT / 'service/hc').rglob('*') if path.is_file()}
     if actual_hc != expected_hc:
         raise ValueError('Old product modules were relocated into native core transport')
+    # Every path a commit here could hold (tracked, or new and not ignored) is in the shared table
+    # (D5, issue #7): U's, an admitted owner's or a named addition. Any other refuses, by name.
+    held = set(git('ls-files', '-z', '--cached', '--others', '--exclude-standard').decode().split('\0')) - {''}
+    named = {path for paths in NAMED.values() for path in paths.split()}
+    unadmitted = sorted(held - upstream - set(deltas) - named)
+    if unadmitted:
+        raise ValueError('Path outside the shared table of U, admitted owners and named additions: ' + ', '.join(unadmitted))
     return len(files)
 
 

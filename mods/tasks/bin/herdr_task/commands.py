@@ -22,9 +22,12 @@ from .agents import (
 from .sessions import refresh_sessions
 from .providers import admit_launch
 from .github import (
-    adopt_existing, already_merged, base_commit, finish, gh, GH_ACCESS, GhFailed, github, local_base, merge_into_branch,
-    merged_here, NO_ASK, no_local_merge, own_work, plain, pr_adopt, pr_open, pr_pending, pr_problem, pr_read, pr_view, STAYS,
+    base_commit, finish, GH_ACCESS, GhFailed, local_base, merge_into_branch, merged_here, NO_ASK, own_work, plain, STAYS,
     update_main, watch_main,
+)
+from .forge import (
+    admit, adopt_existing, already_merged, integrate, no_local_merge, pr_adopt, pr_open, pr_pending, pr_problem, pr_read,
+    pr_view, repository,
 )
 from .launch import (
     base_ref, brief, caller_labels, caller_space, current_base, default_space, folder_for, handoff, launch, name_tabs,
@@ -657,13 +660,15 @@ def finalize(s, t):
     always asks: ready never merges it. Publishing comes first, and gh or git failing there refuses
     (Fail): on GitHub, Ready means published. Returns what to say."""
     worktree_here(s, t)
+    # A saved pull request no forge adapter here reaches refuses before any host is asked anything.
+    admit(t)
     worktree = t.get("mode") == "worktree" and t.get("worktree")
-    repo = github(s) if worktree else None
-    if worktree and not repo and getattr(s, "github_saved", False):
+    where = repository(s) if worktree else None
+    if worktree and not where and getattr(s, "github_saved", False):
         # A saved "not on GitHub" is asked again (as no_local_merge() does): Ready decides publication,
         # and a refusal saves nothing, so a stale no would keep it from publishing for up to an hour.
-        repo = github(s, fresh=True)
-    pr = pr_open(s, t, repo, t.get("summary")) if repo else None
+        where = repository(s, fresh=True)
+    pr = pr_open(s, t, where, t.get("summary")) if where else None
     t["state"], t["ready_at"] = "ready", now()
     for k in ("attention", "merge_requested", "review"):
         t.pop(k, None)
@@ -1016,7 +1021,7 @@ def merge_now(s, t):
     """Merges the task's pull request on GitHub (squash) and tidies up here. Returns why it
     couldn't, or why one already merged doesn't finish the task (merged_elsewhere()); None when
     it's merged (and the task done)."""
-    n, repo = str(t["pr"]["number"]), t["pr"]["repo"]
+    n = str(t["pr"]["number"])
     v, why = pr_read(t)
     s.dirty = True
     matched = None  # the head GitHub was asked to merge (--match-head-commit)
@@ -1030,8 +1035,7 @@ def merge_now(s, t):
         if pr_pending(v):
             return "Checks are still running."
         matched = v.get("headRefOid") or ""
-        ok, _, err = gh("pr", "merge", n, "--repo", repo, "--squash", "--delete-branch",
-                        "--match-head-commit", matched)
+        ok, err = integrate(t, v)
         # A one-off GitHub error can come after the merge went through: asked again.
         again = None if ok else pr_view(t)
         if not ok and (again or {}).get("state") == "MERGED":
@@ -1146,7 +1150,7 @@ def cmd_accept(args):
             back = back_to_work(s, t, "its agent is at work again")
         # One its agent opened itself, which ready couldn't open again ("already exists"): adopted.
         elif (not t.get("pr") and "already exists" in (t.get("attention") or "")
-              and (repo := github(s)) and pr_adopt(t, repo)):
+              and (where := repository(s)) and pr_adopt(t, where)):
             t.pop("attention", None)
             s.dirty = True
         # A pull request's problems are read fresh (merge_now()): one fixed since, or a merge that

@@ -3,8 +3,9 @@
 S0 is a source-only foundation; A1 adds provider launch plans and deployment discovery
 owners on it, with Azure dispatch held, N1 adds native pull request adoption and
 fail-closed publication, C1 finds a Claude Code session under its own agent's
-folder, W1 keeps a web page's chat flag apart from background work, and H1 adds an
-opt-in private custom-domain listener. Required Bitbucket, Azure and lifecycle ports are
+folder, W1 keeps a web page's chat flag apart from background work, H1 adds an
+opt-in private custom-domain listener, and S1 routes pull requests through the forge
+seam with GitHub as its one adapter. Required Bitbucket, Azure and lifecycle ports are
 pending. This checkpoint is not deployable or ready for application use. Check's
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
@@ -95,8 +96,9 @@ byte-identical to U with U's mode, and each admitted path matches its pin (an
 admitted U path keeps exact U's mode; an admitted added path is a plain file). A
 symbolic link at an admitted path or at a U path outside the overrides refuses, even
 to identical content. The three overrides (`AGENTS.md`, `docs/develop.md`, `.github/workflows/check.yml`) are
-skipped whole, content and mode. They, the checker, the manifest and added files
-outside the table are not pinned by it and rely on review. Candidate readiness
+skipped whole, content and mode. They, the checker, the manifest and the added files
+the shared table names (below) are not pinned by content and rely on review. Since S1
+(PR 19 decision D5, issue #7), a path outside that table refuses. Candidate readiness
 stays blocked.
 
 - `T/providers.py` owns nonsecret bindings, the four supported launch plans and the
@@ -122,9 +124,10 @@ admitted owner matches its pin, and every U path outside that table and the thre
 overrides is byte-identical to U with U's mode. So a phase can't change a U path it
 doesn't own, or an owner away from its pin. Naming an earlier phase over its deltas
 refuses, and dropping the deltas as well refuses because the admitted paths then
-differ from exact U. A path a phase adds outside the table relies on review: the
-checker refuses only files under the retired `server/` and `helper/` owners and new
-files in `service/hc`. Candidate readiness stays blocked.
+differ from exact U. Under D5, a path a phase added outside the table relied on review
+until S1 enumerated tracked paths in the shared table (issue #7); the checker also refuses
+files under the retired `server/` and `helper/` owners and new files in `service/hc`.
+Candidate readiness stays blocked.
 
 - `T/github.py` owns adoption (`adopt_existing()`), reached by `herdr-task adopt`.
   Base equivalence is proved from commits: the task's start commit is the one merge
@@ -282,6 +285,49 @@ wiring in `service/auth.ts` and `service/main.ts`, `docs/private-domain.md`, ADR
   `service/private-domain.test.ts` runs with the service suite in Check.
 - This fix is not a required port. No inventory requirement changes status.
 
+### S1 forge checkpoint
+
+S1 is re-applied on this candidate after H1 as its own row in `PHASES`. Its owners are
+`T/__init__.py`, `T/commands.py`, `T/forge.py`, `T/github.py`, `T/proof.py`, `T/tick.py`,
+`test/test_forge.py` and `test/test_herdr_task.py`; those earlier phases admitted are
+S1's from here, and their pins are S1's.
+
+- `T/forge.py` is the single route from Ready, review, Accept, merge, adopt, the tick and
+  the Accept card to a task's pull request and its folder's repository. `T/github.py` is
+  the GitHub adapter; its N1 functions keep their behaviour: Ready means published
+  (any publication failure refuses Ready, with no "ready, but" state), D3 cleanup,
+  adopted-head checks, the saved-no recheck (gh asked once per command) and fail-closed
+  reads. Local Git, task state, approval and cleanup keep their owners.
+- An unqualified saved record is GitHub's. The adapter still writes that legacy shape;
+  no record is qualified on read or write.
+- A saved record naming a provider without an adapter, or saved for a host other than
+  the one herdr-task reaches GitHub at, is refused before any gh call. That host is
+  where gh sends `--repo owner/name`: `GH_HOST`, else github.com. A gh configuration
+  whose default is another host without `GH_HOST` isn't known before a call; there the
+  answered-identity check below still refuses before any write.
+- Publication reads a saved pull request first, before any push, comment or new pull
+  request. No answer refuses, as N1 does, and an answer whose link, host, repository or
+  number differs from the record refuses. Reads for Ready's SHEP-59 check, Accept,
+  merge, the tick and the Accept card refuse the same way; nothing reads a refused view
+  as merged, open or checked. Adoption from a list takes only a pull request whose own
+  link is in the folder's repository; `adopt` refuses a link or answer on another host.
+- Not covered: `pr_merged()`'s merged list (SHEP-59) records a merged pull request
+  without checking its link, as N1 does; read-only presentation in `service/worktree.ts`
+  and `mods/task-pr/main.js`, and GitHub news (`T/ghnews.py`), still read the saved
+  `repo` (B1/B2). Host-qualified GitHub transport is not added.
+- Regression: `test/test_forge.py` runs `ready` and `merge` as processes on the N1
+  fixture. Existing `test_herdr_task.py` assertions are unchanged; its patch points moved
+  to the seam, and the merge fake answers only `gh pr merge`.
+- The shared table (PR 19 decision D5's deferred enumeration, issue #7): every path a
+  commit could hold, tracked or new and not ignored, must be U's, an admitted phase
+  owner's (A1, N1, C1, W1, H1, S1) or an addition named in `NAMED` by the accepted change
+  that added it: S0's foundation documents and checker, A1's `docs/azure-launch-plans.md`,
+  and PR 20's checkout access (`.claude/.gitignore`, `.claude/checkout-access.json`,
+  `bin/checkout-access`, `test/test_checkout_access.py`). Named additions are admitted by
+  name only; their content relies on review. Any other path refuses by name, a document
+  as much as source; ignored paths are no commit and pass.
+- This is not a required port. No inventory requirement changes status.
+
 ### Bitbucket contract
 
 Port P's behavior into native owners, not its old server paths. GitHub retains
@@ -384,7 +430,8 @@ Root runs `python3 bin/check-migration`, its public-CLI checkpoint tests
 `service/azure-deployments.test.ts`), the N1 publication tests (`test/test_native_publication.py`),
 the C1 discovery tests (`core/chat-find.test.js`, `test/test_session_discovery.py`),
 the W1 flag tests (`service/jobs-flags.test.ts`), the H1 listener tests
-(`service/private-domain.test.ts`) and every native Check command. CI owns
+(`service/private-domain.test.ts`), the S1 forge tests (`test/test_forge.py`) and every
+native Check command. CI owns
 frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.

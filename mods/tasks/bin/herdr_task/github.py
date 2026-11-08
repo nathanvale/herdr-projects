@@ -1,4 +1,5 @@
-"""GitHub and merging: pull requests, checks, and finishing a merged task."""
+"""GitHub and merging: pull requests, checks, and finishing a merged task. The pull request part is
+GitHub's forge adapter (forge.py reaches it); merging here and finishing stay with local Git."""
 
 import hashlib
 import json
@@ -12,6 +13,15 @@ from .agents import agent_running, live_agents
 
 
 # ---- GitHub ---------------------------------------------------------------------------------
+
+NAME = "GitHub"
+
+
+def host():
+    """The host gh sends `--repo owner/name` to, the only one herdr-task reaches GitHub at: GH_HOST,
+    else gh's own default, github.com. herdr-task never names another to gh."""
+    return (os.environ.get("GH_HOST") or "github.com").strip().lower()
+
 
 GH_MISSING = "gh isn't installed here (GitHub CLI)"
 # gh's own words for a repo whose remotes it can't place on GitHub: the one failure that is a real no.
@@ -208,18 +218,19 @@ def publish(s, task, repo):
         raise Caused("git", push_problem(wt, br, remote, there, err))
 
 
-def pr_open(s, task, repo, summary=None):
+def pr_open(s, task, repo, summary=None, state=None):
     """Publishes the task's branch and opens its pull request (or keeps the open one, also one
     opened by hand or by its agent for the branch: SHEP-13's "already exists"). Refuses (Fail) when
     gh or git can't: a saved pull request gh can't read is never replaced by a new one, and one
     adopted (adopt_existing()) is never replaced at all. Nor does a branch whose open pull request
-    targets another base get a second one (no_other_base())."""
+    targets another base get a second one (no_other_base()). state: the saved one's, as the forge
+    read it and found it is this task's (forge.pr_open()); read here when not given."""
     br, pr = task["branch"], task.get("pr") or {}
-    state = None
-    if pr.get("number"):
+    if pr.get("number") and not state:
         ok, state, err = gh("pr", "view", str(pr["number"]), "--repo", repo, "--json", "state", "-q", ".state")
         if not ok or not state:
             raise GhFailed(f"read pull request #{pr['number']}", err or "no answer")
+    if pr.get("number"):
         if state == "MERGED" and pr.get("adopted"):
             raise Fail(f"Pull request #{pr['number']}, adopted for {s.ref(task)}, already merged, so there is nothing to publish. "
                        f"The tick finishes the task if that was into {task.get('base') or 'main'}, and holds it for the "
@@ -291,7 +302,8 @@ def pr_adopt(task, repo):
     repo (open_prs()), into the task's base, at the branch's tip here."""
     base, prs = task.get("base") or "main", open_prs(task, repo)
     tip_ok, tip, _ = git(task["worktree"], "rev-parse", "--verify", "--quiet", f"refs/heads/{task['branch']}")
-    found = next((p for p in prs if p["baseRefName"] == base and tip_ok and tip and p.get("headRefOid") == tip), None)
+    found = next((p for p in prs if p["baseRefName"] == base and answered_in(p, repo) and tip_ok and tip
+                  and p.get("headRefOid") == tip), None)
     if found:
         task["pr"] = {"number": found["number"], "url": found["url"], "repo": repo}
     return task.get("pr") if found else None
@@ -331,6 +343,8 @@ def adopt_existing(s, task, given):
     if not re.fullmatch(PR_NUMBER, word):
         raise Fail(f"{given!r} isn't a pull request: give its number or its link.")
     number = int(word)
+    if link and link_host(given.strip()) != host():
+        raise Fail(f"{given} is on {link_host(given.strip())}, and herdr-task reaches GitHub at {host()} here. Nothing was adopted.")
     if link and link.group(1).lower() != repo.lower():
         raise Fail(f"{given} is in {link.group(1)}, and this folder's repository is {repo}. Give a pull request of {repo}.")
     have = task.get("pr") or {}
@@ -361,7 +375,8 @@ def adopt_existing(s, task, given):
         if not BRANCH.fullmatch(name) or name.startswith("-"):
             raise Fail(f"GitHub answered #{number} with the branch {name!r}, which isn't a branch name herdr-task takes. "
                        "Nothing was adopted.")
-    if not answered or answered.group(1).lower() != repo.lower() or int(answered.group(2)) != number:
+    if not answered or answered.group(1).lower() != repo.lower() or int(answered.group(2)) != number \
+            or link_host(p["url"]) != host():
         raise Fail(f"GitHub answered #{number} with {p['url']}, not a pull request of {repo}. Check the repository's name and "
                    "the number, then adopt again.")
     if cross is not False:
@@ -457,10 +472,11 @@ def landed(s, task):
     return False
 
 
-def already_merged(s, task):
+def already_merged(s, task, view=None):
     """SHEP-59: its work is already in its base (its pull request merged, squash too, or nothing left
     to merge): ready and the tick mark it done instead of opening a pull request. Returns the merged
-    pull request ({} when merged without one), or None. Its pull request is recorded on the task."""
+    pull request ({} when merged without one), or None. Its pull request is recorded on the task.
+    view: how a saved one is read (the forge's, which confirms it is this task's); pr_view() alone."""
     if merged_here(s, task):
         return {}
     repo = github(s)
@@ -472,7 +488,7 @@ def already_merged(s, task):
         git(main, "fetch", "--quiet", remote, f"+refs/heads/{base}:refs/remotes/{remote}/{base}")
         tip = git(main, "rev-parse", "--verify", "--quiet", f"refs/heads/{task.get('branch')}")[1] or tip
         if task.get("pr"):
-            v = pr_view(task)
+            v = (view or pr_view)(task)
             if v and v.get("state") == "MERGED" and v.get("headRefOid") == tip:
                 return {**task["pr"], "mergeCommit": v.get("mergeCommit")}
         found = pr_merged(task, repo)
@@ -494,7 +510,8 @@ PENDING = {"QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED", "EXPECTED
 def pr_read(task):
     """A pull request as gh answers it, and why not: (its view, None), or (None, gh's reason)."""
     pr = task["pr"]
-    ok, out, err = gh("pr", "view", str(pr["number"]), "--repo", pr["repo"], "--json", "state,mergeable,headRefOid,baseRefName,statusCheckRollup,mergeCommit")
+    ok, out, err = gh("pr", "view", str(pr["number"]), "--repo", pr["repo"], "--json",
+                      "state,mergeable,headRefOid,baseRefName,statusCheckRollup,mergeCommit,url")
     if not ok:
         return None, err or "no answer"
     try:
@@ -507,6 +524,41 @@ def pr_read(task):
 def pr_view(task):
     """pr_read()'s view alone, for those that wait quietly for the next look: None when gh can't say."""
     return pr_read(task)[0]
+
+
+def link_host(url):
+    m = re.match(r"https?://([^/]+)/", str(url or ""))
+    return m.group(1).lower() if m else None
+
+
+def pr_identity(v):
+    """Which pull request GitHub answered for, from its own link: {provider, host, repo, number, url};
+    None when it gave none."""
+    url = str(v.get("url") or "")
+    m = re.fullmatch(rf"https?://([^/]+)/([^/]+/[^/]+)/pull/({PR_NUMBER})/?", url)
+    return {"provider": "github", "host": m.group(1).lower(), "repo": m.group(2), "number": int(m.group(3)), "url": url} if m else None
+
+
+def answered_in(p, repo):
+    """GitHub's answer is that pull request in `repo`, by its own link."""
+    i = pr_identity(p)
+    return bool(i) and i["repo"] == repo and i["number"] == p.get("number")
+
+
+def pr_merge(pr, v):
+    """Squash-merges it on GitHub, only at the head commit the view `v` read: (ok, gh's words)."""
+    ok, _, err = gh("pr", "merge", str(pr["number"]), "--repo", pr["repo"], "--squash", "--delete-branch",
+                    "--match-head-commit", v.get("headRefOid") or "")
+    return ok, err
+
+
+def pr_checks(v):
+    """Its checks as facts, for the Accept card: {failed: [names], running, total}."""
+    rows = v.get("statusCheckRollup") or []
+    word = lambda c: (c.get("conclusion") or c.get("state") or "").upper()
+    return {"failed": [c.get("name") or c.get("context") or "a check" for c in rows if word(c) in BAD],
+            "running": sum(1 for c in rows if (c.get("status") or c.get("state") or "").upper() in PENDING and not c.get("conclusion")),
+            "total": len(rows)}
 
 
 def pr_problem(v):
