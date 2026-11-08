@@ -386,15 +386,17 @@ are B1's from here, and their pins are B1's.
   Native 3.x has no contained-repository owner, so nothing here claims one. The service's and the
   window's Pull request views (`service/worktree.ts`, `mods/task-pr/main.js`) ask gh, so for any
   record not GitHub's they now say why there is nothing to show there, without a call, instead of
-  reading its name as GitHub's.
+  reading its name as GitHub's. This is source-inspected: no test runs those two views, and their
+  sentence is a copy in each rather than in `core/worktree.js`'s `VIEW_WORDS`, which B1 doesn't own.
 - Transport (`T/bitbucket_http.py`): fixed GETs under
   `https://api.bitbucket.org/2.0/repositories/<repo>`: the repository (`full_name` and its link),
   the pull request (this repository's own source and destination, its number and link), the
   commit its (often abbreviated) head resolves to, that full commit's statuses page by page, and
   the pull request again. A head, branch or state that moved meanwhile refuses. Pagination
   stays in the same collection on that origin; a foreign, repeated or out-of-collection link,
-  a redirect, a disagreeing `size`, 20 pages, 1000 rows, 1 MiB per body, 8 s of wall clock per
-  request (a timeout too) and 45 s in all each make the read incomplete. TLS uses the system's default verification; proxies
+  a redirect, a disagreeing `size`, 20 pages, 1000 rows, 1 MiB per body, a timeout (8 s per socket
+  wait, with the body's reads also held to 8 s of wall clock) and a 45 s budget checked before each
+  request each make the read incomplete. Connecting, the tunnel and TLS have only the socket timeout. TLS uses the system's default verification; proxies
   from the environment are honoured as urllib does.
 - Outcomes kept apart: no complete read is no view at all, and `show --evidence` (the Accept
   card) says why in `checks.result`: `missing` (no such pull request, or one the token can't
@@ -405,8 +407,11 @@ are B1's from here, and their pins are B1's.
   than the branch here are `other-head`. The card's `state` keeps its existing five values. For
   the tick and Accept, failed checks and a declined pull request are problems in GitHub's words,
   and running or no checks are pending: empty is never green.
-- Merge refusal: Accept, merge and every auto merge send Bitbucket nothing that merges and merge
-  no other way (no GitHub, local or agent route); the refusal stays on the task for the person.
+- Merge refusal: Accept (also while checks run, so no `auto_merge` is set), merge and the tick's auto
+  merge send Bitbucket nothing that merges and merge no other way (no GitHub, local or agent route);
+  the refusal stays on the task for the person. A failed read's repair names a credential only when
+  that is what failed; `--json` carries no `cause` for Bitbucket (`cause` stays gh's and git's).
+- `adopt` on a task that already records a Bitbucket pull request refuses before any call.
   A pull request merged on Bitbucket by hand finishes its task through the tick or Accept, with
   `merged_head` taken from that very read, so the branch goes only at that head (`finish()`
   never asks gh about another forge's record). GitHub news and the base watch stay GitHub's.

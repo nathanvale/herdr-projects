@@ -300,6 +300,19 @@ class ExactHeadChecks(unittest.TestCase, Quiet):
                 self.assertEqual((checks["state"], checks["result"]), ("unknown", "incomplete-read"))
                 self.assertNotIn("head", checks)
 
+    def test_a_link_that_isnt_a_url_never_stops_a_command(self):
+        f = fixture(self)  # a status's own link is its poster's: left off, and the read still whole
+        f.bb.answers(f.tip, [{**f.bb.status("a", "SUCCESSFUL"), "url": "https://a]b/"}])
+        self.assertEqual(self.run_show(f)["result"], "passed")
+        p = f.run("tick", "--folder", f.repo, "--json")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        f = fixture(self)  # a next page that isn't a URL: incomplete
+        f.bb.answers(f.tip)
+        f.bb.routes[f.bb.statuses_path(f.tip)] = (200, {"values": [], "next": "https://a]b/x"})
+        self.assertEqual(self.run_show(f)["result"], "incomplete-read")
+        p = f.run("tick", "--folder", f.repo, "--json")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
     def test_missing_moved_and_another_head_are_not_checks(self):
         f, checks = self.outcome()
         f.bb.routes[f"{ROOT}/pullrequests/7"] = (404, {"type": "error"})
@@ -415,6 +428,28 @@ class NothingMergesOrPublishes(unittest.TestCase, Quiet):
                 self.assertEqual((t["state"], t["attention"], t["pr"]["number"], t.get("accepted_at")), ("ready", error, 7, None))
                 self.assertEqual((f.rev("main"), f.rev("task/1")), (f.start, f.tip))  # nothing merged here either
                 self.assertTrue(os.path.isdir(f.wt))
+
+    def test_accept_with_checks_running_waits_for_nothing_that_would_merge(self):
+        f = fixture(self)
+        f.bb.answers(f.tip, [f.bb.status("a", "INPROGRESS")])
+        p = f.run("accept", "1", "--folder", f.repo, "--json")
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("sent no merge there", json.loads(p.stdout)["error"])
+        self.quiet(f, p.stdout, p.stderr)
+        t = f.task()
+        self.assertEqual((t["state"], t.get("auto_merge"), t.get("accepted_at")), ("ready", None, None))
+
+    def test_the_ticks_auto_merge_sends_no_merge(self):
+        f = self.passed()
+        f.seed(auto_merge="checks")
+        p = f.run("tick", "--folder", f.repo, "--json")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.quiet(f, p.stdout, p.stderr)
+        t = f.task()
+        self.assertEqual((t["state"], json.loads(p.stdout)["done"]), ("ready", []))
+        self.assertIn("sent no merge there", t["attention"])
+        self.assertEqual({r["method"] for r in f.bb.seen}, {"GET"})
+        self.assertEqual((f.rev("main"), f.rev("task/1")), (f.start, f.tip))
 
     def test_one_merged_on_bitbucket_at_its_head_finishes(self):
         f = fixture(self)

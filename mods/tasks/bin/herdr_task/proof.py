@@ -66,6 +66,7 @@ def numstat(out, files):
 
 def bitbucket_checks(t, tip):
     """Bitbucket's checks on exactly the head of its pull request, in words: {state, text, result, head?}.
+    tip: the branch here for a worktree task ("" when it can't be read: then no check counts), else None.
     result keeps apart what state can't: missing (Bitbucket has no such pull request), every way a read
     can fail to be complete (bitbucket_http.WORDS's categories: none of it counts), other-head (they are
     a head other than the branch here, the one Accept takes), and a complete read's empty, pending,
@@ -78,9 +79,10 @@ def bitbucket_checks(t, tip):
         return {"state": "unknown", "result": "refused", "text": c["refused"]}
     head, bad, running, total = c["head"], c["failed"], c["running"], c["total"]
     on = {"head": head}
-    if tip and head != tip:
+    if tip is not None and head != tip:
+        here = f"not {tip[:7]}, this branch here" if tip else "and this branch's own commit here can't be read"
         return {"state": "unknown", "result": "other-head", **on,
-                "text": f"They are for {head[:7]}, the pull request's head, not {tip[:7]}, this branch here, so none of them count"}
+                "text": f"They are for {head[:7]}, the pull request's head, {here}, so none of them count"}
     if bad:
         return {"state": "failed", "result": "failed", **on, "text": f"{len(bad)} failing on {head[:7]}: " + ", ".join(bad[:FEW])}
     if running:
@@ -155,5 +157,5 @@ def evidence(s, t):
     out["diff"] = None if files is None else {
         "files": len(files), "added": sum(v[0] for v in files.values()), "removed": sum(v[1] for v in files.values()),
         "list": [{"path": p, "added": v[0], "removed": v[1]} for p, v in sorted(files.items(), key=lambda x: -(x[1][0] + x[1][1]))[:FEW]]}
-    out["checks"] = checks_of(t, tip if t.get("mode") == "worktree" and t.get("branch") else None)
+    out["checks"] = checks_of(t, (tip or "") if t.get("mode") == "worktree" and t.get("branch") else None)
     return out

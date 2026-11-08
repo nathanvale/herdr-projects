@@ -38,7 +38,7 @@
       "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "d2463e1a37c0aeefaee51eec7480d3de3df1f40d",
-      "sha256": "96925bc3ab0489904f0d48f62bb106769d81b113268cc1ca859cb6b17d66cbd5"
+      "sha256": "5049ca4e11ae1caf03ba43d3b73b3765e54fc37911f67258908904195e2d1f29"
     },
     {
       "phase": "B1",
@@ -68,7 +68,7 @@
       "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/tick.py",
       "upstream_blob": "079934ac912d084b2c4803e772007778d5791d71",
-      "sha256": "fe5039654b0f616960f1c964a08c51054c0f413398357cb417e035dd8efc6d9e"
+      "sha256": "a5e98681a8f5e5db1b43acf890ff4c4f2fa5db7e61d233b259943c6dca9fef98"
     },
     {
       "phase": "A1",
@@ -278,13 +278,13 @@
       "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/forge.py",
       "upstream_blob": null,
-      "sha256": "97f836a36598d6e6a1a69836331a516fb640650ebcac5b7ffb2dc748a71d2b4a"
+      "sha256": "3779f22df66886a4c6cb2ee133c84f052ec592b5fa29ec8d74322dcaebd4cfbf"
     },
     {
       "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/proof.py",
       "upstream_blob": "8937928917d15f089198e13a44a1bfe4ae6d1520",
-      "sha256": "7663d430aac525c8f5e8c81cddb8cd89b2798380afbaa8a0afc69d886cc51857"
+      "sha256": "b90cc74cde4dde53f1262cce7031f1c93da7ca24c0d77ce642f7fbd90d77433d"
     },
     {
       "phase": "S1",
@@ -296,13 +296,13 @@
       "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/bitbucket.py",
       "upstream_blob": null,
-      "sha256": "55efe9bc756bf7ef6edb98125837ba5b72a6bf44853324296c8ac3b34c404b47"
+      "sha256": "19d8f4fa386a6bf7cab10132b79a14696df9740b44f09c43b2488261120e9423"
     },
     {
       "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/bitbucket_http.py",
       "upstream_blob": null,
-      "sha256": "a6b5952d8fa6619e779a4983dd7249dcc95347ee53d3cb400486bf52d5945e6b"
+      "sha256": "1665e0f7cf232461c3f726ca5bf69600c21964d99fbeec86b78b77f82312100a"
     },
     {
       "phase": "B1",
@@ -320,7 +320,7 @@
       "phase": "B1",
       "path": "test/test_bitbucket.py",
       "upstream_blob": null,
-      "sha256": "67327021fb8c63f7824f9faacbcf840d4fdf7ae3ee9c725ab7c61457beea3434"
+      "sha256": "94cc98328db478e693c20c549305cc2338a4a9c84782b14fca2b5a8b90dee3c2"
     }
   ],
   "requirements": [
@@ -376,7 +376,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; S1 refuses another provider or host before any gh call and checks the answered link, host, repository and number before any write (test/test_forge.py authored, CI pending); B1 reads a Bitbucket record only from a checkout whose remote binds that repository in every configured and derived URL view and whose pull request is from the task's branch into its base, and the service's and window's Pull request views refuse any record not GitHub's without a gh call (test/test_bitbucket.py authored, CI pending); Bitbucket folder identity and records are B2's; native qualification pending"
+      "evidence": "source-inspected; S1 refuses another provider or host before any gh call and checks the answered link, host, repository and number before any write (test/test_forge.py authored, CI pending); B1 reads a Bitbucket record only from a checkout whose remote binds that repository in every configured and derived URL view and whose pull request is from the task's branch into its base, (test/test_bitbucket.py authored, CI pending); the service's and window's Pull request views refuse any record not GitHub's without a gh call (source-inspected only); Bitbucket folder identity and records are B2's; native qualification pending"
     },
     {
       "id": "bitbucket-credentials",
@@ -544,7 +544,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; B1 already refuses Accept, merge and auto merge for a saved Bitbucket pull request before any merge request, with no GitHub, local or agent route, and finishes one merged on Bitbucket by hand only at the head that read (test/test_bitbucket.py authored, CI pending); B2 keeps it for published records; native qualification pending"
+      "evidence": "source-inspected; B1 already refuses Accept (passed and running checks), merge and the tick's auto merge for a saved Bitbucket pull request before any merge request, with no GitHub, local or agent route, and finishes one merged on Bitbucket by hand only at the head that read (test/test_bitbucket.py authored, CI pending); B2 keeps it for published records; native qualification pending"
     },
     {
       "id": "public-cli-outcomes",

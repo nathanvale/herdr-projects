@@ -26,8 +26,8 @@ from .github import (
     update_main, watch_main,
 )
 from .forge import (
-    access_of, admit, adopt_existing, already_merged, integrate, merge_reach, name_of, no_local_merge, no_merge, pr_adopt,
-    pr_open, pr_pending, pr_problem, pr_read, pr_view, publication, repository,
+    admit, adopt_existing, already_merged, integrate, merge_reach, name_of, no_local_merge, no_merge, pr_adopt,
+    pr_open, pr_pending, pr_problem, pr_read, pr_view, provider_of, publication, repair_of, repository,
 )
 from .launch import (
     base_ref, brief, caller_labels, caller_space, current_base, default_space, folder_for, handoff, launch, name_tabs,
@@ -376,7 +376,6 @@ def cmd_ready(args):
         worktree_here(s, t)
         # A saved pull request its forge can't publish from here (Bitbucket's, until B2) refuses first,
         # before any read, fetch or finish: nothing is asked of any host and the task stays as it was.
-        admit(t)
         publication(t)
         wt = t.get("worktree") if t.get("mode") == "worktree" else None
         if wt and os.path.isdir(wt):
@@ -1041,7 +1040,7 @@ def merge_now(s, t):
     matched = None  # the head GitHub was asked to merge (--match-head-commit)
     if not v:
         return (f"{UNREACHED} #{n} on {name_of(t['pr'])} ({plain(why or 'no answer')}). Nothing merged. "
-                f"Repair {access_of(t['pr'])}, then try again.")
+                f"{repair_of(t['pr'], why)}")
     if v.get("state") != "MERGED":
         problem = pr_problem(v) or adopted_moved(s, t, v)
         if problem:
@@ -1085,7 +1084,7 @@ def merge_now(s, t):
 
 def merge_refused(args, v, error):
     """Accept or merge stopped at merge_now(): why, and with --json whether gh was the cause."""
-    github = (v.get("pr") or {}).get("provider") in (None, "github")
+    github = provider_of(v.get("pr")) == "github"
     cause = {"cause": "gh"} if github and error.startswith((UNREACHED, MERGE_FAILED)) else {}
     say(args, {**v, "error": error, **cause}, None) if args.json else print(f"herdr-task: {error}", file=sys.stderr)
     sys.exit(1)

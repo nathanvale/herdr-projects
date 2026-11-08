@@ -63,9 +63,9 @@ def name_of(pr):
     return ADAPTERS.get(provider_of(pr), github).NAME
 
 
-def access_of(pr):
-    """What the person repairs when that forge can't be read."""
-    return bitbucket.ACCESS if provider_of(pr) == BITBUCKET else github.GH_ACCESS
+def repair_of(pr, why):
+    """What the person does when that forge couldn't read it (why: its reason), as one sentence."""
+    return bitbucket.repair(why) if provider_of(pr) == BITBUCKET else f"Repair {github.GH_ACCESS}, then try again."
 
 
 def publication(task):
@@ -185,8 +185,12 @@ def pr_adopt(task, where):
 
 def adopt_existing(s, task, given):
     """Records an existing pull request by hand (the adapter checks it is the task's), refused first
-    when the one already saved is unreachable here."""
+    when the one already saved is unreachable here, or another forge's than GitHub (whose adoption
+    alone is here): nothing is read or recorded."""
     admit(task)
+    if task.get("pr") and provider_of(task["pr"]) != GITHUB:
+        raise Fail(f"This task already records {name_of(task['pr'])}'s pull request {mine(task['pr'])}, and a task keeps the one "
+                   "it records; nothing was adopted.")
     # The folder's host, once gh has placed it (the adapter's own lookup, asked once), before any
     # call about the pull request.
     return github.adopt_existing(s, task, given, lambda s: reach(repository(s), "nothing was adopted", "adopt again"))

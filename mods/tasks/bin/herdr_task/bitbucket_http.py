@@ -48,10 +48,10 @@ STATUS = {"SUCCESSFUL": "pass", "INPROGRESS": "pending", "FAILED": "fail", "STOP
 
 # What each failure means to the person, in herdr-task's words only.
 WORDS = {
-    "not-bitbucket": "this folder's remote isn't one Bitbucket repository herdr-task can bind (its written, fetch and push "
-                     "URLs must all name the same one on bitbucket.org)",
-    "missing-credentials": "this machine's Git credential helper gave no Bitbucket token for it without asking "
-                           "(set up a REST-capable API or access token for bitbucket.org there)",
+    "not-bitbucket": "this folder's remote doesn't point at one and the same Bitbucket repository on bitbucket.org every "
+                     "way git uses it",
+    "missing-credentials": "this machine's Git credential helper gave no Bitbucket token without asking; set up an API "
+                           "or access token for bitbucket.org there",
     "permission-refused": "Bitbucket refused this machine's token for reading it (the token needs pull request read access)",
     "rate-limited": "Bitbucket limited how often it is read; the next look tries again",
     "malformed-response": "Bitbucket's answer wasn't one herdr-task can read",
@@ -211,8 +211,8 @@ class Reader:
         """A pagination link, admitted only inside the same collection of this repository on the API."""
         if not isinstance(url, str) or self.has_token(url):
             raise Failure("incomplete-read")
-        u = urllib.parse.urlsplit(url)
         try:
+            u = urllib.parse.urlsplit(url)
             port = u.port
         except ValueError:
             raise Failure("incomplete-read")
@@ -301,7 +301,10 @@ class Reader:
         href = (value or {}).get("href") if isinstance(value, dict) else None
         if not isinstance(href, str) or self.has_token(href):
             raise Failure("malformed-response")
-        u = urllib.parse.urlsplit(href)
+        try:
+            u = urllib.parse.urlsplit(href)
+        except ValueError:
+            raise Failure("malformed-response")
         if (u.scheme, u.netloc, u.query, u.fragment) != ("https", HOST, "", "") or u.path.rstrip("/").lower() != path.lower():
             raise Failure("malformed-response")
         return href
@@ -354,8 +357,12 @@ class Reader:
                 raise Failure("identity-changed")
             item = {"name": self.clean(row.get("name") or row["key"]), "state": STATUS[row["state"]]}
             link = row.get("url")
-            if isinstance(link, str) and not self.has_token(link) and urllib.parse.urlsplit(link).scheme == "https" \
-                    and not urllib.parse.urlsplit(link).username:
+            try:
+                shown = isinstance(link, str) and not self.has_token(link) and urllib.parse.urlsplit(link).scheme == "https" \
+                    and not urllib.parse.urlsplit(link).username
+            except ValueError:
+                shown = False  # a status's own link is its poster's: one that isn't a URL is left off, not fatal
+            if shown:
                 item["url"] = link[:2048]
             out.append(item)
         return out
@@ -372,7 +379,7 @@ def read_pull_request(folder, remote, number):
         raise Failure("not-bitbucket")
     token = credential(folder, remote, seen, bound)
     r = Reader(bound["repo"], token)
-    r.same_repository(r.get(r.root))  # the token reads this very repository
+    r.same_repository(r.get(r.root, "missing"))  # the token reads this very repository (404: it can't see it)
     pr = r.pull_request(number)
     head = r.commit(pr["short"])
     checks = r.statuses(head)

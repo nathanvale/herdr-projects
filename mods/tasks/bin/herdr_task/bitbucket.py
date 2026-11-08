@@ -18,9 +18,10 @@ from . import bitbucket_http as http
 NAME = "Bitbucket"
 PROVIDER = "bitbucket"
 ACCESS = "this machine's Git credential helper for bitbucket.org (a REST-capable API or access token)"
-MERGE_REFUSED = ("Bitbucket can't be asked to merge exactly the commit that was accepted (its merge has no expected-head "
-                 "check), so herdr-task sent no merge there and doesn't merge it any other way. Merge pull request #{n} on "
-                 "Bitbucket yourself; the tick finishes the task once it reads it merged at this head.")
+MERGE_REFUSED = ("Bitbucket's merge can't be tied to exactly the commit that was accepted, so herdr-task sent no merge "
+                 "there and doesn't merge it any other way. Merge pull request #{n} on Bitbucket yourself: the tick then "
+                 "finishes the task, and removes its branch only if what merged is this branch's commit.")
+SIGN_IN = {"missing-credentials", "permission-refused"}
 PUBLISH_LATER = ("herdr-task doesn't publish to Bitbucket yet, so this task's pull request {pr} can't be opened, prepared or "
                  "told it's ready from here; nothing was pushed or sent. {stays}")
 
@@ -64,7 +65,7 @@ def pr_read(task):
         r = http.read_pull_request(wt, remote, pr["number"])
     except http.Failure as e:
         return None, Why(e.category, http.WORDS.get(e.category, http.WORDS["unavailable"]))
-    except (TypeError, KeyError, AttributeError, IndexError, RecursionError):
+    except (TypeError, KeyError, AttributeError, IndexError, ValueError, RecursionError):
         return None, Why("malformed-response", http.WORDS["malformed-response"])
     # The task's own candidate: its branch into its base. Another source or destination is never read
     # as this task's, so nothing finishes on it and no card counts its checks (as GitHub's adoption).
@@ -117,6 +118,13 @@ def pr_pending(v):
     """Still waiting on its checks: some are running, or none were reported at all (empty is never green)."""
     c = pr_checks(v)
     return not c.get("refused") and (c["running"] > 0 or c["total"] == 0)
+
+
+def repair(why):
+    """What the person does when a read failed, by why (Why.category): only a credential needs repairing."""
+    if getattr(why, "category", None) in SIGN_IN:
+        return f"Repair {ACCESS}, then try again."
+    return "Try again later; merging it is done on Bitbucket itself either way."
 
 
 def merge_refusal(pr):
