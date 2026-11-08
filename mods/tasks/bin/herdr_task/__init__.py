@@ -15,6 +15,10 @@ before it:
                resume.
   github       GitHub and merging: pull requests, checks, and finishing a merged task; GitHub's
                forge adapter.
+  bitbucket_http  Bitbucket Cloud's REST transport, for reads: one bound repository's pull request
+               and its head's complete statuses, on this machine's own Git credentials.
+  bitbucket    Bitbucket's forge adapter: reads a saved Bitbucket pull request and its checks;
+               publishing and merging there are refused.
   forge        The forge: the one way commands, the tick and the Accept card reach a task's pull
                request, whichever provider hosts it; identity checked before anything is sent.
   launch       Starting agents: their argv, labels, brief, tab and coordinator.

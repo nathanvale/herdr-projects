@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "phase": "S1",
+  "phase": "B1",
   "architecture": "full-upstream-3.x",
   "candidate_readiness": "blocked",
   "inputs": {
@@ -17,10 +17,10 @@
       "sha256": "fde3f8a8ca8de98d98b66621029b131b2387906c69283a3e5f3290d558527574"
     },
     {
-      "phase": "S1",
+      "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/__init__.py",
       "upstream_blob": "3d166c20ba39b46df4d797acfabeaeac0e28aa21",
-      "sha256": "8b7c9e84069cfe7e53b58abf1a276525e771a3931a9455c29dfdf9b4f64cd1c1"
+      "sha256": "e86a7bc3e46774d17b6a568a15a0a6c668ad337263ba1d02e9a1f208b7347a5a"
     },
     {
       "phase": "A1",
@@ -35,16 +35,16 @@
       "sha256": "637b1d75478a87121b109eb58db2725fc28ea13d3bcce819fdd9fad4d6d42246"
     },
     {
-      "phase": "S1",
+      "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "d2463e1a37c0aeefaee51eec7480d3de3df1f40d",
-      "sha256": "c39cba6785b67f2978e06cf79aba1b8a6aa5722b819daf4da6ab65642a4a31c0"
+      "sha256": "5049ca4e11ae1caf03ba43d3b73b3765e54fc37911f67258908904195e2d1f29"
     },
     {
-      "phase": "S1",
+      "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/github.py",
       "upstream_blob": "e28e2fe4f68da9e52fbbe8cbee1e293d5b22558c",
-      "sha256": "3e836b95b796c78d63ca3b2fcc5fc0cbad86972d9565102f7ec99430e9364f8f"
+      "sha256": "21259c10695409e45b50f3dc22a1d1664ed58e19f0060fb6192751fb9452f9cb"
     },
     {
       "phase": "A1",
@@ -65,10 +65,10 @@
       "sha256": "6876bcbaa82aa62004f92f37b4d0d7c5c463c417da573c4c726ca0e169a61f8d"
     },
     {
-      "phase": "S1",
+      "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/tick.py",
       "upstream_blob": "079934ac912d084b2c4803e772007778d5791d71",
-      "sha256": "5fd92884eaffd055034cc31ae03bf8337efa50cd590c9742920ebdb36673e07c"
+      "sha256": "a5e98681a8f5e5db1b43acf890ff4c4f2fa5db7e61d233b259943c6dca9fef98"
     },
     {
       "phase": "A1",
@@ -275,22 +275,52 @@
       "sha256": "b64850658f22915955f13f7901bd5cdf5b00867d60afb77e2e12119528dfcce5"
     },
     {
-      "phase": "S1",
+      "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/forge.py",
       "upstream_blob": null,
-      "sha256": "7dd9199f225094e17607f2857f281f1e4cfa70f31de0fe9770c404855da5350c"
+      "sha256": "3779f22df66886a4c6cb2ee133c84f052ec592b5fa29ec8d74322dcaebd4cfbf"
     },
     {
-      "phase": "S1",
+      "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/proof.py",
       "upstream_blob": "8937928917d15f089198e13a44a1bfe4ae6d1520",
-      "sha256": "08147494c1d50e1f2e30948d639c26e228ab3975d60dd0df3b5e724d4dbb0f4c"
+      "sha256": "b90cc74cde4dde53f1262cce7031f1c93da7ca24c0d77ce642f7fbd90d77433d"
     },
     {
       "phase": "S1",
       "path": "test/test_forge.py",
       "upstream_blob": null,
       "sha256": "9934521733dde37ee0c0e899b06a2f9934db3f06f6379a3de6e575efcf4fc42c"
+    },
+    {
+      "phase": "B1",
+      "path": "mods/tasks/bin/herdr_task/bitbucket.py",
+      "upstream_blob": null,
+      "sha256": "19d8f4fa386a6bf7cab10132b79a14696df9740b44f09c43b2488261120e9423"
+    },
+    {
+      "phase": "B1",
+      "path": "mods/tasks/bin/herdr_task/bitbucket_http.py",
+      "upstream_blob": null,
+      "sha256": "a5d4b3d784343c54b408553cc3aa4d1f26825e2b5ea73e7a60382ae4b548f090"
+    },
+    {
+      "phase": "B1",
+      "path": "mods/task-pr/main.js",
+      "upstream_blob": "757874bfd87b6fe27c58a4d09be69536978ef527",
+      "sha256": "00ebc2702dab15afb253b93b793097ae0576165321187e79679f5d0ff0dc09e4"
+    },
+    {
+      "phase": "B1",
+      "path": "service/worktree.ts",
+      "upstream_blob": "ea79e8b16d6ffb0e3e39ca22167a9129b800da6c",
+      "sha256": "e2783e28630f3633e5fd926190ba90a426eece83ba3d61276b24a1293819aeb3"
+    },
+    {
+      "phase": "B1",
+      "path": "test/test_bitbucket.py",
+      "upstream_blob": null,
+      "sha256": "23a4e1d64982a9e71b04212b628f8d5dce1720ef2c2e0aee04ff6de7e746e8f5"
     }
   ],
   "requirements": [
@@ -319,7 +349,7 @@
         "test/core-github-pr.test.ts",
         "test/core-worktree.test.ts"
       ],
-      "evidence": "source-inspected; S1 routes GitHub through the forge seam with legacy records unqualified (test/test_forge.py, test/test_herdr_task.py authored, CI pending); native qualification pending"
+      "evidence": "source-inspected; S1 routes GitHub through the forge seam with legacy records unqualified (test/test_forge.py, test/test_herdr_task.py authored, CI pending); B1 leaves GitHub folders, records and gh calls as they were (existing tests unchanged); native qualification pending"
     },
     {
       "id": "forge-identity",
@@ -346,7 +376,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; S1 refuses another provider or host before any gh call and checks the answered link, host, repository and number before any write (test/test_forge.py authored, CI pending); presentation readers and Bitbucket are B1/B2; native qualification pending"
+      "evidence": "source-inspected; S1 refuses another provider or host before any gh call and checks the answered link, host, repository and number before any write (test/test_forge.py authored, CI pending); B1 reads a Bitbucket record only from a checkout whose remote binds that repository in every configured and derived URL view and whose pull request is from the task's branch into its base, (test/test_bitbucket.py authored, CI pending); the service's and window's Pull request views refuse any record not GitHub's without a gh call (source-inspected only); Bitbucket folder identity and records are B2's; native qualification pending"
     },
     {
       "id": "bitbucket-credentials",
@@ -365,7 +395,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; B1 asks the execution host's Git credential helper (git credential fill, prompts off, bounded) for the bound repository, accepts only an ordinary username/password answer and sends the token as Bearer to the fixed API; refusal before any request and redaction are in test/test_bitbucket.py (authored, CI pending); a real helper, account and both execution hosts are native qualification"
     },
     {
       "id": "bitbucket-reads",
@@ -384,7 +414,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; B1 reads the pull request, resolves its head to the full commit, reads every status page of exactly that commit within fixed bounds and reads the pull request again; missing, refused, incomplete, other-head, empty, pending, failed and passed stay distinct (show --evidence checks.result; test/test_bitbucket.py authored, CI pending); Bitbucket's real answers are native qualification"
     },
     {
       "id": "bitbucket-publication",
@@ -514,7 +544,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; B1 already refuses Accept (passed and running checks), merge and the tick's auto merge for a saved Bitbucket pull request before any merge request, with no GitHub, local or agent route, and finishes one merged on Bitbucket by hand only at the head that read (test/test_bitbucket.py authored, CI pending); B2 keeps it for published records; native qualification pending"
     },
     {
       "id": "public-cli-outcomes",
@@ -1218,7 +1248,7 @@
     }
   ],
   "inventory": "upstream-v3.1.3-files.json",
-  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held, N1 native pull request adoption and fail-closed publication, the C1 session discovery under each agent's own folder, the W1 web chat flag kept apart from background work, the H1 opt-in private custom-domain listener, and the S1 forge seam with GitHub as its one adapter; no required fork port is complete, CI-proved or runtime-qualified",
+  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held, N1 native pull request adoption and fail-closed publication, the C1 session discovery under each agent's own folder, the W1 web chat flag kept apart from background work, the H1 opt-in private custom-domain listener, the S1 forge seam with GitHub as its first adapter, and the B1 Bitbucket reads (a saved Bitbucket pull request and its head's complete checks on the execution host's own Git credentials, merge and publication refused); no required fork port is complete, CI-proved or runtime-qualified",
   "azure_cli_design": {
     "skill": "my-second-brain-playground:cli-design",
     "route": "maintain/extend existing-project",

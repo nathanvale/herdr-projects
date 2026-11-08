@@ -10,9 +10,10 @@ import type { Diff, DiffFile, FileText, Patch, PullRequest, TreeFiles } from "..
 const { READ, against, changedFiles, PR_FIELDS, prOf, VIEW_WORDS, LIST_DIR, dirEntries, MARK_ARGS, markOf, PER_FOLDER } = W as any;
 import { HOME } from "./paths.ts";
 
-export type Where = { folder: string; machine: string | null; base?: string | null; start?: string | null; branch?: string | null; pr?: { number: number; repo?: string } | null };
+export type Where = { folder: string; machine: string | null; base?: string | null; start?: string | null; branch?: string | null; pr?: { number: number; repo?: string; provider?: string } | null };
 
 const MAX_FILES = 5000, MAX_TEXT = 400_000;
+const OTHER_FORGE = "This pull request isn't on GitHub; its checks show on the task's Accept card.";
 const STATUS: Record<string, DiffFile["status"]> = { A: "added", M: "modified", D: "deleted", U: "modified" };
 
 /** A path inside the worktree: relative, no way out of it. */
@@ -30,6 +31,8 @@ export async function worktree(hub: Hub, w: Where, what: string, path?: string):
   if (what === "pr") {
     // as the window's Pull request (mods/task-pr ask()): { pr }, or { why } there's none, or { error }
     if (!w.pr?.number && !w.branch) return { why: VIEW_WORDS.noBranch };
+    // Only GitHub's are asked of gh: another forge's saved repository name would be read as GitHub's (B1).
+    if (w.pr?.provider && w.pr.provider !== "github") return { why: OTHER_FORGE };
     const r = w.pr?.number && w.pr.repo ? await sh(["gh", "pr", "view", String(w.pr.number), "--repo", w.pr.repo, "--json", PR_FIELDS])
       : await sh(["gh", "pr", "view", w.branch!, "--json", PR_FIELDS]).catch(() => null);
     if (!r) return { why: VIEW_WORDS.noPr };

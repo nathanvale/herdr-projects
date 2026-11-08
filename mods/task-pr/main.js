@@ -15,6 +15,8 @@ const EVERY = 30000;
 async function ask(w) {
   const on = w.machine ?? undefined;
   let r;
+  // Only GitHub's are asked of gh: another forge's saved repository name would be read as GitHub's (B1).
+  if (w.pr?.provider && w.pr.provider !== "github") return { why: "This pull request isn't on GitHub; its checks show on the task's Accept card." };
   if (w.pr?.number && w.pr?.repo) {
     r = await exec("gh", ["pr", "view", String(w.pr.number), "--repo", w.pr.repo, "--json", PR_FIELDS], { on });
   } else if (w.branch) {

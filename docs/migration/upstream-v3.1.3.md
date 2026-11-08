@@ -4,9 +4,10 @@ S0 is a source-only foundation; A1 adds provider launch plans and deployment dis
 owners on it, with Azure dispatch held, N1 adds native pull request adoption and
 fail-closed publication, C1 finds a Claude Code session under its own agent's
 folder, W1 keeps a web page's chat flag apart from background work, H1 adds an
-opt-in private custom-domain listener, and S1 routes pull requests through the forge
-seam with GitHub as its one adapter. Required Bitbucket, Azure and lifecycle ports are
-pending. This checkpoint is not deployable or ready for application use. Check's
+opt-in private custom-domain listener, S1 routes pull requests through the forge
+seam with GitHub as its first adapter, and B1 reads a saved Bitbucket pull request and
+its head's complete checks through a second. Required Bitbucket publication, Azure and
+lifecycle ports are pending. This checkpoint is not deployable or ready for application use. Check's
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
 
@@ -351,6 +352,89 @@ those earlier phases admitted are S1's from here, and their pins are S1's.
   as much as source; ignored paths are no commit and pass.
 - This is not a required port. No inventory requirement changes status.
 
+### B1 Bitbucket reads checkpoint
+
+B1 is its own row in `PHASES` after S1. Its owners are `T/__init__.py`, `T/bitbucket.py`,
+`T/bitbucket_http.py`, `T/commands.py`, `T/forge.py`, `T/github.py`, `T/proof.py`, `T/tick.py`,
+`mods/task-pr/main.js`, `service/worktree.ts` and `test/test_bitbucket.py`; those S1 admitted
+are B1's from here, and their pins are B1's.
+
+- What is read: a task's saved Bitbucket pull request, `{provider: "bitbucket", host:
+  "bitbucket.org", repo, number, url}`, through `forge.pr_read()` like GitHub's. A legacy
+  unqualified record stays GitHub's, and a folder's repository (`forge.repository()`) is still
+  GitHub's or none: a Bitbucket-only folder still merges locally as N1 decided, and nothing
+  writes a Bitbucket record yet. B2 makes Bitbucket folders publish and record one.
+- Binding: the read goes from the task's own checkout. Its remote (`origin`, else its first)
+  must name that same `workspace/repo` in every view git has of it: each configured `url` and
+  `pushurl` line, which must be on bitbucket.org itself, and the fetch and push URLs git derives
+  from them, which a rewrite (`url.*.insteadOf`) may take through an SSH alias of the same path. An
+  HTTPS view must be bitbucket.org with no password, query or port other than 443. Otherwise nothing
+  is sent, and the view is refused. The pull request read must then be from the task's branch into
+  its base (none recorded is `main`): another source or destination is a refused view, so nothing
+  finishes on it and no card counts its checks.
+- Credential custody: the execution host's own Git credential helper, through `git credential
+  fill` in the checkout, with prompts off (`GIT_TERMINAL_PROMPT=0`, a failing askpass,
+  `GCM_INTERACTIVE=never`) and a 5 s bound. The request carries `protocol=https`,
+  `host=bitbucket.org`, the HTTPS path (else `<repo>.git`) and only a username written in an
+  HTTPS URL; git's own configuration decides whether the path takes part (`credential.useHttpPath`).
+  Only an ordinary username and password answer counts, and its password is sent as the Bearer
+  token, so the helper must hold a REST-capable Bitbucket API or access token there: herdr-task
+  can't tell a token from any other password. It refuses before any request a missing answer, a
+  password that isn't 1 to 8192 printable ASCII characters, a username other than one written in
+  the URL, any `authtype`/`credential` answer that reaches it (git itself drops those for a caller
+  that didn't ask for them), and a remote that changed since it was bound. Bitbucket refuses
+  anything else that isn't a token it accepts (`permission-refused`). No other account, store,
+  setting or Basic fallback. herdr-task never approves, rejects or stores a credential.
+- Remote and contained execution: Bitbucket is reached only by herdr-task itself, on the machine
+  holding the checkout (`herdr-task --on <machine>` runs it there, with that machine's helper).
+  Native 3.x has no contained-repository owner, so nothing here claims one. The service's and the
+  window's Pull request views (`service/worktree.ts`, `mods/task-pr/main.js`) ask gh, so for any
+  record not GitHub's they now say why there is nothing to show there, without a call, instead of
+  reading its name as GitHub's. This is source-inspected: no test runs those two views, and their
+  sentence is a copy in each rather than in `core/worktree.js`'s `VIEW_WORDS`, which B1 doesn't own.
+- Transport (`T/bitbucket_http.py`): fixed GETs under
+  `https://api.bitbucket.org/2.0/repositories/<repo>`: the repository (`full_name` and its link),
+  the pull request (this repository's own source and destination, its number and link), the
+  commit its (often abbreviated) head resolves to, that full commit's statuses page by page, and
+  the pull request again. A head, branch or state that moved meanwhile refuses. Pagination
+  stays in the same collection on that origin; a foreign, repeated or out-of-collection link,
+  a redirect, a disagreeing `size`, 20 pages, 1000 rows, 1 MiB per body, a timeout (8 s per socket
+  wait, with the body's reads also held to 8 s of wall clock) and a 45 s budget checked before each
+  request each make the read incomplete. Connecting, the tunnel and TLS have only the socket timeout. TLS uses the system's default verification; proxies
+  from the environment are honoured as urllib does.
+- Outcomes kept apart: no complete read is no view at all, and `show --evidence` (the Accept
+  card) says why in `checks.result`: `missing` (no such pull request, or one the token can't
+  see), `refused` (nothing sent), or a transport category (`missing-credentials`,
+  `permission-refused`, `rate-limited`, `malformed-response`, `incomplete-read`,
+  `identity-changed`, `unavailable`). A complete read is `empty`, `pending`, `failed`
+  (`FAILED` or `STOPPED`) or `passed`, with `checks.head` the full commit; checks for a head other
+  than the branch here are `other-head`. The card's `state` keeps its existing five values. For
+  the tick and Accept, failed checks and a declined pull request are problems in GitHub's words,
+  and running or no checks are pending: empty is never green.
+- Merge refusal: Accept (also while checks run, so no `auto_merge` is set), merge and the tick's auto
+  merge send Bitbucket nothing that merges and merge no other way (no GitHub, local or agent route);
+  the refusal stays on the task for the person. A failed read's repair names a credential only when
+  that is what failed; `--json` carries no `cause` for Bitbucket (`cause` stays gh's and git's).
+- `adopt` on a task that already records a Bitbucket pull request refuses before any call.
+  A pull request merged on Bitbucket by hand finishes its task through the tick or Accept, with
+  `merged_head` taken from that very read, so the branch goes only at that head (`finish()`
+  never asks gh about another forge's record). GitHub news and the base watch stay GitHub's.
+- Ready with a saved Bitbucket record refuses first, before any read, fetch, push or finish
+  (`forge.publication()` at the top of `cmd_ready`), and the task stays as it was.
+- Regression: `test/test_bitbucket.py` runs `show --evidence`, `tick`, `accept`, `merge` and
+  `ready` as processes on the N1 fixture with its remote on bitbucket.org. Bitbucket is a
+  test-owned answerer behind a local CONNECT proxy that opens only `api.bitbucket.org:443`, with a
+  certificate from a throwaway CA (`SSL_CERT_FILE`); the credential is a recording helper in the
+  repository's config, with global and system config emptied. No real provider request is made
+  or possible, and the shipped transport has no test seam. It needs `openssl` on CI.
+- Not covered: Bitbucket's real answers (abbreviated hashes, the commit's `repository` field and
+  status fields are read as its documentation shows them), a real helper or account, and both
+  execution hosts, all native qualification. Merged-list reads (SHEP-59 for a Bitbucket branch
+  with no record), adoption, publication, readiness and claims are B2's. Python checks and the
+  regression are authored here and run only in Root's CI.
+- This is not a required port's completion: `bitbucket-credentials`, `bitbucket-reads` and
+  `forge-identity` stay pending until Root CI and native qualification.
+
 ### Bitbucket contract
 
 Port P's behavior into native owners, not its old server paths. GitHub retains
@@ -453,8 +537,8 @@ Root runs `python3 bin/check-migration`, its public-CLI checkpoint tests
 `service/azure-deployments.test.ts`), the N1 publication tests (`test/test_native_publication.py`),
 the C1 discovery tests (`core/chat-find.test.js`, `test/test_session_discovery.py`),
 the W1 flag tests (`service/jobs-flags.test.ts`), the H1 listener tests
-(`service/private-domain.test.ts`), the S1 forge tests (`test/test_forge.py`) and every
-native Check command. CI owns
+(`service/private-domain.test.ts`), the S1 forge tests (`test/test_forge.py`), the B1
+Bitbucket read tests (`test/test_bitbucket.py`) and every native Check command. CI owns
 frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.

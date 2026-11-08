@@ -51,6 +51,12 @@ service/private-domain.ts'''.split()),
     'S1': frozenset('''mods/tasks/bin/herdr_task/__init__.py mods/tasks/bin/herdr_task/commands.py
 mods/tasks/bin/herdr_task/forge.py mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/proof.py
 mods/tasks/bin/herdr_task/tick.py test/test_forge.py test/test_herdr_task.py test/test_native_publication.py'''.split()),
+    # Bitbucket reads: a saved Bitbucket pull request and its head's complete checks, through the forge's
+    # second adapter on the execution host's own Git credentials. S1's owners it changes are B1's from here.
+    'B1': frozenset('''mods/tasks/bin/herdr_task/__init__.py mods/tasks/bin/herdr_task/bitbucket.py
+mods/tasks/bin/herdr_task/bitbucket_http.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/forge.py
+mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/proof.py mods/tasks/bin/herdr_task/tick.py
+mods/task-pr/main.js service/worktree.ts test/test_bitbucket.py'''.split()),
 }
 # The shared table's second half (PR 19 decision D5, issue #7): what accepted changes add beyond exact
 # U and outside every phase's owners, admitted by name and left to review for content. With U's paths

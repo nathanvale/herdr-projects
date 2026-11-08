@@ -8,7 +8,7 @@ import os
 import re
 
 from .base import Fail, HOME, git
-from .forge import pr_checks, pr_view
+from .forge import BITBUCKET, pr_checks, pr_read, pr_view, provider_of
 
 ARTIFACTS = os.path.join(HOME, ".herdr", "artifacts")
 # Files named on the card, and commits.
@@ -64,9 +64,39 @@ def numstat(out, files):
             cur[1] += int(r) if r.isdigit() else 0
 
 
-def checks_of(t):
+def bitbucket_checks(t, tip):
+    """Bitbucket's checks on exactly the head of its pull request, in words: {state, text, result, head?}.
+    tip: the branch here for a worktree task ("" when it can't be read: then no check counts), else None.
+    result keeps apart what state can't: missing (Bitbucket has no such pull request), every way a read
+    can fail to be complete (bitbucket_http.WORDS's categories: none of it counts), other-head (they are
+    a head other than the branch here, the one Accept takes), and a complete read's empty, pending,
+    failed and passed. Only passed, on that head, is green."""
+    v, why = pr_read(t)
+    if not v:
+        return {"state": "unknown", "result": getattr(why, "category", "unavailable"), "text": f"Couldn't read them: {why}"}
+    c = pr_checks(v)
+    if c.get("refused"):
+        return {"state": "unknown", "result": "refused", "text": c["refused"]}
+    head, bad, running, total = c["head"], c["failed"], c["running"], c["total"]
+    on = {"head": head}
+    if tip is not None and head != tip:
+        here = f"not {tip[:7]}, this branch here" if tip else "and this branch's own commit here can't be read"
+        return {"state": "unknown", "result": "other-head", **on,
+                "text": f"They are for {head[:7]}, the pull request's head, {here}, so none of them count"}
+    if bad:
+        return {"state": "failed", "result": "failed", **on, "text": f"{len(bad)} failing on {head[:7]}: " + ", ".join(bad[:FEW])}
+    if running:
+        return {"state": "running", "result": "pending", **on, "text": f"{running} of {total} still running on {head[:7]}"}
+    if not total:
+        return {"state": "none", "result": "empty", **on, "text": f"None reported on {head[:7]} yet"}
+    return {"state": "passed", "result": "passed", **on, "text": f"All {total} passed on {head[:7]}"}
+
+
+def checks_of(t, tip=None):
     """GitHub's checks on its pull request, in words: {state, text}; failed and running say so,
-    so a green one is never assumed."""
+    so a green one is never assumed. Bitbucket's: bitbucket_checks() (tip: the branch here)."""
+    if t.get("pr") and provider_of(t["pr"]) == BITBUCKET:
+        return bitbucket_checks(t, tip)
     if not t.get("pr"):
         return {"state": "none", "text": "No GitHub checks here"}
     v = pr_view(t)
@@ -127,5 +157,5 @@ def evidence(s, t):
     out["diff"] = None if files is None else {
         "files": len(files), "added": sum(v[0] for v in files.values()), "removed": sum(v[1] for v in files.values()),
         "list": [{"path": p, "added": v[0], "removed": v[1]} for p, v in sorted(files.items(), key=lambda x: -(x[1][0] + x[1][1]))[:FEW]]}
-    out["checks"] = checks_of(t)
+    out["checks"] = checks_of(t, (tip or "") if t.get("mode") == "worktree" and t.get("branch") else None)
     return out
