@@ -129,10 +129,18 @@ def news_pass(report, folder=None):
                     else:
                         t.pop("waits", None)
                     s.dirty = True
+                # Quiet on its own background work (SHEP-53): Working in the Tasks panel too.
+                if s.write and bool(t.get("own_work")) != bool(v.get("own_work")):
+                    if v.get("own_work"):
+                        t["own_work"] = True
+                    else:
+                        t.pop("own_work", None)
+                    s.dirty = True
                 cur = {"status": v["status"], "why": v.get("why"), "stall": stall[0] if stall else None}
                 current[key] = cur
                 prev = mine.get(str(t["id"]))
-                mine[str(t["id"])] = {"status": cur["status"], "stall": cur["stall"] or (prev or {}).get("stall")}
+                mine[str(t["id"])] = {"status": cur["status"], "stall": cur["stall"] or (prev or {}).get("stall"),
+                                      **({"needs": v["needs"]} if v.get("needs") else {})}
                 # Its backup took over (takeover()): told once; on a first look, old news.
                 b = t.get("backup") or {}
                 backup = s.write and b.get("state") == "started" and not b.get("told")
@@ -143,7 +151,9 @@ def news_pass(report, folder=None):
                     continue
                 lines = [("backup", news_line(s, t, v, "backup", backup_news(t)))] if backup else []
                 # Taken back to work after it said ready (back_to_work(), busy_again()): told as it happens.
-                if v["status"] == "working" and (prev or {}).get("status") in ("ready", "merging"):
+                # Its agent took up what needed the person (failing checks: on_it()) too.
+                if v["status"] == "working" and ((prev or {}).get("status") in ("ready", "merging")
+                                                 or (prev or {}).get("needs") == "attention" and t.get("attention")):
                     event = "working-again"
                 if event and (prev or {}).get("status") != v["status"]:
                     lines.append((event, news_line(s, t, v, event)))
@@ -186,6 +196,18 @@ def news_pass(report, folder=None):
             read = (k.get("labels") or {}).get(READ) if k else None
             if k and str(read) == str(k.get("turn")) and to not in quiet:
                 quiet[to] = {"turn": k.get("turn"), "at": now()}
+    # Settings changed for a space: its running Assistant told once, in one message (assistant_settings.py).
+    try:
+        from .assistant_settings import settings_pass
+        settings_pass(report, quiet)
+    except Exception as e:  # never stops the news
+        report["settings_error"] = str(e)
+    # Reactions changed for a space: every other running agent its hook taught told once (reactions.py).
+    try:
+        from .reactions import reactions_pass
+        reactions_pass(report, quiet)
+    except Exception as e:  # never stops the news
+        report["reactions_error"] = str(e)
     news_read(quiet)
     held_pass(report)
     tmp = f"{NEWS}.{os.getpid()}.tmp"
@@ -195,7 +217,7 @@ def news_pass(report, folder=None):
 
 
 READ = "herdr.chat.read"  # the Assistant's turn last read (mods/chat/unread.js)
-NO_REPLY = re.compile(r"^\s*(?:<hc\s+no-reply\s*/>|</?no-reply\b[^\n]*)\s*$")
+NO_REPLY = re.compile(r"^\s*(?:<hc\s+no-reply\b[^>]*/>|</?no-reply\b[^\n]*)\s*$")
 
 
 def news_read(quiet):
@@ -212,7 +234,7 @@ def news_read(quiet):
         quiet.pop(addr)
         if str((k.get("labels") or {}).get(READ)) != str(q["turn"]):
             continue  # read since, or changed by someone else
-        log = session_of((k.get("foreground") or {}).get("pid") or "")[1] if (k.get("foreground") or {}).get("pid") else None
+        log = session_of((k.get("foreground") or {}).get("pid") or "", any_folder=True)[1] if (k.get("foreground") or {}).get("pid") else None
         for d in reversed(log_tail(log, 65536)):
             if from_person(d) is not None:
                 break

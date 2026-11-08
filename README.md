@@ -8,7 +8,7 @@
 
 <p align="center"><a href="https://github.com/eliasstravik/shepherdr/blob/main/docs/install.md"><img src="assets/buttons/install-shepherdr.svg" alt="Install Shepherdr" /></a></p>
 
-<p align="center"><sub>✓&nbsp;Free,&nbsp;MIT&nbsp;licensed &nbsp; ✓&nbsp;Runs&nbsp;on&nbsp;your&nbsp;machines,&nbsp;inside&nbsp;the&nbsp;Herdr&nbsp;app &nbsp; ✓&nbsp;Shepherdr&nbsp;3.1.3,&nbsp;herdr-app&nbsp;0.1.12+</sub></p>
+<p align="center"><sub>✓&nbsp;Free,&nbsp;MIT&nbsp;licensed &nbsp; ✓&nbsp;Runs&nbsp;on&nbsp;your&nbsp;machines,&nbsp;inside&nbsp;the&nbsp;Herdr&nbsp;app &nbsp; ✓&nbsp;Shepherdr&nbsp;3.1.16,&nbsp;herdr-app&nbsp;0.1.12+</sub></p>
 
 <br />
 
@@ -36,11 +36,11 @@ Keep your attention on decisions. Shepherdr starts, follows and puts away the ta
 
 ### 📈 See every task at a glance
 
-Each space's Assistant chat is in the middle and its tasks on the right, by what they need: `Needs you`, `Ready`, `Merging`, `Working`, `Queued`, `To do` and `Done`. A working task's dot fills like a pie with its % done and its minutes left, and its second line says what it is doing (`Fixing the two failing tests`). The sidebar groups your spaces by machine, with Pinned and sections of your own, and marks the ones that wait on you. A task opens in the panel with its chat, terminal, files, diff, pull request and browser; Herdr's own panes and splits work as always.
+Each space's Assistant chat is in the middle and its tasks on the right, by what they need: `Needs you`, `Ready`, `Merging`, `Working`, `Queued`, `Scheduled`, `To do` and `Done`. A working task's dot fills like a pie with its % done and its minutes left, and its second line says what it is doing (`Fixing the two failing tests`). The sidebar groups your spaces by machine, with Pinned and sections of your own, and marks the ones that wait on you. A task opens in the panel with its chat, terminal, files, diff, pull request and browser; Herdr's own panes and splits work as always.
 
 ### 🧩 Make it yours: everything is an add-on
 
-Tasks, Assistants, chat, artifacts, voice, reactions, the task browser, Autopilot, other machines: every part of Shepherdr is an add-on made of Herdr mods, listed in one file with what it needs. Switch Artifacts, Voice, Reactions, the Task browser, Autopilot, the sync to other machines or the web app off in Shepherdr settings → Window; the rest is always on in 3.1.3. Your own mods and layouts sit beside Shepherdr's in your Herdr folder and are never touched: an update replaces only the files it put there and you didn't change, and keeps a copy of anything it replaces. Herdr's themes and keys stay yours. [Add-ons](docs/addons.md) lists each one and its switch.
+Tasks, Assistants, chat, artifacts, voice, reactions, the task browser, Autopilot, other machines: every part of Shepherdr is an add-on made of Herdr mods, listed in one file with what it needs. Switch Artifacts, Voice, Reactions, the Task browser, Autopilot, the sync to other machines or the web app off in Shepherdr settings → Window; the rest is always on in 3.1.16. Your own mods and layouts sit beside Shepherdr's in your Herdr folder and are never touched: an update replaces only the files it put there and you didn't change, and keeps a copy of anything it replaces. Herdr's themes and keys stay yours. [Add-ons](docs/addons.md) lists each one and its switch.
 
 ### ⚡ Stop briefing every agent yourself
 
@@ -87,7 +87,23 @@ Shepherdr doesn't update itself: it never follows main, so a merge can't change 
 
 ### Do I need to know how to code?
 
-You need to be comfortable in a terminal for the install. After that everything happens in the Herdr window or the web app: you write to Assistants and answer cards, and Shepherdr settings holds the few defaults. You'll need macOS or Linux, the Herdr app 0.1.12 or newer with herdr-core 0.1.17 or newer, Python 3.8+, Git, and Claude Code or Codex, installed and signed in. `gh` (pull requests), agent-browser and Chrome for the task browser, whisper.cpp for dictation and an ElevenLabs key for voice are optional; the web app needs Bun and Tailscale. [Install](docs/install.md) covers the prerequisites.
+You need to be comfortable in a terminal for the install. After that everything happens in the Herdr window or the web app: you write to Assistants and answer cards, and Shepherdr settings holds the few defaults. You'll need macOS or Linux, the Herdr app 0.1.12 or newer with herdr-core 0.1.17 or newer, Python 3.8+, Git, and Claude Code or Codex, installed and signed in. `gh` (pull requests), agent-browser and Chrome for the task browser, and an ElevenLabs key for voice and dictation are optional; the web app needs Bun and Tailscale. [Install](docs/install.md) covers the prerequisites.
+
+### Can my coding agent install it for me?
+
+Yes. Give it this, in the Herdr app's terminal or any agent session on that machine:
+
+```text
+Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/eliasstravik/shepherdr/tree/main
+```
+
+### Can I use it without the Herdr app?
+
+Yes: herdr-core runs the agents and the web app is your window, in a browser on your tailnet. Give your agent this:
+
+```text
+Install herdr-core (https://herdr.dev), Tailscale (signed in), python3, git and Claude Code or Codex. Then clone https://github.com/eliasstravik/shepherdr, read its docs/install.md and docs/web.md, and install only the web app with ./install.sh --web. Check it with shepherdr doctor, then give me the link from shepherdr web status. Keep it private to my tailnet: never Tailscale Funnel.
+```
 
 ### How do I check that Shepherdr is installed right?
 
@@ -105,7 +121,7 @@ Shepherdr settings → Machines says how each machine is, and each machine shows
 
 ### Does Shepherdr send my work to a hosted service?
 
-No. Shepherdr runs inside the Herdr app on your own machine, keeps its files there, talks to your local herdr-core, and reaches your other machines over herdr-core's remote and your own SSH. The web app is served from your own machine to your tailnet only. Your agent CLI still uses its own service as usual, `gh` talks to GitHub, voice calls go through ElevenLabs if you set them up, and dictation's model is downloaded once from Hugging Face.
+No. Shepherdr runs inside the Herdr app on your own machine, keeps its files there, talks to your local herdr-core, and reaches your other machines over herdr-core's remote and your own SSH. The web app is served from your own machine to your tailnet only. Your agent CLI still uses its own service as usual, `gh` talks to GitHub, and voice calls and dictation go through ElevenLabs if you set them up.
 
 ### Will it touch my branches or worktrees on its own?
 
@@ -149,4 +165,4 @@ Nowhere: 2.1 is on the `v2.1` branch and 2.0 on the `v2.0` branch, each with its
 
 <p align="center"><a href="https://github.com/eliasstravik/shepherdr/blob/main/docs/install.md"><img src="assets/buttons/install-shepherdr.svg" alt="Install Shepherdr" /></a></p>
 
-<p align="center"><sub>✓&nbsp;Free,&nbsp;MIT&nbsp;licensed &nbsp; ✓&nbsp;Runs&nbsp;on&nbsp;your&nbsp;machines,&nbsp;inside&nbsp;the&nbsp;Herdr&nbsp;app &nbsp; ✓&nbsp;Shepherdr&nbsp;3.1.3,&nbsp;herdr-app&nbsp;0.1.12+</sub></p>
+<p align="center"><sub>✓&nbsp;Free,&nbsp;MIT&nbsp;licensed &nbsp; ✓&nbsp;Runs&nbsp;on&nbsp;your&nbsp;machines,&nbsp;inside&nbsp;the&nbsp;Herdr&nbsp;app &nbsp; ✓&nbsp;Shepherdr&nbsp;3.1.16,&nbsp;herdr-app&nbsp;0.1.12+</sub></p>

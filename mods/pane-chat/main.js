@@ -16,8 +16,9 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { props, run, theme, home, exec, hc, notify, nextCommand, shared, setShared } from "herdr";
-import { panes, terminals, inRender } from "./live.js";
-import { apSpace, apWatch, apPoll, apChip, apHeartbeatLink, COMPACT_BELOW } from "./autopilot.js";
+import { panes, terminals, spaces, inRender } from "./live.js";
+import { spaceName } from "./core/spaces.js";
+import { apSpace, apWatch, apPoll, apGroup, apHeartbeatLink, COMPACT_BELOW } from "./autopilot.js";
 import { button as uiButton, segmented, TEXT, RADIUS, toast, plainError } from "./ui.js";
 import { on as addonOn } from "./addons.js";
 // "End Claude Code?" and its buttons: core/menus.js (the web app's header asks in the same words).
@@ -216,14 +217,16 @@ export default class Pane extends View {
     // An artifact (mods/artifacts: mod "art-<id>") shows its title and version.
     const art = self.mod?.startsWith("art-") ? shared("artifacts.titles")?.[self.mod] ?? self.title : null;
     const prog = ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "Shell";
-    // An Assistant reads "Assistant · Claude Code": the role first, then what it runs.
+    // An Assistant reads as its space ("tor-gameboy"), never its role or what it runs (SHEP-36: the composer's model
+    // menu says which agent): the space's name, then its folder, quieter.
     const isAssistant = Boolean(lazy) || terminals().find((x) => x.address === (agent ?? self.terminal))?.labels?.["herdr.role"] === "coordinator";
-    const name = art ?? (lazy ? "Assistant" : chatMode && p === self ? "Chat" : isAssistant ? `Assistant · ${prog}` : prog);
+    const space = isAssistant ? spaces().find((s) => s.tabs?.some((x) => x.id === self.tab)) : null;
+    const name = art ?? (isAssistant ? spaceName(space, { home: home() }) : chatMode && p === self ? "Chat" : prog);
     const pic = art !== null ? svg("mods/artifacts/artifacts.svg").size(14).flex_none().text_color(t.dim) : icon(p.program, 14, t.dim);
     const st = p.status;
     const pane = self.pane;
     const canSwitch = chatMode ? Boolean(entry) || Boolean(lazy) : chatty(self);
-    // An Assistant (chat or terminal): its Autopilot switch after the folder (none while the
+    // An Assistant (chat or terminal): its Autopilot switch on the right, before the hover buttons (none while the
     // Autopilot add-on is off).
     const apFor = addonOn("autopilot") ? apSpace(agent ?? (chatMode ? null : self.terminal), lazy || null) : null;
     apWatch(this, apFor, cx);
@@ -241,15 +244,20 @@ export default class Pane extends View {
       .on_size_change((size, cx) => { if (Math.round(size.width) !== this.width) { this.width = Math.round(size.width); cx.notify(); } })
       .on_click(() => run("pane.focus", { pane }))
       .when(Boolean(pic), (el) => el.child(pic))
-      .child(div().flex_none().truncate().max_w(260).font_medium().text_color(t.foreground).child(name))
+      .child(div().flex_none().max_w(260).min_w(0).truncate().font_medium().text_color(t.foreground).child(name))
       // The folder gives way first; the switch keeps its width; the gap after pushes the rest right.
       .child(div().flex_shrink_1().min_w(0).truncate().text_color(t.dim).child(folder(p.cwd)))
-      .when(Boolean(apFor), (el) => el.child(apChip(this, t, apFor, pane, (this.width ?? Infinity) < COMPACT_BELOW))
-        .child(apHeartbeatLink(this, apFor, pane) ?? div()))
       .child(div().flex_1())
-      .when(st === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
+      // The status in words, right-aligned with the controls: "Working…" with its spinner, "Needs you", nothing at
+      // rest (done is the normal state, no mark).
+      .when(st === "working", el => el.child(h_flex().flex_none().gap(6).items_center().text_color(t.muted)
+        .child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900))
+        .when((this.width ?? Infinity) >= COMPACT_BELOW, el => el.child(div().whitespace_nowrap().child("Working…")))))
       .when(st === "blocked", el => el.child(div().flex_none().px(6).h(18).flex().items_center().rounded(RADIUS.control).bg(t.blocked + "26").text_size(TEXT.id).font_semibold().text_color(t.blocked).child("Needs you")))
-      .when(st === "done", el => el.child(div().size(7).flex_none().rounded(4).bg(t.done)))
+      // Autopilot sits with the other controls on the right, not mid-bar after the folder.
+      // "Write a heartbeat" before it, so nothing after the switch comes and goes with it.
+      .when(Boolean(apFor), (el) => el.child(apHeartbeatLink(this, apFor, pane) ?? div())
+        .child(apGroup(this, t, apFor, pane, (this.width ?? Infinity) < COMPACT_BELOW)))
       // Ending a chat's agent asks first, in place of the hover buttons.
       .when(Boolean(entry) && this.ending === true, el => el
         .child(div().flex_none().whitespace_nowrap().text_color(t.foreground).child(endAgent(prog).ask))
@@ -261,7 +269,7 @@ export default class Pane extends View {
         .child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))
         .child(this.button(t, `ph-z-${pane}`, self.zoomed ? "unzoom" : "zoom", "pane.zoom", { pane }))
         .when(!entry, el => el.child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane })))
-        .when(Boolean(entry), el => el.child(this.button(t, `ph-x-${pane}`, "close", null, null, () => { this.ending = true; }).tooltip(endAgent(prog).tip))))
+        .when(Boolean(entry), el => el.child(this.button(t, `ph-x-${pane}`, "close", null, null, () => { this.ending = true; }))))
       .when(canSwitch, (el) => el.child(this.switcher(t, `ph-mode-${pane}`, chatMode,
         (cx) => this.toChat(self, cx),
         // No agent yet: the chat starts it (no first message) and then shows its terminal.

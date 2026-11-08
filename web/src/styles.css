@@ -392,6 +392,20 @@
   }
 }
 
+/* A strip that scrolls sideways only (a task's tabs, the list chips, attached files): overflow-x alone turns overflow-y
+   to auto too, so anything a hair taller (a tab's hit area) made it scroll and bounce up and down on a phone, and a
+   vertical swipe on it moved it. No scrollbar: the cut edge says there is more */
+@utility scroll-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 /* A chat's column of messages and its box: a comfortable line, a little wider on a very wide window */
 @utility max-w-read {
   max-width: 720px;
@@ -743,6 +757,13 @@
     border: solid var(--muted);
     border-width: 0 0 1.5px 1.5px;
   }
+  /* scheduled (SHEP-38): starts by itself at a time: a small grey calendar, its top bar and two rings */
+  .dot.scheduled {
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--muted);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='%23000' stroke-width='1.5'%3E%3Crect x='1.75' y='2.75' width='10.5' height='9.5' rx='2'/%3E%3Cpath d='M1.75 6.25h10.5M4.75 1v3M9.25 1v3'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
   .dot.off {
     box-shadow: none;
     border: 1.5px dashed var(--muted);
@@ -814,6 +835,19 @@
   .mode-pill.mark::before {
     width: 6px;
     height: 6px;
+  }
+  /* SHEP-5: a sidebar row's Autopilot mark (a small rocket before the #): it breathes while a wake runs or waits */
+  .pilot-mark {
+    margin-right: -4px;
+  }
+  .pilot-mark[data-waking] {
+    animation: pilot-wake 1.2s ease-in-out infinite;
+  }
+  @keyframes pilot-wake {
+    50% { opacity: 0.35; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pilot-mark[data-waking] { animation: none; }
   }
   [data-device="phone"] .mode-pill.mark {
     width: 16px;

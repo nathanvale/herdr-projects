@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { place, queueReason, reportOf, estimated, order, ago, autoPrefix, refOf, taskKey, matches, busyAgain, secondLine, WORKING_AGAIN } from "./tasks.js";
+import { place, queueReason, reportOf, estimated, order, ago, autoPrefix, refOf, taskKey, matches, busyAgain, secondLine, leftOf, ORDER, STATUS, WORKING_AGAIN, fromLine, autoWhere, inSpace } from "./tasks.js";
 import { REASONS, fit } from "./needs.js";
 
 const NOW = 1_800_000_000_000;
@@ -22,6 +22,12 @@ describe("a task's status (as herdr-task's task_status)", () => {
   test("an idle live agent waits for a reply; no agent at all has stopped", () => {
     expect(at({ id: 1, state: "running", started: NOW - 600_000 }, [{ address: "t1", status: "idle" }])).toMatchObject({ section: "needs", needs: "reply" });
     expect(at({ id: 1, state: "running", started: NOW - 600_000 })).toMatchObject({ section: "needs", needs: "stopped" });
+  });
+  test("an idle agent on its own background work is working; asking still needs you (SHEP-53)", () => {
+    const idle = [{ address: "t1", status: "idle" }];
+    expect(at({ id: 1, state: "running", started: NOW - 600_000, own_work: true }, idle)).toMatchObject({ section: "working", needs: null });
+    expect(at({ id: 1, state: "running", started: NOW - 600_000, own_work: true }, [{ address: "t1", status: "blocked" }])).toMatchObject({ section: "needs", needs: "asks" });
+    expect(at({ id: 1, state: "running", started: NOW - 600_000, own_work: true })).toMatchObject({ section: "needs", needs: "stopped" });
   });
   test("a machine still loading gives no verdict", () => {
     expect(at({ id: 1, state: "running", started: NOW - 600_000 }, [], false).section).toBe("working");
@@ -91,5 +97,84 @@ describe("a Ready task back at work (as herdr-task's busy_again)", () => {
   test("asking the person while back at work needs them", () => {
     const task = { id: 7, state: "ready", ready_at: back.now - 600_000, ready_turns: { t1: 5 } };
     expect(place(list([task]), task, { live: [{ address: "t1", status: "blocked", turn: 5 }], now: back.now }).section).toBe("needs");
+  });
+});
+
+// A task with a problem (failing checks) its agent is on: Working; nobody on it: Needs you (SHEP-8). The same
+// cases herdr-task's task_status() passes (test/test_herdr_task.py).
+const onIt = JSON.parse(readFileSync(new URL("./on-it.cases.json", import.meta.url), "utf8"));
+
+describe("a problem someone is on (as herdr-task's on_it)", () => {
+  for (const c of onIt.cases) test(c.name, () => {
+    const task = { id: 7, ...c.task };
+    const p = place(list([task]), task, { live: c.live, now: onIt.now });
+    const why = c.expect.why === "QUESTION" ? REASONS.question : c.expect.why;
+    expect({ section: p.section, needs: p.needs, why: p.why }).toEqual({ section: c.expect.status, needs: c.expect.needs, why });
+  });
+});
+
+// SHEP-38: a task that starts by itself at a time (herdr-task --at / --in) is Scheduled: its row says when ("Starts
+// Today 18:00"), its time until then under its mark ("6h"), the next to start first.
+test("a scheduled task says when it starts", () => {
+  const now = new Date(2026, 10, 5, 12, 0).getTime(); // a Thursday, noon
+  const at = (d, h, m = 0) => new Date(2026, 10, d, h, m).getTime();
+  const list = { prefix: "HAT", folder: "/f", tasks: [] };
+  const p = (ms) => place(list, { id: 1, state: "scheduled", scheduled_for: ms, agents: [] }, { now });
+  expect(p(at(5, 18)).section).toBe("scheduled");
+  expect(secondLine(p(at(5, 18)), null, null, now)).toBe("Starts Today 18:00");
+  expect(secondLine(p(at(6, 9)), null, null, now)).toBe("Starts Tomorrow 9:00");
+  expect(secondLine(p(at(9, 8, 15)), null, null, now)).toBe("Starts Mon 8:15");
+  expect(secondLine(p(at(25, 9)), null, null, now)).toBe("Starts Nov 25 9:00");
+  expect(secondLine(p(at(5, 11)), null, null, now)).toBe("Starts now");
+  expect([at(5, 12, 45), at(5, 18), at(7, 12)].map((ms) => leftOf(p(ms), null, now))).toEqual(["45m", "6h", "2d"]);
+  const rows = [p(at(7, 9)), p(at(5, 18))];
+  expect(rows.sort(order("scheduled")).map((r) => r.task.scheduled_for)).toEqual([at(5, 18), at(7, 9)]);
+  expect(ORDER.indexOf("scheduled")).toBe(ORDER.indexOf("queued") + 1);
+  expect(STATUS.scheduled).toBe("Scheduled");
+});
+
+describe("an automation's row (SHEP-43)", () => {
+  test("says its machine and space whatever the grouping, its machine only with more than one", () => {
+    expect(autoWhere("vm-b", "shepherdr", true)).toBe("vm-b · shepherdr");
+    expect(autoWhere("This computer", "Home", true)).toBe("This computer · Home");
+    expect(autoWhere("This computer", "Home", false)).toBe("Home");
+    expect(autoWhere(null, null, true)).toBe(null);
+  });
+  test("one set off from another folder says by what and where", () => {
+    expect(fromLine(["merged"], "vm-b · shepherdr")).toBe("On merges in vm-b · shepherdr");
+    expect(fromLine(["ready", "merged"], "x")).toBe("On ready tasks or merges in x");
+    expect(fromLine(["added", "ready", "merged"], "x")).toBe("On task events in x");
+    expect(fromLine([], "x")).toBe("On task events in x");
+  });
+});
+
+// SHEP-54: a worker's own helper agent (its reviewer, an hc child) is never one of its agents: at work or asking, its
+// quiet worker is Working; once over, it counts not
+test("place: a worker's helper keeps it Working, never Needs you", () => {
+  const list = { slug: "x", folder: "/x", prefix: "X", tasks: [] };
+  const task = { id: 1, state: "running", started: 1, agents: [{ address: "t1", at: 1 }] };
+  const live = [{ address: "t1", status: "idle", role: "worker" }];
+  expect(place(list, task, { live, helpers: [{ address: "t2", status: "working" }] }).section).toBe("working");
+  expect(place(list, task, { live, helpers: [{ address: "t2", status: "blocked" }] }).section).toBe("working");
+  expect(place(list, task, { live, helpers: [{ address: "t2", status: "idle" }] }).section).toBe("needs");
+  // no worker left: its helper alone keeps nothing going
+  expect(place(list, task, { live: [], helpers: [{ address: "t2", status: "working" }] }).section).toBe("needs");
+});
+
+describe("This space (inSpace)", () => {
+  const sp = { id: "sp3", machine: null, folder: "/work/shop" };
+  test("its list's folder, on its machine", () => {
+    expect(inSpace(sp, { machine: null, folder: "/work/shop" })).toBe(true);
+    expect(inSpace(sp, { machine: "vm", folder: "/work/shop" })).toBe(false);
+    expect(inSpace(sp, { machine: null, folder: "/work/other" })).toBe(false);
+  });
+  test("started for the space, wherever its list is (a bare id or one read from a machine)", () => {
+    expect(inSpace(sp, { machine: null, folder: "/work/other", space: "sp3" })).toBe(true);
+    expect(inSpace({ ...sp, machine: "vm", id: "vm/sp3" }, { machine: "vm", folder: "/x", space: "sp3" })).toBe(true);
+    expect(inSpace({ ...sp, machine: "vm" }, { machine: "vm", folder: "/x", space: "vm/sp3" })).toBe(true);
+    expect(inSpace(sp, { machine: null, folder: "/x", space: "sp4" })).toBe(false);
+  });
+  test("no space: nothing is in it", () => {
+    expect(inSpace(null, { machine: null, folder: "/work/shop" })).toBe(false);
   });
 });

@@ -1,7 +1,11 @@
 # Full 3.x source migration
 
 S0 is a source-only foundation; A1 adds provider launch plans and deployment discovery
-owners on it, with Azure dispatch held. Required Bitbucket, Azure and lifecycle ports are
+owners on it, with Azure dispatch held, N1 adds native pull request adoption and
+fail-closed publication, C1 finds a Claude Code session under its own agent's
+folder, W1 keeps a web page's chat flag apart from background work, H1 adds an
+opt-in private custom-domain listener, and S1 routes pull requests through the forge
+seam with GitHub as its one adapter. Required Bitbucket, Azure and lifecycle ports are
 pending. This checkpoint is not deployable or ready for application use. Check's
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
@@ -11,7 +15,8 @@ pass. Imported installer/service code is source input, not authority to run it.
 | Input | Exact commit |
 | --- | --- |
 | F, reserved fork parent | `4f0236f03a88c5e9fa344475d90d3a20ef418481` |
-| U, upstream v3.1.3 parent | `dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc` |
+| U, upstream v3.1.16 parent (since its merge) | `57302497117183a1772464b31751da12a1c03e4a` |
+| Upstream v3.1.3, S0's U (history) | `dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc` |
 | P, required Bitbucket contract source | `074dec5ea0bf0a057f520fa50497bf9e1b696ad9` |
 | B, actual common ancestor | `de8e17957efb4aa016d7e4d652f397aaa95f0880` |
 
@@ -36,8 +41,12 @@ owners, not implemented interfaces.
 | Phase | Dependencies | Owner and exit |
 | --- | --- | --- |
 | S0 | This source admission | Exact U, F/P dispositions and blocked readiness; Root review and CI before dependent work. |
+| N1 | S0, separately authorized | `T/github.py`, commands and CLI; adopt an existing pull request, fail closed on GitHub, separate gh and git failures. Not a port. |
 | S1 | Reviewed S0 | New `T/forge.py`, existing `T/github.py`, commands/proof/worktree consumers; preserve GitHub defaults. Smallest next customization. |
 | A1 | Reviewed S0 | New `T/providers.py` and `service/azure-deployments.ts`; nonsecret bindings, supported authentication and discovery custody. |
+| C1 | S0, separately authorized | `core/chat-log.js` FIND and `T/sessions.py`; a Claude Code session is found under its own process's folder, for reading only, and nothing starts such an agent again. Not a port. |
+| W1 | S0, separately authorized | `service/jobs.ts`; a chat a web page follows keeps its ask flag with background work off, and nothing else runs. Not a port. |
+| H1 | S0, separately authorized | `service/private-domain.ts`, `service/auth.ts`, `service/main.ts`; an opt-in HTTPS listener for a domain you control, admitting Tailscale peers by owner. Not a port. |
 | B1 | S1 | New `T/bitbucket.py`, `T/bitbucket_http.py`; qualified identity, host credentials and complete exact-head reads. |
 | B2 | B1 | New `T/publications.py`, commands/output/CLI; durable claims, publication/readiness and current admission. |
 | A2 | A1 | Shared settings/agents, desktop/web controls, `T/settings.py`, launch/resume; discovery, selectors and binding parity. |
@@ -45,6 +54,38 @@ owners, not implemented interfaces.
 | L2 | A2, L1 | Native revive/watch/manual restart through that owner; independent qualification and conditional retirement. |
 | Q | B2, A2, L2 | Exact candidate CI/public process proof; all required ports and old proof obligations resolved. |
 | R | Q, human state choices | Separately admitted rehearsal and matching executable/state rollback. |
+
+### Upstream v3.1.16 merge
+
+The local candidate `integrate/upstream-v3.1.16` starts at `83417614`, merges PRs 19 to
+22 and the private HTTPS commits (H1), each with `--no-ff`, then merges upstream v3.1.16
+(`57302497`, from the annotated tag `e6c52e6b`, which is unsigned) the way S0 merged
+v3.1.3. No published commit is rebased. U now names v3.1.16: every U path outside the
+phase table and the overrides is byte-identical to it, and each row's `upstream_blob` is
+its v3.1.16 blob. The file names keep `v3.1.3`, as every reference names them; F, P and B
+and the file dispositions don't change. The gate's checks are unchanged.
+
+Where the two sides met:
+
+- SHEP-59 (a squash-merged pull request is done, never a second one) goes through N1's
+  `finish()`: the branch goes only at the head gh says merged (`headRefOid == tip`). Its
+  bare base names are read as branches (`local_base()`, a `refs/heads/` fetch). A squash
+  with no pull request to read keeps the branch and worktree, and its note says the work
+  landed. `ready` takes SHEP-59's step after nothing-to-merge and before publishing.
+- The tick now reads a running task's pull request too (SHEP-8, `2a3c5e13`); N1's adopted-head check
+  stays for a Ready task, as a working agent's commits move the branch.
+- SHEP-86's clean-environment start is on every start path C1 guards (launch, revive,
+  `restart.sh`, the one-off templates); C1 only refuses before them.
+  `mods/chat-models/core/agents.js`, a copy new in v3.1.16, carries C1's `core/agents.js`
+  and is admitted under C1.
+- SHEP-33 removed secret serving from the service's jobs; W1's flags-first start and its
+  test follow that.
+- H1's listener shares the service's handlers; the main listener takes SHEP-93's
+  `idleTimeout: 180`, and the private listener keeps Bun's default (not changed here).
+- Taken as they are and held before any activation: SHEP-33's automatic vault move,
+  SHEP-78's feedback issues (on by default, filed to upstream's repository on a yes) and
+  SHEP-79's star card. SHEP-26's lost-log search reads only the default `~/.claude`.
+- Our `AGENTS.md` and `docs/develop.md` stay overrides.
 
 ### A1 provider checkpoint
 
@@ -55,8 +96,9 @@ byte-identical to U with U's mode, and each admitted path matches its pin (an
 admitted U path keeps exact U's mode; an admitted added path is a plain file). A
 symbolic link at an admitted path or at a U path outside the overrides refuses, even
 to identical content. The three overrides (`AGENTS.md`, `docs/develop.md`, `.github/workflows/check.yml`) are
-skipped whole, content and mode. They, the checker, the manifest and added files
-outside the table are not pinned by it and rely on review. Candidate readiness
+skipped whole, content and mode. They, the checker, the manifest and the added files
+the shared table names (below) are not pinned by content and rely on review. Since S1
+(PR 19 decision D5, issue #7), a path outside that table refuses. Candidate readiness
 stays blocked.
 
 - `T/providers.py` owns nonsecret bindings, the four supported launch plans and the
@@ -73,6 +115,241 @@ stays blocked.
   selection only; the same treatment of endpoint, credential and model variables is unproved.
   The backup's gate has in-module proof only; its public-process proof is Q's.
 - Detail, official sources and authored regressions: [Azure launch plans](../azure-launch-plans.md).
+
+### N1 native publication checkpoint
+
+`bin/check-migration` names each phase's admitted owner paths; the manifest's
+`source_deltas` pins each one's content hash and exact-U blob. What it enforces: each
+admitted owner matches its pin, and every U path outside that table and the three
+overrides is byte-identical to U with U's mode. So a phase can't change a U path it
+doesn't own, or an owner away from its pin. Naming an earlier phase over its deltas
+refuses, and dropping the deltas as well refuses because the admitted paths then
+differ from exact U. Under D5, a path a phase added outside the table relied on review
+until S1 enumerated tracked paths in the shared table (issue #7); the checker also refuses
+files under the retired `server/` and `helper/` owners and new files in `service/hc`.
+Candidate readiness stays blocked.
+
+- `T/github.py` owns adoption (`adopt_existing()`), reached by `herdr-task adopt`.
+  Base equivalence is proved from commits: the task's start commit is the one merge
+  base of its tip and the commit GitHub's base branch holds now, read through gh, and
+  the recorded base (`main` when none is recorded) is in that commit. Adoption records
+  the head it verified; Accept and the tick refuse unless the pull request's base is
+  unchanged and its head and the branch here are both that head. Only adopting again
+  records another. S1 moves this behind the forge.
+- Finishing removes a task's branch and worktree only when the branch tip is the commit
+  that merged (the head GitHub merged, or with no pull request a tip in the base
+  branch) and nothing is uncommitted there; otherwise both stay with a note. A base
+  that is only a commit refuses adoption and a local merge, and the base is fetched as
+  a branch. A saved "not on GitHub" is asked again once before a local merge.
+- Known gap: a retarget between Accept's read and `gh pr merge` isn't caught. The head
+  stays guarded by `--match-head-commit`; gh offers no such guard for the base.
+- A repo with no remotes, or only remotes on another named forge, stays local without
+  asking gh. Otherwise only gh's own word that it knows no such host is a saved no, and
+  a github.com remote or a name saved for the same remotes overrules it. Any other gh
+  failure refuses and never reaches a local merge. gh not installed refuses for a
+  recognised GitHub remote; whether that holds is an open human decision.
+- Credential custody is unchanged: [Pull requests and credentials](../install.md#pull-requests-and-credentials).
+- This phase, A1 and S1 each add one row to `PHASES` and their rows to `source_deltas`.
+  They merge into one table, and whichever merges second re-pins every path they share.
+- This fix is not a required port. No inventory requirement changes status.
+
+### C1 chat profile checkpoint
+
+`core/chat-log.js` (FIND, copied to `mods/chat/core/` by `bin/sync-shared`) and
+`T/sessions.py` (`session_of()`) find an agent's Claude Code session, each by one rule,
+for each candidate process and never for the caller:
+
+- That process's `CLAUDE_CONFIG_DIR` set to an absolute path: exactly that folder.
+- Its environment readable and the variable unset: `$HOME/.claude`.
+- Unreadable, an empty environment, or a value that isn't an exact absolute path: nothing
+  for that process, and no other folder is tried. macOS shows a system binary's environment
+  as empty, so empty is no evidence.
+- Metadata whose `pid` isn't that process's selects nothing. A session with no log stays
+  pending under `~/.claude`. Nothing scans across folders.
+- Under another folder a session with no log prints nothing, and FIND stops at that process,
+  as pending has no path for a guard to read and would open a chat that could restart it. The cost: a fresh custom-folder
+  agent shows "Can't find this conversation" until its first log line, as today. Both chats
+  look again while they have no path, so it opens then.
+- A reused pid isn't caught: a crashed agent's metadata names the same pid as a new process
+  under that folder, so it can match until the new process rewrites the file. The `pid`
+  check catches metadata for another pid and no other stale metadata.
+- Only that one variable is taken from a process. Linux reads `/proc/<pid>/environ`; macOS
+  reads `KERN_PROCARGS2` through python3, as `ps eww` is flat text. Any other platform
+  finds nothing. Both read the environment the process started with.
+- macOS reads live memory, and `argc` no longer marks where the environment starts once a
+  process sets its title (Node's `process.title` rewrites argv). A short title zero-fills argv
+  past itself, so with `argc` of 2 or more and every word after `argv[0]` empty the
+  environment starts at the next word, and a Node agent reads as usual. A title that fills
+  argv collapses it: the variable seen anywhere but in the counted environment refuses, and
+  so does an empty count, so a set variable reads as unset only if a process overwrites its
+  own environment memory. An argument shaped like the variable, with the variable unset,
+  refuses too.
+- Behaviour change: on macOS FIND now needs python3 on its PATH. Without it every Claude
+  agent there loses Chat, including default ones that work today. `session_of()` runs in
+  python already and doesn't.
+- A session under another folder is for reading only. Revive, resume, a restart and a fork
+  carry no `CLAUDE_CONFIG_DIR`, so continuing it would start on another profile, perhaps
+  another account. `session_of()` returns such a session only to `any_folder=True`, which
+  `T/news.py` alone asks for, so for a non-default folder nothing records it and no path
+  that starts an agent gains anything. A default agent whose environment can't be read
+  does change: it gets no record, so a resume starts fresh. `sessionOf()` in `core/agents.js`
+  gives a session under another folder no id. Carrying the folder belongs to L1 and L2.
+- What would start an agent again asks its process, not a found log: FIND prints nothing for
+  a custom-folder agent with no log, and a reader can be gone or have no path yet. `FOLDER`
+  in `core/chat-log.js` runs on the agent's machine and prints `default`, `other` or nothing.
+  The process with its own session is the agent; with none yet, another folder in the process
+  or a child counts, and the process itself must be readable. It shares FIND's process
+  reading, and FIND's arguments and output don't change.
+- A running agent: `restartRefusal()` in `core/agents.js`, called by the window's picker, its
+  task switch and `service/agents.ts` `restart()` before anything ends. Another folder and
+  unreadable both refuse, each in its own words, so that also changes a default agent whose
+  process can't be read: it no longer restarts. The live list lacks another machine's
+  foreground program, so the service asks `hc get`. Codex isn't asked.
+- A lost session: `lostRefusal()`, called by the window's `lostSession()` and
+  `service/watch.ts`. The agent has gone, so it has no process to ask. Refused: a
+  `CLAUDE_CONFIG_DIR=` word before the agent's in the launch's argv, which `freshArgv()` drops
+  (any value, even `~/.claude` written out); a live shell that reads another folder; in the
+  window, a log it had found under another folder. Not refused, as the two rules conflict
+  here and each departs from "unreadable refuses": a shell that can't be read, since macOS
+  shows no environment for a system binary such as `/bin/zsh`, and what's typed inherits that
+  shell as the agent that left did; and an ended terminal with no assignment, which leaves
+  nothing to read, as refusing would end recovery for every default agent. So an ended agent
+  whose variable arrived any other way can still start fresh on another folder. That a
+  terminal gets the core's environment plus its caller's overrides is read from `hc`'s own
+  description of its record, not proved here.
+- A fork refused for another folder says so, in both the window and `service/actions.ts`.
+- Still open: a tab's Restart and Switch agent (`tab-switch` in `service/actions.ts`) and
+  `mods/coordinator/restart.sh`'s fixed `~/.claude` lookup don't ask.
+- `sessionOf()` knows ~/.claude by its shape, as the agent's machine's home isn't known
+  there, so FIND finds nothing for another folder called `.claude`, and so does `session_of()`.
+- The macOS reader has no CI: `core/chat-find.test.js` and `test/test_session_discovery.py`
+  take it only when run on macOS.
+- This fix is not a required port. No inventory requirement changes status.
+
+### W1 web chat flag checkpoint
+
+Claude Code's question hook (`mods/chat/ask-hook.sh`) asks a chat only while
+`data/chat-asks/open/<terminal>` is under 15 s old. On the web only `service/jobs.ts`
+touched it, and only with background work on, so with `SHEPHERDR_JOBS=off`, or a 3.0
+window keeping that work, a web page got no cards. W1 starts that flag's round before
+the background work's gate. Nothing else moves.
+
+- Background work keeps its gate: the task tick, `scheduler --ensure` and other machines'
+  ticks run only as before. `/api/health`'s `jobs` is unchanged. (v3.1.16's SHEP-33 removed
+  secret serving from the service's jobs.)
+- The flag is kept only for a live Claude agent's chat that a page follows, as before.
+  Another machine's agent keeps its flag there through `machine.exec`, the same one
+  `touch` with background work on or off; the cards there are already read and answered
+  through that link (`service/asks.ts`).
+- While herdr-core is away, flags here are touched from its last list as before: they and
+  the answers are files, so an outage doesn't affect them. Behaviour change, with background
+  work on too: another machine's flag isn't touched then, where each touch used to wait and
+  land once the core was back, perhaps for a terminal gone since; the first round after it's
+  back sends one (at its usual 8 s spacing) instead of a queued touch landing at once, so an
+  outage ending 12 to 15 s after the last touch now lets that flag go stale where it didn't
+  before. An outage covering the round that would refresh it is enough, however short; one
+  over about 12 s always is.
+- Existing limitation, the same with background work on: a window closing an agent's chat
+  on that agent's own machine (`close()` in `mods/chat/main.js`; a window showing another
+  machine's agent leaves its flag alone) deletes the flag and empties every request waiting
+  on that terminal, so a card about to be answered on a page goes to the terminal instead.
+  The service makes the flag again for the next request: within 4 s for an agent on the
+  service's machine, and for another machine's agent at its next remote touch, up to about
+  12 s later with the 8 s spacing, plus the link's delay. While the window and
+  a page show one chat, both can answer one request; the hook takes the first answer file
+  it sees.
+- With background work off and a window there, a request from an agent whose chat a page
+  follows now waits for a chat's answer instead of going straight to the terminal, as it
+  already did with background work on. The window's own flag code is unchanged.
+- Untouched: `mods/chat/ask-hook.sh`, `service/asks.ts`, request identity, the answer
+  path, `service/main.ts` and every permission restriction.
+- `service/jobs-flags.test.ts` runs `service/jobs.ts` in a child process with stand-ins for
+  herdr-task, herdr-secret and the hub. A real Claude, its hook and a real page are not run.
+- This fix is not a required port. No inventory requirement changes status.
+
+### H1 private custom-domain checkpoint
+
+The private HTTPS commits (`f8c43a60` to `c8217c0b`, kept at
+`refs/archive/private-https-c8217c0b`) were made on v3.1.3 and are what the live release runs.
+H1 admits them unchanged: `service/private-domain.ts` and its test, the listener's
+wiring in `service/auth.ts` and `service/main.ts`, `docs/private-domain.md`, ADR 0004,
+`scripts/private-domain-proof.ts`, a line in `docs/web.md` and the workflow
+`.github/workflows/private-domain.yml`.
+
+- Set only through `SHEPHERDR_PRIVATE_DOMAIN` (a local JSON file outside synchronized
+  settings). Unset, there is no listener and no extra lookup, and Tailscale Serve and
+  local token access keep their defaults ([Private custom domains](../private-domain.md)).
+- `docs/web.md` is W1's too: one row, under H1, pins its combined content.
+- The workflow runs only on pushes to `feat/private-custom-domain` or by hand, so it
+  doesn't run for this branch; its owner and sensitivity checks need a reviewer's look.
+  `service/private-domain.test.ts` runs with the service suite in Check.
+- This fix is not a required port. No inventory requirement changes status.
+
+### S1 forge checkpoint
+
+S1 is re-applied on this candidate after H1 as its own row in `PHASES`. Its owners are
+`T/__init__.py`, `T/commands.py`, `T/forge.py`, `T/github.py`, `T/proof.py`, `T/tick.py`,
+`test/test_forge.py`, `test/test_herdr_task.py` and `test/test_native_publication.py`;
+those earlier phases admitted are S1's from here, and their pins are S1's.
+
+- `T/forge.py` is the single route from Ready, review, Accept, merge, adopt, the tick and
+  the Accept card to a task's pull request and its folder's repository. `T/github.py` is
+  the GitHub adapter; its N1 functions keep their behaviour: Ready means published
+  (any publication failure refuses Ready, with no "ready, but" state), D3 cleanup,
+  adopted-head checks, the saved-no recheck (gh asked once per command) and fail-closed
+  reads. Local Git, task state, approval and cleanup keep their owners.
+- An unqualified saved record is GitHub's. The adapter still writes that legacy shape;
+  no record is qualified on read or write.
+- A saved record naming a provider without an adapter, or saved for a host other than
+  the one herdr-task reaches GitHub at, is refused before any gh call. That host is
+  where gh sends `--repo owner/name`: `GH_HOST`, else github.com. A gh configuration
+  whose default is another host without `GH_HOST` isn't known before a call; there the
+  answered-identity check below still refuses before any write.
+- Publication reads a saved pull request first, before any push, comment or new pull
+  request. No answer refuses, as N1 does, and an answer whose link, host, repository or
+  number differs from the record refuses. Reads for Ready's SHEP-59 check, Accept,
+  merge, the tick and the Accept card refuse the same way; nothing reads a refused view
+  as merged, open or checked. A pull request from a list, open (adoption) or merged
+  (SHEP-59's `pr_merged()`), counts only when its own link is in the folder's repository
+  on that host; `adopt` refuses a link or answer on another host.
+- The folder's host is gh's own: `gh repo view --json nameWithOwner,url` in the folder,
+  the one lookup `github()` makes, gives the link on the host gh resolves from the remote,
+  SSH aliases included. `forge.reach()` is the one owner of comparing it with the host
+  `--repo owner/name` reaches: a different host, or none given, refuses with nothing
+  changed and says to set `GH_HOST`. Publication calls it before any push; adopt, Accept's
+  already-exists adoption, every merge (`merge_now()` from merge, Accept, Ready's and the
+  tick's auto merge) and the tick's merged read (`squash_merged()`, which skips the task
+  for that pass) call it before any call about a pull request. gh failing to place the
+  folder at a merge reads as gh failing to reach the pull request, as N1 words it.
+- Not covered: read-only presentation in `service/worktree.ts` and `mods/task-pr/main.js`,
+  and GitHub news (`T/ghnews.py`), still read the saved `repo` (B1/B2). Host-qualified
+  GitHub transport is not added.
+- The tick's read of a recorded pull request (`facts()`) passes `reach()` for the
+  folder's repository first, so a record saved before S1 (never checked) is held to it
+  too. Otherwise nothing is read as the task's and nothing finishes: the record and the
+  worktree stay, the next look comes after `PR_EVERY` as when gh doesn't answer, and
+  the tick goes on.
+- SHEP-59's completion read (`already_merged()`, from Ready and from the tick for a
+  Ready task) makes its pull request queries, the saved one's view and the merged list,
+  only once `reach()` passes for the folder's repository. Otherwise none is merged:
+  nothing is recorded or raised, and local Git alone (`merged_here()`, `landed()`)
+  says whether the work is in its base, as for a folder not on GitHub. Ready then
+  reaches publication, which refuses on that host.
+- Regression: `test/test_forge.py` runs `ready`, `merge` and `tick` as processes on the N1
+  fixture. Existing assertions are unchanged; `test_herdr_task.py`'s patch points moved
+  to the seam, and the merge fake answers only `gh pr merge`. Fixtures answer as gh does:
+  merged-list links in the fixture repository, a pull request view naming itself, the
+  folder's link on the host gh resolves, and `GH_HOST` set where an Enterprise remote
+  publishes.
+- The shared table (PR 19 decision D5's deferred enumeration, issue #7): every path a
+  commit could hold, tracked or new and not ignored, must be U's, an admitted phase
+  owner's (A1, N1, C1, W1, H1, S1) or an addition named in `NAMED` by the accepted change
+  that added it: S0's foundation documents and checker, A1's `docs/azure-launch-plans.md`,
+  and PR 20's checkout access (`.claude/.gitignore`, `.claude/checkout-access.json`,
+  `bin/checkout-access`, `test/test_checkout_access.py`). Named additions are admitted by
+  name only; their content relies on review. Any other path refuses by name, a document
+  as much as source; ignored paths are no commit and pass.
+- This is not a required port. No inventory requirement changes status.
 
 ### Bitbucket contract
 
@@ -173,7 +450,12 @@ silently considered covered by default tests.
 
 Root runs `python3 bin/check-migration`, its public-CLI checkpoint tests
 (`test/test_migration.py`), the A1 provider and discovery tests (`test/test_providers.py`,
-`service/azure-deployments.test.ts`) and every native Check command. CI owns frozen dependency installation, web
+`service/azure-deployments.test.ts`), the N1 publication tests (`test/test_native_publication.py`),
+the C1 discovery tests (`core/chat-find.test.js`, `test/test_session_discovery.py`),
+the W1 flag tests (`service/jobs-flags.test.ts`), the H1 listener tests
+(`service/private-domain.test.ts`), the S1 forge tests (`test/test_forge.py`) and every
+native Check command. CI owns
+frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.
 Missing dependencies/generated web sources are prerequisite blockers, not authority

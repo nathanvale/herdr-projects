@@ -7,7 +7,8 @@ const { typing: slashTyping, match: slashMatch } = SL as any
 import { openAccept } from '@client/screens/Accept.tsx'
 import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ComponentType, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode, type RefObject } from 'react'
 import { act, chatName, definePlugin, getDraft, getState, goChat, has, holdReload, openArtifact, openItem, openNeeds, openTask, registry, setDraft, setOutbox, setUI, taskOf, useDraft, useSnap, useStore, useUI, type UI } from '@client/kernel.ts'
-import { keyOf, partsOf, priorOf, reasonOf, SEND_TIMEOUT, type Outgoing } from '@client/outbox.ts'
+import { anchorOf, keyOf, partsOf, placesOf, priorOf, reasonOf, SEND_TIMEOUT, type Outgoing } from '@client/outbox.ts'
+import { dropFiles, keepFile, keptFile, postFile, retrying, sweepFiles } from '@client/uploads.ts'
 import { AlertIcon, BackIcon, CameraIcon, CheckIcon, CopyIcon, Count, DeleteIcon, dimmed, Dot, DownIcon, DownloadIcon, Empty, field, FileIcon, ic, IconButton, KeyIcon, LinkButton, LiveWave, MachineIcon, Menu, MenuItem, MenuSeparator, MenuSetting, MicIcon, ModeIcon, MoreIcon, NextIcon, PageIcon, PlanIcon, PlusIcon, Primary, QuestionIcon, ReplyIcon, RestartIcon, roundBtn, SearchIcon, SecretField, Sent, SmileIcon, Tab, Tabs, TextBox, UpIcon, useElapsed, XIcon } from '@client/ui.tsx'
 import { canDictate, dictate, dictSample, type Dictation } from '@client/dictation.ts'
 import { extOf, isImage } from '@shared/files.ts'
@@ -23,16 +24,20 @@ import { Fold } from './fold.tsx'
 import { Markdown } from './markdown.tsx'
 import { answeredBy, cancelReply, canReply, isArtifact, jumpTo, startReply } from './reply.ts'
 import { typing, working } from './typing.ts'
-import { JobsSheet, JobsTag, NeedsYou, TurnLine, WorkingLine } from './activity.tsx'
-import { ClockIcon, PaperClipIcon } from '@heroicons/react/16/solid'
-import { AskedRow, Band, BriefRow, Chips, EndedRow, ErrorRow, NoteRow, Notice, HeadRow, ImagesLine, NewsRow, onTerminal, PublishingRow, questionsBelow, ReplyLine, Thumbs, WORDS } from './rows.tsx'
+import { JobsSheet, JobsTag, NeedsYou, openSubagent, TurnLine, useSubagent, WorkingLine } from './activity.tsx'
+import { ClockIcon } from '@heroicons/react/16/solid'
+import { AskedRow, Band, BriefRow, Chips, EndedRow, ErrorRow, NoteRow, Notice, HeadRow, ImagesLine, NewsRow, onTerminal, PilotRow, PublishingRow, questionsBelow, ReplyLine, Thumbs, WORDS } from './rows.tsx'
 import { AgentLine, openModelMenu, openRestart, RestartSheet } from '@client/restart.tsx'
+import { Sheet, SheetClose } from '@client/Stack.tsx'
+import { expandPicked, forMarkdown, mentionItems, MentionList, pickable, takeItem, useReach, withChips, type Item } from './mentions.tsx'
+import * as MNc from '@core/mentions.js'
+const mentionTyping = (text: string): string | null => (MNc as any).typingTask(text) ?? (MNc as any).typing(text)
 
 /* ---------- messages ---------- */
 
 /** Human messages, including full task briefs and generated settings, exactly as written. */
-function YourText({ text }: { text: string }) {
-  return <div className="whitespace-pre-wrap wrap-anywhere">{text}</div>
+function YourText({ text, chat }: { text: string; chat?: string }) {
+  return <div className="whitespace-pre-wrap wrap-anywhere">{chat ? withChips(text, chat) : text}</div>
 }
 
 export { Markdown }
@@ -191,8 +196,8 @@ function Bubble({ msg, chat, from, out, last, pics, images, writing }: { msg: Me
                     const blocker = chat.messages.findLast((m) => m.question?.sent === undefined && !!m.question && !m.waiting)
                     return blocker ? <LinkButton onClick={() => jumpTo(chat.key, blocker.id, { card: true })}>Go to question</LinkButton> : null
                   })()}
-                </> : waitLine(msg.waitsFor)}</div> : null}
-                {msg.text ? <div ref={text} data-text>{you ? <YourText text={msg.text} /> : <Fold id={msg.id}><Markdown text={msg.text} /></Fold>}</div> : null}
+                </> : msg.waitsFor === 'queue' ? <InQueue chatKey={chat.key} /> : waitLine(msg.waitsFor)}</div> : null}
+                {msg.text ? <div ref={text} data-text>{you ? <YourText text={msg.text} chat={chat.key} /> : <Fold id={msg.id}><Markdown text={msg.text} chat={chat.key} /></Fold>}</div> : null}
               </div>,
               true,
             )
@@ -219,7 +224,7 @@ function Bubble({ msg, chat, from, out, last, pics, images, writing }: { msg: Me
           : null}
         {!body && !msg.file && !art && reacted ? <div className="mt-1.5 flex gap-1">{edge}</div> : null}
         {art ? null : parts}
-        {out?.state === 'failed' && last ? <NotSent out={out} /> : null}
+        {out?.state === 'failed' && last ? <NotSent out={out} /> : out?.state === 'sending' && last ? <Sending out={out} /> : null}
       </div>
     </>
   )
@@ -255,6 +260,23 @@ function Held({ chatKey }: { chatKey: string }) {
         </div>
       ))}
     </div>
+  )
+}
+
+/** one in its CLI's own queue (#662): Queued, and Send now when the agent is Claude Code (its Ctrl+Enter takes it at
+ *  once, mid-turn; the service presses it only while its screen offers it). Why it couldn't, in place of Send now */
+function InQueue({ chatKey }: { chatKey: string }) {
+  const claude = useStore((s) => s.chats[chatKey]?.agent?.kind === 'claude')
+  const [state, setState] = useState<'idle' | 'sending' | string>('idle')
+  const now = () => {
+    setState('sending')
+    act({ type: 'steer', chat: chatKey }).then(() => setState('idle'), (e) => setState(String(e?.message ?? e) || 'It didn\'t go.'))
+  }
+  return (
+    <>
+      {WORDS.inQueue}
+      {claude ? state === 'idle' ? <>{' · '}<LinkButton onClick={now}>{WORDS.sendNow}</LinkButton></> : state === 'sending' ? ' · Sending…' : <>{' · '}{state}</> : null}
+    </>
   )
 }
 
@@ -295,8 +317,36 @@ function NotSent({ out, className }: { out: Outgoing; className?: string }) {
   )
 }
 
+/** under one still on its way: how it goes, in a quiet line (it isn't in the conversation until the agent has it):
+ *  its pictures going up, the message going in, or the network gone, and it goes by itself once it's back */
+function Sending({ out, className }: { out: Outgoing; className?: string }) {
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine !== false)
+  useEffect(() => {
+    const on = () => setOnline(navigator.onLine !== false)
+    addEventListener('online', on)
+    addEventListener('offline', on)
+    return () => {
+      removeEventListener('online', on)
+      removeEventListener('offline', on)
+    }
+  }, [])
+  const n = out.files.length
+  const pictures = out.files.every((f) => isImage(f.name)) ? (n === 1 ? 'picture' : 'pictures') : n === 1 ? 'file' : 'files'
+  const words = out.offline || !online ? 'Waiting for a connection. It sends by itself.' : out.up !== undefined && n ? `Uploading ${Math.min(out.up + 1, n)} of ${n} ${pictures}…` : 'Sending…'
+  return (
+    <div role="status" data-sending className={clsx('mt-1 flex items-center justify-end gap-1.5 text-[0.75rem] text-fg3 tabular-nums phone:text-[0.8125rem]', className)}>
+      <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-[currentColor] motion-safe:animate-pulse" />
+      {words}
+    </div>
+  )
+}
+
 /** take one you sent out of the chat, its words and files with it */
-const removeOut = (cid: string) => setOutbox((all) => all.filter((o) => o.cid !== cid))
+const removeOut = (cid: string) => setOutbox((all) => {
+  const o = all.find((x) => x.cid === cid)
+  if (o) void dropFiles(o.files.map((f) => f.path).filter(isStandIn))
+  return all.filter((x) => x.cid !== cid)
+})
 
 /** a hold on one still on its way (or ⋯ beside it, with a mouse): Remove takes it out, should it never come back. It
  *  opens above it: what is on its way is always at the end of the chat, over the box */
@@ -336,6 +386,14 @@ if (typeof addEventListener === 'function') {
 const SWIPE = 64
 /** how far the chat slides left to show every message's time (like iMessage) */
 const PEEK = 80
+
+/** a box from el up to (not past) top that scrolls sideways: wider than its view, and allowed to scroll */
+function scrollsAcross(el: Element | null, top: Element) {
+  for (; el && el !== top && top.contains(el); el = el.parentElement) {
+    if (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(el).overflowX)) return true
+  }
+  return false
+}
 
 /** on a touch screen, holding a message (or tapping it twice) does fn, with a light tap from the phone; sliding it
     right replies (swipe), sliding it left shows every message's time while the finger stays; scrolling, a tap on a link or a picture, a swipe from the screen's edge and a mouse are left
@@ -384,7 +442,10 @@ function useHold(fn: ((at: At) => void) | null, swipe: (() => void) | null = nul
       r.current = { ...r.current, x: e.clientX, y: e.clientY, touch, fired: false, el: e.currentTarget, slide: undefined, dx: 0, armed: false }
       // a swipe from the screen's edge is the screen's (it goes back, or opens the places)
       if (!touch || Date.now() - scrolled < 250 || e.clientX < EDGE) return
+      // a finger on a box wider than its view (a code block, a table) scrolls that box sideways: the message stays put
+      // (#629); a hold still works
       r.current.armed = true
+      if (scrollsAcross(e.target as Element, e.currentTarget)) r.current.slide = 'off'
       if (!fn) return
       if (again) {
         r.current.last = 0
@@ -598,7 +659,7 @@ function Album({ msgs, chat, from, out, last: lastPart }: { msgs: Message[]; cha
         chat={chat.key} you={you} width={width}
         open={(i) => setUI({ photo: out ? { chat: chat.key, file: msgs[i].file } : { chat: chat.key, msg: msgs[i].id } })}
       />
-      {out?.state === 'failed' && lastPart ? <NotSent out={out} className="self-end" /> : null}
+      {out?.state === 'failed' && lastPart ? <NotSent out={out} className="self-end" /> : out?.state === 'sending' && lastPart ? <Sending out={out} className="self-end" /> : null}
     </div>
   )
 }
@@ -846,7 +907,7 @@ function PhotoView({ shots, at: index, go, chatKey }: { shots: Shot[]; at: numbe
           {neighbour(next, 'right')}
         </div>
       </div>
-      <div {...own} className="absolute inset-x-0 top-0 flex items-center gap-2 bg-linear-to-b from-black/60 to-transparent px-3 pt-[calc(env(safe-area-inset-top)+10px)] pb-6">
+      <div {...own} className="absolute inset-x-0 top-0 flex items-center gap-2 bg-linear-to-b from-black/60 to-transparent px-3 pt-[calc(env(safe-area-inset-top)+10px)] pb-6 [[data-topbar]~*_&]:pt-2.5">
         <div className="min-w-0 flex-1 pl-1">
           <div className="truncate text-[0.8125rem] text-white/80 phone:text-[0.9375rem]">{f.name}</div>
           {shots.length > 1 ? <div className="text-[0.75rem] text-white/55 tabular-nums phone:text-[0.8125rem]">{`${index + 1} of ${shots.length}`}</div> : null}
@@ -1008,7 +1069,7 @@ function Card({ card: c, chat, at, press, keys, className }: { card: UpdateCard;
   const status = t?.status ?? c.status ?? 'idle'
   const needs = (c.ask?.open || status === 'need') && registry.views.needs
   const pr = c.pr ?? t?.pr
-  // Shepherdr 3: a news line says what happened at its moment and is never rewritten after; a Ready one has Accept
+  // Shepherdr 3: a news line says what happened at its moment and is never rewritten after; a Ready one has Review (opens the Accept card)
   // while its task still waits for it
   const accept = c.status === 'ready' && t?.status === 'ready' && !t.archived
   const line = (
@@ -1028,7 +1089,7 @@ function Card({ card: c, chat, at, press, keys, className }: { card: UpdateCard;
       {accept ? (
         <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); openAccept(task) }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); openAccept(task) } }}
           className="press-dim ml-auto h-6 shrink-0 rounded-full bg-fg px-2.5 text-xs/6 font-medium text-bg phone:h-8 phone:px-3 phone:text-sm/8">
-          Accept
+          Review
         </span>
       ) : null}
     </button>
@@ -1108,14 +1169,24 @@ const Messages = memo(function Messages({ chat, from }: { chat: Chat; from: stri
   const outbox = useStore((s) => s.outbox)
   type Item = { at: number; msg: Message; out?: Outgoing; last?: boolean } | { at: number; album: Message[]; out?: Outgoing; last?: boolean }
   // held messages aren't in the conversation yet: they are rows over the box (Held), as the window's
-  const items: Item[] = chat.messages.filter((m) => !isHeld(m)).map((msg) => ({ at: msg.at ?? 0, msg }))
-  items.sort((a, b) => a.at - b.at)
-  // what you just sent comes last, in one list with the rest: when it comes back it keeps its place in the list, so
-  // nothing is drawn again (a picture doesn't load twice)
-  for (const out of outbox) {
-    if (out.chat !== chat.key || heldOut(out)) continue
+  const shown: Item[] = chat.messages.filter((m) => !isHeld(m)).map((msg) => ({ at: msg.at ?? 0, msg }))
+  shown.sort((a, b) => a.at - b.at)
+  // what you just sent, in one list with the rest: right after what was last when you sent it, so newer messages come
+  // under it and the chat keeps the order things were sent in (SHEP-93: one stuck at the bottom under everything
+  // newer). When it comes back it keeps its place in the list, so nothing is drawn again (a picture doesn't load twice)
+  const mine = outbox.filter((o) => o.chat === chat.key && !heldOut(o))
+  const places = placesOf(shown.map((it) => ('msg' in it ? { id: it.msg.id, cid: it.msg.cid } : { id: '' })), mine)
+  const extra = new Map<number, Item[]>()
+  for (const out of mine) {
     const parts = partsOf(out, chat)
-    parts.forEach((msg, i) => items.push({ at: out.at, msg, out, last: i === parts.length - 1 }))
+    const at = places.get(out.cid)!
+    const list = extra.get(at) ?? extra.set(at, []).get(at)!
+    parts.forEach((msg, i) => list.push({ at: out.at, msg, out, last: i === parts.length - 1 }))
+  }
+  const items: Item[] = []
+  for (let i = 0; i <= shown.length; i++) {
+    items.push(...(extra.get(i) ?? []))
+    if (i < shown.length) items.push(shown[i])
   }
   // as the window's rows: images sent with words go under them (an album of their own when they came alone); the
   // quiet lines (tools, a brief or another agent's message, task news, a publish on its way) sit tight together, one
@@ -1124,7 +1195,7 @@ const Messages = memo(function Messages({ chat, from }: { chat: Chat; from: stri
   const rows: (Item | Quiet)[] = []
   const pics = new Map<Message, Message[]>()
   const imgLines = new Map<Message, number>()
-  const isQuiet = (m: Message) => !!(m.activity || m.brief || m.news || m.publishing || m.ended)
+  const isQuiet = (m: Message) => !!(m.activity || m.brief || m.news || m.publishing || m.ended || m.pilot)
   for (const it of items) {
     const last = rows.at(-1)
     if ('msg' in it && isQuiet(it.msg)) {
@@ -1134,10 +1205,13 @@ const Messages = memo(function Messages({ chat, from }: { chat: Chat; from: stri
     }
     const words = last && 'msg' in last && last.msg.text && !last.msg.card ? last.msg : null
     const together = (m: Message) => !!words && words.who === m.who && words.at === m.at && words.cid === m.cid
-    if ('msg' in it && it.msg.images && together(it.msg)) { imgLines.set(words!, it.msg.images); continue }
+    // what goes under the words takes over their row's end: one on its way says how it goes under the last of it
+    // (SHEP-93: words with pictures that didn't go showed no Retry)
+    const under = () => { if (it.last) (last as Extract<Item, { msg: Message }>).last = true }
+    if ('msg' in it && it.msg.images && together(it.msg)) { imgLines.set(words!, it.msg.images); under(); continue }
     if (!('msg' in it) || !isPicture(it.msg)) { rows.push(it); continue }
     const m = it.msg
-    if (together(m)) { pics.set(words!, [...(pics.get(words!) ?? []), m]); continue }
+    if (together(m)) { pics.set(words!, [...(pics.get(words!) ?? []), m]); under(); continue }
     const prev = last && 'album' in last ? last.album.at(-1)! : null
     if (prev && prev.who === m.who && !m.newSession && !!prev.waiting === !!m.waiting && m.at === prev.at && prev.cid === m.cid) {
       const album = last as Extract<Item, { album: Message[] }>
@@ -1188,7 +1262,7 @@ const Messages = memo(function Messages({ chat, from }: { chat: Chat; from: stri
                 <div data-quiet className="flex w-full flex-col">
                   {it.quiet.map((m) => (
                     <div key={m.id} data-msg={m.id} data-chat={chat.key} className="w-full">
-                      {m.activity ? <TurnLine a={m.activity} chat={chat.key} /> : m.brief ? <BriefRow msg={m} /> : m.news ? <NewsRow msg={m} /> : m.ended ? <EndedRow msg={m} /> : <PublishingRow />}
+                      {m.activity ? <TurnLine a={m.activity} chat={chat.key} /> : m.brief ? <BriefRow msg={m} /> : m.news ? <NewsRow msg={m} /> : m.ended ? <EndedRow msg={m} /> : m.pilot ? <PilotRow msg={m} /> : <PublishingRow />}
                     </div>
                   ))}
                 </div>
@@ -1222,17 +1296,30 @@ const Messages = memo(function Messages({ chat, from }: { chat: Chat; from: stri
  *  question mark, or a list for a plan. The title wraps onto as many lines as it needs, the mark on its first line */
 type CardSource = { id: string; title?: string }
 
-export function CardShell({ title, plan, icon, action, source, head, children }: { title: string; plan?: boolean; icon?: ComponentType<{ className?: string }>; action?: ReactNode; source?: CardSource; head?: { who: string; links: { label: string; fn: () => void }[] }; children: ReactNode }) {
+export function CardShell({ title, plan, icon, action, source, head, children }: { title: string; plan?: boolean; icon?: ComponentType<{ className?: string }>; action?: ReactNode; source?: CardSource; head?: { who: string; links: { label: string; fn: () => void }[]; dismiss?: () => void }; children: ReactNode }) {
   const Icon = icon ?? (plan ? PlanIcon : QuestionIcon)
+  // Esc while the card has the focus (a press on it) dismisses it, as Esc in the CLI's own prompt; not while typing in it
+  const esc = head?.dismiss
+    ? (e: KeyboardEvent) => {
+        if (e.key !== 'Escape' || (e.target as HTMLElement).closest('input, textarea')) return
+        e.preventDefault()
+        e.stopPropagation()
+        head.dismiss!()
+      }
+    : undefined
   return (
-    <div data-card className="mt-2 w-[440px] max-w-full cursor-default overflow-hidden rounded-box bg-bg shadow-[inset_0_0_0_1px_var(--line2)]">
+    <div data-card tabIndex={esc ? -1 : undefined} onKeyDown={esc} className="mt-2 w-[440px] max-w-full cursor-default overflow-hidden rounded-box bg-bg shadow-[inset_0_0_0_1px_var(--line2)] outline-none">
       {/* the window's card header: a red dot, "Claude asks", quiet links at the right */}
       {head ? (
         <div data-card-head className="flex items-center gap-2 px-3 pt-2 text-[0.75rem] phone:text-[0.8125rem]">
           <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-need" />
           <span className="min-w-0 flex-1 truncate font-medium text-fg2">{`${head.who} asks`}</span>
           {head.links.map((l) => (
-            <button key={l.label} type="button" onClick={l.fn} className="shrink-0 text-fg3 hover:text-fg hover:underline">{l.label}</button>
+            <button key={l.label} type="button" onClick={l.fn} className="relative shrink-0 text-fg3 hover:text-fg hover:underline">
+              {l.label}
+              {/* a finger's reach on a touch screen */}
+              <span aria-hidden="true" className="absolute top-1/2 left-1/2 hidden size-[max(100%,2.75rem)] -translate-1/2 coarse:block" />
+            </button>
           ))}
         </div>
       ) : null}
@@ -1251,13 +1338,16 @@ export function CardShell({ title, plan, icon, action, source, head, children }:
   )
 }
 
-/** a hook ask's card header, as the window's: whose ask ("Claude asks"), and "Answer in terminal" (no decision here:
- *  the CLI asks in its terminal, which then shows) */
+/** a hook ask's card header, as the window's: whose ask ("Claude asks"), "Answer in terminal" (no decision here:
+ *  the CLI asks in its terminal, which then shows) and "Dismiss" (or Esc on the card: closed without an answer, as Esc
+ *  in the CLI's prompt; the agent hears it was declined and carries on). A CLI's start screen has no Dismiss. */
 function askHead(q: Question, chat: Chat) {
+  const dismiss = q.press ? undefined : () => void act({ type: 'answer', chat: chat.key, question: q.id, dismiss: true } as never).catch(() => undefined)
+  const last = dismiss ? [{ label: 'Dismiss', fn: dismiss }] : []
   // a task worker's, in its Assistant's chat: headed by its task, its own chat a link (no terminal link)
-  if (q.by) return { who: q.by.ref, links: [{ label: 'Open chat', fn: () => goChat(q.by!.chat) }] }
+  if (q.by) return { who: q.by.ref, links: [{ label: 'Open chat', fn: () => goChat(q.by!.chat) }, ...last], dismiss }
   const terminal = () => void act({ type: 'answer', chat: chat.key, question: q.id, terminal: true } as never).then(() => openTerminal(chat.key), () => undefined)
-  return { who: chat.cli === 'codex' ? 'Codex' : 'Claude', links: [{ label: 'Answer in terminal', fn: terminal }] }
+  return { who: chat.cli === 'codex' ? 'Codex' : 'Claude', links: [{ label: 'Answer in terminal', fn: terminal }, ...last], dismiss }
 }
 
 /** a questions card's "Chat about this": no answer; the agent hears the person wants to talk it over, and the box
@@ -1645,26 +1735,65 @@ export function SecretCard({ ask, chat, source }: { ask: SecretAsk; chat: Chat; 
 
 /* ---------- sending: it shows at once, and settles once it is in ---------- */
 
-async function deliver(o: Outgoing) {
-  const patch = (p: (x: Outgoing) => Partial<Outgoing>) => setOutbox((all) => all.map((x) => (x.cid === o.cid ? { ...x, ...p(x) } : x)))
-  // a reload now would cut it off on its way
-  const release = holdReload()
+/** being sent from this page now, by cid: each once */
+const delivering = new Set<string>()
+/** by cid: done once its send is over (in or failed), for the ones sent after it in its chat */
+const gates = new Map<string, Promise<void>>()
+
+/** send one on its way: its files up first (each once, again by itself when the network cut it off), then the message,
+ *  asked again with the same id while the network is the trouble (the server never sends it twice). It is "sent" only
+ *  once the server says the agent has it; else it fails, its words and files kept for Retry (SHEP-93) */
+async function deliver(cid: string) {
+  if (delivering.has(cid)) return
+  const first = getState().outbox.find((x) => x.cid === cid)
+  if (!first || first.state !== 'sending') return
+  delivering.add(cid)
+  // the agent gets them in the order they were sent: this one's message waits for the ones sent before it in this
+  // chat (words sent while earlier pictures still go up never overtake them); their files go up meanwhile
+  let opened!: () => void
+  const mine = new Promise<void>((r) => (opened = r))
+  const before = getState().outbox.filter((x) => x.chat === first.chat && x.cid !== cid && x.state === 'sending' && x.at <= first.at).map((x) => gates.get(x.cid)).filter(Boolean)
+  gates.set(cid, mine)
+  const patch = (p: (x: Outgoing) => Partial<Outgoing>) => setOutbox((all) => all.map((x) => (x.cid === cid && x.state === 'sending' ? { ...x, ...p(x) } : x)))
+  const since = first.at
+  const onWait = (offline: boolean) => patch((x) => (!!x.offline === offline ? {} : { offline: offline || undefined }))
+  const standIns = first.files.filter((f) => isStandIn(f.path)).map((f) => f.path)
   try {
-    // a file still uploading goes once it is up
-    const files = o.files.some((f) => uploads.has(f.path)) ? await uploaded(o.files) : o.files
-    if (files !== o.files) patch(() => ({ files }))
-    const r = (await act({ type: 'send', chat: o.chat, text: o.text, attachments: files.map((f) => f.path), cid: o.cid, reply: o.reply?.id, human: true, ...(o.hold ? { hold: true } : {}) } as never, AbortSignal.timeout(SEND_TIMEOUT))) as {
-      waiting?: boolean
-      waitsFor?: Outgoing['waitsFor']
-      at?: number
+    let up = 0
+    if (standIns.length) patch(() => ({ up: 0 }))
+    const files = await Promise.all(first.files.map(async (f) => {
+      if (!isStandIn(f.path)) return f
+      const path = await startUpload(first.chat, f.path, since)
+      up++
+      patch(() => ({ up }))
+      return { ...f, path }
+    }))
+    await Promise.all(before)
+    const o = getState().outbox.find((x) => x.cid === cid)
+    if (!o || o.state !== 'sending') return
+    if (standIns.length) patch(() => ({ files, up: undefined }))
+    // a reload now would cut it off on its way
+    const release = holdReload()
+    let r: { waiting?: boolean; waitsFor?: Outgoing['waitsFor']; at?: number }
+    try {
+      r = (await retrying(
+        () => act({ type: 'send', chat: o.chat, text: o.text, attachments: files.map((f) => f.path), cid, reply: o.reply?.id, human: true, ...(o.hold ? { hold: true } : {}) } as never, AbortSignal.timeout(SEND_TIMEOUT)),
+        since,
+        { onWait },
+      )) as typeof r
+    } finally {
+      release()
     }
     // the chat may already show it waiting (queued) or gone in: that knows better than the answer
     const serverAt = typeof r?.at === 'number' ? r.at : undefined
-    patch((x) => ({ state: 'sent', error: undefined, serverAt, ...(x.queued || x.wentAt ? {} : { waiting: r?.waiting || undefined, waitsFor: (r?.waiting && r.waitsFor) || undefined }) }))
+    patch((x) => ({ state: 'sent', error: undefined, offline: undefined, up: undefined, serverAt, ...(x.queued || x.wentAt ? {} : { waiting: r?.waiting || undefined, waitsFor: (r?.waiting && r.waitsFor) || undefined }) }))
+    void dropFiles(standIns)
   } catch (e) {
-    patch((x) => (x.state === 'sending' ? { state: 'failed', error: reasonOf(e) } : {}))
+    patch(() => ({ state: 'failed', error: reasonOf(e), offline: undefined, up: undefined }))
   } finally {
-    release()
+    delivering.delete(cid)
+    gates.delete(cid)
+    opened()
   }
 }
 
@@ -1677,9 +1806,9 @@ function retry(cid: string) {
   const s = getState()
   const o = s.outbox.find((x) => x.cid === cid)
   if (!o) return
-  const again: Outgoing = { ...o, cid: o.lost ? newCid() : o.cid, state: 'sending', error: undefined, lost: undefined, waiting: undefined, waitsFor: undefined, queued: undefined, serverAt: undefined, wentAt: undefined, busyAt: undefined, pastAt: undefined, at: Date.now(), prior: priorOf(s.chats[o.chat]) }
+  const again: Outgoing = { ...o, cid: o.lost ? newCid() : o.cid, state: 'sending', error: undefined, lost: undefined, waiting: undefined, waitsFor: undefined, queued: undefined, serverAt: undefined, wentAt: undefined, busyAt: undefined, pastAt: undefined, offline: undefined, up: undefined, at: Date.now(), prior: priorOf(s.chats[o.chat]), after: anchorOf(s.chats[o.chat]), before: s.outbox.filter((x) => x.chat === o.chat && x.cid !== cid).map((x) => x.cid) }
   setOutbox((all) => all.map((x) => (x.cid === cid ? again : x)))
-  deliver(again)
+  void deliver(again.cid)
 }
 
 /* ---------- composer ---------- */
@@ -1711,31 +1840,6 @@ function SlashList({ chatKey, text, pick }: { chatKey: string; text: string; pic
           className="flex w-full min-w-0 items-baseline gap-2 rounded-row px-2.5 py-1.5 text-left hover:bg-hover phone:py-2.5">
           <span className="shrink-0 font-medium">/{c.name}</span>
           <span className="min-w-0 truncate text-fg3">{c.about}</span>
-        </button>
-      ))}
-    </div>
-  )
-}
-
-/** "#4" at the end of the box, as the window's: the chat's space's tasks, by number or title; a tap puts its id in */
-function TaskList({ chatKey, text, pick }: { chatKey: string; text: string; pick: (text: string) => void }) {
-  const snap = useSnap()
-  const h = /(?:^|\s)#([\w-]*)$/.exec(text.replace(/\n+$/, ''))
-  if (!h || !snap) return null
-  const own = taskChatId(chatKey)
-  const place = own ? taskOf(snap, own)?.place : snap.places.find((p) => p.chat === chatKey)?.id
-  const q = h[1].toLowerCase()
-  const refOf = (id: string) => id.split(':').pop() ?? id
-  const list = (snap.tasks ?? []).filter((t) => t.place === place && (!q || refOf(t.id).toLowerCase().includes(q) || t.name.toLowerCase().includes(q))).slice(0, 8)
-  if (!list.length) return null
-  return (
-    <div role="listbox" aria-label="Tasks" className="overflow-hidden rounded-box bg-bg p-1 shadow-menu">
-      {list.map((t) => (
-        <button key={t.id} type="button" role="option" aria-selected={false} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(text.replace(/\n+$/, '').replace(/#[\w-]*$/, `${refOf(t.id)} `))}
-          className="flex w-full min-w-0 items-baseline gap-2.5 rounded-row px-2.5 py-1.5 text-left hover:bg-hover phone:py-2.5">
-          <span className="shrink-0 font-medium">{refOf(t.id)}</span>
-          <span className="min-w-0 flex-1 truncate text-fg2">{t.name}</span>
-          {t.state ? <span className="shrink-0 text-[0.6875rem] text-fg3">{t.state}</span> : null}
         </button>
       ))}
     </div>
@@ -1782,9 +1886,23 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
       removeEventListener('resize', on)
     }
   }, [])
+  // the last full fit: its words, what it was fitted for, and the box's sizes then (its height's cap, a line, paddings)
+  const fit = useRef<{ text: string; width: number; room: number; live: boolean; max: number; lh: number; pads: number } | null>(null)
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
+    // a letter typed on at the end (the box, its width and the screen as they were): the box can only grow, so it is
+    // measured as it stands, once, and grows only when the words no longer fit. A layout or two for each letter, not
+    // five: typing on a phone keeps up (#631)
+    const f = fit.current
+    if (f && f.width === width && f.room === room && f.live === !!live && text.length > f.text.length && text.startsWith(f.text)) {
+      f.text = text
+      const h = el.scrollHeight
+      if (h > el.clientHeight) el.style.height = `${h > f.max && f.lh ? f.pads + Math.floor((f.max - f.pads) / f.lh) * f.lh : h}px`
+      if (document.activeElement === el) reveal(el)
+      fades(el)
+      return
+    }
     // the words grow the box upward, between buttons that stay put, up to its max height (CSS), then scroll inside.
     // Measuring at auto height loses where it was scrolled to: it scrolls back, then the line you type comes into full
     // view, padding and all (the browser alone stops short, under the fade)
@@ -1799,6 +1917,7 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
     const cs = getComputedStyle(el)
     const [max, lh, pads] = [parseFloat(cs.maxHeight), parseFloat(cs.lineHeight), parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)]
     el.style.height = `${el.scrollHeight > max && lh ? pads + Math.floor((max - pads) / lh) * lh : el.scrollHeight}px`
+    fit.current = { text, width, room, live: !!live, max, lh, pads }
     hold.style.height = ''
     el.scrollTop = top
     if (document.activeElement === el) reveal(el)
@@ -1810,8 +1929,19 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
   // Up in an empty box: which earlier message shows (-1: none), and its words (editing them makes it a new one)
   const recall = useRef(-1)
   const recalled = useRef('')
+  // the "#" list: spaces this chat's agent reaches; the "@" list: tasks in them (mentions.tsx). Escape closes it for
+  // what is typed, Up and Down choose, Enter or Tab takes
+  const snap = useSnap()
+  const word = mentionTyping(text)
+  const [mclosed, setMclosed] = useState<string | null>(null)
+  const reach = useReach(chatKey, word !== null)
+  const mentions = word !== null && mclosed !== text ? mentionItems(snap, chatKey, text, reach) : []
+  const choosable = pickable(mentions)
+  const [msel, setMsel] = useState(0)
+  useEffect(() => setMsel(0), [word, (MNc as any).typingTask(text) === null])
+  const takeMention = (i: Item) => { setText(takeItem(chatKey, text, i)); ref.current?.focus() }
   const send = (hold = false) => {
-    const t = text.trim()
+    const t = expandPicked(chatKey, text.trim())
     if (!t && !files.length) return
     recall.current = -1
     const reply = getState().ui.reply[chatKey]
@@ -1839,20 +1969,20 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
       at: Date.now(),
       state: 'sending',
       prior: priorOf(getState().chats[chatKey]),
+      after: anchorOf(getState().chats[chatKey]),
+      before: getState().outbox.filter((o) => o.chat === chatKey).map((o) => o.cid),
       ...(hold ? { hold: true } : {}),
     }
     setOutbox((all) => [...all, out])
-    deliver(out)
+    void deliver(out.cid)
   }
   return (
     // what goes with the box (send, +, a file's x, its menu) leaves the box the focus: a phone's keyboard stays up. What
     // shows over the box (working, queued, jobs, lists) is a stack with one gap, none of its own: as the window's
     <div data-kb data-keep-box className={clsx('mx-auto flex w-full max-w-read shrink-0 flex-col gap-2 px-4 pt-2', keyboard && device === 'phone' ? 'pb-1' : 'pb-2.5')}>
-      {registry.composerAbove.map(({ View }, i) => (
-        <View key={i} chatKey={chatKey} cli={cli} />
-      ))}
+      <ComposerAbove chatKey={chatKey} cli={cli} />
       <SlashList chatKey={chatKey} text={text} pick={(name) => { setText(`/${name} `); ref.current?.focus() }} />
-      <TaskList chatKey={chatKey} text={text} pick={(next) => { setText(next); ref.current?.focus() }} />
+      <MentionList items={mentions} sel={msel} from={reach?.from ?? null} pick={takeMention} />
       {/* the window's box: the words across its full width, then a row in it of attach on the left and on the right
           what the agent runs on (the model menu), the mic and Send (or Call); nothing under it. Its corners are half a
           round button and the padding, so the buttons sit in the bottom ones with the same curve round them */}
@@ -1894,6 +2024,12 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
                 onFocus={() => setUI({ focus: chatKey })}
                 onBlur={() => getState().ui.focus === chatKey && setUI({ focus: null })}
                 onKeyDown={(e) => {
+                  if (choosable.length && !e.nativeEvent.isComposing) {
+                    const n = choosable.length, at = Math.min(msel, n - 1)
+                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); return setMsel((at + (e.key === 'ArrowDown' ? 1 : n - 1)) % n) }
+                    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && device === 'desktop')) { e.preventDefault(); return takeMention(choosable[at]) }
+                    if (e.key === 'Escape') { e.preventDefault(); return setMclosed(text) }
+                  }
                   // as the window's: Up in an empty box (or one showing a recalled message) brings back your earlier
                   // messages, newest first; Down goes back toward the empty box
                   if ((e.key === 'ArrowUp' && (!text || recall.current >= 0)) || (e.key === 'ArrowDown' && recall.current >= 0)) {
@@ -1941,19 +2077,19 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
             </div>
             <div data-btns className="flex items-center gap-1">
               {registry.composerPlus ? (
-                // the window's paperclip: the device's file picker; a phone's also offers its camera (a menu)
+                // the window's plus: the device's file picker; a phone's also offers its camera (a menu)
                 <IconButton
                   label={WORDS.attach}
                   className={roundBtn}
                   pressed={plus}
                   onClick={() => device === 'phone' ? setUI({ plus: plus ? null : chatKey }) : document.querySelector<HTMLInputElement>(`input[name=file][data-chat="${CSS.escape(chatKey)}"]`)?.click()}
                 >
-                  <PaperClipIcon className={ic} />
+                  <PlusIcon className={ic} />
                 </IconButton>
               ) : null}
               <div className="flex-1" />
-              <AgentLine chatKey={chatKey} cli={cli} />
-              {Mic ? <Mic chatKey={chatKey} /> : null}
+              <AgentLineKept chatKey={chatKey} cli={cli} />
+              {Mic ? <MicKept chatKey={chatKey} /> : null}
               {text.trim() || files.length || !Idle ? (
                 <button
                   type="button"
@@ -1986,6 +2122,17 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
 
 const noFiles: { name: string; path?: string }[] = []
 
+// What sits round the message box but not its words (what shows over it, the model menu, the mic) is drawn again only
+// when its own bits change, not on each letter typed (#631)
+const ComposerAbove = memo(function ComposerAbove({ chatKey, cli }: { chatKey: string; cli: string }) {
+  return registry.composerAbove.map(({ View }, i) => <View key={i} chatKey={chatKey} cli={cli} />)
+})
+const AgentLineKept = memo(AgentLine)
+const MicKept = memo(function MicKept({ chatKey }: { chatKey: string }) {
+  const Mic = registry.composerMic
+  return Mic ? <Mic chatKey={chatKey} /> : null
+})
+
 /** mark which ends of the message box have more words past them, for its fades */
 function fades(el: HTMLElement) {
   // only words past the padding count: a box a few px short of its end (a phone showing the caret) has none below
@@ -1997,6 +2144,11 @@ function fades(el: HTMLElement) {
 /** the line with the caret in full view in the message box, with the padding round it, so no fade is on it */
 function reveal(el: HTMLTextAreaElement) {
   if (el.scrollHeight <= el.clientHeight || el.selectionStart !== el.selectionEnd) return
+  // at the end (typing on), its line is the last: the end of the box, its padding and all, no copy to measure
+  if (el.selectionEnd === el.value.length) {
+    el.scrollTop = el.scrollHeight - el.clientHeight
+    return
+  }
   const cs = getComputedStyle(el)
   const [pt, pb, pl, pr, lh] = [cs.paddingTop, cs.paddingBottom, cs.paddingLeft, cs.paddingRight, cs.lineHeight].map(parseFloat)
   if (!lh) return
@@ -2079,7 +2231,7 @@ function Attachments({ chatKey }: { chatKey: string }) {
       ref={row}
       role="list"
       aria-label="Attached files"
-      className="-mx-4 flex shrink-0 gap-2 overflow-x-auto overscroll-x-contain px-4 motion-safe:scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="scroll-x -mx-4 flex shrink-0 gap-2 px-4 motion-safe:scroll-smooth"
     >
       {files.map((f, i) => (
         <Pending key={`${f.path ?? f.name}-${i}`} f={f} chatKey={chatKey} onRemove={() => remove(f)} />
@@ -2109,7 +2261,7 @@ function Pending({ f, chatKey, onRemove }: { f: { name: string; path?: string };
           <img src={fileUrl(chatKey, path)} alt={f.name} draggable={false} onError={() => setBroken(true)} className="size-full object-cover" />
         </button>
       ) : (
-        <div title={f.name} className="flex h-full w-[184px] items-center gap-2.5 rounded-box bg-bubble pr-8 pl-2.5 phone:w-[200px]">
+        <div className="flex h-full w-[184px] items-center gap-2.5 rounded-box bg-bubble pr-8 pl-2.5 phone:w-[200px]">
           <span className="grid size-10 shrink-0 place-items-center rounded-[calc(var(--box-radius)-var(--spacing)*2.5)] bg-bg text-fg2">
             <FileIcon className={ic} />
           </span>
@@ -2134,47 +2286,72 @@ function Pending({ f, chatKey, onRemove }: { f: { name: string; path?: string };
   )
 }
 
-/** a file still uploading, by the stand-in path it waits in the box with: its path once uploaded (none: it failed) */
-const uploads = new Map<string, Promise<string | undefined>>()
+/** a file picked waits in the box (and in a message on its way) by a stand-in path until it is uploaded */
+const isStandIn = (path: string) => path.startsWith('upload:')
+/** a file's upload, by its stand-in path: its path on Shepherdr's machine once up */
+const uploads = new Map<string, Promise<string>>()
+/** the files picked on this page, by stand-in path (the device keeps them too, for after a reload: keepFile) */
+const picked = new Map<string, File>()
 
-/** the paths a message's files went up to, once each has (Send can come before an upload is done) */
-async function uploaded(files: Outgoing['files']) {
-  const paths = await Promise.all(files.map((f) => uploads.get(f.path) ?? f.path))
-  if (paths.some((p) => !p)) throw new Error("A file didn't upload.")
-  return files.map((f, i) => ({ ...f, path: paths[i]! }))
+/** a picked file's upload, once: again by itself while the network is the trouble (from since); one that failed for
+ *  good starts over when asked again (Send, Retry) */
+function startUpload(chatKey: string, id: string, since = Date.now()): Promise<string> {
+  const was = uploads.get(id)
+  if (was) return was
+  const up = (async () => {
+    const f = picked.get(id) ?? (await keptFile(id))
+    if (!f) throw new Error('A picture was lost when the page reloaded: take it out and add it again.')
+    picked.set(id, f)
+    const release = holdReload()
+    try {
+      // the message it goes with says it waits for the network
+      const onWait = (w: boolean) => setOutbox((all) => (all.some((o) => o.state === 'sending' && !!o.offline !== w && o.files.some((x) => x.path === id)) ? all.map((o) => (o.state === 'sending' && o.files.some((x) => x.path === id) ? { ...o, offline: w || undefined } : o)) : all))
+      return await retrying(() => postFile(chatKey, f), since, { onWait })
+    } finally {
+      release()
+    }
+  })()
+  uploads.set(id, up)
+  up.then(
+    (path) => {
+      const url = previews.get(id)
+      if (url) previews.set(baseName(path), url)
+    },
+    () => uploads.delete(id),
+  )
+  return up
 }
 
 /** files from +, a paste or a drop: each shows in the message box at once (a picture as itself, from the device) while
- *  it uploads to Shepherdr, and waits there until it is sent */
+ *  it uploads to Shepherdr, and waits there until it is sent. One whose upload fails keeps its place: Send tries again */
 async function attach(chatKey: string, list: File[]) {
   if (!list.length) return
-  const release = holdReload()
   const added = list.map((f) => {
     const id = `upload:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-    const url = isImage(f.name) ? URL.createObjectURL(f) : null
-    if (url) previews.set(id, url)
-    const up = fetch('api/upload', { method: 'POST', body: form(chatKey, f), headers: { 'x-shepherdr': '1' } })
-      .then((x) => x.json())
-      .then((r) => r?.path as string | undefined, () => undefined)
-      .then((path) => {
-        if (path && url) previews.set(baseName(path), url)
-        // in the box still: its real path (none: it shows as a file that didn't go up)
-        setUI((u) => ({ files: { ...u.files, [chatKey]: (u.files[chatKey] ?? []).map((x) => (x.path === id ? { name: x.name, path } : x)) } }))
-        return path
-      })
-    uploads.set(id, up)
+    if (isImage(f.name)) previews.set(id, URL.createObjectURL(f))
+    picked.set(id, f)
+    void keepFile(id, f)
     return { name: f.name, path: id }
   })
   setUI((u) => ({ plus: null, files: { ...u.files, [chatKey]: [...(u.files[chatKey] ?? []), ...added] } }))
-  await Promise.all(added.map((a) => uploads.get(a.path))).finally(release)
+  await Promise.allSettled(added.map((a) => startUpload(chatKey, a.path)))
 }
 
-function form(chatKey: string, f: File) {
-  const body = new FormData()
-  body.append('chat', chatKey)
-  body.append('file', f)
-  return body
+/** a page opened again: what was still sending goes on (its pictures from the device), and the device lets go of
+ *  files kept over a day */
+async function resume() {
+  void sweepFiles()
+  for (const o of getState().outbox) {
+    for (const f of o.files) {
+      if (!isStandIn(f.path) || previews.has(f.path) || !isImage(f.name)) continue
+      const kept = await keptFile(f.path)
+      if (kept) previews.set(f.path, URL.createObjectURL(kept))
+    }
+    if (o.state === 'sending') void deliver(o.cid)
+  }
 }
+if (typeof window !== 'undefined') setTimeout(() => void resume(), 0)
+
 
 /** the + menu, and the device's file pickers it opens: they stay once the menu has closed, to hear what was picked */
 function PlusMenu({ chatKey }: { chatKey: string }) {
@@ -2223,7 +2400,7 @@ function PlusOpen({ chatKey, file, photo }: { chatKey: string; file: RefObject<H
   const settings = snap ? registry.composerSettings.filter((x) => x.when(snap, chatKey)) : []
   return (
     <Menu label={WORDS.attach} tabs onClose={close} className="w-fit max-w-full origin-bottom-left">
-      {/* a phone's paperclip: Attach files, or its camera; the model is the button in the box */}
+      {/* a phone's plus: Attach files, or its camera; the model is the button in the box */}
       <MenuItem
         icon={<FileIcon className={ic} />}
         onClick={() => {
@@ -2259,7 +2436,7 @@ export function toggleDictation(chatKey: string) {
   const at = box && document.activeElement === box ? [box.selectionStart, box.selectionEnd] : null
   // the box records instead of taking typing, so the keyboard goes down
   ;(document.activeElement as HTMLElement | null)?.blur?.()
-  setUI({ dict: chatKey, dictStarted: Date.now(), dictDone: false, focus: null, plus: null })
+  setUI({ dict: chatKey, dictStarted: Date.now(), dictDone: false, dictDoneAt: 0, dictError: null, focus: null, plus: null })
   dictation = dictate((said) => {
     dictation = null
     if (getState().ui.dict !== chatKey) return
@@ -2283,7 +2460,22 @@ export function toggleDictation(chatKey: string) {
       el.setSelectionRange(caret, caret)
     }
     requestAnimationFrame(back)
-  })
+  }, (why) => setUI({ dictError: { chat: chatKey, text: why } }))
+}
+
+/** talk to type that didn't work: why, over the box (what was typed stays as it was), until dismissed or tried again */
+function DictError({ chatKey }: { chatKey: string }) {
+  const why = useUI((u) => (u.dictError?.chat === chatKey ? u.dictError.text : null))
+  if (!why) return null
+  return (
+    <div role="alert" className="flex items-start gap-2 rounded-box bg-bubble py-2 pr-1.5 pl-3 text-[0.8125rem] text-pretty text-fg2 phone:text-[0.9375rem]">
+      <span aria-hidden="true" className="mt-[0.45em] size-1.5 shrink-0 rounded-full bg-need" />
+      <p className="min-w-0 flex-1">Dictation didn’t work. {why}</p>
+      <IconButton label="Dismiss" className="-my-1 size-7 shrink-0" onClick={() => setUI({ dictError: null })}>
+        <XIcon className={ic} />
+      </IconButton>
+    </div>
+  )
 }
 
 function boxOf(chatKey: string) {
@@ -2291,7 +2483,8 @@ function boxOf(chatKey: string) {
 }
 
 export function finishDictation() {
-  setUI({ dictDone: true })
+  if (!dictation || getState().ui.dictDone) return
+  setUI({ dictDone: true, dictDoneAt: Date.now() })
   dictation?.finish()
 }
 
@@ -2312,28 +2505,65 @@ function Mic({ chatKey }: { chatKey: string }) {
   )
 }
 
-/** While you talk to type the box records: Cancel, a red dot and the time, the live wave of your voice, Done */
+/** writing down after Done this long says it's taking longer than usual */
+export const DICT_SLOW = 5000
+
+/** the calm writing spinner: a faint ring with a turning arc */
+function WritingSpin() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 shrink-0 animate-spin text-fg3 motion-reduce:animate-none">
+      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.3" strokeWidth="2" />
+      <path d="M14 8a6 6 0 0 0-6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+/** true once writing has taken DICT_SLOW */
+function useSlow(at: number) {
+  const [slow, setSlow] = useState(false)
+  useEffect(() => {
+    setSlow(false)
+    if (!at) return
+    const t = setTimeout(() => setSlow(true), Math.max(0, at + DICT_SLOW - Date.now()))
+    return () => clearTimeout(t)
+  }, [at])
+  return slow
+}
+
+/** While you talk to type the box records: Cancel, the live wave of your voice, a red dot and the time, Done. After
+ *  Done the microphone and the wave stop at once: a calm "Writing…" with a small spinner until the words land (saying
+ *  so if it takes a while), and Cancel still drops it. */
 export function DictationBox() {
   const ui = useUI()
+  const writing = ui.dictDone
   const t = useElapsed(ui.dictStarted)
+  const slow = useSlow(writing ? ui.dictDoneAt : 0)
   return (
     <>
-      {/* as the window's recording row: the red X throws it away, the wave, "Recording" (or "Writing") and the time,
-          Done in Send's spot */}
-      <button type="button" aria-label="Cancel" disabled={ui.dictDone} onClick={cancelDictation}
+      {/* as the window's recording row: the red X throws it away, the wave, "Recording" and the time, Done in Send's spot */}
+      <button type="button" aria-label={writing ? 'Cancel: drop what was said' : 'Cancel'} onClick={cancelDictation}
         className={clsx('press-dim relative grid size-[34px] shrink-0 place-items-center rounded-full bg-need text-white after:absolute after:-inset-1.5 phone:size-11', dimmed)}>
         <XIcon className={ic} />
       </button>
-      <LiveWave sample={dictSample} label="Your voice" className="mx-1.5 flex-1" />
-      <p className="flex shrink-0 items-center gap-1.5 pr-1 text-[0.8125rem] phone:text-[0.9375rem]">
-        {ui.dictDone ? null : <span aria-hidden="true" className="size-2 rounded-full bg-need" />}
-        <span role="status" className="font-medium text-fg">{ui.dictDone ? 'Writing' : 'Recording'}</span>
-        <span className="font-mono text-[0.75rem] text-fg3 tabular-nums">{t}</span>
-      </p>
+      {writing ? (
+        <p role="status" data-dict="writing" className="mx-1.5 flex min-w-0 flex-1 items-center gap-2 text-[0.8125rem] phone:text-[0.9375rem]">
+          <WritingSpin />
+          <span className="shimmer truncate font-medium">{slow ? 'Taking longer than usual…' : 'Writing…'}</span>
+        </p>
+      ) : (
+        <>
+          <LiveWave sample={dictSample} label="Your voice" className="mx-1.5 flex-1" />
+          <p className="flex shrink-0 items-center gap-1.5 pr-1 text-[0.8125rem] phone:text-[0.9375rem]">
+            <span aria-hidden="true" className="size-2 rounded-full bg-need" />
+            <span role="status" data-dict="recording" className="font-medium text-fg">Recording</span>
+            <span className="font-mono text-[0.75rem] text-fg3 tabular-nums">{t}</span>
+          </p>
+        </>
+      )}
       <button
         type="button"
         aria-label="Done: put it in the box"
-        disabled={ui.dictDone}
+        disabled={writing}
         onClick={() => finishDictation()}
         className={clsx('press-dim relative grid size-[34px] shrink-0 place-items-center rounded-full bg-fg text-bg after:absolute after:-inset-1.5 phone:size-11', dimmed)}
       >
@@ -2636,7 +2866,9 @@ function DropFiles({ chatKey, children }: { chatKey: string; children: ReactNode
   return (
     <div
       data-drop
-      className="relative flex min-h-0 flex-1 flex-col"
+      // its own stacking context: the Latest pill, the drop note and a message's menu layer over the chat only, so a
+      // drawer, sheet or menu over the chat covers them all, whatever their z
+      className="isolate relative flex min-h-0 flex-1 flex-col"
       onDragEnter={(e) => {
         if (!draggingFiles(e.dataTransfer)) return
         e.preventDefault()
@@ -2679,6 +2911,25 @@ function DropFiles({ chatKey, children }: { chatKey: string; children: ReactNode
   )
 }
 
+/** a subagent's own chat (SHEP-54: a reviewer its worker started), opened from its row over the parent's box: the whole
+ *  conversation, and a box to talk to it */
+function SubagentSheet() {
+  const j = useSubagent()
+  if (!j?.chat) return null
+  const close = () => openSubagent(null)
+  return (
+    <Sheet label={j.title} onClose={close} panel="max-w-[720px] h-[min(85dvh,860px)]">
+      <div className="flex shrink-0 items-center gap-2 px-4 pt-3 pb-2">
+        <h2 className="min-w-0 flex-1 truncate text-[0.9375rem] font-medium phone:text-base">{j.title}</h2>
+        <SheetClose onClose={close} />
+      </div>
+      <div data-subagent-chat className="flex min-h-0 flex-1 flex-col">
+        <ChatView key={j.chat} chatKey={j.chat} placeholder={`Message the ${j.role === 'reviewer' ? 'reviewer' : 'helper'}`} />
+      </div>
+    </Sheet>
+  )
+}
+
 export default definePlugin({
   name: 'chat',
   setup(reg) {
@@ -2687,12 +2938,13 @@ export default definePlugin({
     reg.composerAbove.push({ order: 5, View: WorkingLine }, { order: 6, View: NeedsYou }, { order: 8, View: Held })
     reg.composerAbove.push({ order: 10, View: JobsTag })
     onTerminal(openTerminal)
-    reg.overlays.push(JobsSheet)
+    reg.overlays.push(JobsSheet, SubagentSheet)
     reg.messageParts.push({ order: 60, View: ({ msg, chat, from }) => (msg.question ? <QuestionCard q={msg.question} chat={chat} msg={msg.id} from={from} /> : null) })
     reg.messageParts.push({ order: 61, View: ({ msg, chat }) => (msg.secret ? <SecretCard ask={msg.secret} chat={chat} source={msg.secret.by ? { id: msg.secret.by.ref, title: msg.secret.by.title } : undefined} /> : null) })
     reg.composerPlus = PlusMenu
     reg.composerMic = Mic
     reg.composerLive.push({ when: (ui, chatKey) => ui.dict === chatKey, View: DictationBox })
+    reg.composerAbove.push({ order: 40, View: DictError })
     // while it records, Enter puts it in the box and Esc drops it
     reg.keys.push({
       order: 5,

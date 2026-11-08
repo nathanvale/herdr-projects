@@ -206,15 +206,20 @@ class PersonalPassThrough(unittest.TestCase):
 
     def started_plainly(self, f):
         """The one agent hc was asked for is the CLI as Settings starts it: the task's browser variable
-        only, the person's shell, claude with its own --settings, and nothing of a provider's."""
+        only, the person's shell, claude with its own --settings, and nothing of a provider's. All of it
+        run as upstream runs every agent (SHEP-86): exactly clean_env() of those words, nothing else."""
+        sys.path.insert(0, BIN)
+        from herdr_task.launch import clean_env
         run = f.launches()
         self.assertEqual(len(run), 1, f.calls())
         words = run[0]
         at = words.index("herdr-low")
-        self.assertEqual(words[at + 1:at + 7], ["env", "HERDR_BROWSER_TASK=" + words[words.index("--label") + 1].split("=", 1)[1],
-                                               "/bin/sh", words[at + 4], '"$@"; exec "$0" -i', "/bin/sh"])
-        self.assertIn(words[at + 4], ("-ic", "-lic"))
-        agent = words[at + 7:]
+        cmd = words[at + 5:]  # what clean_env() wraps: its own 4 words come first
+        self.assertEqual(words[at + 1:], clean_env(cmd))
+        self.assertEqual(cmd[:6], ["env", "HERDR_BROWSER_TASK=" + words[words.index("--label") + 1].split("=", 1)[1],
+                                   "/bin/sh", cmd[3], '"$@"; exec "$0" -i', "/bin/sh"])
+        self.assertIn(cmd[3], ("-ic", "-lic"))
+        agent = cmd[6:]
         self.assertEqual(agent[:2], ["claude", "--settings"])
         settings = json.loads(agent[2])
         self.assertEqual((settings["fastMode"], sorted(settings)), (False, ["fastMode", "permissions"]))

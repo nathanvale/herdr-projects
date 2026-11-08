@@ -8,7 +8,7 @@ import os
 import re
 
 from .base import Fail, HOME, git
-from .github import BAD, PENDING, pr_view
+from .forge import pr_checks, pr_view
 
 ARTIFACTS = os.path.join(HOME, ".herdr", "artifacts")
 # Files named on the card, and commits.
@@ -72,17 +72,17 @@ def checks_of(t):
     v = pr_view(t)
     if not v:
         return {"state": "unknown", "text": "Couldn't ask GitHub"}
-    rows = v.get("statusCheckRollup") or []
-    word = lambda c: (c.get("conclusion") or c.get("state") or "").upper()
-    bad = [c.get("name") or c.get("context") or "a check" for c in rows if word(c) in BAD]
-    running = [c for c in rows if (c.get("status") or c.get("state") or "").upper() in PENDING and not c.get("conclusion")]
+    c = pr_checks(v)
+    if c.get("refused"):
+        return {"state": "unknown", "text": c["refused"]}
+    bad, running, total = c["failed"], c["running"], c["total"]
     if bad:
         return {"state": "failed", "text": f"{len(bad)} failing: " + ", ".join(bad[:FEW])}
     if running:
-        return {"state": "running", "text": f"{len(running)} of {len(rows)} still running"}
-    if not rows:
+        return {"state": "running", "text": f"{running} of {total} still running"}
+    if not total:
         return {"state": "none", "text": "No checks on its pull request"}
-    return {"state": "passed", "text": f"All {len(rows)} passed"}
+    return {"state": "passed", "text": f"All {total} passed"}
 
 
 def evidence(s, t):

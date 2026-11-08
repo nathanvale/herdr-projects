@@ -24,6 +24,8 @@ import { layoutSection } from "./layout.js";
 import { manifest } from "./addons.js";
 import { secretsInit, secretsSection } from "./secrets-section.js";
 import { baseInit, baseRow } from "./base-branch.js";
+import { branchInit, branchRow } from "./branch-names.js";
+import { feedbackInit, feedbackRow, feedbackRepoRow } from "./feedback-repo.js";
 import { autopilotInit, autopilotSection, autopilotFlush } from "./autopilot-section.js";
 import { spaceName } from "./core/spaces.js";
 import { NOTIFY, NOTIFY_DEFAULT, notifyMachine, notifyMachineOwn, notifyOf, notifyOwn, notifyEverywhere,
@@ -35,9 +37,9 @@ import { webSection } from "./web-section.js";
 // herdr-task's merge policy (MERGE): "ask" waits for the person's Accept (which merges), the others merge without it.
 // NOTES: what a task's agent is told to do first and last (tasks.start_notes / finish_notes): herdr-task puts them
 // into its starting prompt; Herdr runs nothing itself.
-import { SECTIONS, ROLES, NOTES, MERGE, MUST_FIX, ROUNDS, ARCHIVE, ABOUT, BACKUP, NOTIFY_ABOUT, TITLE, SPACE_TITLE,
+import { SECTIONS, ROLES, NOTES, MERGE, MUST_FIX, ROUNDS, ARCHIVE, ABOUT, BACKUP, REACTIONS, STAR, starState, upgradeReactions, NOTIFY_ABOUT, TITLE, SPACE_TITLE,
   EVERYWHERE, CHANGED_HERE, RESET, EDIT_INSTRUCTIONS, USE_OTHER_CLI, LOADING_AGENTS, SAVED, sameAs as sameAsWords,
-  spacesOwn, otherCliWords, backupProblem, notifyMachineAbout, machineLabel, TASK_ROWS, LEVEL, RESET_TIP } from "./core/settings.js";
+  spacesOwn, otherCliWords, backupProblem, notifyMachineAbout, machineLabel, TASK_ROWS, LEVEL } from "./core/settings.js";
 
 const I = (name) => `mods/shepherdr-settings/${name}.svg`;
 // A page's title, and a Tasks row's (by its key, section.field).
@@ -86,6 +88,9 @@ export default class ShepherdrSettings extends View {
     this.secFor();
     // Tasks > Base branch, a space's (base-branch.js).
     this.bb = baseInit(this);
+    // Tasks > Branch names, Everywhere's or a space's (branch-names.js).
+    this.bn = branchInit(this);
+    this.fr = feedbackInit(this);
     // Autopilot: one setting for every space, kept by herdr-task (autopilot-section.js).
     this.ap = autopilotInit(this, cx);
     // The add-ons Window's switches offer (lib/addons.json, layout.js).
@@ -129,6 +134,8 @@ export default class ShepherdrSettings extends View {
   async load() {
     this.raw = await readTextFile(SHEPHERDR_FILE()).catch(() => null);
     try { this.cfg = this.raw ? JSON.parse(this.raw) : {}; } catch { this.cfg = {}; }
+    // SHEP-42's assistant.reactions read as agents.reactions: the next change writes it there
+    upgradeReactions(this.cfg);
     // Each machine's CLIs, installed and signed in: herdr-task's scheduler checks every 15 minutes.
     try { this.clis = JSON.parse((await readTextFile(CLI_CHECK())) ?? "{}")?.machines ?? {}; } catch { this.clis = {}; }
   }
@@ -418,7 +425,7 @@ export default class ShepherdrSettings extends View {
     if (this.scope) {
       return sc.mine
         ? line.child(div().text_color(t.muted).child(CHANGED_HERE)).child(div().text_color(t.dim).child("·"))
-          .child(div().tooltip(RESET_TIP(sc.from.replace(/^Inherited from /, ""))).child(link(`reset-${sc.id}`, RESET, (_e, cx) => sc.reset(cx))))
+          .child(div().child(link(`reset-${sc.id}`, RESET, (_e, cx) => sc.reset(cx))))
         : line.child(div().text_color(t.dim).child(sc.from));
     }
     if (!sc.others?.length) return null;
@@ -471,7 +478,23 @@ export default class ShepherdrSettings extends View {
     return v_flex()
       .child(this.title(t, page("agents")))
       .children(ROLES.map((r) => this.roleRow(t, r, cx)))
-      .child(this.backupRow(t));
+      .child(this.backupRow(t))
+      .child(this.reactionsRow(t))
+      .child(feedbackRow(this, t))
+      .children([feedbackRepoRow(this, t)].filter(Boolean))
+      .when(!this.scope, (el) => el.child(this.starRow(t, cx)));
+  }
+
+  // Ask for a GitHub star (herdr-task's star.py), Everywhere only: a switch that turns it off before it ever shows;
+  // once an Assistant asked, no switch, just when (it never asks again). Kept as everywhere.star_prompt.
+  starRow(t, _cx) {
+    const st = starState(this.cfg);
+    return this.row(t, STAR.title, st.about.replace("\n", " "), st.asked ? null : toggleSwitch("star-prompt", st.on,
+      (next, _e, cx) => this.change((cfg) => {
+        const e = (cfg.everywhere ??= {});
+        if (e.star_prompt?.asked) return;
+        if (next) delete e.star_prompt; else e.star_prompt = { off: true };
+      }, cx)));
   }
 
   // A role: its model button and, on Everywhere, "Edit instructions" (the same for every space).
@@ -486,6 +509,14 @@ export default class ShepherdrSettings extends View {
       .when(!this.scope, (el) => el.child(button(`edit-${r.id}`, EDIT_INSTRUCTIONS,
         { onClick: () => this.edit({ id: r.id, title: r.told, file: `${TEMPLATES()}/${r.file}` }) })));
     return this.row(t, r.title, r.about, control, this.scoped(r.id, null));
+  }
+
+  // Reactions, for every agent (herdr-task's reactions.py): Assistants, task workers,
+  // automation runs and agent tabs react to some of your messages with an emoji; off, none does.
+  reactionsRow(t) {
+    const on = shepherdrFor(this.cfg, this.scope).agents.reactions !== false;
+    return this.row(t, REACTIONS.title, REACTIONS.about,
+      toggleSwitch("reactions", on, (next, _e, cx) => this.set("agents", "reactions", next, cx)), this.scoped("agents", "reactions"));
   }
 
   // Backup (herdr-task's takeover.py): the other CLI takes over a task, once, when its agent
@@ -520,6 +551,7 @@ export default class ShepherdrSettings extends View {
     const days = Math.max(0, parseInt(k.archive_after, 10) || 0);
     const autoOn = shepherdrFor(this.cfg, this.scope).automations.enabled !== false;
     const base = baseRow(this, t);
+    const branch = branchRow(this, t);
     return v_flex()
       .child(this.title(t, page("tasks")))
       .child(this.row(t, rowTitle("tasks.merge"), ABOUT["tasks.merge"],
@@ -547,6 +579,7 @@ export default class ShepherdrSettings extends View {
         toggleSwitch("worktrees", k.worktrees !== false, (next, _e, cx) => this.set("tasks", "worktrees", next, cx)),
         this.scoped("tasks", "worktrees")))
       .when(Boolean(base), (el) => el.child(base))
+      .when(Boolean(branch), (el) => el.child(branch))
       .child(this.row(t, rowTitle("automations.enabled"), ABOUT["automations.enabled"],
         toggleSwitch("auto", autoOn, (next, _e, cx) => this.set("automations", "enabled", next, cx)),
         this.scoped("automations", "enabled")))
@@ -613,7 +646,7 @@ export default class ShepherdrSettings extends View {
     const own = (id) => {
       const l = this.cfg.spaces?.[id] ?? {};
       return ["coordinator", "worker", "reviewer"].filter((k) => l[k] != null).length
-        + ["tasks", "automations", "backup", "autopilot"].reduce((n, k) => n + Object.keys(l[k] ?? {}).length, 0);
+        + ["tasks", "automations", "backup", "autopilot", "agents"].reduce((n, k) => n + Object.keys(l[k] ?? {}).length, 0);
     };
     const pick = (id) => (_e, cx) => this.pickScope(id, cx);
     const machinesHere = [...new Set(shown.map((s) => s.machine))];

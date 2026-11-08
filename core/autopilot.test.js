@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { pilotFor, everywhereOf, headerDetail, presetOf, levelOf, blankBeat, currentBeat, OLD_STARTERS, STARTER, EVENTS, PRESETS } from "./autopilot.js";
+import { pilotFor, everywhereOf, headerDetail, flipped, presetOf, levelOf, blankBeat, currentBeat, OLD_STARTERS, STARTER, EVENTS, PRESETS } from "./autopilot.js";
 import { SECTIONS } from "./settings.js";
 
 const { cases } = JSON.parse(readFileSync(new URL("./autopilot.cases.json", import.meta.url), "utf8"));
@@ -27,9 +27,33 @@ test("the header's words", () => {
   expect(headerDetail({ on: true, pending: {} })).toBe("Queued");
   expect(headerDetail({ on: true, inflight: {}, pending: {} })).toBe("Waking");
   expect(headerDetail({ on: true, events: ["ready"] })).toBe("On events");
-  expect(headerDetail({ on: true, events: [] })).toBe("Run now only");
+  expect(headerDetail({ on: true, events: [] })).toBe("No schedule");
+  // SHEP-5: the next heartbeat, near as minutes, further as its time
+  const now = new Date(2026, 10, 5, 9, 0, 0).getTime();
+  expect(headerDetail({ on: true, next_run: now + 7 * 60000 - 5000 }, now)).toBe("Next in 7 min");
+  expect(headerDetail({ on: true, next_run: now + 20000 }, now)).toBe("Next in 1 min");
+  expect(headerDetail({ on: true, next_run: now - 5000 }, now)).toBe("Next in 1 min");
+  expect(headerDetail({ on: true, next_run: now + 90 * 60000 }, now)).toBe("Next 10:30");
+  expect(headerDetail({ on: true, next_run: now + 3 * 86400000 }, now)).toBe("Next Sun");
   expect(presetOf(" Every 60 Minutes ")).toBe("every 60 minutes");
   expect(presetOf("every 2 hours")).toBe(null);
+});
+
+test("SHEP-52: switched on, the header says Waking at once, never the off record's empty schedule", () => {
+  const off = { on: false, next_run: null, pending: null, inflight: null, every: "every 60 minutes", events: [] };
+  expect(headerDetail({ ...off, on: true })).toBe("No schedule"); // what it showed before: the off record, on
+  expect(headerDetail(flipped(off, true))).toBe("Waking");
+  expect(flipped(off, true).on).toBe(true);
+  // herdr-task's answer then says the rest: queued, waking, then the next wake
+  expect(headerDetail({ ...off, on: true, pending: { reasons: ["switched on"] } })).toBe("Queued");
+  const now = Date.now();
+  expect(headerDetail({ ...off, on: true, next_run: now + 60 * 60000 - 1000 }, now)).toBe("Next in 60 min");
+  // switched off: nothing waits
+  const on = { on: true, next_run: now + 5000, pending: { reasons: ["run now"] }, inflight: { reason: "run now" } };
+  expect(flipped(on, false)).toEqual({ on: false, next_run: null, pending: null, inflight: null });
+  expect(headerDetail(flipped(on, false))).toBe("");
+  // a wake already running keeps its own
+  expect(flipped({ ...on, on: false }, true).inflight).toEqual({ reason: "run now" });
 });
 
 test("a space's own settings have Autopilot", () => {
@@ -44,12 +68,28 @@ test("a level holds only what it sets", () => {
   // the starter is a real heartbeat; an earlier version's, never edited, stands for it
   expect([blankBeat(""), blankBeat(STARTER), blankBeat("Ship."), blankBeat(OLD_STARTERS[0])]).toEqual([true, false, false, false]);
   expect([currentBeat(OLD_STARTERS[0]), currentBeat(` ${OLD_STARTERS[0].trim()}\n\n`), currentBeat("Ship.")]).toEqual([STARTER, STARTER, "Ship."]);
+  // every earlier starter (the one that said "Don't invent work" too) stands for today's, which drives the project
+  expect(OLD_STARTERS.map(currentBeat)).toEqual(OLD_STARTERS.map(() => STARTER));
+  expect(STARTER).toContain("Push the project forward");
+  expect(STARTER).not.toContain("Don't invent work");
+  // 3.1.5's asked; today's decides, and only a take-over alerts the person
+  expect(OLD_STARTERS.some((x) => x.includes("ask me once"))).toBe(true);
+  expect(STARTER).not.toMatch(/ask me once|Ask before/);
+  expect(STARTER).toContain("Never ask me a question on a wake");
+  expect(STARTER).toContain("herdr-task alert");
+  // SHEP-40: 3.1.7's parked behind an Accept with a bare no-reply; today's works around it, says what waits, and gives a why
+  expect(OLD_STARTERS[0]).toContain("Reply only <hc no-reply/>");
+  expect(currentBeat(OLD_STARTERS[0])).toBe(STARTER);
+  expect(STARTER).toContain("Never park on a task waiting for my Accept");
+  expect(STARTER).toContain("never a limit of your own");
+  expect(STARTER).toContain('<hc no-reply why="');
+  expect(STARTER).not.toContain("Reply only <hc no-reply/>");
 });
 
 test("the starter heartbeat, events and default schedule are herdr-task's", () => {
   const py = readFileSync(new URL("../mods/tasks/bin/herdr_task/autopilot.py", import.meta.url), "utf8");
   expect(py).toContain(`STARTER = """${STARTER}"""`);
-  expect(py).toContain(`OLD_STARTERS = ("""${OLD_STARTERS[0]}""",)`);
+  expect(py).toContain(`OLD_STARTERS = (${OLD_STARTERS.map((x) => `"""${x}"""`).join(", ")},)`);
   const auto = readFileSync(new URL("../mods/tasks/bin/herdr_task/automations.py", import.meta.url), "utf8");
   expect(auto).toContain(`EVENTS = [${EVENTS.map(([v]) => `"${v}"`).join(", ")}]`);
   expect(py).toContain(`DEFAULT_EVERY = "${PRESETS[2][0]}"`);

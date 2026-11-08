@@ -3,9 +3,10 @@ import { actionable, attentionCounts } from './attention.ts'
 import { useSyncExternalStore, type FC, type ReactNode } from 'react'
 import { buildId } from '@shared/build.ts'
 import { expire, loadOutbox, prune, saveOutbox, settle, type Outgoing } from './outbox.ts'
+import { HttpError, wakeAll } from './uploads.ts'
 import { keptOf, mayReload, type Kept } from './reload.ts'
 import { OPEN_WITHIN, PONG_WITHIN, retryIn, SAY_LOST_AFTER } from './link.ts'
-import { groupFor, groupTasks, loadAllDone, loadGroups, loadShut, namesFor, saveAllDone, saveGroups, saveShut, shownGroup, type GroupBy, type Groups, type TaskGroup } from './groups.ts'
+import { groupFor, groupTasks, loadAllDone, loadGroups, loadShut, keepTasks, namesFor, saveAllDone, saveGroups, saveShut, shownSplit, type GroupBy, type Groups, type TaskGroup } from './groups.ts'
 import { canDock, CHAT_READ, fit as fitSidebars, focused, loadSidebars, PANEL, RIGHT, saveSidebars, showPanel, toggleFocus as focusTo, type Sidebars } from './sidebars.ts'
 import { hush } from './motion.ts'
 import { closed, loadPanes, MAX_PANES, normal, only, opened, PANE_MIN, replaced, samePane, savePanes, type Pane, type Panes } from './panes.ts'
@@ -62,6 +63,8 @@ export interface PanelItem {
   Icon: FC<{ className?: string }>
   /** a hook: why it has nothing to show for this task (greyed out with that hint), or null */
   useOff?: (task: Task) => string | null
+  /** how many it holds for this task, shown quietly after its label (Artifacts 3); none or 0: no number */
+  count?: (task: Task) => number
   View: FC<{ task: Task; chatKey: string }>
 }
 
@@ -113,8 +116,9 @@ export interface Registry {
   keys: { order: number; handle: (k: KeyContext) => boolean }[]
   /** a settings row a plugin acts on itself (alerts: turn them on for this device); returns what to say */
   settingActions: Record<string, () => Promise<string>>
-  /** pages a plugin adds to Settings' This device group, after Appearance (the keyboard shortcuts); `when` says if one shows */
-  settingsPages: { name: string; about?: string; Icon: FC<{ className?: string }>; when: (ui: UI) => boolean; View: FC<{ phone: boolean }> }[]
+  /** pages a plugin adds to Settings' This device group, after Appearance (the keyboard shortcuts); `when` says if one shows;
+   *  into: drawn on top of that server page instead (Notify's alerts on this device) */
+  settingsPages: { name: string; about?: string; Icon: FC<{ className?: string }>; when: (ui: UI) => boolean; View: FC<{ phone: boolean }>; into?: string }[]
 }
 
 export const registry: Registry = {
@@ -203,6 +207,8 @@ export interface UI {
   sideShut?: boolean
   /** a space's other agent tabs (t:<address>) shown as their chat rather than their terminal (3.0's Chat | Terminal) */
   tabView?: Record<string, 'chat' | 'terminal'>
+  /** subagents' chats on screen (SHEP-54): a subagent row opened over the box, or its own chat in a sheet; followed too */
+  subs?: string[]
   /** what the Tasks and Artifacts lists show (their chips) and whether it stays whatever place is picked, remembered
    *  on this device */
   lists: Lists
@@ -254,6 +260,9 @@ export interface UI {
   /** the Tasks panel's status filter, as 3.0's chips: all, needs, working, merging, ready, queued, todo, done or
    *  automations; kept on this device */
   taskFilter: string
+  /** This space (the filter row's first chip, SHEP-72): the Tasks list shows only the place picked's tasks, automations
+   *  and what its agents ask, whatever status is picked; kept on this device */
+  thisSpace: boolean
   /** what each list is filtered by, while typed: "place|tasks", "place|artifacts" (*pinned for the pinned chips) */
   filter: Record<string, string>
   /** message id with the reaction bar open */
@@ -279,6 +288,10 @@ export interface UI {
   dictStarted: number
   /** Done was pressed: the last words are still coming in */
   dictDone: boolean
+  /** when Done was pressed (a slow writing says so) */
+  dictDoneAt: number
+  /** talk to type didn't work in this chat's box: why, over the box until dismissed or tried again */
+  dictError: { chat: string; text: string } | null
   files: Record<string, { name: string; path?: string }[]>
   /** search in a chat: its words, and the match shown (by message id; none: the newest) */
   find: { chat: string; q: string; id: string | null } | null
@@ -306,7 +319,7 @@ function tabOf(t: string | null): UI['tab'] {
 }
 
 const TASK_FILTER = 'shepherdr.taskFilter'
-const FILTERS = ['all', 'needs', 'working', 'merging', 'ready', 'queued', 'todo', 'done', 'automations']
+const FILTERS = ['all', 'needs', 'working', 'merging', 'ready', 'queued', 'scheduled', 'todo', 'done', 'automations']
 function loadTaskFilter(): string {
   try {
     const v = localStorage.getItem(TASK_FILTER) ?? 'all'
@@ -319,6 +332,16 @@ function loadTaskFilter(): string {
 export function setTaskFilter(f: string) {
   try { localStorage.setItem(TASK_FILTER, f) } catch { /* private window: All statuses next time */ }
   setUI({ taskFilter: f, cur: 0 })
+}
+
+const THIS_SPACE = 'shepherdr.thisSpace'
+function loadThisSpace(): boolean {
+  try { return localStorage.getItem(THIS_SPACE) === '1' } catch { return false }
+}
+/** This space on or off (the filter row's first chip), remembered on this device */
+export function setThisSpace(on: boolean) {
+  try { localStorage.setItem(THIS_SPACE, on ? '1' : '0') } catch { /* private window: off next time */ }
+  setUI({ thisSpace: on, cur: 0 })
 }
 
 function deviceFor(w: number): Device {
@@ -422,6 +445,7 @@ let state: State = {
     shut: loadShut(),
     archived: null,
     taskFilter: loadTaskFilter(),
+    thisSpace: loadThisSpace(),
     filter: {},
     pick: null,
     pickChat: null,
@@ -435,6 +459,8 @@ let state: State = {
     dict: null,
     dictStarted: 0,
     dictDone: false,
+    dictDoneAt: 0,
+    dictError: null,
     files: {},
     reply: {},
     find: null,
@@ -714,7 +740,8 @@ let watched = ''
 
 export async function act(a: Action, signal?: AbortSignal) {
   const r = await fetch('api/action', { method: 'POST', headers: { 'content-type': 'application/json', 'x-shepherdr': '1' }, body: JSON.stringify(a), signal })
-  if (!r.ok) throw new Error((await r.text()) || `${r.status}`)
+  // with its status: a proxy's 502 is the network (uploads.ts transient), the server's own no is not
+  if (!r.ok) throw new HttpError(r.status, (await r.text()) || `${r.status}`)
   return r.json().catch(() => ({}))
 }
 
@@ -746,6 +773,8 @@ export function connect() {
     if (saying) clearTimeout(saying)
     saying = null
     watched = ''
+    // the link is back: what waits to send goes now
+    wakeAll()
     if (state.ui.offline) setUI({ offline: null })
     watchVisible()
   }
@@ -1048,6 +1077,12 @@ export function pinTask(t: Task, on: boolean) {
   return act({ type: 'pin', chat: t.agent?.chat ?? `${t.id}/Agent`, on })
 }
 
+/** SHEP-38: start a task by itself later ({ at: "fri 8:15" } or { in: "6h" }), take that back ({ off: true }) or start a
+ *  scheduled one now ({ now: true }); error: herdr-task's words for a time it doesn't know */
+export function scheduleTask(t: Task, when: { at?: string; in?: string; off?: boolean; now?: boolean }): Promise<{ ok?: boolean; error?: string; why?: string }> {
+  return act({ type: 'schedule', chat: t.agent?.chat ?? `${t.id}/Agent`, ...when })
+}
+
 /** pause a working task: its agent is interrupted and the task is To do until written to */
 export function pauseTask(t: Task) {
   return act({ type: 'pause', chat: t.agent?.chat ?? `${t.id}/Agent` })
@@ -1093,23 +1128,28 @@ export function counts(snap: Snapshot, placeId: string) {
 
 /* ---------- a place's tasks, grouped (groups.ts) ---------- */
 
-export { GROUPS, groupChoices, groupFor, namesFor, type GroupBy, type Groups, type TaskGroup } from './groups.ts'
+export { GROUPS, bySpace, groupChoices, groupFor, keepTasks, namesFor, type GroupBy, type Groups, type SubGroup, type TaskGroup } from './groups.ts'
 
-/** a list's tasks in their groups, in the order they show: more machines' under each machine's name */
-export function taskGroups(snap: Snapshot, list: ListView, by: GroupBy): TaskGroup[] {
+/** a list's tasks in their groups, in the order they show: more machines' under each machine's name; by status, each
+ *  status's per space with split (Split by space), the space the person is in (here) first */
+export function taskGroups(snap: Snapshot, list: ListView, by: GroupBy, opts: { split?: boolean; here?: string } = {}): TaskGroup[] {
   const tasks = tasksIn(snap, list)
   if (list.attention) return snap.places.flatMap((p) => (['need', 'ready'] as const).flatMap((status) => {
     const rows = tasks.filter((t) => t.place === p.id && t.status === status)
     return rows.length ? [{ key: `${p.id}|${status}`, label: `${p.name} · ${status === 'need' ? 'Needs you' : 'Ready'}`, note: machineName(snap.machines, p.machine), tasks: rows, names: { machine: false, project: false } }] : []
   }))
-  return groupTasks(snap.places, snap.machines ?? [], tasks, by, list.level)
+  return groupTasks(snap.places, snap.machines ?? [], tasks, by, list.level, opts)
 }
+
+/** how a list's groups split: by space as this device chose (on until switched off), the space open first */
+const splitOf = (ui: Pick<UI, 'groups'> & Partial<Pick<UI, 'place'>>) => ({ split: ui.groups.split !== false, here: ui.place ?? state.ui.place })
 
 /** a list's task groups as this screen shows them: grouped as this device chose, Done cut short until Show all, a
  *  group folded shut (or under a machine folded shut) showing none of its tasks */
 export function shownGroups(snap: Snapshot, list: ListView, ui: Pick<UI, 'groups' | 'allDone' | 'shut'> = state.ui) {
   const shut = (key: string) => ui.shut.includes(`${list.key}|${key}`)
-  return taskGroups(snap, list, groupFor(ui.groups, list.level)).map((g) => shownGroup(g, ui.allDone.includes(`${list.key}|${g.key}`), shut(g.key) || (!!g.machine && shut(`m:${g.machine.id}`))))
+  const all = (key: string) => ui.allDone.includes(`${list.key}|${key}`)
+  return taskGroups(snap, list, groupFor(ui.groups, list.level), splitOf(ui)).map((g) => shownSplit(g, all, (k) => shut(k) || (k === g.key && !!g.machine && shut(`m:${g.machine.id}`))))
 }
 
 /** fold a heading of a list's tasks shut or open ("group", "m:machine"); with siblings, them too, the same way */
@@ -1130,7 +1170,12 @@ export function toggleAllDone(listKey: string, key: string) {
 
 /** how lists of this level group their tasks (a place's level: 0 more machines', 1 one machine's) */
 export function setGroup(level: number, by: GroupBy) {
-  setUI((ui) => ({ groups: { ...ui.groups, [level === 0 ? 'all' : 'machine']: by }, lists: { ...ui.lists, chips: state.snap ? listChips(ui, state.snap) : [], at: ui.place }, cur: 0 }))
+  setUI((ui) => ({ groups: { ...ui.groups, [level === 0 ? 'all' : 'machine']: by }, lists: { ...ui.lists, chips: state.snap ? ownChips(ui, state.snap) : [], at: ui.place }, cur: 0 }))
+}
+
+/** Split by space (the Tasks ⋯): by status, each status's tasks under their machine · space, or not */
+export function setSplit(on: boolean) {
+  setUI((ui) => ({ groups: { ...ui.groups, split: on }, cur: 0 }))
 }
 
 /** whether every word typed is in one of these, any case: ⌘K's search and the lists' filters */
@@ -1152,10 +1197,10 @@ export function setFilter(listKey: string, list: 'tasks' | 'artifacts', q: strin
 
 /** A list's tasks filtered: in their groups, every Done one, and then its archived ones; groups with none left out */
 export function filteredGroups(snap: Snapshot, list: ListView, q: string, ui: Pick<UI, 'groups'> = state.ui) {
-  const groups: TaskGroup[] = taskGroups(snap, { ...list, attention: false }, groupFor(ui.groups, list.level))
+  const groups: TaskGroup[] = taskGroups(snap, { ...list, attention: false }, groupFor(ui.groups, list.level), splitOf(ui))
   const archived = archivedIn(snap, list)
   if (archived.length) groups.push({ key: 'archived', label: 'Archived', tasks: archived, names: namesFor(list.level) })
-  return groups.map((g) => ({ ...g, tasks: g.tasks.filter((t) => taskMatches(t, q)) })).filter((g) => g.tasks.length)
+  return groups.map((g) => keepTasks(g, (t) => taskMatches(t, q))).filter((g) => g.tasks.length)
 }
 
 /** a list's tasks in the order they show, as the keyboard walks them: only the ones on screen */
@@ -1166,12 +1211,11 @@ export function orderedTasks(snap: Snapshot, list: ListView) {
   return shownGroups(snap, list).flatMap((g) => g.tasks)
 }
 
-/** what a space is, under its name in its header: a home space keeps its machine (the main machine's every machine) */
+/** what a space is, quietly under its name in its header: the folder its Assistant works in, and its machine when not
+ *  this one. Never its role or agent ("Assistant · Claude Code", SHEP-36): the composer's model menu says which agent. */
 export function placeKind(snap: Snapshot, p: Place) {
-  // 3.0's pane header: "Assistant · Claude Code" and the folder it works in (its machine too, where there are more)
-  const on = manyMachines(snap) && p.machine !== snap.host ? ` · ${machineName(snap.machines, p.machine)}` : ''
-  const where = p.cwd ?? p.where
-  return `${p.header ?? 'Assistant'}${where ? ` · ${where}` : ''}${on}`
+  const on = manyMachines(snap) && p.machine !== snap.host ? machineName(snap.machines, p.machine) : ''
+  return [p.cwd ?? p.where, on].filter(Boolean).join(' · ')
 }
 
 /** the open task's agent, whose chat is on screen */
@@ -1200,14 +1244,15 @@ export function visibleChats(ui: UI, snap: Snapshot): string[] {
   const tabChat = ui.term?.startsWith('t:') && ui.tabView?.[ui.term] === 'chat' ? ui.term : null
   const place = tabChat ?? placeOf(snap, ui.place).chat
   const ag = agentChat(ui, snap)?.chat
+  const subs = ui.subs ?? []
   // a phone shows one chat (with a task open, its place's chat waits under it as it last was, unseen)
-  if (ui.device === 'phone') return [ui.task ? ag : ui.tab === 'chat' && !ui.settings ? place : null].filter(Boolean) as string[]
+  if (ui.device === 'phone') return [ui.task ? ag : ui.tab === 'chat' && !ui.settings ? place : null, ...subs].filter(Boolean) as string[]
   // split, each pane's chat
   const panes = panesHere(ui)
   // (focus on the open task hides them)
-  if (panes.length) return [...new Set([...(focusHere(ui, snap) ? [] : panes.map((p) => paneChat(snap, p))), ag])].filter(Boolean) as string[]
+  if (panes.length) return [...new Set([...(focusHere(ui, snap) ? [] : panes.map((p) => paneChat(snap, p))), ag, ...subs])].filter(Boolean) as string[]
   // a task in the middle covers its place's chat
-  return [taskInMiddle(ui, snap) ? null : place, ag].filter(Boolean) as string[]
+  return [...new Set([taskInMiddle(ui, snap) ? null : place, ag, ...subs])].filter(Boolean) as string[]
 }
 
 /* ---------- what the Tasks and Artifacts lists show: their chips ---------- */
@@ -1243,6 +1288,13 @@ function known(snap: Snapshot, c: string) {
 /** The chips the lists show: pinned, theirs; following, the place picked's own, or what was made of them there. Pinned
  *  chips all gone, they follow again. */
 export function listChips(ui: UI, snap: Snapshot): string[] {
+  // This space: the place picked alone, as long as it is one (never kept in the lists' own chips)
+  if (ui.thisSpace && snap.places.some((p) => p.id === ui.place)) return [ui.place]
+  return ownChips(ui, snap)
+}
+
+/** the lists' own chips, This space aside */
+function ownChips(ui: UI, snap: Snapshot): string[] {
   const l = ui.lists
   if (l.pinned || l.at === ui.place) {
     const chips = l.chips.filter((c) => known(snap, c))
@@ -1258,13 +1310,13 @@ export function listOf(snap: Snapshot, chips: string[]): Omit<ListView, 'search'
   return { key: chips.length ? [...chips].sort().join('+') : '*', chips, level }
 }
 
-let lastList: { snap: Snapshot; lists: Lists; place: string; view: ListView } | null = null
+let lastList: { snap: Snapshot; lists: Lists; place: string; here: boolean; view: ListView } | null = null
 
 /** the lists as they show now: the same object while nothing they hang on changes, so a part can pick it */
 export function listView(ui: UI, snap: Snapshot): ListView {
-  if (lastList && lastList.snap === snap && lastList.lists === ui.lists && lastList.place === ui.place) return lastList.view
+  if (lastList && lastList.snap === snap && lastList.lists === ui.lists && lastList.place === ui.place && lastList.here === ui.thisSpace) return lastList.view
   const view = { ...listOf(snap, listChips(ui, snap)), search: listsPinned(ui, snap) ? '*pinned' : ui.place, attention: false }
-  lastList = { snap, lists: ui.lists, place: ui.place, view }
+  lastList = { snap, lists: ui.lists, place: ui.place, here: ui.thisSpace, view }
   return view
 }
 
@@ -1293,7 +1345,7 @@ export function togglePin() {
     const filter = { ...ui.filter }
     for (const l of ['tasks', 'artifacts']) filter[`${to}|${l}`] = ui.filter[`${from}|${l}`] ?? ''
     return {
-      lists: pinned ? { pinned: false, chips: [], at: null } : { pinned: true, chips: state.snap ? listChips(ui, state.snap) : [], at: ui.place },
+      lists: pinned ? { pinned: false, chips: [], at: null } : { pinned: true, chips: state.snap ? ownChips(ui, state.snap) : [], at: ui.place },
       filter,
       cur: 0,
     }
@@ -1422,9 +1474,18 @@ export function openTask(id: string) {
   }))
 }
 
+/** the space a chat is in: its Assistant's own, or its task's (a voice call's mark goes on it, SHEP-51) */
+export function chatPlace(snap: Snapshot, key: string): string | null {
+  const own = snap.places.find((p) => p.chat === key)
+  if (own) return own.id
+  if (key.includes('/')) return taskOf(snap, taskChatId(key)!)?.place ?? null
+  return snap.places.some((p) => p.id === key) ? key : null
+}
+
 export function goChat(key: string) {
   if (key.includes('/')) openTask(taskChatId(key)!)
-  else setUI({ place: key, task: null, tab: 'chat', drawer: false })
+  // a space's chat key (p:<id>) goes to its space (SHEP-51: it went to the home space)
+  else setUI({ place: state.snap?.places.find((p) => p.chat === key)?.id ?? key, task: null, tab: 'chat', drawer: false })
 }
 
 export type Children = { children?: ReactNode }

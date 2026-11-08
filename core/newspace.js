@@ -1,17 +1,20 @@
 // The New space dialog's words and rules, the same in the window (mods/newspace) and on the web
 // (web/plugins/places/add.tsx, service/spaces.ts): its field holds the folder the space is made in, its
 // suggestions are that machine's recent folders (at most SHOWN), Browse… lists a folder's subfolders on
-// another machine, and a folder outside git is offered "Make it a git repo".
+// another machine, and a folder outside git is offered "Make it a git repo". With more than one machine on, it starts
+// with a Machine choice (a machine's + only preselects it); with one, the choice isn't shown.
 // Plain JS (no herdr or node imports): bin/sync-shared copies it into mods/newspace/core/.
 
 export const WORDS = {
   title: "New space",
   on: (machine) => `on ${machine}`,
+  machine: "Machine",
   label: "Icon and folder",
   placeholder: "~/path/to/folder",
   browse: "Browse…",
   loading: "Loading…",
   empty: "No folders inside",
+  noMatch: "No matching folders",
   missing: "This folder doesn't exist. It will be created.",
   makeRepo: "Make it a git repo",
   makeRepoWhy: "so each task gets its own worktree",
@@ -22,6 +25,8 @@ export const WORDS = {
   cantList: (dir, machine) => `Couldn't list ${dir}${machine ? ` on ${machine}` : ""}.`,
   cantMake: (dir) => `Couldn't make ${dir}.`,
   cantRepo: (why) => `Couldn't make it a git repo: ${why || "git failed"}`,
+  // made, but not in the list yet (another machine's spaces still on their way): said, never closed silently
+  notShown: (machine) => `Made it${machine ? ` on ${machine}` : ""}, but it hasn't shown up yet. It opens here once it does.`,
 };
 
 // The suggestions shown at most.
@@ -51,6 +56,28 @@ export const pathOf = (text, home) => {
   const f = String(text ?? "").trim();
   return /^[~/]/.test(f) ? untilde(f.length > 1 ? f.replace(/\/+$/, "") : f, home) : null;
 };
+
+// The folder a field's text is inside, as a shell completes a path: the part up to its last / (as a path) and
+// the word after it, or null when the text has no / or isn't a path ("~/dev/sh" → { dir: <home>/dev, word: "sh" }).
+export const typedDir = (text, home) => {
+  const f = String(text ?? "").trimStart();
+  const i = f.lastIndexOf("/");
+  if (i < 0 || !/^[~/]/.test(f)) return null;
+  const d = f.slice(0, i + 1);
+  return { dir: d === "/" ? "/" : untilde(d.replace(/\/+$/, "") || "/", home), word: f.slice(i + 1) };
+};
+
+// A folder as the field holds it to list what's inside: from home as ~, ending in /.
+export const asDir = (p, home) => { const t = tilde(p, home); return t.endsWith("/") ? t : t + "/"; };
+
+// A folder's subfolders (paths) whose name matches `word`, ignoring case: those starting with it first, then
+// those containing it, each in their order.
+export function matching(paths, word) {
+  const w = String(word ?? "").toLowerCase();
+  if (!w) return [...paths];
+  const name = (p) => (p.split("/").filter(Boolean).pop() ?? p).toLowerCase();
+  return [...paths.filter((p) => name(p).startsWith(w)), ...paths.filter((p) => !name(p).startsWith(w) && name(p).includes(w))];
+}
 
 // The suggestions: `all` (recent folders, Browse…'s picks first) matching what's typed (all of them for
 // an empty field or a path), at most SHOWN, the field's own folder left out.
@@ -91,3 +118,15 @@ export const offersRepo = (folder, inRepo, home) => Boolean(folder) && folder !=
 
 // What Herdr calls an unnamed space there: "Home" at home, else its repo's top folder, else the folder.
 export const placeName = (folder, top, home) => (folder === home ? "Home" : (top || folder).split("/").filter(Boolean).pop() ?? folder);
+
+// The machines New space can make a space on: those on and reachable (`list`: { key, on }, key null for this
+// computer), in their order. The Machine choice shows only when there are two or more.
+export const reachable = (list) => list.filter((m) => m.on).map((m) => m.key);
+export const choosesMachine = (keys) => keys.length > 1;
+
+// The machine the dialog starts on: the one asked for (a machine's +), else the shown space's, when it can be reached;
+// else the first that can (this computer first when it is on). undefined: none can.
+export function startMachine(keys, asked, shown) {
+  for (const k of [asked, shown]) if (k !== undefined && keys.includes(k)) return k;
+  return keys.length ? keys[0] : undefined;
+}

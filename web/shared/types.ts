@@ -4,7 +4,7 @@ import type { BrowserNote } from './browser.ts'
 
 /** Status marks: red needs you, green ready, green turning ring merging, amber working, grey ring idle or to do, grey
  * clock queued, grey check done, dashed ring unreachable. */
-export type Status = 'need' | 'ready' | 'merging' | 'work' | 'idle' | 'queued' | 'todo' | 'done' | 'off'
+export type Status = 'need' | 'ready' | 'merging' | 'work' | 'idle' | 'queued' | 'scheduled' | 'todo' | 'done' | 'off'
 /** A chat's final segment is its role; the task ID may itself contain a machine qualifier. */
 export function taskChatId(chat: string) { const at = chat.lastIndexOf('/'); return at < 0 ? undefined : chat.slice(0, at) }
 
@@ -125,11 +125,9 @@ export interface Place {
   store?: { folder: string; name: string; key?: string }
   /** when something in its tabs last changed state (ms; Herdr's tab changed_at): Jump lists spaces newest first */
   changedAt?: number
-  /** its repo's name, branch (null: detached) and commits ahead of and behind its upstream, as the window's row */
+  /** its repo's name and branch (null: detached), as the window's row */
   gitName?: string
   branch?: string | null
-  ahead?: number
-  behind?: number
 }
 
 /** A machine, as a heading over its spaces in the sidebar: no chat, nothing to open. How it is doing shows on it and in
@@ -275,7 +273,7 @@ export interface Report {
  * into main, nothing for you to do (GitHub's checks run, it is rebased or merged); work: its agent is at it; queued:
  * it waits for other tasks to be done, then Shepherdr tells its agent to go; todo: its agent waits for a go, or is
  * starting and not yet at work on its brief; done: merged */
-export type TaskStatus = 'need' | 'ready' | 'merging' | 'work' | 'queued' | 'todo' | 'done'
+export type TaskStatus = 'need' | 'ready' | 'merging' | 'work' | 'queued' | 'scheduled' | 'todo' | 'done'
 
 /** A task's one agent: tapping the task opens its chat. */
 export interface TaskAgent {
@@ -295,18 +293,28 @@ export interface Task {
   /** short name, as people say it: GTM-15 */
   id: string
   name: string
+  /** the folder whose tasks it is (herdr-task's --folder), on its machine: an @-mention names it (core/mentions.js) */
+  taskFolder?: string
   status: TaskStatus
   /** project place id */
   place: string
   /** second line in lists */
   sub?: string
-  /** Working: the minutes left under its row's dot, in the window's words ("6m", "<1m", "2h"), once its agent gave them */
+  /** Working: the minutes left under its row's dot, in the window's words ("6m", "<1m", "2h"), once its agent gave them;
+   *  Scheduled: the time until it starts ("6h", "2d") */
   left?: string
+  /** Scheduled (SHEP-38, herdr-task --at/--in): when it starts by itself (ms) */
+  startsAt?: number
   /** Ready, its accept under way from the window's Accept card: its row and header say "Accepting…" */
   accepting?: boolean
   /** still Working, its turn over: what Shepherdr itself knows it waits for */
   waitsFor?: 'review'
   age: string
+  /** when its first agent started (ms): a task that ran never says it hasn't started */
+  started?: number
+  /** what its agent said when it was ready (herdr-task ready --summary, --details) */
+  summary?: string
+  details?: string
   /** when a Done task finished (ms): the Done group shows newest first */
   doneAt?: number
   /** its latest news (ms): started, ready or done, as Jump orders tasks */
@@ -318,6 +326,12 @@ export interface Task {
   plan?: string[]
   /** none until the task's agent starts */
   agent?: TaskAgent
+  /** the ids of the artifacts its agent and its helpers made or updated (SHEP-60): its proof first, then newest first */
+  artifacts?: string[]
+  /** its proof artifact's id (herdr-task ready --proof) */
+  proof?: string
+  /** its worker's own helper agents (SHEP-54: a reviewer it started), newest last */
+  subagents?: { chat: string; title: string; status: 'working' | 'needs' | 'done'; at: number; ended?: number }[]
   desc?: string
   said?: string
   /** its facts line when done: PR, commit, checks, review, what is not proven */
@@ -371,6 +385,9 @@ export interface Automation {
   /** where it is, as its row says it: the space in its folder, else its list's name; and its machine (none: this computer) */
   listName?: string
   machine?: string | null
+  /** set off by another folder's task events (--from): that folder's machine (none: this computer), its space's name
+   *  there (else the folder's last part), and the events ("merged", "ready"…) */
+  from?: { machine: string | null; place: string; events: string[] }
 }
 
 /** A question card: built-in choice cards, a CLI's own menus, plans. */
@@ -556,8 +573,10 @@ export interface Message {
   /** a secret the agent asked for (shepherdr secret ask): a masked box to give it in */
   secret?: SecretAsk
   /** 3.0's quiet row for a message the person didn't type: a launch brief ("New session", "Task brief") or one
-   *  another agent sent ("Message from Reviewer"); its words (text) open under it. bare: no preview (a fresh start) */
-  brief?: { label: string; bare?: boolean }
+   *  another agent sent ("Message from Reviewer"); its words (text) open under it. bare: no preview (a fresh start);
+   *  from: who sent it ("Reviewer", "Assistant on m3"), only on a message from another agent, drawn as a message;
+   *  to: whom, on a message this chat's own agent sent another (from is then itself: "Assistant" → "SHEP-4") */
+  brief?: { label: string; bare?: boolean; from?: string; to?: string }
   /** 3.0's task news line in an Assistant's chat (core/chat-view.js newsWords): its mark, what happened, the rest;
    *  live: still needs you (red); accept: the newest ready line of a task still Ready */
   news?: { task: string; ref: string; mark: 'started' | 'needs' | 'ready' | 'done' | 'other'; what: string; text: string; live?: boolean; accept?: boolean }
@@ -572,6 +591,8 @@ export interface Message {
   /** 3.0's quiet line for an ask or start screen that closed: what it asked and how it went ("Run: npm test · Allowed
    *  in the chat") */
   ended?: string
+  /** an Autopilot wake's quiet line ("Autopilot woke · on schedule · checked, nothing new": core/chat-log.js pilotLine) */
+  pilot?: string
   /** the tasks your message mentions (#HAT-1), as 3.0's chips under it: a press opens the task */
   mentions?: { task: string; ref: string; title: string }[]
   at?: number
@@ -675,7 +696,8 @@ export interface TurnActivity {
 /** Work an agent started in the background that still runs */
 export interface Job {
   id: string
-  kind: 'agent' | 'shell' | 'monitor' | 'headless'
+  /** child: its own helper agent in herdr (SHEP-54: a reviewer it started), a chat of its own */
+  kind: 'agent' | 'shell' | 'monitor' | 'headless' | 'child'
   /** what it is: a subagent's description, a shell's command, a headless CLI's words */
   title: string
   at: number
@@ -687,6 +709,12 @@ export interface Job {
   command?: string
   /** it can be stopped from here (action stop-job) */
   stop?: boolean
+  /** a child: its chat's key (t:<address>), working / needs / done, its role and CLI, when it ended */
+  chat?: string
+  status?: 'working' | 'needs' | 'done'
+  role?: string
+  cli?: string
+  ended?: number
 }
 
 /** what the screen asks of a chat's activity: a turn's steps, a step's raw output, a background job's steps or output */
@@ -824,7 +852,7 @@ export interface Chat {
   /** a note at the conversation's end (a lost session being started again) */
   note?: string
   /** 3.0's notice instead of the conversation: opening it, not a chat agent, its log not found, its agent ended */
-  notice?: 'opening' | 'unsupported' | 'none' | 'ended'
+  notice?: 'opening' | 'unsupported' | 'none' | 'ended' | 'gone'
   /** the turn that runs now: how far it got and its step on now, drawn as one quiet line at the end of the chat */
   live?: TurnActivity
   /** what it started in the background that still runs: subagents, shells, headless agents */
@@ -984,7 +1012,7 @@ export interface AgentPick { agent: string; model?: string | null; effort?: stri
 
 /** Settings › Agents' model menu, as the window's (mods/chat-models, settings mode; core/agents.js menuFor) */
 export interface ModelMenus {
-  menus: Record<string, { name: string; models: { id: string; name: string; efforts: string[]; defaultEffort?: string | null; fast?: boolean }[]; perms: { id: string; label: string }[]; fastLocked?: boolean }>
+  menus: Record<string, { name: string; models: { id: string; name: string; efforts: string[]; defaultEffort?: string | null; fast?: boolean }[]; perms: { id: string; label: string }[] }>
   permDefault: Record<string, string>
 }
 
@@ -1018,6 +1046,8 @@ export interface SettingSection {
   /** Settings › Secrets, as the window's: every kept secret with where it is kept, and the agents waiting on one */
   vault?: { name: string; at: number; scope: 'everywhere' | 'machine' | 'space'; machine: string | null; space: string | null; where: string }[]
   asks?: { address: string; name: string; why: string; who: string; scope: string }[]
+  /** Secrets: the machine that keeps them (name null: this one; "" not linked), and the machines they can move to */
+  kept?: { here: boolean; set: boolean; auto?: boolean; serve?: string | null; name: string | null; reachable: boolean; choices: { name: string; here: boolean; state: string }[]; moving: string | null; error: string | null }
   /** Web: its QR code (an SVG picture's data URL) and the words over it */
   qr?: string
   qrTitle?: string
@@ -1243,6 +1273,8 @@ export type Action =
   | { type: 'pause'; chat: string }
   /** its agent goes and the task is To do; its work stays */
   | { type: 'stop'; chat: string }
+  /** Send now on a message in its CLI's own queue (waitsFor 'queue'): Claude Code takes it at once, mid-turn */
+  | { type: 'steer'; chat: string }
   /** Stop on a background shell or watcher over the box (Job.id) */
   | { type: 'stop-job'; chat: string; job: string }
   /** what the restart sheet shows for a coordinator (chat: its place id) or a task's agent (ID/Agent): RestartInfo */
@@ -1253,6 +1285,11 @@ export type Action =
   | { type: 'restart'; chat: string; kind?: string; model?: string; effort?: string; speed?: string; save?: boolean }
   /** mark a task done with nothing merged (shepherdr task close); refused (held) while it holds unmerged work, unless force */
   | { type: 'close'; chat: string; force?: boolean }
+  /** undo done or ready (herdr-task reopen): a voice call's act reopen */
+  | { type: 'reopen'; chat: string }
+  /** SHEP-38: start a task that hasn't started by itself later (herdr-task edit --at / --in, the words as typed), take that
+   *  back (off: back to To do) or start a scheduled one now */
+  | { type: 'schedule'; chat: string; at?: string; in?: string; off?: boolean; now?: boolean }
   /** delete a task: its agent, herdr space, worktree, branch, chat and record; refused while it holds work, unless force */
   | { type: 'delete'; chat: string; force?: boolean }
   /** forget a space (shepherdr space remove): its folder and code stay on disk, its coordinator closes, and its open

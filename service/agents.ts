@@ -1,15 +1,17 @@
 // The model menu and restart from the web (2.1's restart sheet): what an agent runs on now and what its CLIs offer
 // (core/agents.js, as the window's model menu), and restarting it on another model, effort or speed the window's way:
 // herdr-task switch for a task's agent, the Assistant's restart.sh for an Assistant, parked behind its chat.
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { join } from "node:path";
 import type { Hub } from "./hub.ts";
 import { HOME } from "./paths.ts";
 import { sh } from "./model.ts";
 import * as AG from "../core/agents.js";
 import { kindOf } from "../core/chat-reader.js";
+import { FOLDER } from "../core/chat-log.js";
 
-const { DEFAULTS, parseDefaults, current, menuFor, rowFor, argvFor, sessionOf, NAMES, line } = AG as any;
+const { DEFAULTS, parseDefaults, current, menuFor, rowFor, argvFor, sessionOf, inOtherFolder, OTHER_FOLDER, restartRefusal, lostRefusal, NAMES, line, PICKS_FILE, parsePicks, pickKey, withPin, withRecent } = AG as any;
 const APP = process.env.HERDR_APP_HOME || join(HOME, ".config", "herdr-app");
 
 async function run(cmd: string[]) {
@@ -20,6 +22,22 @@ async function run(cmd: string[]) {
 
 export class Agents {
   constructor(private hub: Hub) {}
+
+  /** The person's pinned and recent models (core/agents.js PICKS_FILE), as the window's model menu keeps them here */
+  private picksPath = join(HOME, PICKS_FILE);
+  picks() {
+    try { return parsePicks(readFileSync(this.picksPath, "utf8")); } catch { return parsePicks(""); }
+  }
+  private savePicks(p: unknown) {
+    mkdirSync(dirname(this.picksPath), { recursive: true });
+    writeFileSync(this.picksPath, JSON.stringify(p, null, 2));
+  }
+  /** the star on a model's row: pinned to the top of its agent's list, or not any more */
+  pin(agent: string, model: string) {
+    const p = withPin(this.picks(), pickKey(agent, model));
+    this.savePicks(p);
+    return p;
+  }
 
   private async defaults(kind: string, machine: string | null) {
     const r = await sh(this.hub, DEFAULTS, ["defaults", kind], machine).catch(() => null);
@@ -39,7 +57,8 @@ export class Agents {
   }
 
   /** The window's model menu (mods/chat openPicker → mods/chat-models) for the agent at addr: what it runs on, each
-   *  installed CLI's models, levels, Fast and permission modes; remote: why it can't restart from here */
+   *  installed CLI's models, levels, Fast and permission modes, the person's pinned and recent ones; remote: the
+   *  machine another machine's Assistant runs on, which only it restarts */
   async menu(addr: string, reader: any) {
     const t: any = this.hub.terminals.get(addr);
     if (!t) throw new Error("That agent isn't here any more.");
@@ -55,7 +74,7 @@ export class Agents {
     const row = rowFor(kind, c);
     const menus = Object.fromEntries(["claude", "codex"].filter((k) => k === kind || !have || have.has(k)).map((k) => [k, menuFor(k, dflts[k], k === kind ? row : null)]));
     return { current: { agent: kind, model: row, effort: c.effort ?? null, fast: !!c.fast, perm: c.perm ?? null }, menus,
-      permDefault: { claude: claude?.mode ?? "manual", codex: "auto" }, remote: machine && !t.labels?.["herdr.task"] ? "This computer only" : null };
+      permDefault: { claude: claude?.mode ?? "manual", codex: "auto" }, picks: this.picks(), remote: machine && !t.labels?.["herdr.task"] ? machine : null };
   }
 
   /** Each CLI's own settings here (Settings › Agents' model menu: core/settings.js choicesFrom). */
@@ -104,11 +123,29 @@ export class Agents {
     return { role: t.labels?.["herdr.task"] ? "task" : "coordinator", on, onKnown: true, onWords: line(c), want: on, clis, working: t.status?.state === "working" };
   }
 
+  /** Why a restart would lose the agent's folder, from its own process, as a page's reader may be gone or have no path
+   *  yet. The live list lacks another machine's foreground program, so hc get says. No CLI there: no agent to ask. */
+  private async folderRefusal(addr: string, t: any) {
+    const machine = addr.includes("/") ? addr.split("/")[0] : null;
+    const read = (pid: number) => sh(this.hub, FOLDER, ["folder", String(pid)], machine).then((r: any) => r.stdout, () => "");
+    let k = t;
+    if (machine && !t.foreground?.pid) {
+      const r = await run([process.env.SHEPHERDR_HC || "hc", "get", addr, "--json"]).catch(() => null);
+      try { k = { ...t, foreground: JSON.parse(r?.out || "null")?.foreground ?? null }; } catch {}
+    }
+    const running = kindOf(k);
+    return running ? restartRefusal(running, k.foreground?.pid, read) : lostRefusal("claude", k, read);
+  }
+
   /** Restarts it on the picked CLI, model, effort and speed; resolves with the new agent's address. */
   async restart(addr: string, reader: any, pick: { kind: string; model?: string; effort?: string; speed?: string; perm?: string }) {
     const t: any = this.hub.terminals.get(addr);
     if (!t || t.state !== "live") throw new Error("That agent isn't running.");
     const kind = kindOf(t) ?? "claude";
+    // Both ways below end it and start one without its CLAUDE_CONFIG_DIR, as the window's picker refuses (core/agents.js).
+    if (inOtherFolder(kind, reader?.path ?? null)) throw new Error(OTHER_FOLDER);
+    const why = await this.folderRefusal(addr, t);
+    if (why) throw new Error(why);
     const old = { agent: kind, argv: t.foreground?.argv ?? t.argv ?? [], session: sessionOf(kind, reader?.path ?? null) };
     const built = argvFor({ agent: pick.kind, model: pick.model, effort: pick.effort, fast: pick.speed === "fast", perm: pick.perm ?? current(kind, old.argv, {}, {}).perm }, old);
     const pane = t.labels?.["herdr.chat"] ?? "";
@@ -120,6 +157,7 @@ export class Agents {
       if (r.code !== 0 || !out.terminal) throw new Error((r.err || r.out).trim() || "herdr-task switch failed");
       if (pane) await run(["hc", "label", out.terminal, `herdr.chat=${pane}`, `herdr.chat.origin=${t.labels?.["herdr.chat.origin"] || addr}`]);
       await run(["herdr-app", "do", "terminal.park", "--terminal", out.terminal]);
+      this.used(pick);
       return out.terminal as string;
     }
     const script = join(APP, "mods", "coordinator", "restart.sh");
@@ -129,6 +167,12 @@ export class Agents {
     const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
     const next = out.trim().split("\n").pop();
     if ((await p.exited) !== 0 || !next) throw new Error(err.trim() || "The agent didn't restart.");
+    this.used(pick);
     return next;
+  }
+
+  /** restarted on a model: first among the recent ones */
+  private used(pick: { kind: string; model?: string }) {
+    if (pick.model) try { this.savePicks(withRecent(this.picks(), pickKey(pick.kind, pick.model))); } catch {}
   }
 }

@@ -1,10 +1,10 @@
 {
   "//": [
-    "Shepherdr's features list (3.1.3): every feature the layout ships, on both sides. Each has its shared logic (core/<name>.js,",
+    "Shepherdr's features list (3.1.16): every feature the layout ships, on both sides. Each has its shared logic (core/<name>.js,",
     "or the service's service/<file> where herdr-core itself is the logic), its Herdr side (the mods it lives in, or a Herdr",
     "built-in) and its web side (files under web/: 2.1's screens and plugins, and web/src/screens). test/test_repo.py checks it:",
     "a feature missing a side, a mod that belongs to no feature, or a listed file that isn't there fails CI. \"planned\" says what",
-    "its web side still lacks; none may be left when 3.1.3 is released.",
+    "its web side still lacks; none may be left when 3.1.16 is released.",
     "addon: the add-on in lib/addons.json; off there means off on both sides. view_only: per-device look, no shared logic."
   ],
   "features": [
@@ -353,7 +353,7 @@
         ]
       },
       "forms": {
-        "herdr": "Groups, filters, group by, search (F), dots and %, Accept on Ready rows, automations, archived",
+        "herdr": "Groups, filters, group by, search (F), dots and %, Review on Ready rows, Scheduled and Start later, automations, archived",
         "desktop": "Right column",
         "tablet": "Column beside the chat",
         "phone": "Tasks tab in the bottom bar"
@@ -383,7 +383,7 @@
         ]
       },
       "forms": {
-        "herdr": "Header (Pin, Accept, status); Chat, Terminal, Files, Changes, Pull request, Browser",
+        "herdr": "Header (Pin, Review, status); Chat, Terminal, Files, Changes, Pull request, Browser",
         "desktop": "Side panel with those tabs",
         "tablet": "Slides over the list, with Back",
         "phone": "Own screen; tabs in a scrolling switcher"
@@ -501,6 +501,35 @@
       ]
     },
     {
+      "id": "task-artifacts",
+      "addon": "artifacts",
+      "title": "A task's Artifacts",
+      "core": [
+        "task-artifacts"
+      ],
+      "herdr": {
+        "mods": [
+          "task-artifacts"
+        ]
+      },
+      "web": {
+        "files": [
+          "plugins/artifacts/client.tsx",
+          "src/Panel.tsx"
+        ]
+      },
+      "forms": {
+        "herdr": "Its proof first, then newest first; a click opens the viewer",
+        "desktop": "Panel",
+        "tablet": "Panel",
+        "phone": "Screen"
+      },
+      "service": [
+        "compat.ts",
+        "task-logs.ts"
+      ]
+    },
+    {
       "id": "task-menu",
       "addon": "tasks",
       "title": "Pin from a row",
@@ -573,10 +602,10 @@
         ]
       },
       "forms": {
-        "herdr": "News lines in the Assistant chat; Accept on Ready",
-        "desktop": "Same lines, inline Accept",
+        "herdr": "News lines in the Assistant chat; Review on Ready",
+        "desktop": "Same lines, inline Review",
         "tablet": "Same",
-        "phone": "Same; Accept opens the sheet"
+        "phone": "Same; Review opens the sheet"
       },
       "service": [
         "compat.ts"
@@ -616,7 +645,8 @@
       "title": "Composer",
       "core": [
         "send",
-        "slash"
+        "slash",
+        "mentions"
       ],
       "herdr": {
         "mods": [
@@ -629,7 +659,7 @@
         ]
       },
       "forms": {
-        "herdr": "Send mid-turn, Ctrl+Enter holds, Up recalls, drafts, / commands, #task mentions, Stop chip",
+        "herdr": "Send mid-turn, Ctrl+Enter holds, Up recalls, drafts, / commands, #space and @task mentions, Stop chip",
         "desktop": "Same keys",
         "tablet": "Same with a keyboard",
         "phone": "Same box; long-press Send holds; drafts kept on the device"
@@ -968,7 +998,8 @@
       "addon": "voice",
       "title": "Dictation",
       "core": [
-        "send"
+        "send",
+        "voice"
       ],
       "herdr": {
         "mods": [
@@ -981,8 +1012,8 @@
         ]
       },
       "forms": {
-        "herdr": "Mic, level wave, Cancel/Done (whisper.cpp)",
-        "desktop": "Mic; audio goes to the service's whisper.cpp",
+        "herdr": "Mic, level wave, Cancel/Done (ElevenLabs Scribe)",
+        "desktop": "Mic; audio goes through the service to ElevenLabs Scribe",
         "tablet": "Same",
         "phone": "Same; big mic button"
       },
@@ -1010,10 +1041,10 @@
         ]
       },
       "forms": {
-        "herdr": "Call an Assistant (ElevenLabs), mute, call bar",
+        "herdr": "Call an Assistant (ElevenLabs), mute, call mark on its space in the sidebar (a green wave on the narrow rail); the voice agent reads and acts on the window's frame",
         "desktop": "Same, through the service",
         "tablet": "Same",
-        "phone": "Full-width call bar"
+        "phone": "Call mark on its space in the sidebar, and a slim band at the top while away from the call; the voice agent reads and acts on the page"
       },
       "service": [
         "voice.ts",

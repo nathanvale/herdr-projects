@@ -7,13 +7,14 @@
 //   SHEPHERDR_WEB=on|off           serve the web app and share it on the tailnet (default on)
 // Serve from (service/host.ts): one machine serves the web app and holds the shared data; on the others the service
 // reads and writes it there, keeps their settings in step (service/sync.ts) and doesn't share /shepherdr.
-import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync, rmSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { DATA, SOCK, TOKEN, PORT, HOME, ensureData } from "./paths.ts";
 import { holdLock } from "./lock.ts";
-import { gate, type Gate } from "./auth.ts";
+import { gate, localCaller, type Gate } from "./auth.ts";
 import { trustedPeer } from "./peer.ts";
+import { readPrivateDomain, servePrivateDomain, type Admitted } from "./private-domain.ts";
 import { whoami, share, served, unshare, restoreShare, type Me } from "./tailscale.ts";
 import { qrFile } from "./qr.ts";
 import { Hub } from "./hub.ts";
@@ -27,21 +28,23 @@ import { windowSection, setWindow, offList, offPlugins } from "./window.ts";
 import { Chats } from "./chats.ts";
 import { act, hc as hcRun } from "./actions.ts";
 import { AgentWatch } from "./watch.ts";
-import { Compat, activity, newsKey } from "./compat.ts";
+import { Compat, activity, newsKey, placeKey } from "./compat.ts";
 import { Asks } from "./asks.ts";
 import { Jobs } from "./jobs.ts";
 import { terminalBridge } from "./terminal.ts";
 import { worktree } from "./worktree.ts";
 import * as W from "../core/worktree.js";
 import { browserRelay } from "./browser.ts";
-import { voiceCall, type ChatView } from "./voice.ts";
+import { voiceCall, pageWhere, type ChatView } from "./voice.ts";
+import { voiceTool, type VoiceIO, type Where } from "./voice-tools.ts";
 import { Artifacts } from "./artifacts.ts";
+import { TaskLogs } from "./task-logs.ts";
 import { Settings, onWritten, PUSH, pushBody } from "./settings.ts";
-import { Secrets } from "./secrets.ts";
+import { Secrets, SecretsHome } from "./secrets.ts";
 import { Agents } from "./agents.ts";
 import { Machines } from "./machines.ts";
 import { Push, alertsOf, agentAlerts } from "./push.ts";
-import { dictate } from "./dictate.ts";
+import { dictate, liveToken } from "./dictate.ts";
 import { sh, exec } from "./model.ts";
 import { folders, newSpace, newSpaceInfo } from "./spaces.ts";
 import { kindOf } from "../core/chat-reader.js";
@@ -54,9 +57,34 @@ const { serveChoice } = HCORE as any;
 import * as NF from "../core/notify.js";
 const { withEverywhere, withSpace } = NF as any;
 
+import * as MN from "../core/mentions.js";
+const { REACH_FILE, reachable } = MN as any;
+
+// A machine's reach map, as its spaces: kept a minute (its scheduler redraws it every 5)
+const reaches = new Map<string, { at: number; got: Promise<{ from: string | null; spaces: any[]; checked: number | null }> }>();
+function reachOf(machine: string | null) {
+  const k = machine ?? "", was = reaches.get(k);
+  if (was && Date.now() - was.at < 60_000) return was.got;
+  const got = exec(hub, ["sh", "-c", REACH_FILE], machine, 20).then((r) => {
+    const d = JSON.parse(r.stdout || "null");
+    return { from: d?.graph?.core?.name ?? machine, spaces: reachable(d?.graph), checked: d?.at ?? null };
+  }).catch(() => null).then((r) => r?.checked ? r : {
+    // no map there yet (its scheduler hasn't run): its own spaces, which it always reaches
+    from: machine, checked: null,
+    spaces: compat.allSpaces().filter((s) => (s.machine ?? null) === machine).map((s) => {
+      const id = s.id.split("/").pop()!, p = compat.last?.places.find((x) => x.id === s.id);
+      return { id, name: p?.name ?? id, route: "", machine: machine ?? me?.host ?? "", target: id, ...(p?.emoji ? { emoji: p.emoji } : {}), assistant: !!p?.assistantTab?.live };
+    }),
+  });
+  reaches.set(k, { at: Date.now(), got });
+  return got;
+}
+
 const ROOT = join(import.meta.dir, "..");
 const WEB = process.env.SHEPHERDR_WEB_DIR || join(ROOT, "web", "dist");
 export const VERSION = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version as string;
+const privateConfig = readPrivateDomain(process.env.SHEPHERDR_PRIVATE_DOMAIN);
+let privateServer: Bun.Server<{ who: string }> | null = null;
 
 ensureData();
 const release = await holdLock(SOCK);
@@ -67,6 +95,11 @@ if (!release) {
 
 if (!existsSync(TOKEN)) writeFileSync(TOKEN, randomBytes(24).toString("hex") + "\n", { mode: 0o600 });
 const token = readFileSync(TOKEN, "utf8").trim();
+// This start's id (GitHub #635): written with the port into service.json once the port is ours, and answered by health
+// to this machine's callers only, so the window (lib/local.js), the CLI and a call know it is Shepherdr's own service
+// on that port, never another app holding it, before they send the token or the shared state.
+const SERVICE_ID = randomBytes(16).toString("hex");
+const SERVICE_FILE = join(DATA, "service.json");
 
 const hub = new Hub();
 const host = new Host(hub, VERSION);
@@ -93,9 +126,12 @@ let alerted: Set<string> | null = null;
 // the agents' own alerts ride on the snapshot (the web app's toasts: web/plugins/alerts/toasts.tsx), then push
 const chatOfAddress = (a: string) => { for (const [k, v] of ((compat as any).chats ?? new Map()) as Map<string, string>) if (v === a) return k; return null; };
 const alertNewAnd = (snap: any) => { try { snap.alerts = agentAlerts(hub.terminals.values(), snap, chatOfAddress, HOME); alertNew(snap); } catch {} return snap; };
+// the spaces whose Autopilot wake was under way at the last snapshot: a message just after it is its update
+let woke = new Set<string>();
 function alertNew(snap: any) {
   // their words, as the window's toasts: service/push.ts alertsOf
-  const now = alertsOf(snap);
+  const now = alertsOf(snap, woke);
+  woke = new Set((snap.places ?? []).filter((p: any) => p.pilot?.on && (p.pilot.inflight || p.pilot.pending)).map((p: any) => p.id));
   if (alerted) for (const [k, a] of now) if (!alerted.has(k)) void push.send({ ...a, badge: (snap.needs?.length ?? 0) + (snap.tasks ?? []).filter((t: any) => t.status === "ready" && !t.archived).length, open: [...now.values()].filter((x) => x.waits).map((x) => x.tag) });
   alerted = new Set(now.keys());
 }
@@ -108,11 +144,49 @@ machines.start();
 const secrets = new Secrets(hub);
 compat.secrets = secrets;
 (compat as any).terminalsOf = (a: string) => hub.terminals.get(a);
+(compat as any).terminalsAll = () => [...hub.terminals.values()];
+(compat as any).coreName = () => host.me?.name || null;
 let secretNames: { name: string; at: number; space: string | null }[] = [];
 let vaultList: Awaited<ReturnType<Secrets["entries"]>> = [];
 const refreshSecrets = async () => { [secretNames, vaultList] = await Promise.all([secrets.names(), secrets.entries()]); model.rebuild(); };
 void refreshSecrets();
 setInterval(() => void refreshSecrets(), 30_000);
+// which machine keeps the secrets; there, other machines' requests answered with or without a window
+const home = new SecretsHome(hub);
+home.on(() => { void refreshSecrets(); });
+void home.start();
+// Settings › Secrets › Kept on: a move this service started (shepherdr secrets move-to), until it ends
+let secretsMoving: { to: string; at: number; error?: string } | null = null;
+async function moveSecrets(machine: string | null) {
+  const target = machine ?? home.me?.name ?? "here";
+  secretsMoving = { to: target, at: Date.now() };
+  model.rebuild();
+  const cli = [join(HOME, ".local", "bin", "shepherdr"), join(ROOT, "bin", "shepherdr")].find(existsSync) ?? "shepherdr";
+  try {
+    const p = Bun.spawn([cli, "secrets", "move-to", machine ?? "here", "--json"], { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+    const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
+    let r: any = null;
+    try { r = JSON.parse(out.trim().split("\n").pop() ?? ""); } catch {}
+    if ((await p.exited) !== 0 || r?.ok === false) throw new Error(r?.error || err.trim().split("\n").pop()?.replace(/^shepherdr: /, "") || "The move didn't finish.");
+    secretsMoving = null;
+  } catch (err) {
+    secretsMoving = { to: target, at: Date.now(), error: (err as Error).message };
+    setTimeout(() => { if (secretsMoving?.error) { secretsMoving = null; model.rebuild(); } }, 120_000);
+  }
+  await home.poll();
+  await refreshSecrets();
+}
+// Secrets follow Serve from unless the person picked a machine (core/secrets.js followTo): kept elsewhere (where they
+// were before, or Serve from moved), the machine serving the web app moves them to itself the same safe way as Kept on
+// (shepherdr secrets move-to: a backup, a verified copy, rollback), once the machine that keeps them is on; a failed
+// try waits ten minutes and says why in Settings › Secrets.
+let followTried = 0;
+setInterval(() => {
+  if (!home.shouldFollow() || (secretsMoving && !secretsMoving.error) || Date.now() - followTried < 10 * 60_000) return;
+  followTried = Date.now();
+  console.error("secrets: following Serve from: moving them here");
+  void moveSecrets(null).catch(() => {});
+}, 30_000);
 const settings = new Settings();
 // Settings › Agents' model menu and buttons (core/settings.js choicesFrom), from each CLI's own settings here, read
 // again every ten minutes; a CLI herdr-task's check finds missing here isn't offered
@@ -139,7 +213,8 @@ function secretsPage(spaces: any[]) {
     const space = sp ? (machine && !String(sp).includes("/") ? `${machine}/${sp}` : sp) : null;
     return { address: a.address, name: a.name, why: a.why ?? "", who: t?.name || a.address, scope: space ?? `m:${machine ?? ""}` };
   });
-  return { vault, asks };
+  const kept = { ...home.view(), moving: secretsMoving && !secretsMoving.error ? secretsMoving.to : null, error: secretsMoving?.error ?? null };
+  return { vault, asks, kept };
 }
 // Base branch's empty box: the branch a space's folder has checked out, on its machine
 settings.fetchBranch = async (s) => {
@@ -160,6 +235,10 @@ compat.artifacts = artifacts;
 artifacts.hub = hub;
 artifacts.machines = () => model.machineNames();
 artifacts.on(() => model.rebuild());
+// a task's chat logs, for its older artifacts that name no task (its Artifacts tab)
+const taskLogs = new TaskLogs();
+taskLogs.onChange = () => model.rebuild();
+compat.taskLogs = taskLogs;
 artifacts.start();
 const asks = new Asks();
 compat.asks = asks;
@@ -316,33 +395,173 @@ function chatView(addr: string): ChatView {
   const items = () => (compat.reader?.(addr)?.conv?.items ?? []) as any[];
   return {
     lastReply: () => { const x = [...items()].reverse().find((i) => i.kind === "agent" && i.text); return x ? { id: x.id, text: x.text } : null; },
-    recent: () => [`Status: ${(hub.terminals.get(addr) as any)?.status?.state ?? "unknown"}`,
-      ...items().filter((i) => (i.kind === "agent" || i.kind === "user") && i.text).slice(-12).map((i) => `${i.kind === "user" ? "Person" : "Agent"}: ${i.text}`)].join("\n\n").slice(-12000),
     status: () => (hub.terminals.get(addr) as any)?.status?.state ?? null,
     asking: () => asks.of(addr)[0]?.words?.title ?? null,
   };
 }
 
-const server = Bun.serve<{ who: string }>({
-  hostname: "127.0.0.1",
-  port: PORT,
-  async fetch(req, srv) {
+/** Keeps a chat read (service/chats.ts) while something needs it: a voice call, or a tool reading another chat. The
+ *  first read has come once ready resolves; stop() lets it go (dropped a minute after, as a page's). */
+function follow(addr: string) {
+  let first: () => void = () => {};
+  const ready = new Promise<void>((r) => { first = r; });
+  const page = () => first();
+  live.chats?.watch(addr, page);
+  return { ready, stop: () => live.chats?.unwatch(addr, page) };
+}
+
+/** What a voice call's tools reach (service/voice-tools.ts): what the web app shows and does. */
+const voiceIO: VoiceIO = {
+  snap: () => compat.last,
+  async chat(key) {
+    const addr = compat.addrOf(key);
+    if (!addr) return null;
+    const f = follow(addr);
+    try {
+      await Promise.race([f.ready, Bun.sleep(8000)]);
+      const r = compat.reader?.(addr);
+      if (!r) return null;
+      const t: any = hub.terminals.get(addr);
+      const items = () => ((r.conv?.items ?? []) as any[])
+        .filter((i) => (i.kind === "user" || i.kind === "agent" || i.kind === "ask") && typeof i.text === "string" && i.text.trim())
+        .map((i) => ({ who: (i.kind === "user" ? (i.from ? "news" : "you") : "agent") as "you" | "agent" | "news", text: String(i.text), at: typeof i.at === "number" ? i.at : undefined }));
+      const out = { status: t?.status?.state ?? null, doing: r.conv?.doing ?? t?.status?.message ?? null, items: items(),
+        earlier: async () => { const more = await r.earlier().catch(() => false); if (more) out.items = items(); return !!more; } };
+      return out;
+    } finally { f.stop(); }
+  },
+  async send(key, text) { await act(hub, { type: "send", chat: key, text, human: true }, compat); },
+  async action(body) {
+    const r = await doAction(body);
+    const text = await r.text();
+    if (!r.ok) throw new Error(text.trim() || "That didn't go through.");
+    try { return JSON.parse(text); } catch { return { ok: true }; }
+  },
+  addrOf: (key) => compat.addrOf(key),
+  taskWhere: (id) => { const t = compat.taskOf(id); return t ? { ref: t.ref, folder: t.folder, machine: t.machine } : null; },
+};
+
+
+/** One of the web app's actions (an Action, POST /api/action), as the page sends it: a voice call's acts go here too. */
+async function doAction(body: any): Promise<Response> {
+  if (body?.type === "secret" && typeof body.name === "string" && typeof body.level === "string") {
+    // a value goes straight to the vault (herdr-secret set, from stdin); the agent hears its name only
+    try {
+      const card = body.card && typeof body.card.chat === "string" ? { address: compat.addrOf(body.card.chat) ?? "" } : undefined;
+      if (card && !card.address) throw new Error("That agent isn't here any more.");
+      await secrets.keep(body.level, body.name, typeof body.value === "string" ? body.value : null, card);
+      await refreshSecrets();
+      return json({ ok: true });
+    } catch (err) { return new Response((err as Error).message, { status: 400 }); }
+  }
+  if (body?.type === "setting" && body.key === "notify") {
+    // a space's Notify (from its menu or Settings), or Everywhere's, in 3.0's shared "notify"
+    const v = typeof body.value === "string" ? body.value : null, n = model.value("notify") ?? {};
+    const next = !body.place || body.place === "all" ? withEverywhere(n, v) : withSpace(n, String(body.place), v);
+    await store.set("notify", next);
+    return json({ ok: true });
+  }
+  if (body?.type === "setting" && typeof body.key === "string" && body.key.startsWith("notify.machine@")) {
+    // Reset of what a machine set before machine scope went (the window's Notify rows under Everywhere's)
+    await store.set("notify", (NF as any).withMachine(model.value("notify") ?? {}, body.key.slice("notify.machine@".length), null));
+    return json({ ok: true });
+  }
+  if (body?.type === "autopilot-run" && typeof body.place === "string") {
+    try { await runPilot(body.place); await model.readPilot(body.place); return json({ ok: true }); }
+    catch (err) { return json({ ok: false, error: (err as Error).message }); }
+  }
+  if (body?.type === "setting" && body.key === "web.serve") {
+    // Settings › Web's Serve from, confirmed: the machine by its line in the picker
+    const row = serveNow().rows.find((r) => r.label === body.value);
+    if (!row) return json({ ok: false, error: "That machine isn't linked." });
+    if (row.serves) return json({ ok: true });
+    if (moving && !moving.error) return json({ ok: false, error: `Already moving it to ${moving.to}.` });
+    void serveFrom(row.here ? null : row.name).catch(() => {});
+    return json({ ok: true });
+  }
+  if (body?.type === "setting" && typeof body.key === "string" && /^(window|addon)\./.test(body.key)) {
+    try { await setWindow(body.key, typeof body.value === "string" ? body.value : null, (k, v) => store.set(k, v)); return json({ ok: true }); }
+    catch (err) { return json({ ok: false, error: (err as Error).message }); }
+  }
+  if (body?.type === "setting" && typeof body.key === "string") {
+    try {
+      // a space's own: its name, machine and repo folder go with it (herdr-task finds a space's settings by folder)
+      const level = typeof body.place === "string" ? body.place : "all";
+      const sp = level !== "all" && !level.startsWith("m:") ? model.spaceById(level) : null;
+      const folder = sp ? (await exec(hub, ["git", "-C", sp.folder || "~", "rev-parse", "--show-toplevel"], sp.machine ?? null).catch(() => null))?.stdout.trim() || sp.folder : null;
+      let value = typeof body.value === "string" ? body.value : null;
+      // Autopilot's schedule: herdr-task knows its words first (Custom…), as the window's
+      if (body.key === "autopilot.every" && value !== null) value = await checkEvery(value);
+      // Home Assistant's Make home space (and turning it on), as the window's: herdr-task's home round makes one
+      const home = /^machine\.(makehome|home)@([\w.-]+)$/.exec(body.key);
+      if (home && (home[1] === "makehome" || value === "on")) await store.set("home.makereq", { machine: home[2] === "local" ? null : home[2], at: Date.now() });
+      if (home?.[1] === "makehome") return json({ ok: true });
+      // Base branch: checked before it's saved, here or on origin as git last fetched it (the window's words)
+      if (body.key === "tasks.base" && value?.trim()) {
+        const want = value.trim();
+        const there = SC.branchShape(want) && sp && (await Promise.all([`refs/heads/${want}`, `refs/remotes/origin/${want}`].map((ref) =>
+          exec(hub, ["git", "-C", folder || sp.folder || "~", "show-ref", "--verify", "--quiet", ref], sp.machine ?? null).catch(() => null)))).some((r) => r?.code === 0);
+        if (!there) return json({ ok: false, error: SC.BASE.missing(want) });
+      }
+      settings.set(body.key, value, level, sp ? { id: sp.id, name: sp.name, machine: sp.machine ?? null, folder } : null);
+      if (body.key.startsWith("autopilot.")) { await model.readAutopilot(); model.rebuild(); }
+      return json({ ok: true });
+    } catch (err) { return json({ ok: false, error: (err as Error).message }); }
+  }
+  if (body?.type === "template" && typeof body.role === "string") {
+    try { return json({ ok: true, text: settings.template(body.role, typeof body.text === "string" ? body.text : undefined) }); }
+    catch (err) { return json({ ok: false, error: (err as Error).message }); }
+  }
+  if (body?.type === "limits-check") { await machines.checkNow(); return json({ ok: true }); }
+  if (body?.type === "secrets-move") {
+    // Settings › Secrets › Kept on: the vault moves (shepherdr secrets move-to); the page sees it as it goes
+    const m = typeof body.machine === "string" && body.machine && body.machine !== home.me?.name ? body.machine : null;
+    if (m !== null && !home.machines.has(m)) return json({ ok: false, error: "That machine isn't linked." });
+    if (secretsMoving && !secretsMoving.error) return json({ ok: false, error: `Already moving them to ${secretsMoving.to}.` });
+    void moveSecrets(m).catch(() => {});
+    return json({ ok: true });
+  }
+  if (body?.type === "serve-from") {
+    // Settings › Web's Serve from: the move runs on (the page sees it in Settings › Web as it goes)
+    const m = typeof body.machine === "string" && body.machine && body.machine !== host.me?.name ? body.machine : null;
+    if (m !== null && !host.machines.has(m)) return json({ ok: false, error: "That machine isn't linked." });
+    if (moving && !moving.error) return json({ ok: false, error: `Already moving it to ${moving.to}.` });
+    void serveFrom(m).catch(() => {});
+    return json({ ok: true });
+  }
+  if (body?.type === "role-info") {
+    // Settings › Agents' model menu (the window's, settings mode): every installed CLI's models, levels, Fast and
+    // permission modes, and the person's pinned and recent models
+    try { if (!settings.choices) await readDefaults(); return json({ ok: true, menus: settings.choices?.menus ?? {}, permDefault: settings.choices?.permDefault ?? {}, picks: (compat.agents as any).picks(), clis: await compat.agents!.choices(null) }); }
+    catch (err) { return json({ ok: false, error: (err as Error).message }); }
+  }
+  try {
+    const r = await act(hub, body, compat);
+    // a switch flipped: shown at once, on another machine's space too (its file read again there)
+    if (body?.type === "mode" && typeof body.place === "string") await model.readPilot(body.place);
+    return json(r);
+  } catch (err) { return new Response((err as Error).message, { status: 400 }); }
+}
+
+const handlers = {
+  async fetch(req: Request, srv: Bun.Server<{ who: string }>, admitted?: Admitted): Promise<Response | undefined> {
     const url = new URL(req.url);
     const path = url.pathname.startsWith("/shepherdr/") ? url.pathname.slice(10) : url.pathname;
     // the window asks this (lib/service.js): while jobs is true it leaves its background work to the service
-    if (path === "/api/health") return json({ ok: true, version: VERSION, core: hub.up, jobs: jobs.on && hub.up, serving: host.serving(), host: host.hubName() ?? null, reachable: host.reachable(),
+    if (path === "/api/health") return json({ ok: true, app: "shepherdr", ...(localCaller(req, PORT) ? { id: SERVICE_ID } : {}), version: VERSION, core: hub.up, jobs: jobs.on && hub.up, serving: host.serving(), host: host.hubName() ?? null, reachable: host.reachable(),
       // the other machines this service ticks (Serve from: the host the ones with no service of their own)
       ticks: jobs.on ? host.tickOn() : [] });
     // the Web add-on switched off: nothing for the tailnet (this machine's own callers still get the API)
-    if (req.headers.has("tailscale-user-login") && !webOn()) return new Response("Shepherdr's web app is off (Shepherdr settings › Window › Add-ons).", { status: 404 });
+    const browser = !!admitted || req.headers.has("tailscale-user-login");
+    if (browser && !webOn()) return new Response("Shepherdr's web app is off (Shepherdr settings › Window › Add-ons).", { status: 404 });
     // another machine serves it now (Serve from): a page that still comes here goes there
-    if (req.headers.has("tailscale-user-login") && !host.serving()) {
+    if (browser && !host.serving()) {
       const there = host.hostLink();
       return there ? Response.redirect(there, 302) : new Response("Shepherdr's web app is served from another machine now.", { status: 404 });
     }
     const socket = path === "/api/ws" || path === "/api/terminal" || path === "/api/browser" || path === "/api/voice";
     const viaTailnet = req.headers.has("tailscale-user-login");
-    const pass = gate(req, g, socket, viaTailnet && trustedPeer(srv.requestIP(req)?.port, PORT));
+    const pass = admitted ?? gate(req, g, socket, viaTailnet && trustedPeer(srv.requestIP(req)?.port, PORT));
     if (!pass.ok) return new Response(pass.why, { status: pass.status });
     if (path === "/api/browser") {
       // a task's browser (2.1's Browser panel): this machine's tasks
@@ -363,7 +582,7 @@ const server = Bun.serve<{ who: string }>({
       return srv.upgrade(req, { data: { who: pass.who, voice: { key, addr } } as any }) ? undefined : new Response("upgrade failed", { status: 400 });
     }
     if (socket) return srv.upgrade(req, { data: { who: pass.who } }) ? undefined : new Response("upgrade failed", { status: 400 });
-    if (path === "/api/me") return json({ login: pass.who, via: pass.via, machine: me?.host ?? null, link: me ? `https://${me.dns}/shepherdr/` : null, version: VERSION, off: offPlugins() });
+    if (path === "/api/me") return json({ login: pass.who, via: pass.via, machine: me?.host ?? null, link: admitted && privateConfig ? `${privateConfig.origin}/shepherdr/` : me ? `https://${me.dns}/shepherdr/` : null, version: VERSION, off: offPlugins() });
     if (path === "/api/state" && req.method === "GET") return json(store.doc.version ? store.doc : await store.load());
     if (path === "/api/state" && req.method === "POST") {
       const body = await req.json().catch(() => null);
@@ -412,7 +631,11 @@ const server = Bun.serve<{ who: string }>({
       return json({ path: join(dir, name), name: f.name });
     }
     if (path === "/api/dictate" && req.method === "POST") {
-      try { return json({ text: await dictate(await req.blob()) }); } catch (err) { return json({ error: (err as Error).message }, 400); }
+      try { return json({ text: await dictate(hub, await req.blob()) }); } catch (err) { return json({ error: (err as Error).message }, 400); }
+    }
+    // live dictation: a single-use token as the page starts recording (the words are written while it records)
+    if (path === "/api/dictate/live" && req.method === "POST") {
+      try { return json({ token: await liveToken(hub) }); } catch (err) { return json({ error: (err as Error).message }, 400); }
     }
     if (path === "/api/commands") {
       // the "/" list above the box (core/slash.js): its CLI's commands, and for Claude Code the person's own
@@ -421,6 +644,14 @@ const server = Bun.serve<{ who: string }>({
       const kind = kindOf(t) ?? "claude", machine = a.includes("/") ? a.split("/")[0] : null;
       const mine = kind === "claude" ? scanned((await sh(hub, SCAN, ["scan", t.foreground?.cwd ?? t.cwd ?? ""], machine).catch(() => ({ stdout: "" }))).stdout) : [];
       return json({ commands: commandList(kind, mine), menus: [...(MENU[kind] ?? [])] });
+    }
+    if (path === "/api/reach") {
+      // the "#" list above the box (core/mentions.js): the spaces the machine running this chat's agent can reach, from
+      // its herdr-task reach map (what tell-assistant follows); a chat with no agent yet: its space's machine
+      const key = url.searchParams.get("chat") ?? "", a = compat.addrOf(key);
+      const sp = !a ? compat.allSpaces().find((s) => placeKey(s.id) === key) : null;
+      const machine = a ? (a.includes("/") ? a.split("/")[0] : null) : sp?.machine ?? null;
+      return json(await reachOf(machine));
     }
     if (path === "/api/folders") {
       const m = url.searchParams.get("machine"), machine = !m || m === me?.host ? null : m;
@@ -439,13 +670,26 @@ const server = Bun.serve<{ who: string }>({
         const machine = !b?.machine || b.machine === me?.host ? null : String(b.machine);
         const icon = typeof b?.icon === "string" && b.icon ? b.icon.slice(0, 16) : null;
         const place = await newSpace(hub, { machine, path: String(b?.path ?? ""), makeRepo: !!b?.makeRepo, icon, store: compat.shared! });
+        // the page opens it once the sidebar has it: in the snapshot before the answer, not at the next 10 s read
+        await model.waitSpace(place);
         return json({ place });
       } catch (err) { return json({ error: (err as Error).message }, 400); }
     }
     if (path === "/api/push/key") return json({ key: await push.key() });
     if (path === "/api/push/subscribe" && req.method === "POST") {
       const body = await req.json().catch(() => null);
-      try { push.subscribe(body?.sub, body?.device); return json({ ok: true }); } catch (err) { return json({ error: (err as Error).message }, 400); }
+      try { push.subscribe(body?.sub, body?.device, typeof body?.from === "string" ? body.from : undefined); return json({ ok: true, ...push.state(body.sub.endpoint) }); } catch (err) { return json({ error: (err as Error).message }, 400); }
+    }
+    // Settings › Notifications: this device's alerts as the server keeps them, turned off, chosen, tested
+    if (path.startsWith("/api/push/") && req.method === "POST") {
+      const body = await req.json().catch(() => null);
+      const endpoint = typeof body?.endpoint === "string" ? body.endpoint : "";
+      if (path === "/api/push/state") return json(push.state(endpoint));
+      if (path === "/api/push/unsubscribe") { push.unsubscribe(endpoint); return json({ ok: true, ...push.state(endpoint) }); }
+      if (path === "/api/push/choose") {
+        try { return json({ ok: true, ...push.choose(endpoint, { topics: body?.topics, muted: body?.muted }, !!body?.all) }); } catch (err) { return json({ error: (err as Error).message }, 400); }
+      }
+      if (path === "/api/push/test") return json(await push.test(endpoint));
     }
     if (path === "/api/worktree" && url.searchParams.has("space")) {
       // the tab bar's Files and Changes (Herdr's own panels): the space's folder, its uncommitted changes against HEAD
@@ -478,115 +722,47 @@ const server = Bun.serve<{ who: string }>({
       }
       return json(await activity(r, id));
     }
-    if (path === "/api/action" && req.method === "POST") {
-      const body = await req.json().catch(() => null);
-      if (body?.type === "secret" && typeof body.name === "string" && typeof body.level === "string") {
-        // a value goes straight to the vault (herdr-secret set, from stdin); the agent hears its name only
-        try {
-          const card = body.card && typeof body.card.chat === "string" ? { address: compat.addrOf(body.card.chat) ?? "" } : undefined;
-          if (card && !card.address) throw new Error("That agent isn't here any more.");
-          await secrets.keep(body.level, body.name, typeof body.value === "string" ? body.value : null, card);
-          await refreshSecrets();
-          return json({ ok: true });
-        } catch (err) { return new Response((err as Error).message, { status: 400 }); }
-      }
-      if (body?.type === "setting" && body.key === "notify") {
-        // a space's Notify (from its menu or Settings), or Everywhere's, in 3.0's shared "notify"
-        const v = typeof body.value === "string" ? body.value : null, n = model.value("notify") ?? {};
-        const next = !body.place || body.place === "all" ? withEverywhere(n, v) : withSpace(n, String(body.place), v);
-        await store.set("notify", next);
-        return json({ ok: true });
-      }
-      if (body?.type === "setting" && typeof body.key === "string" && body.key.startsWith("notify.machine@")) {
-        // Reset of what a machine set before machine scope went (the window's Notify rows under Everywhere's)
-        await store.set("notify", (NF as any).withMachine(model.value("notify") ?? {}, body.key.slice("notify.machine@".length), null));
-        return json({ ok: true });
-      }
-      if (body?.type === "autopilot-run" && typeof body.place === "string") {
-        try { await runPilot(body.place); await model.readPilot(body.place); return json({ ok: true }); }
-        catch (err) { return json({ ok: false, error: (err as Error).message }); }
-      }
-      if (body?.type === "setting" && body.key === "web.serve") {
-        // Settings › Web's Serve from, confirmed: the machine by its line in the picker
-        const row = serveNow().rows.find((r) => r.label === body.value);
-        if (!row) return json({ ok: false, error: "That machine isn't linked." });
-        if (row.serves) return json({ ok: true });
-        if (moving && !moving.error) return json({ ok: false, error: `Already moving it to ${moving.to}.` });
-        void serveFrom(row.here ? null : row.name).catch(() => {});
-        return json({ ok: true });
-      }
-      if (body?.type === "setting" && typeof body.key === "string" && /^(window|addon)\./.test(body.key)) {
-        try { await setWindow(body.key, typeof body.value === "string" ? body.value : null, (k, v) => store.set(k, v)); return json({ ok: true }); }
-        catch (err) { return json({ ok: false, error: (err as Error).message }); }
-      }
-      if (body?.type === "setting" && typeof body.key === "string") {
-        try {
-          // a space's own: its name, machine and repo folder go with it (herdr-task finds a space's settings by folder)
-          const level = typeof body.place === "string" ? body.place : "all";
-          const sp = level !== "all" && !level.startsWith("m:") ? model.spaceById(level) : null;
-          const folder = sp ? (await exec(hub, ["git", "-C", sp.folder || "~", "rev-parse", "--show-toplevel"], sp.machine ?? null).catch(() => null))?.stdout.trim() || sp.folder : null;
-          let value = typeof body.value === "string" ? body.value : null;
-          // Autopilot's schedule: herdr-task knows its words first (Custom…), as the window's
-          if (body.key === "autopilot.every" && value !== null) value = await checkEvery(value);
-          // Home Assistant's Make home space (and turning it on), as the window's: herdr-task's home round makes one
-          const home = /^machine\.(makehome|home)@([\w.-]+)$/.exec(body.key);
-          if (home && (home[1] === "makehome" || value === "on")) await store.set("home.makereq", { machine: home[2] === "local" ? null : home[2], at: Date.now() });
-          if (home?.[1] === "makehome") return json({ ok: true });
-          // Base branch: checked before it's saved, here or on origin as git last fetched it (the window's words)
-          if (body.key === "tasks.base" && value?.trim()) {
-            const want = value.trim();
-            const there = SC.branchShape(want) && sp && (await Promise.all([`refs/heads/${want}`, `refs/remotes/origin/${want}`].map((ref) =>
-              exec(hub, ["git", "-C", folder || sp.folder || "~", "show-ref", "--verify", "--quiet", ref], sp.machine ?? null).catch(() => null)))).some((r) => r?.code === 0);
-            if (!there) return json({ ok: false, error: SC.BASE.missing(want) });
-          }
-          settings.set(body.key, value, level, sp ? { id: sp.id, name: sp.name, machine: sp.machine ?? null, folder } : null);
-          if (body.key.startsWith("autopilot.")) { await model.readAutopilot(); model.rebuild(); }
-          return json({ ok: true });
-        } catch (err) { return json({ ok: false, error: (err as Error).message }); }
-      }
-      if (body?.type === "template" && typeof body.role === "string") {
-        try { return json({ ok: true, text: settings.template(body.role, typeof body.text === "string" ? body.text : undefined) }); }
-        catch (err) { return json({ ok: false, error: (err as Error).message }); }
-      }
-      if (body?.type === "limits-check") { await machines.checkNow(); return json({ ok: true }); }
-      if (body?.type === "serve-from") {
-        // Settings › Web's Serve from: the move runs on (the page sees it in Settings › Web as it goes)
-        const m = typeof body.machine === "string" && body.machine && body.machine !== host.me?.name ? body.machine : null;
-        if (m !== null && !host.machines.has(m)) return json({ ok: false, error: "That machine isn't linked." });
-        if (moving && !moving.error) return json({ ok: false, error: `Already moving it to ${moving.to}.` });
-        void serveFrom(m).catch(() => {});
-        return json({ ok: true });
-      }
-      if (body?.type === "role-info") {
-        // Settings › Agents' model menu (the window's, settings mode): every installed CLI's models, levels, Fast and
-        // permission modes
-        try { if (!settings.choices) await readDefaults(); return json({ ok: true, menus: settings.choices?.menus ?? {}, permDefault: settings.choices?.permDefault ?? {}, clis: await compat.agents!.choices(null) }); }
-        catch (err) { return json({ ok: false, error: (err as Error).message }); }
-      }
-      try {
-        const r = await act(hub, body, compat);
-        // a switch flipped: shown at once, on another machine's space too (its file read again there)
-        if (body?.type === "mode" && typeof body.place === "string") await model.readPilot(body.place);
-        return json(r);
-      } catch (err) { return new Response((err as Error).message, { status: 400 }); }
+    if (path === "/api/action" && req.method === "POST") return doAction(await req.json().catch(() => null));
+    if (path === "/api/voice/tool" && req.method === "POST") {
+      // the window's voice call (mods/chat/voice.ts) asks its tools here, from this machine only
+      if (pass.via !== "local") return json({ error: "not here" }, 403);
+      const b = await req.json().catch(() => null);
+      const key = typeof b?.addr === "string" ? chatOfAddress(b.addr) : null;
+      if (!key || typeof b.tool !== "string") return json({ error: "no such call" }, 400);
+      const where: Where = { client: "window", call: key, machine: me?.host ?? null, ...pageWhere(b.where ?? {}) };
+      const a = await voiceTool(b.tool, b.params ?? {}, where, voiceIO);
+      return json(a);
     }
     if (path.startsWith("/api/")) return json({ error: "not found" }, 404);
     return file(path);
   },
   websocket: {
-    open(ws) {
+    open(ws: Bun.ServerWebSocket<{ who: string }>) {
       const d: any = ws.data;
       const page = { send: (x: any) => { ws.send(x); }, close: () => ws.close(), buffered: () => ws.getBufferedAmount() };
-      if (d.voice) d.bridge = voiceCall(hub, d.voice.addr, callName(d.voice.key), chatView(d.voice.addr), page);
+      if (d.voice) d.bridge = voiceCall(hub, callName(d.voice.key), { view: chatView(d.voice.addr), io: voiceIO, where: { client: "web", call: d.voice.key, machine: me?.host ?? null },
+        follow: () => follow(d.voice.addr).stop }, page);
       else if (d.term) d.bridge = terminalBridge(hub, d.term, page);
       else if (d.browser) d.bridge = browserRelay(d.browser, page);
       else live.join(ws);
     },
-    message(ws, msg) { const d: any = ws.data; if (d.voice) d.bridge?.message(msg); else if (d.bridge) d.bridge.message(String(msg)); else live.message(ws, String(msg)); },
-    close(ws) { const d: any = ws.data; if (d.bridge) d.bridge.end(); else live.leave(ws); },
+    message(ws: Bun.ServerWebSocket<{ who: string }>, msg: string | Buffer) { const d: any = ws.data; if (d.voice) d.bridge?.message(msg); else if (d.bridge) d.bridge.message(String(msg)); else live.message(ws, String(msg)); },
+    close(ws: Bun.ServerWebSocket<{ who: string }>) { const d: any = ws.data; if (d.bridge) d.bridge.end(); else live.leave(ws); },
   },
-});
+};
+// a send with many pictures (copied to another machine, Claude Code reading each) can take longer than Bun's 10 s
+// default: cut off, the page took it as failed while it still went in (SHEP-93)
+const server = Bun.serve<{ who: string }>({ hostname: "127.0.0.1", port: PORT, idleTimeout: 180, ...handlers });
+if (privateConfig) {
+  try {
+    privateServer = await servePrivateDomain(privateConfig, () => g, handlers);
+    console.log(`Private HTTPS on ${privateConfig.origin}/shepherdr/`);
+  } catch (err) { console.error(`Private HTTPS unavailable: ${(err as Error).message}`); }
+}
 
 console.log(`Shepherdr ${VERSION} on http://127.0.0.1:${server.port} (data ${DATA})${me && webOn() ? `, https://${me.dns}/shepherdr/` : ""}`);
 
-for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => { server.stop(true); release(); process.exit(0); });
+// the port is ours now: say where and this start's id (only this user can read it)
+writeFileSync(SERVICE_FILE, JSON.stringify({ port: server.port, id: SERVICE_ID, pid: process.pid, version: VERSION }) + "\n", { mode: 0o600 });
+
+for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => { privateServer?.stop(true); server.stop(true); try { rmSync(SERVICE_FILE); } catch {} release(); process.exit(0); });

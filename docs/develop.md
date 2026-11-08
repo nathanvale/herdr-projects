@@ -9,7 +9,7 @@ lib/features.json        every feature: its Herdr side, its web side and its sha
 core/                    the logic the mods and the service share (plain JS; copied into mods by bin/sync-shared)
 service/                 the always-on service (Bun): the web app's API, background work, tailnet sharing (docs/web.md)
 web/                     the web app (React, Vite, Tailwind; 2.1's design): src/, plugins/, shared/
-bin/shepherdr            the installer (install, update, uninstall, doctor, whisper); ./install.sh runs it
+bin/shepherdr            the installer (install, update, uninstall, doctor); ./install.sh runs it
 bin/                     herdr-secret, herdr-browser, herdr-browser-view, sync-shared (installed to the app's bin/)
 mods/tasks/bin/          herdr-task (entry) and its herdr_task package
 mods/artifacts/bin/      herdr-artifact
@@ -50,3 +50,7 @@ folder/home/port is not isolation proof. Runtime rehearsal is separately admitte
 - Repo topics: add `herdr-layout` (the listing), keep `herdr` and `shepherdr`, and drop `herdr-plugin` (the
   terminal-plugin card; `herdr-plugin.toml` is gone from main, 2.1 stays installable from `v2.1`).
 - Tag `v3.0.0` and the GitHub release only after the person says yes; patch bumps after that.
+
+## Claude Code checkout access
+
+`.claude/checkout-access.json` names the folders every Claude Code session in this repository may reach, relative to the main checkout. `bin/checkout-access preview` shows the scope; `apply` writes their absolute paths to the main checkout's untracked `.claude/settings.local.json`, and `rollback` removes only what it added. Claude Code resolves relative `additionalDirectories` against each session's folder, so a tracked value can't be right everywhere. It reaches sessions under any Claude profile.

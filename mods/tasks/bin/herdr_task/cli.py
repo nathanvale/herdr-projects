@@ -12,7 +12,7 @@ from .base import bundle, Fail, guard, run, STORE, sync_held, VERSION
 from .agents import LINE_MAX, SUMMARY_MAX
 from .launch import cmd_allow, name_tabs
 from .commands import (
-    cmd_accept, cmd_add, cmd_alert, cmd_config, cmd_edit, cmd_fix, cmd_list, cmd_merge, cmd_ready,
+    cmd_accept, cmd_add, cmd_adopt, cmd_alert, cmd_config, cmd_edit, cmd_fix, cmd_list, cmd_merge, cmd_ready,
     cmd_resume, cmd_review, cmd_review_more, cmd_reviewed, cmd_rm, cmd_show, cmd_start, cmd_state, cmd_status,
     cmd_switch, cmd_unarchive, cmd_where,
 )
@@ -21,8 +21,11 @@ from .backups import cmd_backup, cmd_restore_spaces
 from .automations import auto_list, cmd_auto, cmd_scheduler, cmd_track, EVENTS, HOW
 from .machines import cmd_assistants, cmd_machines, cmd_sync_auto, cmd_tell
 from .autopilot import cmd_autopilot, cmd_complete, cmd_progress
+from .star import cmd_star
 from .home import cmd_home
 from .providers import cmd_provider
+from .assistant_settings import cmd_session_note
+from .feedback import cmd_feedback
 
 
 # ---- another machine ------------------------------------------------------------------------
@@ -120,6 +123,14 @@ def remote(machine, argv):
                 if isinstance(d.get(k), str) and "/" not in d[k]:
                     d[k] = f"{machine}/{d[k]}"
             out = json.dumps(d) + "\n"
+        # An automation's view (auto list, show, add...) is that machine's: it says so (SHEP-43).
+        if argv[:1] == ["auto"] and argv[1:2] != ["feed"]:
+            views = d if isinstance(d, list) else [d] if isinstance(d, dict) else []
+            for v in views:
+                if isinstance(v, dict) and "ref" in v and v.get("machine") is None:
+                    v["machine"] = machine
+            if views:
+                out = json.dumps(d) + "\n"
     sys.stdout.write(out)
     return r.returncode
 
@@ -135,7 +146,8 @@ def main():
         return 0
 
     p = argparse.ArgumentParser(prog="herdr-task", description="Herdr's tasks: add, start and finish work for a folder.",
-                                epilog="Run on another machine's folder: herdr-task --on <machine> <command> ...")
+                                epilog="Run on another machine's folder: herdr-task --on <machine> <command> ... "
+                                       "HERDR_TASK_GH names the gh command to run (default: gh on PATH).")
     sub = p.add_subparsers(dest="cmd")
 
     def cmd(name, fn, help, id=True):
@@ -163,10 +175,19 @@ def main():
                             "review.mustFix=blocker|major|minor, proof=on|off, merge=\"on its own\"|\"after checks\"|\"ask me first\" (\"\": Settings' again)")
         c.add_argument("--base", help="the branch its worktree branches from and merges into (default: its space's Base branch "
                                       "setting, else the folder's current branch)")
+        c.add_argument("--branch", help="its branch's exact name, e.g. a ticket's ABC-2137 (default: the folder's Branch names "
+                                        "setting, else task/<n>-<title words>); refused when that branch exists already (\"\": the pattern's)")
 
     def agent_opts(c):
         c.add_argument("--agent", help="agent key (claude, codex, ...)")
         c.add_argument("--argv", help="how to start it, as a JSON list (default from --agent)")
+
+    def when_opts(c, edit=False):
+        # SHEP-38: Scheduled, a one-off start at a time (a repeating one is an automation: auto add --every).
+        g = c.add_mutually_exclusive_group()
+        g.add_argument("--at", help="start it by itself at this time, this machine's time zone: \"2026-11-06 09:00\", "
+                                    "\"tomorrow 9:00\", \"fri 8:15\", \"18:00\"" + (" (\"\" unschedules: back to To do)" if edit else ""))
+        g.add_argument("--in", dest="in_", metavar="SPAN", help="start it by itself this long from now: \"6h\", \"90m\", \"2 days\"")
 
     cmd("where", cmd_where, "the task folder and store for a folder", id=False)
     c = cmd("list", cmd_list, "list tasks", id=False)
@@ -184,16 +205,19 @@ def main():
     c.add_argument("--after", help="start only once these tasks are done: 3,5; another folder's by its id (WEB-2), another "
                                    "machine's with the machine first (vm-b:HAT-12)")
     c.add_argument("--space", help="the space it's for, whose settings it takes (default: yours)")
+    when_opts(c)
     c = cmd("show", cmd_show, "one task")
     c.add_argument("--evidence", action="store_true", help="with what its Accept card shows: commits, changed files, checks and its proof")
     c = cmd("start", cmd_start, "start a task's agent (no tab: an hc child of the space's coordinator)")
     agent_opts(c)
     c.add_argument("--space")
     c.add_argument("--parent", help="a coordinator's terminal: the agent's hc parent (default: the space's coordinator)")
-    c.add_argument("--now", action="store_true", help="skip the queue")
+    c.add_argument("--now", action="store_true", help="skip the queue (a scheduled task: start it now)")
+    c.add_argument("--branch", help="its branch's exact name (as add --branch), before its worktree is made")
     g = c.add_mutually_exclusive_group()
     g.add_argument("--here", action="store_true")
     g.add_argument("--worktree", action="store_true")
+    when_opts(c)
     c = cmd("ready", cmd_ready, "a worker's task is finished (worktree tasks: committed): it waits in Ready for the person's Accept (opens a pull request on GitHub)")
     c.add_argument("--summary", help=f"what the person now sees or can do, in plain words, at most {SUMMARY_MAX} characters "
                                      "(no file names, flags or jargon); longer is refused")
@@ -203,6 +227,14 @@ def main():
     c.add_argument("--proof", help="its proof artifact's id (herdr-artifact publish prints it); default: its newest artifact titled \"... · Proof\"")
     c.add_argument("--agents-md", help="\"For AGENTS.md\": one line about setting up or testing this repo that the next agent "
                                        "would need and AGENTS.md lacks; the Assistant decides whether to add it")
+    c = cmd("adopt", cmd_adopt, "record a pull request that already exists on a started task, when ready can't (its base differs from "
+                                "the task's recorded one): checks it first, then the task merges into its base. Never creates, pushes or merges")
+    c.description = ("Records a pull request that already exists on a started task. It needs a worktree task, running or ready, with "
+                     "its start commit recorded; this repo's own open pull request for its branch, at exactly its tip; the start "
+                     "commit as the one merge base of that tip and the commit GitHub's base branch holds now; and the recorded "
+                     "base in that commit. gh must answer. Never creates, pushes or merges.")
+    c.epilog = "example: herdr-task adopt HAT-4 --pr 123"
+    c.add_argument("--pr", required=True, help="the pull request: its number or its link")
     c = cmd("reviewed", cmd_reviewed, "a task's agent records one review round of its current commit (Review: on): ready then "
                                       "accepts that commit; uses one of its Review rounds")
     c.add_argument("--report", help="the round's findings in a line (levels, what was fixed)")
@@ -215,11 +247,32 @@ def main():
     c.add_argument("title", help="what can't wait, a few words")
     c.add_argument("--body", help="why, a line or two")
     c.add_argument("--task", help="the task it's about (an Assistant's alert about one of its tasks always reaches the person)")
+    c = cmd("feedback", cmd_feedback, "a problem in Shepherdr itself (not the project's): feedback \"<one line>\" --details \"goal, what "
+            "was tried, what went wrong, expected, suggested fix\" returns at once and your Assistant offers the person to file it "
+            "on GitHub; an Assistant gets whether to offer, and files it only on the person's yes (--file)", id=False)
+    c.add_argument("line", nargs="?", default="", help="the problem in one line")
+    c.add_argument("--details", help="goal, what was tried, what went wrong, expected, suggested fix (no secrets, no logs whole)")
+    c.add_argument("--key", help="the problem's key, as its news line or an earlier answer gave it")
+    g = c.add_mutually_exclusive_group()
+    g.add_argument("--file", action="store_true", help="Assistant, after the person's yes: search open issues for a duplicate, then file it")
+    g.add_argument("--no", action="store_true", help="Assistant: the person said no; never offered again")
+    g.add_argument("--later", action="store_true", help="Assistant on an Autopilot wake: offer it once the person is back")
+    g.add_argument("--list", action="store_true", help="what waits to be offered in this space")
+    for f, words in (("goal", "what they were trying to do"), ("happened", "what went wrong"), ("tried", "what was tried"),
+                     ("expected", "what should have happened"), ("fix", "a suggested fix"), ("repro", "minimal steps to reproduce")):
+        c.add_argument(f"--{f}", help=f"--file: {words}")
+    c.add_argument("--title", help="--file: the issue's title (default: the one line)")
+    c.add_argument("--surface", choices=["web", "window", "both"], help="--file: where the person used Shepherdr")
+    c.add_argument("--repo", help=argparse.SUPPRESS)  # a test's throwaway repo; Settings' otherwise
+    h = c.add_mutually_exclusive_group()
+    h.add_argument("--new", action="store_true", help="--file: file it even though duplicates are open")
+    h.add_argument("--comment", type=int, metavar="N", help="--file: add it as a comment on open issue N instead")
+    c.add_argument("--dry-run", action="store_true", help="--file: show the redacted draft and duplicates, file nothing")
     cmd("done", lambda a: cmd_state(a, "done"), "mark done (the person's call: only when they ask; agents finish with ready)")
     c = cmd("accept", cmd_accept, "the person's Accept on a Ready task: merges first when there is something to merge, then done")
     agent_opts(c)
     c.add_argument("--space")
-    cmd("reopen", lambda a: cmd_state(a, "reopen"), "undo done or ready; a queued task goes back to to do")
+    cmd("reopen", lambda a: cmd_state(a, "reopen"), "undo done or ready; a queued or scheduled task goes back to to do")
     cmd("unarchive", cmd_unarchive, "bring an archived task back into its list (only when the person asks; writing to it does too)")
     c = cmd("edit", cmd_edit, "change a task")
     c.add_argument("--title")
@@ -231,6 +284,7 @@ def main():
     g = c.add_mutually_exclusive_group()
     g.add_argument("--here", action="store_true")
     g.add_argument("--worktree", action="store_true")
+    when_opts(c, edit=True)
     cmd("rm", cmd_rm, "remove a task")
     c = cmd("config", cmd_config, "this folder's settings", id=False)
     c.add_argument("--prefix", help="task ids' prefix, 2 to 5 letters (HAT -> HAT-4); unique on this machine")
@@ -267,6 +321,8 @@ def main():
             c.add_argument("--every", help=HOW)
             c.add_argument("--on", help="events, comma-separated: " + ", ".join(EVENTS))
             c.add_argument("--match", help="only tasks whose title has these words, or branch:<glob>")
+            c.add_argument("--from", dest="from_", help="hear another folder's task events instead of this one's: "
+                           "vm-b:~/dev/app (another machine linked to this one) or a folder here (\"\" clears)")
             c.add_argument("--agent")
             c.add_argument("--space", help="the space its tasks start in (default: yours)")
             c.add_argument("--parent", help="its tasks' agents' parent (default: you)")
@@ -282,6 +338,7 @@ def main():
     c.add_argument("--all", action="store_true", help="every folder's on this machine")
     c.set_defaults(fn=auto_list)
     auto_cmd("show", "one automation")
+    auto_cmd("feed", "this folder's tasks as events read them, as JSON (asked by another machine's --from)", id=False)
     auto_cmd("pause", "stop it firing")
     auto_cmd("resume", "let it fire again")
     ap = sub.add_parser("autopilot", help="a space's Assistant woken on a schedule or by events, with the heartbeat "
@@ -311,6 +368,7 @@ def main():
     c.add_argument("--every", help=HOW + ' "" or off: no schedule; default: follow Everywhere\'s.')
     c.add_argument("--on", help="task events that wake it, comma-separated (\"\": none; default: Everywhere's): " + ", ".join(EVENTS))
     c.add_argument("--heartbeat", help="its heartbeat's words (default: Everywhere's)")
+    c.add_argument("--direction", help="one line it steers toward (\"\" or default: none, it works out what matters from the project)")
     c = ap.add_parser("check", help="check a schedule's words without saving them")
     c.add_argument("--every", required=True)
     c.add_argument("--json", action="store_true")
@@ -322,6 +380,18 @@ def main():
     c.add_argument("--space")
     c.add_argument("--json", action="store_true")
     c.set_defaults(fn=cmd_progress)
+    st = sub.add_parser("star", help="the one-time \"Enjoying Shepherdr?\" card: an Assistant asks the person once, ever, at a good moment").add_subparsers(dest="star")
+    c = st.add_parser("check", help="whether it may ask (never asked, not switched off, enough done)")
+    c.add_argument("--json", action="store_true")
+    c.set_defaults(fn=cmd_star)
+    c = st.add_parser("ask", help="record the ask, then show the card in your chat (a plain link to the repo, and No thanks)")
+    c.add_argument("--folder")
+    c.add_argument("--json", action="store_true")
+    c.set_defaults(fn=cmd_star)
+    c = st.add_parser("answer", help="keep the person's answer from the card")
+    c.add_argument("answer", choices=["github", "no"])
+    c.add_argument("--json", action="store_true")
+    c.set_defaults(fn=cmd_star)
     c = sub.add_parser("complete", help="an Assistant on Autopilot proved its heartbeat's stopping goal: turns Autopilot off")
     c.add_argument("evidence")
     c.add_argument("--space")
@@ -382,7 +452,8 @@ def main():
     agent_opts(c)
     c.add_argument("--space")
     c.add_argument("--reason", help="what to fix (default: what Herdr found)")
-    c = cmd("merge", cmd_merge, "ask the task's agent to merge it (the Merge button)")
+    c = cmd("merge", cmd_merge, "merge it now (the Merge button): a pull request squash-merges on GitHub, unless something holds "
+                                "it back; with none, in a repo not on GitHub, its agent is asked to merge it here")
     agent_opts(c)
     c.add_argument("--space")
     c = cmd("resume", cmd_resume, "continue a stopped task")
@@ -397,6 +468,13 @@ def main():
     c = sub.add_parser("_allow")  # Codex's PermissionRequest hook (own_argv)
     c.add_argument("--command", required=True)
     c.set_defaults(fn=cmd_allow, json=False)
+    c = sub.add_parser("_session-note")  # the chat's SessionStart hook (mods/chat/session-note.sh): an Assistant's extra words
+    c.add_argument("terminal")
+    c.set_defaults(fn=cmd_session_note, json=False)
+    c = sub.add_parser("_hold-news")  # feedback's report, queued for its Assistant in the background (feedback.queue_news)
+    c.add_argument("to")
+    c.add_argument("text")
+    c.set_defaults(fn=lambda a: __import__("herdr_task.news", fromlist=["hold"]).hold(a.to, a.text, "news"), json=False)
     c = sub.add_parser("_track")
     c.add_argument("id")
     c.add_argument("address")
@@ -411,7 +489,8 @@ def main():
         args.fn(args)
     except Fail as e:
         if getattr(args, "json", False):
-            print(json.dumps({"error": str(e)}))
+            cause = getattr(e, "cause", None)
+            print(json.dumps({"error": str(e), **({"cause": cause} if cause else {})}))
         else:
             print(f"herdr-task: {e}", file=sys.stderr)
         return 1

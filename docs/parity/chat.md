@@ -39,7 +39,7 @@ State: ✓ matches, ◇ web-only form (why), ✗ still differs (why).
 | Started from a slot with your words | W:2428 the template part a "New session" row, your words a bubble | D `firstTask()` reads the same data/chat-first/<slot>.txt: "New session" row, then your words | ✓ |
 | Tools row | W:2793 "› Read a file, ran a command" (core summary), opens to each step's line and the first lines it printed | A:316 TurnLine + A:332 ToolSteps (D `activity.summary`, `api/activity` → `results()`) | ✓ (showed raw "Description: command" rows) |
 | Quiet lines sit tight | W spaced(): tools, briefs, news, artifact lines one block, 16px between blocks | C:1084 quiet runs grouped, `gap-4` between blocks | ✓ |
-| Task news line | W:2764 mark (green tick ready, grey tick done, amber started, red needs while live), REF, what, "·", words; Accept at the right while Ready | R:138 NewsRow (D `news`, core `newsWords`/`newsTimeline` incl. start/ready/done from the task's record) | ✓ (was a bordered 2.1 card with raw text) |
+| Task news line | W:2764 mark (green tick ready, grey tick done, amber started, red needs while live), REF, what, "·", words; Review (opens the Accept card) at the right while Ready | R:138 NewsRow (D `news`, core `newsWords`/`newsTimeline` incl. start/ready/done from the task's record) | ✓ (was a bordered 2.1 card with raw text) |
 | Accept on a Ready line | W:2838 opens the Accept card | R:138 → `openAccept` | ✓ |
 | Artifact card / line | W:2748 latest: card "Artifact · v3" + Open; earlier: "Published X v2" | plugins/artifacts ArtifactCard (D emits `artifact` via core `resolveArtifacts`) | ✓ (publishes were missing) |
 | Artifact publishing | W:2807 "Publishing an artifact…" | R:164 PublishingRow (D `publishing`) | ✓ |
@@ -72,6 +72,8 @@ State: ✓ matches, ◇ web-only form (why), ✗ still differs (why).
 | Smiley | W:1852 opens the emoji picker | R:42 → `openPicker` (the full picker) | ✓ |
 | Newest reply while working | W:2477 no band yet | C:1084 `writing` | ✓ |
 | What you just sent | W pending rows have no band | C:102 no band while in the outbox | ✓ |
+| A send whose Enter Claude Code lost (pictures, a long paste) | W sendTyped: Enter again until the box is clear; sent again, only Enter | the same (core/send.js settleBox), once per id (service/send-once.ts) | ✓ |
+| How a send goes | W failed row with resend | Sending… / Uploading n of m / Waiting for a connection, then Not sent with Retry; goes again by itself; in send order (SHEP-93) | ◇ the web's network |
 | Touch | (no touch) | hold a message: X's bar; slide right to reply | ◇ touch instead of hover |
 
 ## Emoji picker (mods/chat-react)
@@ -102,6 +104,7 @@ State: ✓ matches, ◇ web-only form (why), ✗ still differs (why).
 | "#" task list | W:1351 "#4": the folder's tasks, ref + title + state | C:1691 TaskList (the space's tasks from the snapshot) | ✓ |
 | Reply strip | W quote line with × in the box | C:1993 "Replying to …" × | ◇ 2.1's wording kept for whom it quotes |
 | Queued (held) message | W:2999 a row over the box: clock, its words, "Queued · Sends when the agent is free", Send now, Edit, × | C Held: the same row over the box (held ones are kept out of the conversation) | ✓ |
+| In its CLI's queue | W `queued` row under the bubble: "Queued · it reads it at its next step · Send now" (Claude Code: Ctrl+Enter while its screen offers it, `steerNow`) | C `InQueue`: the same line, Send now acts `steer` | ✓ (SHEP-70) |
 | Draft kept | W data/chat-drafts | C drafts (useDraft) | ✓ |
 
 ## Model menu (mods/chat-models)
@@ -159,7 +162,7 @@ State: ✓ matches, ◇ web-only form (why), ✗ still differs (why).
 | Writing it down | W "Writing", spinner in Done | C "Writing", Done disabled | ✓ |
 | Call row | W:3259 Mute (mic / mic-off), wave, Connecting / Listening / Thinking / Speaking / Muted + m:ss, red round X | V:98 CallBox: the same, red round X | ✓ |
 | No key | W:2936 "Voice calls need an ElevenLabs key", "Add your key in Settings › Secrets as ELEVENLABS_API_KEY, then press the call button again.", Open Secrets | V:34 CallHelp over the box, same words, Open Secrets | ✓ (was a top error bar) |
-| Call bar elsewhere | B "Voice call with X · m:ss", Go back, red round X | V:146 CallLine: same words, Go back, red round X | ◇ 2.1's green pill look |
+| A call elsewhere (SHEP-51, SHEP-66) | spaces-chat callMark: a green pill with the wave and m:ss on the call's space row, goes back to its chat; the narrow rail shows the green wave on its space instead | places CallMark: the same pill on the space row; where no sidebar shows it (phone, tablet, shut sidebar) a slim soft-green band at the top with the space and clock, which goes back to its chat | ◇ the window always shows its sidebar or its rail; a phone or a shut web sidebar has neither |
 | Call error | B "Voice call: …" with × | V:168 | ✓ |
 
 ## Image viewer (mods/chat-image)

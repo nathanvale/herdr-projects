@@ -24,7 +24,7 @@ import { machines, layout, layouts, exec, home, run, theme, props, closeOverlay,
 import { spaces, terminals, agents, inRender } from "./live.js";
 import { taskDot } from "./dot.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
-import { busyAgain } from "./core/tasks.js";
+import { busyAgain, onIt } from "./core/tasks.js";
 // A space's name as the sidebar (and the web app) says it: never "~" (core/spaces.js).
 import { spaceName } from "./core/spaces.js";
 import { openViewer, showViewer, chatArea } from "./artview.js";
@@ -42,7 +42,7 @@ const ROW = 48, HEAD = 30, MORE = 32;
 const LIST_MAX = 420;
 // Task ids in a monospace column (JetBrains Mono: 0.6 em a character), so titles line up.
 const ID_FONT = "JetBrains Mono", ID_SIZE = TEXT.id, ID_CHAR = ID_SIZE * 0.6;
-const STATUS = { needs: "Needs you", working: "Working", merging: "Merging", ready: "Ready", queued: "Queued", todo: "To do", done: "Done" };
+const STATUS = { needs: "Needs you", working: "Working", merging: "Merging", ready: "Ready", queued: "Queued", scheduled: "Scheduled", todo: "To do", done: "Done" };
 
 // The Tasks panel's reads (tasklists.js: READ_LISTS, taskLists); every artifact registry the
 // same way.
@@ -179,8 +179,11 @@ export default class Jump extends View {
   // A task's status as the Tasks panel names it, in short (its full rules: tasks/main.js place()).
   status(task, live) {
     const st = task.state;
-    if (["todo", "queued", "done"].includes(st)) return st;
-    if (task.attention || live.some((a) => a.status === "blocked")) return "needs";
+    if (["todo", "queued", "scheduled", "done"].includes(st)) return st;
+    // A problem (failing checks) its agent is on (core/tasks.js onIt()): Working; nobody on it: Needs you.
+    const fixing = task.attention && onIt(task, live);
+    if ((task.attention && !fixing) || live.some((a) => a.status === "blocked")) return "needs";
+    if (fixing) return "working";
     // Back at work after it said ready (core/tasks.js busyAgain()): Working.
     if (st === "ready" && !busyAgain(task, live)) return task.merge_requested && live.length ? "merging" : "ready";
     if (live.some((a) => a.status === "working")) return "working";

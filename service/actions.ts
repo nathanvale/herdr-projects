@@ -3,28 +3,86 @@
 // Anything else is refused. Inputs are checked here; commands run with argument lists, never a shell line.
 import type { Hub } from "./hub.ts";
 import { join } from "node:path";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { sendBody, messageBody, refusal, reactionLine, mentionedIn, taskTag } from "../core/send.js";
+import { sendBody, steerNow, messageBody, refusal, reactionLine, mentionedIn, taskTag } from "../core/send.js";
 import { kindOf } from "../core/chat-reader.js";
+import { WORDS } from "../core/chat-view.js";
 import * as AGa from "../core/agents.js";
-const { sessionOf, forkArgv } = AGa as any;
+import { answerCodex } from "./codex-ask.ts";
+const { sessionOf, forkArgv, inOtherFolder, OTHER_FOLDER } = AGa as any;
 import * as SP from "../core/spaces.js";
 const { READ, withMove, withSection, withoutSection, withSectionName, withIcon, withMachineLook, DELETED, deletedSection, withRestoredSection } = SP as any;
 import type { Compat } from "./compat.ts";
 import { worktreeAct } from "./worktrees.ts";
+import { noteFailed, once } from "./send-once.ts";
 import { execTemplate } from "./spaces.ts";
 import * as MA from "../core/machine-add.js";
 import { exec } from "./model.ts";
+import { closeSaved, renameSaved, orderSaved, withoutSpace, splitId } from "./saved-spaces.ts";
 
 const APP = process.env.HERDR_APP_HOME || join(homedir(), ".config", "herdr-app");
+// The window's own space log (lib/spacelog.js): a space the service closed or renamed with no window is traced there too
+function logSpace(action: string, id: string, name: string | null, extra: Record<string, unknown> = {}) {
+  try {
+    const dir = join(APP, "data", "backups");
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(join(dir, "space-log.jsonl"), JSON.stringify({ at: new Date().toISOString(), machine: splitId(id).machine, space: id, name, action, ...extra, by: "web, no window (service/saved-spaces.ts)" }) + "\n");
+  } catch {}
+}
 const ATTACH = join(process.env.HERDR_APP_HOME || join(homedir(), ".config", "herdr-app"), "data", "chat-attach");
+/** files in one message at most (the page says so before it sends: web/plugins/chat/client.tsx) */
+export const MAX_FILES = 50;
 const ADDR = /^([\w.-]+\/)?t[0-9a-z]+$/;
 const REF = /^[A-Z][A-Z0-9]*-\d+$/;
 const MACHINE = /^[\w.-]+$/;
 
+/** One page's message to its agent, its files' paths after its words. -> { ok, at } once it is in the agent's terminal
+ *  (Claude Code's box clear: core/send.js settleBox), or { waiting } held for the agent's turn; else it throws. */
+async function sendNow(hub: Hub, b: any, compat: Compat, again = false) {
+  const a = addr(b.addr);
+  const text = str(b.text ?? "").trim();
+  if (!text && !(Array.isArray(b.attachments) && b.attachments.length)) throw new Error("nothing to send");
+  const t = hub.terminals.get(a);
+  if (!t || t.state !== "live") throw new Error("That agent isn't running.");
+  const io = { hc: asPerson(hub), sleep: (ms: number) => Bun.sleep(ms), status: () => (hub.terminals.get(a) as any)?.status?.state ?? null };
+  // files sent with it: their paths after the words, as the window's chat sends them (copied first to another machine)
+  const sent: string[] = Array.isArray(b.attachments) ? b.attachments : [];
+  // never some of them quietly
+  if (sent.length > MAX_FILES) throw new Error(`At most ${MAX_FILES} files in one message.`);
+  for (const p of sent) if (typeof p !== "string" || !p.startsWith(ATTACH + "/") || p.includes("/../")) throw new Error("That file isn't one sent from here.");
+  // all at once
+  const files = await Promise.all(sent.map(async (p) => {
+    if (!a.includes("/")) return p;
+    const put = await hc(["put", a, p, "--json"]);
+    let landed: string | null = null;
+    try { landed = JSON.parse(put.stdout || "{}").path ?? null; } catch {}
+    if (put.code !== 0 || !landed) throw new Error("A file didn't reach that machine.");
+    return landed;
+  }));
+  const body = [messageBody({ text, quote: typeof b.quote === "string" ? b.quote.slice(0, 2000) : null, tags: typeof b.tags === "string" ? b.tags : "" }), ...files].filter(Boolean).join("\n\n");
+  // held on purpose (Ctrl+Enter, a long press): it goes once the agent stops working
+  const st = (hub.terminals.get(a) as any)?.status?.state;
+  if (b.hold && (st === "working" || st === "blocked")) {
+    const cid = typeof b.cid === "string" ? b.cid.slice(0, 80) : undefined;
+    // once it goes: the chat knows it again by its words (its id and files), so the page sees it went in
+    const note = () => { if (cid) compat.noteSend?.(a, { cid, text, files: sent, at: Date.now() }); };
+    held.push({ addr: a, kind: kindOf(t) ?? "", body, hub, cid, note });
+    drain();
+    return { ok: true, waiting: true, waitsFor: "turn" };
+  }
+  // when it began to go in, by this clock: the page knows it again in the chat by it (web/src/outbox.ts sameAs)
+  const at = Date.now();
+  // what it was, so the chat knows it again while it waits in the CLI's queue
+  if (typeof b.cid === "string") compat.noteSend?.(a, { cid: b.cid.slice(0, 80), text, files: sent, at });
+  const r: any = await sendBody(io, a, kindOf(t) ?? "", body, again);
+  // (stuck: it stayed in Claude Code's box; sent again with this id it gets only its Enter: send-once.ts)
+  if (r.code !== 0) throw Object.assign(new Error(refusal(r).message), { stuck: !!r.stuck });
+  return { ok: true, at };
+}
+
 // Messages held until their agent is free, sent in order, each once.
-const held: { addr: string; kind: string; body: string; hub: Hub; cid?: string; now?: boolean }[] = [];
+const held: { addr: string; kind: string; body: string; hub: Hub; cid?: string; now?: boolean; note?: () => void }[] = [];
 let draining: ReturnType<typeof setInterval> | null = null, busy = false;
 function drain() {
   draining ??= setInterval(async () => {
@@ -39,7 +97,12 @@ function drain() {
         const i = held.indexOf(m);
         if (i < 0) continue;
         held.splice(i, 1);
-        if (alive) await sendBody({ hc: asPerson(m.hub), sleep: (ms: number) => Bun.sleep(ms), status: () => (m.hub.terminals.get(m.addr) as any)?.status?.state ?? null }, m.addr, m.kind, m.body).catch(() => null);
+        // one that can't go now is told to its page (Chat.failed: Not sent, with Retry), never dropped quietly
+        if (alive) m.note?.();
+        const r: any = alive
+          ? await sendBody({ hc: asPerson(m.hub), sleep: (ms: number) => Bun.sleep(ms), status: () => (m.hub.terminals.get(m.addr) as any)?.status?.state ?? null }, m.addr, m.kind, m.body).catch((e: Error) => ({ code: 1, stderr: e.message }))
+          : { code: 1, stderr: "That agent isn't running." };
+        if (r.code !== 0 && m.cid) noteFailed(m.addr, m.cid, refusal(r).message, !!r.stuck);
       }
     } finally {
       busy = false;
@@ -78,12 +141,18 @@ function firstWhenIdle(hub: Hub, addr: string, text: string) {
 }
 
 async function run(cmd: string[]) {
-  const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+  // a program that isn't there (herdr-app on a web-only install) fails as any other: its code, not a throw
+  let p: ReturnType<typeof Bun.spawn<"ignore", "pipe", "pipe">>;
+  // the window's herdr-app: SHEPHERDR_HERDR_APP in tests (as SHEPHERDR_HC for hc)
+  if (cmd[0] === "herdr-app" && process.env.SHEPHERDR_HERDR_APP) cmd = [process.env.SHEPHERDR_HERDR_APP, ...cmd.slice(1)];
+  try { p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", stdin: "ignore" }); }
+  catch (e) { return { code: 127, stdout: "", stderr: String(e) }; }
   const [stdout, stderr] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
   return { code: await p.exited, stdout, stderr };
 }
 
 export const hc = (args: string[]) => run([process.env.SHEPHERDR_HC || "hc", ...args]);
+
 // hc for core/send.js, its sends as the person's (Hub.send: no <hc from=…> tag on another machine)
 const asPerson = (hub: Hub) => (args: string[]) => args[0] === "send" ? hub.send(args[1], args[2]) : hc(args);
 
@@ -139,6 +208,15 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     const why = await (compat as any).watch?.press(str(b.question, 300), typeof b.choice === "number" ? b.choice : -1);
     return why ? { ok: false, error: why } : { ok: true };
   }
+  if (b?.type === "answer" && typeof b.question === "string" && b.question.startsWith("cq:")) {
+    // Codex's own questions (compat.ts codexQuestion): answered on its screen, as a person would
+    const a = chat(b.chat);
+    const item = (compat.reader?.(a)?.conv?.items ?? []).find((x: any) => x.kind === "ask" && x.id === b.question.slice(3));
+    if (!item?.questions?.length || item.closed) throw new Error("That question was answered already.");
+    const why = await answerCodex(hc, a, item.questions, b);
+    if (why) throw new Error(why);
+    return { ok: true };
+  }
   if (b?.type === "answer" && typeof b.question === "string") {
     // a hook ask's card (its id is the request's): answered as the window's card answers it
     if (!compat.asks) throw new Error("No questions here.");
@@ -146,7 +224,7 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
       choices: Array.isArray(b.choices) ? b.choices.filter((n: unknown) => typeof n === "number") : undefined,
       note: typeof b.note === "string" ? b.note.slice(0, 4000) : undefined, other: typeof b.other === "string" ? b.other.slice(0, 4000) : undefined,
       answers: Array.isArray(b.answers) ? b.answers.slice(0, 20).map((x: unknown) => String(x ?? "").slice(0, 4000)) : undefined,
-      terminal: b.terminal === true, talk: b.talk === true });
+      terminal: b.terminal === true, talk: b.talk === true, dismiss: b.dismiss === true });
     return { ok: true };
   }
   if (b?.type === "react" && typeof b.chat === "string" && typeof b.message === "string" && typeof b.emoji === "string" && b.emoji.length <= 16) {
@@ -196,7 +274,12 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     } else if (b.under.startsWith("m:")) {
       for (const [i, id] of ids.entries()) {
         const r = await run(["herdr-app", "do", "space.move", "--id", id, "--index", String(i + 1)]);
-        if (r.code !== 0) throw new Error("Moving spaces needs the Herdr window open.");
+        if (r.code !== 0) {
+          // no window: the machine's saved spaces in that order (service/saved-spaces.ts)
+          const key = b.under.slice(2);
+          await orderSaved(hub, key === compat.host ? null : key, ids);
+          break;
+        }
       }
       return { ok: true };
     } else throw new Error("Machines keep their order: drag spaces and sections instead.");
@@ -239,7 +322,13 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     // an empty name gives it Herdr's own back, as the window's Rename dialog does
     if (name || b.unname === true) {
       const r = await run(["herdr-app", "do", "space.rename", "--id", b.id, "--name", name]);
-      if (r.code !== 0) throw new Error("Renaming a space needs the Herdr window open.");
+      // no window: its saved name (Herdr's own name back is the window's to give)
+      if (r.code !== 0) {
+        if (!name) throw new Error("Giving a space Herdr's own name back needs the Herdr window open.");
+        const done = await renameSaved(hub, b.id, name);
+        if (!done) throw new Error("That space isn't here any more.");
+        logSpace("rename", b.id, done.was, { to: name });
+      }
     }
     return { ok: true };
   }
@@ -252,6 +341,10 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
       ...(b.place.includes("/") && folder ? ["--space-folder", folder] : []), "--json"]);
     if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim().split("\n").pop() || "Autopilot didn't change.");
     return { ok: true };
+  }
+  if (b?.type === "model-pin" && compat.agents && ["claude", "codex"].includes(b.agent) && typeof b.model === "string" && /^[\w.\[\]-]{1,60}$/.test(b.model)) {
+    // the model menu's star: pinned to the top of its agent's list (core/agents.js PICKS_FILE, as the window's)
+    return { ok: true, picks: (compat.agents as any).pin(b.agent, b.model) };
   }
   if ((b?.type === "restart-info" || b?.type === "model-menu" || b?.type === "restart") && typeof b.chat === "string" && compat.agents) {
     // the model menu: what it runs on and its choices (model-menu: the window's, mods/chat-models); a restart on
@@ -327,7 +420,12 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     const tab = typeof b.tab === "string" ? b.tab : t?.labels?.["herdr.coordinator.tab"], name = b.name.trim().slice(0, 80);
     if (!tab || !/^[\w./:-]{1,200}$/.test(tab)) throw new Error("This space has no Assistant tab.");
     const r = await run(["herdr-app", "do", "tab.rename", "--id", tab, "--name", name]);
-    if (r.code !== 0) throw new Error("Renaming a tab needs the Herdr window open.");
+    if (r.code !== 0) {
+      // no window: its saved name; a tab's place reads the space's machine ("vm/…"), the Assistant's label its own id
+      if (!name) throw new Error("Giving a tab Herdr's own name back needs the Herdr window open.");
+      const there = a?.includes("/") && !tab.includes("/") ? `${a.split("/")[0]}/${tab}` : tab;
+      if (!(await renameSaved(hub, there, name))) throw new Error("That tab isn't here any more.");
+    }
     return { ok: true };
   }
   if ((b?.type === "tab-close" || b?.type === "tab-move" || b?.type === "tab-end") && typeof b.tab === "string" && /^[\w./:-]{1,200}$/.test(b.tab)) {
@@ -380,7 +478,8 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     return { ok: true };
   }
   if (b?.type === "space-remove" && typeof b.place === "string" && compat.shared) {
-    // Close a space: the window closes its own (herdr-app do space.close); the service forgets one of its own and ends its Assistant
+    // Close a space: the window closes its own (herdr-app do space.close), or with no window the service closes it in
+    // the window's saved spaces (service/saved-spaces.ts); the service forgets one of its own and ends its Assistant
     const own = Array.isArray(compat.shared.value("spaces")) ? compat.shared.value("spaces") : [];
     const mine = own.find((x: any) => (x.machine ? `${x.machine}/${x.id}` : x.id) === b.place);
     if (mine) {
@@ -389,7 +488,13 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
       return { ok: true };
     }
     const r = await run(["herdr-app", "do", "space.close", "--id", b.place, "--confirmed", "true"]);
-    if (r.code !== 0) throw new Error("Closing a space needs the Herdr window open.");
+    if (r.code !== 0) {
+      const gone = await closeSaved(hub, b.place);
+      if (!gone) throw new Error("That space isn't here any more.");
+      logSpace("close", b.place, gone.name);
+      const bar = compat.shared.value("spaces-chat") ?? {}, next = withoutSpace(bar, b.place);
+      if (next !== bar) await compat.shared.set("spaces-chat", next);
+    }
     return { ok: true };
   }
   if (b?.type === "rewind" && typeof b.chat === "string" && typeof b.message === "string") {
@@ -412,7 +517,7 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     // a copy of the conversation in a new tab of its space, through the CLI's own fork (the window makes the tab)
     const a = chat(b.chat), t: any = hub.terminals.get(a), r = compat.reader?.(a);
     const kind = kindOf(t) ?? "claude", session = sessionOf(kind, r?.path ?? null);
-    if (!session) throw new Error("This conversation has no saved session to fork.");
+    if (!session) throw new Error(inOtherFolder(kind, r?.path ?? null) ? OTHER_FOLDER : "This conversation has no saved session to fork.");
     const space = ["herdr.space", "herdr.task.space", "herdr.coordinator.space"].map((k) => t?.labels?.[k]).find(Boolean);
     const res = await run(["herdr-app", "do", "tab.new", ...(space ? ["--space", space] : []), "--folder", t?.foreground?.cwd ?? t?.cwd ?? "", "--argv", JSON.stringify(forkArgv(kind, t?.foreground?.argv ?? t?.argv ?? [], session))]);
     if (res.code !== 0) throw new Error("A fork opens as a tab in the Herdr window: it needs the window open.");
@@ -466,14 +571,14 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     const tags = mentionedIn(String(b.text ?? ""), compat.tasksFor(b.chat)).map((x: any) => taskTag(x, x.ref ?? `#${x.id}`)).join("");
     b = { ...b, addr: a, quote: quoted, tags };
   }
-  else if (b?.type === "stop" && typeof b.chat === "string") b = { ...b, addr: chat(b.chat) };
+  else if ((b?.type === "stop" || b?.type === "steer") && typeof b.chat === "string") b = { ...b, addr: chat(b.chat) };
   else if (b?.type === "stop-job" && typeof b.chat === "string" && typeof b.job === "string") {
     // Stop on a background shell or watcher (core/bg-jobs.js): its processes end; its CLI then tells the agent
     const r = compat.reader?.(chat(b.chat));
     if (!r || !b.job.startsWith("b:") || !(await r.stopJob(b.job.slice(2)))) throw new Error("It isn't running any more.");
     return { ok: true };
   }
-  else if ((b?.type === "close" || b?.type === "delete" || b?.type === "archive" || b?.type === "task-resume") && typeof b.chat === "string") {
+  else if ((b?.type === "close" || b?.type === "delete" || b?.type === "archive" || b?.type === "reopen" || b?.type === "task-resume" || b?.type === "schedule") && typeof b.chat === "string") {
     // a task's row menu: its chat key is "<task>/worker" (or 2.1's "/Agent")
     const t = compat.taskOf(b.chat.split("/")[0]);
     if (!t) throw new Error("That task isn't here any more.");
@@ -505,35 +610,18 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
   }
   switch (b?.type) {
     case "send": {
-      const a = addr(b.addr);
-      const text = str(b.text ?? "").trim();
-      if (!text && !(Array.isArray(b.attachments) && b.attachments.length)) throw new Error("nothing to send");
-      const t = hub.terminals.get(a);
+      // one page's send asked again (its answer lost on the way, a reload, Retry): the same one, never twice
+      const cid = typeof b.cid === "string" && b.cid ? b.cid.slice(0, 80) : null;
+      if (!cid) return sendNow(hub, b, compat);
+      return once(cid, (again) => sendNow(hub, b, compat, again));
+    }
+    case "steer": {
+      // Send now on a message in Claude Code's own queue (#662): its Ctrl+Enter, only while its screen offers it
+      const a = addr(b.addr), t = hub.terminals.get(a);
       if (!t || t.state !== "live") throw new Error("That agent isn't running.");
       const io = { hc: asPerson(hub), sleep: (ms: number) => Bun.sleep(ms), status: () => (hub.terminals.get(a) as any)?.status?.state ?? null };
-      // files sent with it: their paths after the words, as the window's chat sends them (copied first to another machine)
-      const sent: string[] = Array.isArray(b.attachments) ? b.attachments.slice(0, 20) : [];
-      for (const p of sent) if (typeof p !== "string" || !p.startsWith(ATTACH + "/") || p.includes("/../")) throw new Error("That file isn't one sent from here.");
-      // all at once
-      const files = await Promise.all(sent.map(async (p) => {
-        if (!a.includes("/")) return p;
-        const put = await hc(["put", a, p, "--json"]);
-        let landed: string | null = null;
-        try { landed = JSON.parse(put.stdout || "{}").path ?? null; } catch {}
-        if (put.code !== 0 || !landed) throw new Error("A file didn't reach that machine.");
-        return landed;
-      }));
-      const body = [messageBody({ text, quote: typeof b.quote === "string" ? b.quote.slice(0, 2000) : null, tags: typeof b.tags === "string" ? b.tags : "" }), ...files].filter(Boolean).join("\n\n");
-      // held on purpose (Ctrl+Enter, a long press): it goes once the agent stops working
-      const st = (hub.terminals.get(a) as any)?.status?.state;
-      if (b.hold && (st === "working" || st === "blocked")) { held.push({ addr: a, kind: kindOf(t) ?? "", body, hub, cid: typeof b.cid === "string" ? b.cid.slice(0, 80) : undefined }); drain(); return { ok: true, waiting: true, waitsFor: "turn" }; }
-      // when it began to go in, by this clock: the page knows it again in the chat by it (web/src/outbox.ts sameAs)
-      const at = Date.now();
-      // what it was, so the chat knows it again while it waits in the CLI's queue
-      if (typeof b.cid === "string") compat.noteSend?.(a, { cid: b.cid.slice(0, 80), text, files: sent, at });
-      const r = await sendBody(io, a, kindOf(t) ?? "", body);
-      if (r.code !== 0) throw new Error(refusal(r).message);
-      return { ok: true, at };
+      if (!(await steerNow(io, a))) throw new Error(WORDS.notNow);
+      return { ok: true };
     }
     case "stop": {
       const r = await hc(["interrupt", addr(b.addr)]);
@@ -568,11 +656,22 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
       if (r.code !== 0 || out?.error || !out?.terminal) throw new Error(out?.error || r.stderr.trim().split("\n").pop() || "Its agent didn't start.");
       return { ok: true, terminal: out.terminal };
     }
+    // a task's Start later (SHEP-38): herdr-task schedules it, takes that back, or starts it now; its words refused come back
+    case "schedule": {
+      const { ref, folder, machine } = taskOf(b);
+      const args = b.now ? ["start", ref, "--now"] : b.off ? ["edit", ref, "--at", ""]
+        : typeof b.in === "string" ? ["edit", ref, "--in", str(b.in, 80)] : ["edit", ref, "--at", str(b.at, 80)];
+      const r = await task(args, folder, machine);
+      let out: any = null;
+      try { out = JSON.parse(r.stdout); } catch {}
+      if (r.code !== 0 || out?.error) return { ok: false, error: out?.error || r.stderr.trim().split("\n").pop() || "herdr-task refused it." };
+      return { ok: true, why: out?.why ?? null };
+    }
     // the person's own calls on a task, as herdr-task makes them: done, removed, or back from the archive
-    case "close": case "delete": case "archive": {
+    case "close": case "delete": case "archive": case "reopen": {
       if (b.type === "archive" && b.on !== false) throw new Error("Done tasks archive themselves: Settings › Tasks › Archive Done after.");
       const { ref, folder, machine } = taskOf(b);
-      const r = await task([b.type === "close" ? "done" : b.type === "delete" ? "rm" : "unarchive", ref], folder, machine);
+      const r = await task([b.type === "close" ? "done" : b.type === "delete" ? "rm" : b.type === "reopen" ? "reopen" : "unarchive", ref], folder, machine);
       let out: any = null;
       try { out = JSON.parse(r.stdout); } catch {}
       if (r.code !== 0 || out?.error) return { ok: false, error: out?.error || r.stderr.trim().split("\n").pop() || "herdr-task refused it." };

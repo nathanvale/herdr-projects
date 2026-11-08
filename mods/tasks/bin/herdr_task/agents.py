@@ -10,12 +10,42 @@ from .base import hc_json, HOME, now, RANK, SHELLS
 
 # ---- live agents ----------------------------------------------------------------------------
 
-def live_agents(key):
-    """The task's live terminals, with labels (hc ls leaves labels out unless filtering by them).
-    Agents start inside the person's shell, which stays when the agent exits: agent_running()."""
+# A worker's own helper agents (SHEP-54): hc children of its terminal it starts itself (`hc run`), labelled
+# herdr.task (its task) and herdr.role reviewer or helper. Never one of the task's agents: no second worker, no
+# status of their own; a working one keeps its quiet worker Working (own_work).
+HELPER_ROLES = ("reviewer", "helper")
+
+
+def parent_of(k):
+    """Its parent's address as hc ls writes this terminal's: another machine's names its parent there ("t5" for "vm/t5")."""
+    p, a = str(k.get("parent") or ""), str(k.get("address") or "")
+    return f"{a.split('/')[0]}/{p}" if p and "/" in a and "/" not in p else p or None
+
+
+def is_helper(k, mine=()):
+    """hc ls gives no labels: a helper is also told by its parent, another terminal of the same task
+    (a worker's parent is its Assistant, never the task's)."""
+    return bool(k.get("parent")) and ((k.get("labels") or {}).get("herdr.role") in HELPER_ROLES or parent_of(k) in mine)
+
+
+def _live(key):
     d = hc_json("ls", "--label", f"herdr.task={key}") or {}
-    return [dict(k, labels=dict(k.get("labels") or {}, **{"herdr.task": key}))
+    live = [dict(k, labels=dict(k.get("labels") or {}, **{"herdr.task": key}))
             for k in d.get("terminals", []) if k.get("state") == "live"]
+    mine = {k.get("address") for k in live}
+    return [(k, is_helper(k, mine)) for k in live]
+
+
+def live_agents(key):
+    """The task's live terminals, with labels (hc ls leaves labels out unless filtering by them),
+    its worker's helpers left out (live_helpers()). Agents start inside the person's shell, which
+    stays when the agent exits: agent_running()."""
+    return [k for k, helper in _live(key) if not helper]
+
+
+def live_helpers(key):
+    """The helper agents its worker started (a reviewer, a second opinion), still live."""
+    return [k for k, helper in _live(key) if helper]
 
 
 def detail(k):
@@ -47,10 +77,10 @@ def status_of(task, live):
     return best or "stopped"
 
 
-# What people see a task as: one of seven, derived, never stored. From the task's record (todo,
-# queued, ready, done, attention, a merge asked for or waiting on checks) and its agents' own
+# What people see a task as: one of eight, derived, never stored. From the task's record (todo,
+# scheduled (SHEP-38: starts by itself at a time), queued, ready, done, attention, a merge asked for or waiting on checks) and its agents' own
 # Herdr status (working, blocked, idle/done), which agents report as always.
-STATUSES = {"todo": "To do", "queued": "Queued", "working": "Working", "needs": "Needs you",
+STATUSES = {"todo": "To do", "scheduled": "Scheduled", "queued": "Queued", "working": "Working", "needs": "Needs you",
             "ready": "Ready", "merging": "Merging", "done": "Done"}
 
 
@@ -58,14 +88,19 @@ def task_status(task, live):
     """(status, needs, why): a STATUSES key; for Needs you what kind ("attention", "asks",
     "reply", "stopped") and a one-line reason. live = its running agents (hc records)."""
     st = task["state"]
+    if st == "scheduled":
+        from .when import starts_words
+        return "scheduled", None, starts_words(task.get("scheduled_for") or now(), now())
     if st not in ("running", "ready"):
         return (st if st in STATUSES else "todo"), None, None
-    if task.get("attention"):
-        return "needs", "attention", task["attention"]
     states = []
     for k in live:
         x = k.get("status")
         states.append(x.get("state") if isinstance(x, dict) else x)
+    # What Herdr found that stops it (failing checks, a conflict): Needs you, unless its agent is
+    # already on it (on_it()); then it is Working, with its agent's own status line.
+    if task.get("attention") and not on_it(task, live):
+        return "needs", "attention", task["attention"]
     # Cut off by its provider (retry_pass): still Working while Herdr waits to tell it to carry
     # on; Needs you once the tries are used up, or at once for what waiting can't fix.
     r = task.get("retry") if st == "running" else None
@@ -75,6 +110,8 @@ def task_status(task, live):
         return "needs", "asks", REASONS["question"]
     if busy_again(task, live):
         return "working", None, WORKING_AGAIN
+    if task.get("attention"):
+        return "working", None, WORKING_AGAIN if st == "ready" else None
     if st == "ready":
         if task.get("merge_requested") and live:
             return "merging", None, None
@@ -87,6 +124,11 @@ def task_status(task, live):
     # Just started: its terminal still runs the shell that starts the agent, or the agent is idle
     # before its first message lands. Working, until it ends or STARTING_MS pass.
     if starting(task):
+        return "working", None, None
+    # Quiet without saying ready, but on its own work (SHEP-53): a background shell, Monitor or
+    # agent still running, or its fresh status line says it waits on CI or a review: Working, its
+    # status line shown, unless its last message asks the person something.
+    if live and own_work(task, live):
         return "working", None, None
     # Quiet without saying ready: alive, it ended its turn (view() says on what: its question or
     # its last sentence); its process gone, the agent stopped.
@@ -125,6 +167,31 @@ def busy_again(task, live):
                and (k.get("turn") or 0) >= (seen or {}).get(k.get("address"), 0) for k in live)
 
 
+# ---- someone is on what needs the person -------------------------------------------------------
+# A task's attention (failing checks, a conflict, a failed merge) needs the person only while
+# nobody is on it (SHEP-8). On it: one of its agents is at work (working, or asking: then the
+# question shows), it was just handed the problem (herdr-task fix, GitHub news: handed_at) and is
+# starting, or its agent said what it's doing (herdr-task status) since the problem came up and
+# that is still fresh: an agent that set its line and waits on CI in the background is idle to
+# Herdr. Nobody on it and the problem still there: Needs you. As core/tasks.js onIt().
+ON_IT_MS = 30 * 60000  # how long an agent's own status line counts, or its own time left if longer
+
+
+def on_it(task, live):
+    """live: its running agents (hc records). Cheap: the task's record and their status only."""
+    if any(status_word(k) in ("working", "blocked") and (k.get("labels") or {}).get("herdr.role") != "reviewer"
+           for k in live):
+        return True
+    if now() - (task.get("handed_at") or 0) < STARTING_MS:
+        return True
+    p = task.get("progress") or {}
+    said = p.get("set") or 0
+    if p.get("by") or not live or not said or said < (task.get("attention_at") or 0):
+        return False
+    left = p.get("left") if isinstance(p.get("left"), (int, float)) else 0
+    return now() - said < max(ON_IT_MS, left)
+
+
 def status_word(k):
     x = k.get("status")
     return x.get("state") if isinstance(x, dict) else x
@@ -158,9 +225,9 @@ def fit(text, n=LINE_MAX):
     return cut.rstrip(" ,;:.-") + "…"
 
 
-def log_tail(log, size=262144):
-    """The last lines of an agent's session log (Claude Code's or Codex's JSONL), parsed; [] when
-    it can't be read. A first line cut in half is left out."""
+def log_lines(log, size=262144):
+    """The last lines of an agent's session log, as text; [] when it can't be read. A first line
+    cut in half is left out."""
     if not log:
         return []
     try:
@@ -171,8 +238,14 @@ def log_tail(log, size=262144):
             lines = f.read().decode("utf-8", "replace").split("\n")
     except OSError:
         return []
+    return lines[1:] if at else lines
+
+
+def log_tail(log, size=262144):
+    """The last lines of an agent's session log (Claude Code's or Codex's JSONL), parsed; [] when
+    it can't be read. A first line cut in half is left out."""
     out = []
-    for raw in lines[1:] if at else lines:
+    for raw in log_lines(log, size):
         try:
             d = json.loads(raw)
         except ValueError:
@@ -408,3 +481,142 @@ def starting(task):
         return False
     at = max([x for x in (task.get("started"), (last or {}).get("at"), (task.get("review") or {}).get("at")) if isinstance(x, (int, float))] or [0])
     return now() - at < STARTING_MS
+
+
+# ---- its own work in the background -------------------------------------------------------------
+# An agent that ended its turn with its own work still running (SHEP-53) is not waiting on the
+# person: Claude Code's background shells, Monitors and background agents (their start has an id,
+# a <task-notification> with a status ends it), Codex's background terminals (a process left
+# running with a session id, until an output says it exited). Or it said so: its status line, set
+# this turn and still fresh, says it waits on CI, a check, a review or a background job ("Waiting on
+# review round 1", "Codex reviewing the change"), and no background job of its ended since.
+# It asks the person something (a question tool or permission: blocked; its last message asks):
+# Needs you all the same. As core/tasks.js place() with task.own_work, which news_pass keeps.
+BG_LOG_BYTES = 1048576
+BG_MAX_MS = 3 * 3600_000  # a background job started longer ago than this no longer counts
+BG_STARTED = re.compile(r"Command running in background with ID: (\w+)|Monitor started \(task (\w+)|Async agent launched[\s\S]*?agentId: (\w+)")
+BG_ENDED = re.compile(r"<task-id>(\w+)</task-id>(?:(?!</task-notification>)[\s\S])*?<status>(\w+)</status>")
+CODEX_RUNNING = re.compile(r"Process running with session ID (\d+)")
+CODEX_OBJECT = re.compile(r"\{[^{}]*\"session_id\"\s*:\s*(\d+)[^{}]*\}")
+CODEX_EXITED = re.compile(r"\"exit_code\"\s*:|Process exited with code")
+WAITS_ON = re.compile(r"\b(wait\w*|watch\w*|polling)\b.*\b(ci|checks?|reviews?|reviewer|build|tests?|background|jobs?|deploy\w*|"
+                      r"release|github|pipeline|actions?|run|workflow)\b|\breviewing\b", re.I)
+WAITS_ON_PERSON = re.compile(r"\b(you|your|yours|person|human|answer|reply|approv\w*|decid\w*|decision|confirm\w*|ok|okay|"
+                             r"input|accept\w*|sign(?:ed)?[- ]?in|login|a go|go-ahead)\b", re.I)
+_bg_cache = {}
+
+
+def _ms(stamp):
+    try:
+        return int(datetime.datetime.fromisoformat(str(stamp).replace("Z", "+00:00")).timestamp() * 1000)
+    except ValueError:
+        return None
+
+
+def _text(x):
+    """A tool result's or output's words, whatever its shape."""
+    if isinstance(x, str):
+        return x
+    if isinstance(x, list):
+        return "\n".join(_text(y) for y in x)
+    if isinstance(x, dict):
+        return _text(x.get("text") if "text" in x else x.get("content"))
+    return ""
+
+
+def background_jobs(log):
+    """(running, last_ended): its agent's background jobs still running by its session log ({id:
+    started ms}), and when the last one ended (ms, or 0). Cached on the log's size and time."""
+    try:
+        st = os.stat(log)
+    except (OSError, TypeError):
+        return {}, 0
+    key = (st.st_size, st.st_mtime_ns)
+    hit = _bg_cache.get(log)
+    if hit and hit[0] == key:
+        return hit[1]
+    running, ended, calls = {}, 0, {}
+    for raw in log_lines(log, BG_LOG_BYTES):
+        if "<task-notification>" in raw or "task_id" in raw or '"tool_result"' in raw or "session_id" in raw or "session ID" in raw:
+            try:
+                d = json.loads(raw)
+            except ValueError:
+                continue
+            if not isinstance(d, dict):
+                continue
+            at = _ms(d.get("timestamp")) or now()
+            # Claude Code: ended by its notice (in the queue, an attachment or a user line), or stopped.
+            if "<task-notification>" in raw and (d.get("type") in ("queue-operation", "attachment") or from_person(d) is not None):
+                for m in BG_ENDED.finditer(raw):
+                    running.pop(m.group(1), None)
+                    ended = max(ended, at)
+            r = d.get("toolUseResult")
+            if isinstance(r, dict) and r.get("task_id") and "stopped" in str(r.get("message") or "").lower():
+                running.pop(str(r["task_id"]), None)
+                ended = max(ended, at)
+            if d.get("type") == "user" and '"tool_result"' in raw and not d.get("isSidechain"):
+                ids = []
+                if isinstance(r, dict):
+                    ids = [r.get("backgroundTaskId") or (r.get("taskId") if r.get("timeoutMs") is not None else None)
+                           or (r.get("agentId") if r.get("isAsync") else None)]
+                for c in (d.get("message") or {}).get("content") or []:
+                    if isinstance(c, dict) and c.get("type") == "tool_result":
+                        m = BG_STARTED.match(_text(c.get("content")).strip())
+                        ids += [next(g for g in m.groups() if g)] if m else []
+                for i in filter(None, ids):
+                    running.setdefault(str(i), at)
+            # Codex: a process left running has a session id until an output says it exited.
+            p = d.get("payload") or {}
+            if d.get("type") == "response_item" and p.get("type") in ("function_call", "custom_tool_call"):
+                calls[p.get("call_id")] = str(p.get("arguments") or p.get("input") or "")
+            elif d.get("type") == "response_item" and p.get("type") in ("function_call_output", "custom_tool_call_output"):
+                text = _text(p.get("output"))
+                for m in CODEX_RUNNING.finditer(text):
+                    running.setdefault("codex:" + m.group(1), at)
+                for m in CODEX_OBJECT.finditer(text):
+                    if CODEX_EXITED.search(m.group(0)):
+                        if running.pop("codex:" + m.group(1), None) is not None:
+                            ended = max(ended, at)
+                    else:
+                        running.setdefault("codex:" + m.group(1), at)
+                # write_stdin to a session whose output says it exited
+                sids = set(re.findall(r"session_id\W{0,4}(\d+)", calls.get(p.get("call_id"), "")))
+                if len(sids) == 1 and CODEX_EXITED.search(text) and not CODEX_OBJECT.search(text):
+                    if running.pop("codex:" + sids.pop(), None) is not None:
+                        ended = max(ended, at)
+    out = ({i: t for i, t in running.items() if now() - t < BG_MAX_MS}, ended)
+    _bg_cache[log] = (key, out)
+    return out
+
+
+def waits_on_own(task, address=None, ended=0):
+    """Its status line, set this turn by the agent itself and still fresh, says it waits on CI, a
+    check, a review or a background job, and no background job of its ended since."""
+    p = task.get("progress") or {}
+    said = p.get("set") or p.get("at") or 0
+    if p.get("by") or not said or said < ended or not own_line(task, address):
+        return False
+    left = p.get("left") if isinstance(p.get("left"), (int, float)) else 0
+    if now() - said >= max(ON_IT_MS, left):
+        return False
+    text = str(p.get("text") or "")
+    return bool(WAITS_ON.search(text)) and not WAITS_ON_PERSON.search(text)
+
+
+def own_work(task, live):
+    """Its quiet agent is on its own work (above), and its last message asks the person nothing.
+    A helper of its own at work (its reviewer, SHEP-54) counts too."""
+    for k in live:
+        if (k.get("labels") or {}).get("herdr.role") == "reviewer" or status_word(k) == "blocked":
+            continue
+        address = k.get("address")
+        key = (k.get("labels") or {}).get("herdr.task")
+        if key and any(parent_of(h) == address and status_word(h) in ("working", "blocked") for h in live_helpers(key)):
+            if not last_question(task, address):
+                return True
+            continue
+        log = agent_log(task, address) or agent_log(task)
+        jobs, ended = background_jobs(log) if log else ({}, 0)
+        if (jobs or waits_on_own(task, address, ended)) and not last_question(task, address):
+            return True
+    return False

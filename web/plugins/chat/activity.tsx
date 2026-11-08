@@ -3,7 +3,7 @@
 // above the message box while background work runs (subagents, shells). A row opens to its command, output or diff;
 // nothing streams by default, nothing flashes, and no command line shows until asked for.
 import clsx from 'clsx'
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   ChevronDownIcon,
   ChevronLeftIcon,
@@ -12,6 +12,8 @@ import {
   CommandLineIcon,
   StopIcon,
   CpuChipIcon,
+  CheckIcon,
+  ArrowUpRightIcon,
   DocumentTextIcon,
   ExclamationTriangleIcon,
   EyeIcon,
@@ -20,7 +22,7 @@ import {
   PencilSquareIcon,
   WrenchIcon,
 } from '@heroicons/react/16/solid'
-import { act, useStore } from '@client/kernel.ts'
+import { act, setUI, useStore } from '@client/kernel.ts'
 import { Sheet, SheetClose } from '@client/Stack.tsx'
 import { countJobs, jobsWords, rowsOf, stepText, took } from '@shared/activity.ts'
 import type { ActivityAnswer, Chat, Job, Step, StepKind, StepRow, TurnActivity } from '@shared/types.ts'
@@ -41,7 +43,7 @@ const ICON: Record<StepKind, typeof CommandLineIcon> = {
 }
 
 /** what a piece of background work is, the word the tag counts it by */
-const KIND: Record<Job['kind'], string> = { agent: 'Subagent', headless: 'Subagent', shell: 'Shell', monitor: 'Watcher' }
+const KIND: Record<Job['kind'], string> = { agent: 'Subagent', headless: 'Subagent', child: 'Subagent', shell: 'Shell', monitor: 'Watcher' }
 
 /* ---------- ticking ---------- */
 
@@ -252,14 +254,14 @@ function JobRow({ j, chat, deep }: { j: Job; chat: string; deep: (j: Job) => voi
   const I = j.kind === 'shell' || j.kind === 'monitor' ? CommandLineIcon : CpuChipIcon
   return (
     <li>
-      <button type="button" disabled={!j.more} onClick={() => deep(j)} className={clsx('flex w-full min-w-0 items-start gap-2 rounded-row px-2 py-2 text-left', j.more && 'cursor-pointer hover:bg-hover')}>
+      <button type="button" disabled={!j.more && !j.chat} onClick={() => (j.chat ? openSubagent(j) : deep(j))} className={clsx('flex w-full min-w-0 items-start gap-2 rounded-row px-2 py-2 text-left', (j.more || j.chat) && 'cursor-pointer hover:bg-hover')}>
         <I aria-hidden className="size-4 h-lh shrink-0 fill-[var(--fg3)]" />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-[0.9375rem]/[1.375rem] text-fg phone:text-base/6">{j.title}</span>
-          <span className={clsx(quiet, 'truncate')}>{[KIND[j.kind], j.now].filter(Boolean).join(' · ')}</span>
+          <span className={clsx(quiet, 'truncate')}>{[KIND[j.kind], j.status ? CV.subagentWord(j.status) : null, j.now].filter(Boolean).join(' · ')}</span>
         </span>
         <span className={clsx(quiet, 'shrink-0 tabular-nums')}>{took(Date.now() - j.at, false)}</span>
-        {j.more ? <ChevronRightIcon aria-hidden className="size-4 h-lh shrink-0 fill-[var(--fg3)]" /> : null}
+        {j.more || j.chat ? <ChevronRightIcon aria-hidden className="size-4 h-lh shrink-0 fill-[var(--fg3)]" /> : null}
       </button>
     </li>
   )
@@ -422,8 +424,8 @@ export function NeedsYou({ chatKey }: { chatKey: string }) {
 /* ---------- the background tag ---------- */
 
 /** how long ago, as the window's rows count it: seconds for a minute, then minutes, then hours */
-const ago = (at: number) => {
-  const s = Math.max(0, Math.floor((Date.now() - at) / 1000))
+const ago = (at: number, until?: number) => {
+  const s = Math.max(0, Math.floor(((until ?? Date.now()) - at) / 1000))
   return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}h`
 }
 
@@ -462,40 +464,150 @@ function JobLine({ j, chat, open, toggle }: { j: Job; chat: string; open: boolea
   )
 }
 
+/* ---------- subagents: an agent's own helper agents in herdr (SHEP-54) ---------- */
+
+/** a subagent's chat followed while it shows (its row open, or its own chat in the sheet): kernel visibleChats */
+function follow(chat: string, on: boolean) {
+  // counted: each one that shows it holds one, and lets go of its own only (the row stays followed once its sheet closes)
+  setUI((u) => {
+    const subs = [...(u.subs ?? [])]
+    if (on) subs.push(chat)
+    else if (subs.includes(chat)) subs.splice(subs.indexOf(chat), 1)
+    return { subs }
+  })
+}
+
+/** the subagent whose own chat shows in its sheet (client.tsx SubagentSheet) */
+let sub: Job | null = null
+const subOpeners = new Set<() => void>()
+export function openSubagent(j: Job | null) {
+  if (sub?.chat) follow(sub.chat, false)
+  sub = j
+  if (j?.chat) follow(j.chat, true)
+  subOpeners.forEach((l) => l())
+}
+export const useSubagent = () =>
+  useSyncExternalStore(
+    (l) => {
+      subOpeners.add(l)
+      return () => subOpeners.delete(l)
+    },
+    () => sub,
+  )
+
+
+/** its status as the dot the task rows use: amber and pulsing at work, red asking, a quiet check once done */
+function SubDot({ status }: { status?: Job['status'] }) {
+  if (status === 'done') return <CheckIcon aria-hidden className="size-3 shrink-0 fill-[var(--fg3)]" />
+  return <span aria-hidden className={clsx('size-1.5 shrink-0 rounded-full', status === 'needs' ? 'bg-[var(--need)]' : 'live-dot bg-[var(--work)]')} />
+}
+
+/** a subagent's last words, from its own chat (followed while open) */
+function SubWords({ chat }: { chat: string }) {
+  const c = useStore((s) => s.chats[chat])
+  const said = (c?.messages ?? []).filter((m) => m.who === 'agent' && typeof m.text === 'string' && m.text.trim()).slice(-2)
+  if (!c) return <p className="text-[0.75rem]/5 text-fg3 phone:text-[0.8125rem]/5">Loading…</p>
+  if (!said.length) return <p className="text-[0.75rem]/5 text-fg3 phone:text-[0.8125rem]/5">{c.working ? (c.doing || CV.WORDS.working) : 'Nothing said yet.'}</p>
+  return (
+    <ul role="list" className="flex w-full flex-col gap-1.5">
+      {said.map((m) => (
+        <li key={m.id} className="line-clamp-4 border-l-2 border-[var(--line2)] pl-2 text-[0.75rem]/[1.125rem] break-words whitespace-pre-wrap text-fg2 phone:text-[0.8125rem]/5">{m.text}</li>
+      ))}
+      {c.working && c.doing ? <li className="truncate pl-2.5 text-[0.71875rem] text-fg3">{c.doing}</li> : null}
+    </ul>
+  )
+}
+
+/** one subagent over its parent's box (as SHEP-27's agent rows: a quiet line that opens in place): its status, its role
+ *  and CLI ("Reviewer · Codex"), its state in words and how long; open, its last words and a way into its own chat */
+function SubagentLine({ j, open, toggle }: { j: Job; open: boolean; toggle: () => void }) {
+  const chat = j.chat ?? ''
+  useEffect(() => {
+    if (!open || !chat) return
+    follow(chat, true)
+    return () => follow(chat, false)
+  }, [open, chat])
+  const word = CV.subagentWord(j.status ?? 'working')
+  return (
+    <div data-subagent={j.id} data-status={j.status} className="flex flex-col">
+      <button type="button" aria-expanded={chat ? open : undefined} disabled={!chat} onClick={toggle}
+        className={clsx('-mx-1 flex h-6 items-center gap-2 rounded-[6px] px-1 text-left text-[0.75rem] phone:h-8 phone:text-[0.8125rem]', chat && 'cursor-pointer hover:bg-hover', open && 'bg-hover')}>
+        <span className="flex size-3 shrink-0 items-center justify-center"><SubDot status={j.status} /></span>
+        <span className="min-w-0 truncate font-medium text-fg">{j.title}</span>
+        <span className={clsx('shrink-0', j.status === 'needs' ? 'text-[var(--need-fg)]' : 'text-fg3')}>{word}</span>
+        <span className="flex-1" />
+        <span className="shrink-0 font-mono text-[0.71875rem] text-fg3 tabular-nums">{ago(j.at, j.ended)}</span>
+        {chat ? <ChevronDownIcon aria-hidden className={clsx('size-3 shrink-0 fill-[var(--fg3)]', open && 'rotate-180')} /> : <span aria-hidden className="size-3 shrink-0" />}
+      </button>
+      {open && chat ? (
+        <div className="flex flex-col items-start gap-2 pt-1 pb-1.5 pl-5">
+          <SubWords chat={chat} />
+          <button type="button" onClick={() => openSubagent(j)}
+            className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-[7px] pr-2.5 pl-2 text-[0.78125rem] font-medium text-fg shadow-[inset_0_0_0_1px_var(--line2)] hover:bg-hover phone:h-9">
+            <ArrowUpRightIcon aria-hidden className="size-3 shrink-0 fill-current" />
+            {CV.WORDS.subOpen}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/** two or more of a kind over the box as one row (SHEP-92): "3 background processes", their shared state, the newest's
+ *  title and how long it has run; open, the list of them in place, each opening as its own row does */
+type Group = { kind: 'sub' | 'proc'; items: Job[]; newest: Job; status: NonNullable<Job['status']>; words: string | null }
+function GroupLine({ g, open, toggle, children }: { g: Group; open: boolean; toggle: () => void; children: ReactNode }) {
+  const sub = g.kind === 'sub'
+  return (
+    <div data-jobs-group={g.kind} data-count={g.items.length} className="flex flex-col">
+      <button type="button" aria-expanded={open} onClick={toggle}
+        className={clsx('-mx-1 flex h-6 cursor-pointer items-center gap-2 rounded-[6px] px-1 text-left text-[0.75rem] hover:bg-hover phone:h-8 phone:text-[0.8125rem]', open && 'bg-hover')}>
+        {sub ? <span className="flex size-3 shrink-0 items-center justify-center"><SubDot status={g.status} /></span> : <CommandLineIcon aria-hidden className="size-3 shrink-0 fill-[var(--work)]" />}
+        <span className="shrink-0 font-medium text-fg">{g.words}</span>
+        {sub ? <span className={clsx('shrink-0', g.status === 'needs' ? 'text-[var(--need-fg)]' : 'text-fg3')}>{CV.subagentWord(g.status)}</span> : null}
+        <span className="min-w-0 flex-1 truncate text-fg3">{g.newest.title}</span>
+        <span className="shrink-0 font-mono text-[0.71875rem] text-fg3 tabular-nums">{ago(g.newest.at, g.newest.ended)}</span>
+        <ChevronDownIcon aria-hidden className={clsx('size-3 shrink-0 fill-[var(--fg3)]', open && 'rotate-180')} />
+      </button>
+      {open ? <div role="list" className="-mx-1 flex max-h-[40svh] flex-col overflow-y-auto overscroll-contain pt-0.5 pr-1 pl-6">{children}</div> : null}
+    </div>
+  )
+}
+
 /** what runs in the background, just above the message box (so it never scrolls away): the CLI's subagents, then its
- *  shells and watchers */
+ *  shells and watchers; at most one row of each kind (SHEP-92), as the window's (mods/chat background()) */
 export function JobsTag({ chatKey }: { chatKey: string; cli: string }) {
   const all = useStore((s) => s.chats[chatKey]?.jobs)
   // Settings › Window › Show subagents above the chat box off: no subagents (its shells still show)
   const helpers = useStore((s) => s.snap?.look?.helpers !== false)
-  const [more, setMore] = useState(false)
+  const [groups, setGroups] = useState<Record<string, boolean>>({})
   const [opened, setOpened] = useState<string | null>(null)
-  const jobs = (all ?? []).filter((j) => helpers || (j.kind !== 'agent' && j.kind !== 'headless'))
+  const jobs = (all ?? []).filter((j) => helpers || (j.kind !== 'agent' && j.kind !== 'headless' && j.kind !== 'child'))
   useTick(jobs.length > 0)
   if (!jobs.length) return null
-  // as the window's (mods/chat background()): one row each (an icon, its name, how long); past five, four rows and
-  // "+N more" opens the rest
-  const open = more || jobs.length <= 5
-  const list = open ? jobs : jobs.slice(0, 4)
+  const row = (j: Job) =>
+    j.kind === 'shell' || j.kind === 'monitor' ? (
+      <JobLine key={j.id} j={j} chat={chatKey} open={opened === j.id} toggle={() => setOpened(opened === j.id ? null : j.id)} />
+    ) : j.kind === 'child' ? (
+      <SubagentLine key={j.id} j={j} open={opened === j.id} toggle={() => setOpened(opened === j.id ? null : j.id)} />
+    ) : (
+      <div key={j.id} className="flex h-6 items-center gap-2 text-[0.75rem] phone:h-8 phone:text-[0.8125rem]">
+        <span aria-hidden className="live-dot size-1.5 shrink-0 rounded-full bg-[var(--work)]" />
+        <span className="min-w-0 flex-1 truncate font-medium text-fg">{j.title}</span>
+        <span className="shrink-0 font-mono text-[0.71875rem] text-fg3 tabular-nums">{ago(j.at)}</span>
+      </div>
+    )
   return (
     <div data-jobs className="flex flex-col">
-      {list.map((j) =>
-        j.kind === 'shell' || j.kind === 'monitor' ? (
-          <JobLine key={j.id} j={j} chat={chatKey} open={opened === j.id} toggle={() => setOpened(opened === j.id ? null : j.id)} />
+      {(CV.bgGroups(jobs) as Group[]).map((g) =>
+        g.words ? (
+          <GroupLine key={g.kind} g={g} open={!!groups[g.kind]} toggle={() => setGroups({ ...groups, [g.kind]: !groups[g.kind] })}>
+            {g.items.map(row)}
+          </GroupLine>
         ) : (
-          <div key={j.id} className="flex h-6 items-center gap-2 text-[0.75rem] phone:h-8 phone:text-[0.8125rem]">
-            <span aria-hidden className="live-dot size-1.5 shrink-0 rounded-full bg-[var(--work)]" />
-            <span className="min-w-0 flex-1 truncate font-medium text-fg">{j.title}</span>
-            <span className="shrink-0 font-mono text-[0.71875rem] text-fg3 tabular-nums">{ago(j.at)}</span>
-          </div>
+          row(g.items[0])
         ),
       )}
-      {!open ? (
-        <button type="button" onClick={() => setMore(true)} className="flex h-[22px] items-center gap-1.5 self-start rounded-[6px] px-1.5 text-[0.75rem] text-fg2 hover:bg-hover hover:text-fg phone:h-8">
-          <ChevronDownIcon aria-hidden className="size-3 fill-current" />
-          {`+${jobs.length - 4} more`}
-        </button>
-      ) : null}
     </div>
   )
 }

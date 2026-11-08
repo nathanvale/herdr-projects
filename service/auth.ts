@@ -10,13 +10,24 @@ export type Pass = { ok: true; who: string; via: "tailnet" | "local" } | { ok: f
 
 const READS = new Set(["GET", "HEAD"]);
 
-export function gate(req: Request, g: Gate, socket = false, peerTrusted = false): Pass {
+export function gate(req: Request, g: Gate, socket = false, peerTrusted = false,
+  privatePeer?: { origin: string; login: string | null }): Pass {
   const h = req.headers;
   const host = (h.get("host") ?? "").toLowerCase();
   const login = h.get("tailscale-user-login");
   const write = socket || !READS.has(req.method);
   if (req.method === "OPTIONS") return { ok: false, status: 403, why: "no cross-site requests" };
   if (h.get("sec-fetch-site") === "cross-site") return { ok: false, status: 403, why: "cross-site" };
+
+  // Only the direct TLS listener supplies this argument, after Tailscale whois of the TCP peer. Headers cannot opt in.
+  if (privatePeer) {
+    if (!g.owner) return { ok: false, status: 503, why: "Tailscale isn't running here" };
+    if (privatePeer.login !== g.owner) return { ok: false, status: 403, why: "only this machine's owner" };
+    if (host !== new URL(privatePeer.origin).host) return { ok: false, status: 421, why: "wrong host" };
+    if (write && h.get("origin") !== privatePeer.origin) return { ok: false, status: 403, why: "wrong origin" };
+    if (write && !socket && h.get("x-shepherdr") !== "1") return { ok: false, status: 403, why: "missing x-shepherdr" };
+    return { ok: true, who: privatePeer.login, via: "tailnet" };
+  }
 
   if (login !== null) {
     if (!g.owner || !g.dns) return { ok: false, status: 503, why: "Tailscale isn't running here" };
@@ -37,6 +48,13 @@ export function gate(req: Request, g: Gate, socket = false, peerTrusted = false)
   if (!g.token || !same(given, g.token)) return { ok: false, status: 401, why: "no token" };
   if (h.get("origin")) return { ok: false, status: 403, why: "no browser pages on 127.0.0.1" };
   return { ok: true, who: "local", via: "local" };
+}
+
+/** A caller on this machine (the window, the CLI, a call), as health tells only them the service's id (main.ts):
+ *  127.0.0.1 by the service's own port, no tailnet login, no browser page. */
+export function localCaller(req: Request, port: number) {
+  const h = req.headers, host = (h.get("host") ?? "").toLowerCase();
+  return !h.has("tailscale-user-login") && !h.get("origin") && (host === `127.0.0.1:${port}` || host === `localhost:${port}`);
 }
 
 function same(a: string, b: string) {

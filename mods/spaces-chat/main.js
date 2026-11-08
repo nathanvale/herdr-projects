@@ -1,6 +1,6 @@
 // Workspace spaces: stable colored avatars, worktrees under their checkout,
 // grouped by machine when more than one is known. After a space's name, the repo
-// its first terminal is in now, only where unusual: branch, ahead/behind. Agent state lives in the agents list, not here. Click to
+// its first terminal is in now, only where unusual: its branch. Agent state lives in the agents list, not here. Click to
 // switch, right-click for its menu, drag to reorder. Under each machine, its sections
 // (sections.js): the + on its header makes one, spaces drag in and out of them (only by
 // dragging; a folded one opens while a space is dragged over it). Above the machines, Pinned
@@ -13,7 +13,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { machines, run, props, exec, hc, home, theme, shared, setShared, watchFolder, window, layout, nextCommand } from "herdr";
+import { machines, run, props, exec, hc, home, theme, shared, setShared, watchFolder, window, layout, nextCommand, readTextFile } from "herdr";
 import { panes, spaces as allSpaces, inRender } from "./live.js";
 import { countsByTab, readyByTab } from "./inbox.js";
 import { spacesWithChats } from "./parked.js";
@@ -25,9 +25,7 @@ import { unreadSpaces, readShown } from "./unread.js";
 import { muted } from "./notify.js";
 import { MachinePopup, openMachine, openMachineSettings } from "./machine-popup.js";
 import { startPolling, allStats, healthMeters, bars } from "./machines.js";
-// The meter's tooltip and the red dot's words: the shared core's (the web's machine header says the same).
-import { meterWords, healthErrorWords } from "./core/machines.js";
-import { countBadge, red, H, TEXT, RADIUS } from "./ui.js";
+import { countBadge, red, green, H, TEXT, RADIUS } from "./ui.js";
 import { spaceName, gitTail, tilde, sharedNames } from "./core/spaces.js";
 import { coordinatorTab } from "./coordinator.js";
 
@@ -104,7 +102,7 @@ export default class Spaces extends View {
       this.popup.init(cx);
       return;
     }
-    this.git = {}; // where() -> { name, branch, ahead, behind, repo, linked }, null: not a repo
+    this.git = {}; // where() -> { name, branch, repo, linked }, null: not a repo
     this.checked = {}; // where() -> when it was last looked at
     this.unsure = new Set(); // where()s git couldn't answer for (a machine away)
     this.pending = new Set(); // where()s to look at next
@@ -126,6 +124,13 @@ export default class Spaces extends View {
     this.machinesRead = false; // hc machine ls answered once: a machine missing from it is offline
     this.refreshMachines(cx);
     cx.timer.every(15000, cx => this.refreshMachines(cx));
+    // Each of this computer's spaces on Autopilot (herdr-task's ~/.herdr/tasks/.autopilot.json): "on", or "waking"
+    // while a wake runs or waits for its Assistant; its row shows a mark (row()). Read every 5 s.
+    this.pilots = new Map();
+    this.readPilots(cx);
+    cx.timer.every(5000, (cx) => this.readPilots(cx));
+    // A voice call's clock on its space's row (callMark): once a second, only while a call is on.
+    cx.timer.every(1000, (cx) => { if (this.calling) cx.notify(); });
     // Each machine's health and plan limits (machines.js): read every 45 s / 10 min, not per render.
     startPolling(cx);
     // spaces-chat.machine (a key, or `herdr-app do`): the details of the shown space's machine.
@@ -144,6 +149,60 @@ export default class Spaces extends View {
     // `git status` walks the whole tree, on another machine a process there:
     // only when its answer could have changed (see `due`).
     cx.timer.every(250, (cx) => this.checkNew(cx));
+  }
+
+  readPilots(cx) {
+    cx.spawn(async (cx) => {
+      let d = null;
+      try { d = JSON.parse((await readTextFile(`${home()}/.herdr/tasks/.autopilot.json`)) ?? "{}"); } catch { return; }
+      const next = new Map(Object.entries(d?.spaces ?? {}).filter(([, a]) => a?.on).map(([id, a]) => [id, a.inflight || a.pending ? "waking" : "on"]));
+      if (JSON.stringify([...next]) === JSON.stringify([...this.pilots])) return;
+      this.pilots = next;
+      cx.notify();
+    });
+  }
+
+  // A space's Autopilot mark after its name (SHEP-5): a small rocket, as its chat's wake lines have, dim while on, in
+  // the working colour and breathing while a wake runs or waits. This computer's spaces only (another machine's file
+  // is read where its header shows).
+  pilotMark(w, t) {
+    const p = w.machine ? null : this.pilots?.get(w.id);
+    if (!p) return null;
+    return div().id(`pilot-${w.id}`).flex_none().text_color(p === "waking" ? t.working : t.dim)
+      .when(p === "waking", (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1200 }))
+      .child(svg("mods/spaces-chat/rocket.svg").size(12).flex_none());
+  }
+
+  // SHEP-51: a voice call going on in this space (mods/chat's shared "chat.calls": its chat's pane is in one of this
+  // space's tabs), in its row: a soft green pill with the call's wave and clock, which goes back to the call's chat
+  // (its box is the call: Mute, End). No bar over the window.
+  callOf(w) {
+    const calls = shared("chat.calls") ?? {};
+    for (const [pane, c] of Object.entries(calls)) {
+      if (Date.now() - (c.beat ?? 0) > 45000) continue;
+      const tab = c.tab ?? panes().find((p) => p.pane === pane)?.tab;
+      if (tab && (w.tabs ?? []).some((t) => t.id === tab)) return { pane, ...c, tab };
+    }
+    return null;
+  }
+
+  callMark(w, t) {
+    const call = this.callOf(w);
+    if (!call) return null;
+    this.calling = true;
+    const secs = Math.max(0, Math.floor((Date.now() - (call.started ?? Date.now())) / 1000));
+    const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+    const back = () => {
+      run("space.select", { id: w.id });
+      run("tab.select", { id: call.tab });
+      run("pane.focus", { pane: call.pane });
+    };
+    return h_flex().id(`call-${w.id}`).h(18).pl(5).pr(7).gap(4).flex_none().items_center().rounded(9).cursor_pointer()
+      .bg(`${green()}26`).text_color(green()).text_size(TEXT.label).hover((s) => s.opacity(0.8))
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => { cx.stop_propagation(); back(); })
+      .child(svg("mods/chat/audio-lines.svg").size(12).flex_none().loop("opacity", { from: 0.45, to: 1, period: 1400 }))
+      .child(div().child(clock));
   }
 
   checkNew(cx) {
@@ -172,7 +231,7 @@ export default class Spaces extends View {
     for (const p of ps) {
       if (!p.terminal || !spaceOf[p.tab]) continue;
       busy[p.pane] = p.status === "working" || !(p.program?.shell || p.program?.agent);
-      if (this.busy[p.pane] && !busy[p.pane]) this.sameRepo(at[spaceOf[p.tab].id], keys).forEach((k) => due.add(k));
+      if (this.busy[p.pane] && !busy[p.pane] && keys.has(at[spaceOf[p.tab].id])) due.add(at[spaceOf[p.tab].id]);
     }
     this.busy = busy;
     for (const m of machines()) {
@@ -187,12 +246,6 @@ export default class Spaces extends View {
       }
     }
     return due;
-  }
-
-  // `key` and the other places in its repo (a commit there moves their ahead/behind).
-  sameRepo(key, keys) {
-    const repo = this.git[key]?.repo;
-    return [key, ...(repo ? [...keys].filter((k) => this.git[k]?.repo === repo) : [])];
   }
 
   refreshMachines(cx) {
@@ -223,7 +276,7 @@ export default class Spaces extends View {
     });
   }
 
-  // One place's git: branch, ahead/behind, its repo.
+  // One place's git: its branch and repo.
   async check(key, cx) {
     const [on, cwd] = JSON.parse(key);
     this.checked[key] = Date.now();
@@ -231,28 +284,19 @@ export default class Spaces extends View {
     try {
       // No optional locks: a status that touched the index would wake the watch again.
       // Writes nothing under .git (index lock, fsmonitor cookie): watch() would wake on it.
-      const r = await exec("git", ["--no-optional-locks", "-c", "core.fsmonitor=false", "status", "--porcelain=v2", "--branch"], { cwd, on });
+      // The repo's own .git folder names it; a worktree's top differs from it.
+      const r = await exec("git", ["rev-parse", "--show-toplevel", "--path-format=absolute", "--git-common-dir"], { cwd, on });
       if (r.code !== 0) {
         // Only git's own "no" is remembered as no repo; anything else is asked again.
         if (!/not a git repository/i.test(r.stderr)) this.unsure.add(key);
         this.git[key] = null;
         return;
       }
-      // The repo's own .git folder names it; a worktree's top differs from it.
-      const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on });
-      const common = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, on });
-      const repo = common.stdout.trim();
+      const [top, repo] = r.stdout.split("\n").map((l) => l.trim());
+      // its branch; none: detached
+      const head = await exec("git", ["symbolic-ref", "--short", "-q", "HEAD"], { cwd, on });
       const name = repo.endsWith("/.git") ? base(repo.slice(0, -5)) : base(repo).replace(/\.git$/, "");
-      const info = { name, branch: null, ahead: 0, behind: 0, repo: JSON.stringify([on, repo]), linked: repo !== `${top.stdout.trim()}/.git` };
-      for (const line of r.stdout.split("\n")) {
-        if (line.startsWith("# branch.head ")) info.branch = line.slice(14);
-        else if (line.startsWith("# branch.ab ")) {
-          const [a, b] = line.slice(12).split(" ");
-          info.ahead = Math.abs(parseInt(a, 10)) || 0;
-          info.behind = Math.abs(parseInt(b, 10)) || 0;
-        }
-      }
-      this.git[key] = info;
+      this.git[key] = { name, branch: head.code === 0 ? head.stdout.trim() || null : null, repo: JSON.stringify([on, repo]), linked: repo !== `${top}/.git` };
       if (!on) this.watch(repo, cx);
     } catch {
       // Couldn't ask (the machine is away): keep what it showed, look again later.
@@ -386,13 +430,12 @@ export default class Spaces extends View {
           // + (New space or New section, there) hugging its one meter. HERD-70.
           .when(connected, el => el.child(h_flex().flex_none().gap(2).items_center()
             .child(div().id(`machine-add-${m ?? "local"}`).size(20).flex_none().flex().items_center().justify_center().rounded(RADIUS.control)
-              .text_color(t.muted).cursor_pointer().hover(s => s.bg(t.raised).text_color(t.foreground)).tooltip("New space or section")
+              .text_color(t.muted).cursor_pointer().hover(s => s.bg(t.raised).text_color(t.foreground))
               .on_mouse_down("left", (e) => { this.addAt = rectOf(e); })
               .on_click((_e, cx) => { cx.stop_propagation(); this.addMenu(m); })
               .child(svg("mods/workspace-chrome/plus.svg").size(14)))
             .child(this.meter(m, t))))
-          .when(connected && Boolean(health?.error), el => el.child(div().id(`machine-dot-${m ?? "local"}`).size(6).rounded(3).flex_none().bg(red())
-            .tooltip(healthErrorWords(health.error))))
+          .when(connected && Boolean(health?.error), el => el.child(div().id(`machine-dot-${m ?? "local"}`).size(6).rounded(3).flex_none().bg(red())))
           .child(svg(`mods/workspace-chrome/chevron-${folded ? "right" : "down"}.svg`).size(12).flex_none().text_color(t.dim)));
       const own = !collapsed && sectionsOf(m).length;
       // An empty machine is just its header: its + makes a space.
@@ -401,18 +444,16 @@ export default class Spaces extends View {
   }
 
   // A machine's health (CPU, memory, disk) as one set of thin bars, amber while new tasks wait
-  // there, red past its alert limit. No % beside it (HERD-70): numbers and plan left stay in
-  // the tooltip and the details a click opens (machine-popup.js). HERD-40, HERD-62.
+  // there, red past its alert limit. No % beside it (HERD-70): numbers and plan left are in
+  // the details a click opens (machine-popup.js). HERD-40, HERD-62.
   // `this.stats`: read once per render (render()), as each read copies every machine's numbers.
   meter(m, t) {
     const s = this.stats?.[m ?? ""];
     const id = `machine-meter-${m ?? "local"}`;
     if (!s?.health) return div().id(id);
     const meters = healthMeters(s);
-    const words = meterWords(s);
     return h_flex().id(id).flex_none().h(20).px(4).gap(4).items_center().rounded(RADIUS.control).cursor_pointer()
       .hover((st) => st.bg(t.hover))
-      .tooltip(words)
       .on_mouse_down("left", (e) => { this.meterAt = rectOf(e); })
       .on_click((_e, cx) => { cx.stop_propagation(); openMachine(m, this.meterAt); })
       .child(bars(t, meters, 11, `${id}-health`));
@@ -595,7 +636,7 @@ export default class Spaces extends View {
     return w.tabs.reduce((n, tab) => n + (m.get(tab.id) ?? 0), 0);
   }
 
-  // Only what's unusual, after the name: "herdr \u00b7 spike \u21912 \u21931". The repo or
+  // Only what's unusual, after the name: "herdr \u00b7 spike". The repo or
   // branch goes when the name already says it (a worktree is named after its branch),
   // and master/main go: nearly every space is on one.
   gitTail(g, tree, name, t, tag) {
@@ -609,9 +650,7 @@ export default class Spaces extends View {
       .items_center()
       .text_size(TEXT.label)
       .text_color(t.dim)
-      .when(Boolean(where), (el) => el.child(div().min_w(0).truncate().child(where)))
-      .when(g.ahead > 0, (el) => el.child(div().flex_none().text_color(t.ansi2).child(`\u2191${g.ahead}`)))
-      .when(g.behind > 0, (el) => el.child(div().flex_none().text_color(t.ansi1).child(`\u2193${g.behind}`)));
+      .when(Boolean(where), (el) => el.child(div().min_w(0).truncate().child(where)));
   }
 
   // `pinned`: in Pinned, `tag` its machine there; `end`: the drag key (a section's, Pinned) a
@@ -657,6 +696,8 @@ export default class Spaces extends View {
           .when(!tree, el => el.child(div().w(18).flex_none().text_center().text_size(iconOf(w.id) ? 14 : 15).text_color(fresh ? t.foreground : w.active && !quiet ? t.muted : t.dim)
             .when(quiet && Boolean(iconOf(w.id)), (el) => el.opacity(0.5)).child(iconOf(w.id) ?? "#")))
           .child(nameText(name, fresh, quiet ? t.dim : w.active ? t.foreground : t.muted, t))
+          .when(Boolean(this.pilotMark(w, t)), (el) => el.child(this.pilotMark(w, t)))
+          .when(Boolean(this.callOf(w)), (el) => el.child(this.callMark(w, t)))
           .child(g ? this.gitTail(g, tree, name, t, label) : h_flex().flex_1().min_w(0).justify_end().text_size(TEXT.label).text_color(t.dim)
             .when(Boolean(label), (el) => el.child(div().min_w(0).truncate().child(label))))
           .when(quiet, (el) => el.child(svg("mods/spaces-chat/bell-off.svg").size(13).flex_none().text_color(t.dim)))
@@ -666,26 +707,38 @@ export default class Spaces extends View {
       );
   }
 
+  // The rail's row: its number and status; a voice call's space shows the call's green wave instead, and goes back to
+  // the call (SHEP-66: the rail has no room for callMark's clock, and the wave was nowhere on it).
   compact({ w, i }, t) {
+    const call = this.callOf(w);
     return h_flex()
       .id(`space-${w.id}`)
       .h(26)
       .flex_none()
       .justify_center()
+      .items_center()
       .gap(4)
       .rounded(RADIUS.card)
       .cursor_pointer()
       .when(w.active, (el) => el.bg(t.raised))
+      .when(Boolean(call), (el) => el.bg(`${green()}26`))
       .hover((s) => s.bg(t.hover))
-      .on_click(() => run("space.select", { id: w.id }))
+      .on_click(() => {
+        run("space.select", { id: w.id });
+        if (call) { run("tab.select", { id: call.tab }); run("pane.focus", { pane: call.pane }); }
+      })
       .child(nameText(String(i + 1), this.unread.has(w.id), muted(w.id) ? t.dim : w.active ? t.foreground : t.muted, t))
-      .child(div().text_color(tone(t, w.status)).child(glyph(w.status)));
+      .child(call
+        ? svg("mods/chat/audio-lines.svg").size(12).flex_none().text_color(green()).loop("opacity", { from: 0.45, to: 1, period: 1400 })
+        : div().text_color(tone(t, w.status)).child(glyph(w.status)));
   }
 
   close() { this.popup?.close?.(); }
 
   // One copy of Herdr's live lists for the whole render (live.js): past ~50 ms Herdr stops it.
   render(cx) {
+    // a voice call's row sets it again (callMark): its clock ticks only while one shows
+    this.calling = false;
     return inRender(() => this.draw(cx));
   }
 
@@ -716,7 +769,7 @@ export default class Spaces extends View {
         .when(!collapsed, el => el.child("Spaces"))
         // As a machine's +: New space, New section, on the shown space's machine.
         .child(div().id("space-new").size(H.sm).flex_none().flex().items_center().justify_center().rounded(RADIUS.control).cursor_pointer()
-          .hover(s => s.bg(t.hover).text_color(t.foreground)).tooltip("New space or section")
+          .hover(s => s.bg(t.hover).text_color(t.foreground))
           .on_mouse_down("left", (e) => { this.addAt = rectOf(e); })
           .on_click(() => this.addMenu(sp.find(s => s.active)?.machine ?? null))
           .child(svg("mods/workspace-chrome/plus.svg").size(14))))

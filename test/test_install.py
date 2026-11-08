@@ -56,10 +56,11 @@ class Install(unittest.TestCase):
         return os.path.join(self.root, *rel)
 
     def test_install_again_update_uninstall(self):
+        os.makedirs(self.p(".codex"))
         out = run("install", "--root", self.root, "--yes").stdout
         self.assertRegex(out, r"files: \d+ new\n")
         rec = json.load(open(self.p(APP, "data/shepherdr/installed.json")))
-        self.assertEqual(rec["version"], "3.1.3")
+        self.assertEqual(rec["version"], "3.1.16")
         self.assertTrue(os.path.isfile(self.p(APP, "mods/tasks/bin/herdr-task")))
         self.assertTrue(os.path.isfile(self.p(APP, "layouts/shepherdr.json")))
         self.assertEqual(os.path.realpath(self.p(".local/bin/herdr-task")), os.path.realpath(self.p(APP, "mods/tasks/bin/herdr-task")))
@@ -71,6 +72,9 @@ class Install(unittest.TestCase):
         hooks = json.load(open(self.p(".claude/settings.json")))
         self.assertEqual(hooks["model"], "x")
         self.assertIn("ask-hook.sh", json.dumps(hooks["hooks"]["PermissionRequest"]))
+        # Codex's approvals come to the chat's card too (SHEP-91)
+        codex = json.load(open(self.p(".codex/hooks.json")))
+        self.assertIn("ask-hook.sh", json.dumps(codex["hooks"]["PermissionRequest"]))
         # Helpers changed: the sync to other machines is held until doctor passes.
         self.assertTrue(os.path.exists(self.p(".herdr/sync-hold")))
         d = run("doctor", "--root", self.root)
@@ -140,6 +144,62 @@ class Install(unittest.TestCase):
         run("uninstall", "--root", self.root)
         self.assertFalse(os.path.exists(unit))
         self.assertFalse(os.path.exists(self.p(".local/share/shepherdr/service/main.ts")))
+
+    def test_port(self):
+        """install --port (GitHub #635): the unit starts the service on it, the record keeps it for updates, 7788 puts the
+        default back; a port out of range is refused."""
+        unit = self.p("Library/LaunchAgents/dev.shepherdr.service.plist") if sys.platform == "darwin" else self.p(".config/systemd/user/shepherdr.service")
+        out = run("install", "--root", self.root, "--yes", "--port", "7795").stdout
+        if "needs bun" in out:
+            self.skipTest("bun isn't installed here")
+        self.assertIn("7795", open(unit).read())
+        self.assertIn("SHEPHERDR_PORT", open(unit).read())
+        run("update", "--root", self.root, "--yes", "--source", ROOT)
+        self.assertIn("7795", open(unit).read(), "an update keeps the port")
+        run("install", "--root", self.root, "--yes", "--port", "7788")
+        self.assertNotIn("SHEPHERDR_PORT", open(unit).read())
+        p = run("install", "--root", self.root, "--yes", "--port", "80", ok=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("1024", p.stdout + p.stderr)
+
+    def test_service_answers(self):
+        """doctor and install trust only Shepherdr's own service on its port: the id it wrote in service.json, not
+        another app answering health there (GitHub #635)."""
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from importlib.machinery import SourceFileLoader
+        sh = SourceFileLoader("shepherdr_cli", SHEPHERDR).load_module()
+
+        def server(body):
+            class H(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(json.dumps(body).encode())
+
+                def log_message(self, *a):
+                    pass
+            s = ThreadingHTTPServer(("127.0.0.1", 0), H)
+            threading.Thread(target=s.serve_forever, daemon=True).start()
+            return s
+        ours, other = server({"ok": True, "id": "id-1"}), server({"ok": True})
+        try:
+            data = self.p(".herdr", "shepherdr")
+            os.makedirs(data)
+            ok, why = sh.service_answers(self.root)
+            self.assertFalse(ok)
+            self.assertIn("hasn't started", why)
+            for port, want in ((ours.server_port, True), (other.server_port, False)):
+                with open(os.path.join(data, "service.json"), "w") as f:
+                    json.dump({"port": port, "id": "id-1"}, f)
+                ok, why = sh.service_answers(self.root)
+                self.assertEqual(ok, want, why)
+                self.assertEqual(sh.our_port(self.root), port)
+            self.assertIn("another app", why)
+        finally:
+            for s in (ours, other):
+                s.shutdown()
+                s.server_close()
 
     def test_web_only(self):
         """install --web: the service, the web app, herdr-task and the helpers under .local/share/shepherdr, linked from
@@ -373,6 +433,20 @@ class Install(unittest.TestCase):
     def test_dry_run_writes_nothing(self):
         run("install", "--root", self.root, "--dry-run")
         self.assertEqual(tree(self.root), self.before)
+
+
+class AudioTools(unittest.TestCase):
+    def test_doctor_names_the_mic_and_speaker_tools_per_platform(self):
+        """Linux names pw-record and pw-play; a Mac names Apple's command line tools (swiftc) instead."""
+        from importlib.machinery import SourceFileLoader
+        from unittest import mock
+        sh = SourceFileLoader("shepherdr_cli", SHEPHERDR).load_module()
+        for platform, want, not_want in (("linux", ["pw-record", "pw-play"], "swiftc"), ("darwin", ["swiftc"], "pw-record")):
+            with mock.patch.object(sh.sys, "platform", platform), mock.patch.object(sh.shutil, "which", lambda n: None):
+                notes = "\n".join(sh.check_tools(False)[1])
+            for name in want:
+                self.assertIn(f"optional: {name} isn't on the PATH", notes)
+            self.assertNotIn(not_want, notes)
 
 
 if __name__ == "__main__":

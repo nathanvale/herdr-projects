@@ -1,5 +1,177 @@
 # Changelog
 
+## 3.1.16
+
+Every agent question can be answered from the chat, and web messages never get lost.
+
+- Every question or permission an agent asks shows as a card in the chat, on the web and phone too, for Claude Code
+  and Codex.
+- Messages sent from the web go again by themselves after a dropped connection, show how they are going, and are
+  never sent twice.
+- Background processes and subagents each show as one row over the chat box, which opens to the list.
+- A task's chat follows its agent when it restarts in a new terminal, instead of "Can't find this conversation".
+
+## 3.1.15
+
+Agents keep their chat history, a stuck web chat recovers on its own, and the session note works on Macs.
+
+- Agents started from inside Claude Code keep their chat history and folder-trust prompt again.
+- The web chat follows an Assistant that was restarted, instead of showing "not a chat agent" until the service
+  restarts.
+- Macs: the note Shepherdr adds when a Claude Code session starts no longer breaks it (#731).
+
+## 3.1.14
+
+Shorter voice replies when you ask a call to open something.
+
+- Voice calls: opening a space, task or screen gets a one-word reply, a failed or unclear open is said in a few words,
+  and ending the call asks "Are you sure you want to end the call?".
+
+## 3.1.13
+
+Dictation that writes while you speak, Tasks grouped by space, calmer voice calls, and many phone and chat fixes.
+
+- Dictation writes your words while you speak. Done stops the mic at once and shows a calm Writing… with Cancel.
+- Tasks by status are split by machine and space when they sit in more than one, and a This space chip shows only the
+  space you're in (web and window).
+- Voice calls: short answers, quiet through silence, and the call ends itself after you say yes to End the call?. On a
+  phone, a slim green band at the top takes you back to a call you can't see.
+- The Herdr window on a Mac uses the Mac's own mic and speaker for dictation and calls.
+- Dismiss (or Esc) closes a question or permission card without an answer; the agent hears it was declined.
+- Send now on a message waiting in Claude Code's queue (web and window).
+- A task's header has no Pin button any more: the task row's menu pins it.
+- Phone chat: wide code and tables scroll on their own, typing is smoother, and folded replies never blank the list.
+- Chat shows typed <words>, keeps your first message after a reopen, and ignores a template's example news.
+- New tasks start from a freshly fetched base branch, and Settings › Tasks › Branch names picks how branches are named.
+- The service's port can be set at install and is checked before anything is sent to it; the web app installs on a
+  home screen behind login proxies.
+- Alerts on this device show whether they really work, can be turned off, send a test, and let each device choose
+  what it hears.
+- Agents can offer feedback about Shepherdr itself; an issue is filed only after you say yes (switch in Settings ›
+  Agents).
+- A one-time "Enjoying Shepherdr?" card with a plain link to star it on GitHub (switch in Settings › Agents).
+- The Autopilot switch stays put: its status and Run now open to its left.
+
+## 3.1.12
+
+Artifacts in a task's view, and tasks that finish cleanly after a squash merge.
+
+- A task's view has an Artifacts tab, on the web and in the window: every report and proof the task's agents made, the
+  proof first, then the newest.
+- Artifacts name the task they were made for again.
+- When a task's pull request was squash-merged, or its work is already in main, ready marks the task done instead of
+  trying to open a second pull request.
+
+## 3.1.11
+
+Web app fixes: new spaces on other machines and menus that stay in sight.
+
+- A new space made on another machine from the web app shows up and opens at once, with the icon you picked. If it
+  takes a moment, the dialog says so and keeps waiting instead of closing.
+- In the web app's sidebar, the machine load popover and every row menu open fully on screen, even in a narrow sidebar
+  or the phone drawer.
+
+## 3.1.10
+
+Voice that can reach your whole screen, subagents you can see, and honest Working and Waking labels.
+
+- Voice calls can look at and use everything on your screen: open files, changes, tasks by state, settings pages and
+  more. Risky clicks wait for your yes. The bar on top is gone: a green mark with the clock on the call's space takes
+  you back to it.
+- An agent's own helpers, like its reviewer, show in its chat as Subagent rows you can open, and never count as the
+  task's agents. Reviews run as one of these helpers, never hidden.
+- An agent that's quiet because its own background job is still running (CI, a review, a shell) reads Working, not
+  Needs you.
+- Autopilot's header says Waking the moment you switch it on, and No schedule when nothing is set.
+
+## 3.1.9
+
+Voice calls that really open things where you are, reactions from every agent, and Assistants that know their settings.
+
+- Voice calls open a space, task or artifact on the screen you called from, and only say it's open once it shows. An
+  old page that never answers asks you to reload. Spaces are found by machine, artifacts by title.
+- Settings › Agents › Reactions is one switch for every agent: Assistants, task agents, automations and agent tabs.
+  Running agents are told when it changes, and pick the emoji that fits best, not just a thumbs up.
+- An agent's reaction still works when it quotes your words, and never shows up as stray text.
+- Each Assistant gets its space's settings when it starts (review, merge, proof, Autopilot and the rest), and a short
+  note when one of them changes.
+
+## 3.1.8
+
+Tasks that start at a time you pick, an Assistant that never stops quietly, and a few things back where they belong.
+
+- Scheduled tasks: tell a task to start later (at a time, or in an hour) and it starts by itself. They wait in their
+  own Scheduled group with a countdown, and a task's menu has Start later, in the window and on the web.
+- Autopilot never parks silently: when work waits on your Accept it says what waits, carries on with other work, and
+  a quiet wake says why it stayed quiet. 3.1.7's starter heartbeat, if you never edited it, is upgraded (the old one
+  kept as a `.bak`).
+- A task's time left is back under its status icon, short ("2h", "<1m").
+- The Fast switch is back in the model menu for Codex, and turning it off really runs at standard speed.
+- Settings › Agents › Reactions: the Assistant reacts with an emoji where it fits (on by default), or never.
+- Automations say which machine and space they belong to.
+- Voice calls can look around Shepherdr: read a chat, open a space, task or artifact, and send or act for you.
+
+## 3.1.7
+
+A space's chat says which space it is, and the README shows how to install with an agent.
+
+- A space's chat header, in the window and on the web, shows the space's name and its folder (and its machine when
+  it's another one), not "Assistant · Claude Code". The composer's model menu still says which agent runs.
+- README and the install guide: what to tell your coding agent so it installs Shepherdr for you, in the Herdr app or
+  without it (the web app in a browser on your tailnet is then your window).
+
+## 3.1.6
+
+Autopilot that decides on its own, agents talking as a group chat, and a calmer, tidier app.
+
+- Autopilot: on a wake the Assistant makes every call itself, saying in one line what it chose and why, and answers
+  its agents' questions instead of asking you. Only something critical (money, publishing, deleting data, credentials,
+  security, stuck after retries) reaches you, as an alert. 3.1.5's starter heartbeat, if you never edited it, is
+  upgraded with the old one kept beside it as a `.bak`.
+- Messages between agents show as a group chat: one quiet row ("Assistant → SHEP-4") that opens into the message,
+  and another Assistant's message names it and its machine.
+- A finished task shows its chat, not "hasn't started"; one whose chat is gone shows its summary instead.
+- Assistant header: no hidden button that ended the agent, its state in words ("Working…", "Needs you"), Autopilot
+  on the right.
+- No hover tooltips anywhere; buttons say what they do.
+- Tasks list: the id under the title, time left and Review at the row's end, the same in the window and on the web.
+- Model picker: every model a CLI offers, with search, pinned and recent ones; reasoning levels read whole.
+- Dictation writes your words down with ElevenLabs (the voice call's key), not whisper.cpp.
+- Secrets follow the machine that serves the web app with no setup, and can be added or removed from any machine.
+- Sidebar: no more git ahead/behind arrows. Attach in the composer is a plus.
+
+## 3.1.5
+
+Autopilot now pushes the project forward on its own.
+
+- Autopilot: each wake, after unblocking and checking what's open, the Assistant looks at the project and adds and
+  starts the next most valuable tasks (at most 2 a wake). It stays quiet only when nothing is worth doing.
+- Each space can set a one-line Direction for Autopilot to follow, in Shepherdr settings → Autopilot (window and web)
+  or with `herdr-task autopilot set --direction`. With none, it works out what matters from the project itself.
+- The old starter heartbeat, if you never edited it, is upgraded to the new one on its own, with the old one kept
+  beside it as a `.bak`. Your own words are never touched.
+
+## 3.1.4
+
+Mentions in chat, Autopilot you can see, and more done from the web without the window.
+
+- Chat: type # to mention a space and @ to mention a task, in the window and on the web. A mention shows as a chip
+  that opens the space or task, locked when the agent can't reach it.
+- Autopilot: switching it on wakes the Assistant at once; every wake shows as one quiet line in the chat; the header
+  counts down to the next run and has Run now; the sidebar marks spaces on Autopilot with a small rocket.
+- Automations can fire on another machine's task events.
+- Messages from other agents stand out as their own bubble and name who sent them. The person's words sent from
+  the window always count as the person's, never as "Another agent".
+- The web can close, rename and reorder a space with no Herdr window open.
+- New space: pick the machine to make it on, and the folder list follows the path you type, as a shell completes one.
+- Secrets can be kept on one chosen main machine, and voice calls use its ElevenLabs key everywhere
+  (`shepherdr secrets move-to`).
+- Tasks: a task whose agent is fixing its failing checks shows Working, not Needs you. Buttons that open the Accept
+  card say Review.
+- Web: tidier Assistant header with Autopilot as one group; a phone task view with a calm one-line header and tab
+  strips that only scroll sideways; dictation says why when it can't write your words down; a nicer Mark up
+  button; the chat's Latest pill stays under the drawer; spaces you've read stop being bold after each new reply.
+
 ## 3.1.3
 
 Autopilot everywhere, settings per space, and agents that survive a crash.
