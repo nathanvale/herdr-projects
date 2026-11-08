@@ -185,3 +185,13 @@ class NativeFoundation(unittest.TestCase):
             with self.subTest(path=path):
                 code, observed = self.changed(path, lambda target: target.chmod(0o755))
                 self.assertEqual((code, observed['error']), (1, 'Native executable mode differs at ' + path))
+
+    def test_an_added_path_outside_the_table_is_left_to_review(self):
+        """What the contract says the gate leaves out: a path no phase admits and U doesn't have."""
+        added = self.copy / 'docs' / 'added-outside-the-table.md'
+        added.write_text('Not pinned by the gate.\n')
+        try:
+            code, observed = self.check()
+        finally:
+            added.unlink()
+        self.assertEqual((code, observed['source_validation']), (0, 'passed'), observed)

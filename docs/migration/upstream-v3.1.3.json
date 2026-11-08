@@ -92,13 +92,13 @@
       "phase": "N1",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "104a0d67f907d4f26dc62ded57780e4e060a3b7b",
-      "sha256": "8ecf62216ac29ef8347912b63a8bfeaae89fac38fad324ade40dc67a22b517f7"
+      "sha256": "99cca54fdd5d4a876e7bddc5b8bb07d4508d176330f249e9cb21f6ca1aca9964"
     },
     {
       "phase": "N1",
       "path": "test/test_native_publication.py",
       "upstream_blob": null,
-      "sha256": "fee2123952c29d40fb45ca4edff0d16ca6897d61fe5cb98c1e34caa704b3a9b9"
+      "sha256": "d6ec14ea271834a2e5101d0a1cc2a32716d25c5b26828f5f6610037370bffd8b"
     },
     {
       "phase": "A1",

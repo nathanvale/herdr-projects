@@ -930,7 +930,7 @@ class OnlyGhsOwnNoIsANo(unittest.TestCase):
         f = self.elsewhere(ENTERPRISE, fail=NOT_GITHUB)
         f.merges_here()
         self.assertEqual(json.loads(f.saved())["github"]["repo"], None)
-        self.assertEqual(len(f.calls("repo", "view")), 1)  # Accept took the saved answer
+        self.assertEqual(len(f.calls("repo", "view")), 2)  # ready's, then Accept rechecks GitHub before merging here
         self.assertEqual(f.calls("pr") + f.calls("api"), [])
 
     def test_a_remote_added_since_a_saved_no_is_asked_about(self):
