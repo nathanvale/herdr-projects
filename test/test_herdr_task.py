@@ -1117,6 +1117,7 @@ class BaseIsABranch(unittest.TestCase):
     """D2: adopt and a merge refuse a base that is only a commit here; the base is fetched as a branch."""
 
     def test_adopt_refuses_a_base_that_is_only_a_commit(self):
+        """adopt already refused this before (with other words); the merges below carry the claim."""
         f = publication.Fixture(self)
         f.github(prs=[f.pr()])
         f.seed(base=f.start)
@@ -1139,17 +1140,17 @@ class BaseIsABranch(unittest.TestCase):
         publication.Fixture(self, github=False).merges_here()
 
     def test_a_tag_named_like_the_base_doesnt_win_the_fetch(self):
+        """The base checked out here (main), so it catches up from its remote's copy alone: a fetch that
+        reads the remote's tag "main" first leaves that copy where it was, and main with it."""
         f = publication.Fixture(self)
-        f.github(prs=[f.pr()])
-        f.adopt()
-        f.ready()
+        f.seed(state="ready", ready_at=1, base="main", pr={"number": 7, "url": "https://github.com/o/r/pull/7", "repo": "o/r"})
         moved = f.sibling("another task merged")
-        f.publish(moved, "target")
-        f.git(f.repo, "update-ref", "refs/remotes/origin/target", f.start)  # this clone hasn't seen it yet
-        f.git(f.bare, "tag", "target", f.first)
-        f.github(prs=[f.pr(state="MERGED", mergeCommit={"oid": moved})])
+        f.publish(moved, "main")
+        f.git(f.repo, "update-ref", "refs/remotes/origin/main", f.start)  # this clone hasn't seen it yet
+        f.git(f.bare, "tag", "main", f.first)  # the tag and the branch at different commits
+        f.github(prs=[f.pr(baseRefName="main", state="MERGED", mergeCommit={"oid": moved})])
         self.assertEqual(f.ok("accept", "1", "--folder", f.repo)["accepted"], "github")
-        self.assertEqual((f.rev("refs/remotes/origin/target"), f.rev("refs/heads/target")), (moved, moved))
+        self.assertEqual((f.rev("refs/remotes/origin/main"), f.rev("refs/heads/main")), (moved, moved))
 
 
 # A stand-in gh route that answers as the recording one does, but can't answer a pull request's view
@@ -1278,7 +1279,8 @@ class Cleanup(unittest.TestCase):
         self.assertEqual(f.ok("tick", "--folder", f.repo)["done"], [1])
         self.gone(f)
 
-    def test_an_unmerged_commit_keeps_both_on_those_paths(self):
+    def test_an_unmerged_commit_never_reaches_finishing_on_those_paths(self):
+        """A guard of the calling paths: the tick and ready never finish a task holding unmerged work."""
         f = publication.Fixture(self, github=False)
         f.ok("tick", "--folder", f.repo)
         f.git(f.repo, "merge", "-q", "--ff-only", "task/1")
@@ -1288,7 +1290,8 @@ class Cleanup(unittest.TestCase):
         self.assertEqual(f.task()["state"], "ready")
         self.assertEqual((os.path.isdir(f.wt), branch_here(f)), (True, True))
 
-    def test_a_tag_named_like_the_base_removes_nothing(self):
+    def test_a_tag_named_like_the_base_never_counts_as_merged(self):
+        """A guard of the calling paths: the tick and ready read the base as a branch, never its tag."""
         f = publication.Fixture(self, github=False)
         f.git(f.repo, "tag", "main", f.tip)  # a tag would say the work is in "main"; the branch says it isn't
         for _ in range(2):
@@ -1387,3 +1390,126 @@ class AnImplicitBase(unittest.TestCase):
         before = f.saved()
         self.assertIn("isn't in target", f.refused("adopt", "1", "--folder", f.repo, "--pr", "7"))
         self.assertEqual(f.saved(), before)
+
+
+@publication.ON_CI
+class CycleTwo(unittest.TestCase):
+    """PR 19's second repair round, across the command line as above."""
+
+    def recorded(self, **pr):
+        """A Ready task with the pull request ready opened for it, into target."""
+        f = publication.Fixture(self)
+        f.seed(state="ready", ready_at=1, base="target", pr={"number": 7, "url": "https://github.com/o/r/pull/7", "repo": "o/r"})
+        f.github(prs=[f.pr(**pr)])
+        return f
+
+    def kept(self, f, *words):
+        t = f.task()
+        self.assertEqual((os.path.isdir(f.wt), branch_here(f), t["state"]), (True, True, "done"))
+        for w in words:
+            self.assertIn(w, t.get("kept") or "")
+        return t["kept"]
+
+    def ahead(self, f, words):
+        """A commit on top of the task's tip, here but on no branch: GitHub's "Update branch", say."""
+        return f.git(f.repo, "commit-tree", f"{f.tip}^{{tree}}", "-p", f.tip, "-m", words)
+
+    # 1: a branch behind what merged holds nothing unmerged; both stay, and the note doesn't say it does.
+    def test_a_branch_behind_what_merged_keeps_both_and_says_so_plainly(self):
+        f = self.recorded()
+        updated = self.ahead(f, "Update branch")
+        f.github(prs=[f.pr(headRefOid=updated)])
+        self.assertEqual(f.ok("accept", "1", "--folder", f.repo)["accepted"], "github")
+        note = self.kept(f, f"task/1 is at {f.tip[:7]} here and what merged was {updated[:7]}", "nothing was removed")
+        self.assertNotIn("didn't merge", note)
+
+    # 3: a merge that erred and went through records the head gh says merged, not the one asked for.
+    def test_a_merge_that_erred_but_went_through_records_its_head(self):
+        f = self.recorded()
+        updated = self.ahead(f, "a suggestion committed on GitHub")
+        f.github(prs=[f.pr()], merge="GraphQL: Something went wrong",
+                 merge_moves={"state": "MERGED", "headRefOid": updated, "mergeCommit": {"oid": "e" * 40}})
+        self.assertEqual(f.ok("accept", "1", "--folder", f.repo)["accepted"], "github")
+        self.assertEqual(f.task()["merged_head"], updated)
+        self.kept(f, updated[:7])
+
+    # 5: the no-PR keep path: a task with nothing of its own whose start isn't in its base any more.
+    def test_a_tip_that_isnt_in_the_base_keeps_both(self):
+        for verb in ("accept", "ready"):
+            with self.subTest(verb=verb):
+                f = publication.Fixture(self, github=False)
+                f.git(f.wt, "checkout", "-q", "-B", "task/1", f.start)  # nothing of its own
+                rewritten = f.git(f.repo, "commit-tree", "HEAD^{tree}", "-p", f.first, "-m", "main rewritten without the start")
+                f.git(f.repo, "checkout", "-q", "-B", "main", rewritten)
+                if verb == "accept":
+                    f.seed(state="ready", ready_at=1)
+                    self.assertEqual(f.ok("accept", "1", "--folder", f.repo)["accepted"], "done")
+                else:
+                    f.ready()
+                self.kept(f, f"task/1 at {f.start[:7]} isn't in main")
+
+    # 6: the saved no is asked again through merge and ready's auto-merge too.
+    def saved_no(self):
+        f = publication.Fixture(self, github=False)
+        f.git(f.repo, "remote", "add", "origin", publication.ENTERPRISE)
+        f.github(prs=[], fail=publication.NOT_GITHUB)
+        f.ready()
+        f.github(prs=[])  # gh now places it on GitHub
+        return f
+
+    def test_merge_asks_a_saved_no_again(self):
+        f = self.saved_no()
+        self.assertIn("no pull request recorded", f.refused("merge", "1", "--folder", f.repo))
+        self.assertEqual((len(f.calls("repo", "view")), f.hc("send", "run"), f.rev("main")), (2, [], f.start))
+        self.assertNotIn("merge_requested", f.task())
+
+    def test_readys_auto_merge_asks_a_saved_no_again(self):
+        f = self.saved_no()
+        f.seed(state="running", set={"merge": "auto"})
+        self.assertIn("no pull request recorded", f.no_ready())
+        self.assertEqual((len(f.calls("repo", "view")), f.hc("send", "run"), f.rev("main")), (2, [], f.start))
+        self.assertNotIn("merge_requested", f.task())
+
+    # 2: no base recorded, adopted into main: its base is written as at eaa90190, with no adopted_from.
+    def test_adopted_into_main_with_no_base_recorded_writes_it(self):
+        f = publication.Fixture(self)
+        f.github(prs=[f.pr(baseRefName="main")])
+        f.edit(lambda d: [d["tasks"][0].pop(k, None) for k in ("base", "base_set")])
+        p = f.run("adopt", "1", "--folder", f.repo, "--pr", "7")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("its base stays main", p.stdout)
+        t = f.task()
+        self.assertEqual((t["base"], t["base_set"], t["base_by"]), ("main", True, "pull-request"))
+        self.assertNotIn("adopted_from", t)
+
+    # 9: what was kept is said in Accept's, merge's and show's own words, not only in --json.
+    def test_what_was_kept_is_said(self):
+        for verb in ("accept", "merge"):
+            with self.subTest(verb=verb):
+                f = self.recorded()
+                f.commit(f.wt, "one more, after the pull request's head")
+                p = f.run(verb, "1", "--folder", f.repo)
+                self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+                self.assertIn("Kept task/1 and its worktree", p.stdout)
+                self.assertIn("kept: Kept task/1 and its worktree", f.run("show", "1", "--folder", f.repo).stdout)
+
+    # 10: one side moved is said as one side.
+    def test_only_the_branch_here_moving_is_said_so(self):
+        f = publication.Fixture(self)
+        f.github(prs=[f.pr()])
+        f.adopt()
+        f.ready()
+        moved = f.commit(f.wt, "one more fix")
+        error = f.refused("accept", "1", "--folder", f.repo)
+        for words in (NOT_VERIFIED, f"#7 is still at {f.tip[:7]}, but task/1 is at {moved[:7]} here", "herdr-task adopt"):
+            self.assertIn(words, error)
+        self.assertNotIn("Bring both back", error)
+
+    # 12: a branch that's gone: the worktree alone is kept, and said so.
+    def test_a_branch_thats_gone_keeps_the_worktree_and_says_that(self):
+        f = self.recorded()
+        f.git(f.repo, "update-ref", "-d", "refs/heads/task/1")
+        self.assertEqual(f.ok("accept", "1", "--folder", f.repo)["accepted"], "github")
+        t = f.task()
+        self.assertEqual((t["state"], os.path.isdir(f.wt)), ("done", True))
+        self.assertTrue(t["kept"].startswith(f"Kept the worktree {f.wt}: its branch task/1 isn't here"), t["kept"])
