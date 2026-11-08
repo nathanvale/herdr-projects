@@ -33,19 +33,28 @@ saved repo name.
   nothing of that name on `PATH`, counts as not installed: a `gh` that can't run, or a `HERDR_TASK_GH` that can't run or
   doesn't exist, is that other failure, whatever the remote.
 - An alias or Enterprise repo `gh` has never confirmed, with `gh` not knowing that host, takes `gh`'s no and merges
-  locally: `gh` can't tell it from a host that isn't GitHub. A repo `gh` has confirmed keeps refusing.
+  locally: `gh` can't tell it from a host that isn't GitHub. A repo `gh` has confirmed keeps refusing. A saved no is
+  asked again once before each local merge, so a repo `gh` now places on GitHub doesn't merge locally.
 - A branch GitHub already holds at exactly its commit isn't pushed, so publishing it needs only `gh`'s access.
 - `herdr-task adopt <task> --pr <number or link>` records a pull request that already exists on a started task, when
   its target differs from the base the task recorded. It reads and checks, and never creates, pushes or merges. The pull
   request must be this repo's own and open, for the task's branch, at exactly its tip. The task's start commit must be
   the one merge base of that tip and the commit GitHub's base branch holds now, and the recorded base's commit must be
-  in that commit too. The task's base then becomes the pull request's, the old one is kept as `adopted_from`, and it
-  merges only on the person's Accept, which refuses if the pull request's base or head has moved since. If it merges
-  into any other branch anyway, the task isn't finished: Accept and the tick hold it, its worktree and branch stay, and
-  `herdr-task done <task>` is the person's way out. The base commit must be in this clone: a `git fetch` first, if adopt
-  asks for it, is the one step that uses git's own access.
+  in that commit too (a task with no recorded base is checked against `main`; a base that is only a commit refuses).
+  The task's base then becomes the pull request's, the old one is kept as `adopted_from`, the tip it verified is kept as
+  `adopted_head`, and it merges only on the person's Accept. Accept refuses unless the pull request still targets that
+  base and both its head and the branch here are still at `adopted_head`. `ready` never changes `adopted_head`; running
+  `adopt` again after the branch has moved verifies it again and records the new tip. A retarget between Accept's read
+  and the merge isn't caught. If it merges into any other branch anyway, the task isn't finished: Accept and the tick
+  hold it, its worktree and branch stay, and `herdr-task done <task>` is the person's way out. The base commit must be
+  in this clone: a `git fetch` first, if adopt asks for it, is the one step that uses git's own access.
 - `ready` opens no second pull request for a branch. When the branch's open pull requests all target another base, it
   refuses before pushing and names the `adopt` command to run.
+- A finished task's branch and worktree go only when the branch's tip is the commit that merged and the worktree holds
+  nothing uncommitted (ignored files aside). For a pull request that's the head GitHub merged, never its squash commit;
+  with none, a tip already in the base branch. Otherwise both stay, and the done task says why in `kept`. `gh pr merge`,
+  run with `--repo`, deletes only GitHub's copy of the branch. A merge here into a base that is only a commit, not a
+  branch, refuses.
 
 ## Install
 

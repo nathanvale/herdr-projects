@@ -79,17 +79,27 @@ stays blocked.
 ### N1 native publication checkpoint
 
 `bin/check-migration` names each phase's admitted owner paths; the manifest's
-`source_deltas` pins each one's content hash and exact-U blob. Every U path outside
-that table and the three overrides stays byte-identical to U with U's mode. A phase
-cannot widen its owners or drift its content. It cannot roll back either: naming an
-earlier phase over its deltas refuses, and dropping the deltas as well refuses
-because the admitted paths then differ from exact U. Candidate readiness stays blocked.
+`source_deltas` pins each one's content hash and exact-U blob. What it enforces: each
+admitted owner matches its pin, and every U path outside that table and the three
+overrides is byte-identical to U with U's mode. So a phase can't change a U path it
+doesn't own, or an owner away from its pin. Naming an earlier phase over its deltas
+refuses, and dropping the deltas as well refuses because the admitted paths then
+differ from exact U. A path a phase adds outside the table relies on review: the
+checker refuses only files under the retired `server/` and `helper/` owners and new
+files in `service/hc`. Candidate readiness stays blocked.
 
 - `T/github.py` owns adoption (`adopt_existing()`), reached by `herdr-task adopt`.
   Base equivalence is proved from commits: the task's start commit is the one merge
   base of its tip and the commit GitHub's base branch holds now, read through gh, and
-  the recorded base is in that commit. Accept and the tick recheck an adopted pull
-  request's base and head. S1 moves this behind the forge.
+  the recorded base (`main` when none is recorded) is in that commit. Adoption records
+  the head it verified; Accept and the tick refuse unless the pull request's base is
+  unchanged and its head and the branch here are both that head. Only adopting again
+  records another. S1 moves this behind the forge.
+- Finishing removes a task's branch and worktree only when the branch tip is the commit
+  that merged (the head GitHub merged, or with no pull request a tip in the base
+  branch) and nothing is uncommitted there; otherwise both stay with a note. A base
+  that is only a commit refuses adoption and a local merge, and the base is fetched as
+  a branch. A saved "not on GitHub" is asked again once before a local merge.
 - Known gap: a retarget between Accept's read and `gh pr merge` isn't caught. The head
   stays guarded by `--match-head-commit`; gh offers no such guard for the base.
 - A repo with no remotes, or only remotes on another named forge, stays local without

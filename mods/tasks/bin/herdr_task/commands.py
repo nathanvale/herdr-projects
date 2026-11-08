@@ -22,8 +22,8 @@ from .agents import (
 from .sessions import refresh_sessions
 from .providers import admit_launch
 from .github import (
-    adopt_existing, base_commit, finish, gh, GH_ACCESS, GhFailed, github, local_base, merged_here, NO_ASK, no_local_merge, own_work,
-    plain, pr_adopt, pr_open, pr_pending, pr_problem, pr_read, pr_view, STAYS, update_main, watch_main,
+    adopt_existing, base_commit, finish, gh, GH_ACCESS, GhFailed, github, local_base, merge_into_branch, merged_here, NO_ASK,
+    no_local_merge, own_work, plain, pr_adopt, pr_open, pr_pending, pr_problem, pr_read, pr_view, STAYS, update_main, watch_main,
 )
 from .launch import (
     base_ref, brief, caller_labels, caller_space, current_base, default_space, folder_for, handoff, launch, name_tabs,
@@ -598,6 +598,7 @@ def finalize(s, t):
             return msg + " It merges by itself once its checks pass."
         no_local_merge(s, t)
         try:
+            merge_into_branch(s, t)
             sent, started = tell(s, t, local_merge_msg(s, t), None)
             t["merge_requested"] = now()
             return msg + " Settings say merge it right away: the next message says how."
@@ -663,7 +664,7 @@ def cmd_state(args, state):
         t = s.find(args.id)
         if state == "reopen":
             state = "running" if t.get("started") and t["state"] != "queued" else "todo"
-            for k in ("reviews", "review", "auto_merge", "merged", "nothing_to_merge", "accepted_at"):
+            for k in ("reviews", "review", "auto_merge", "merged", "nothing_to_merge", "accepted_at", "merged_head", "kept"):
                 t.pop(k, None)
         if state == "done" and t.get("worktree") and merged_here(s, t):
             t["merged"] = True
@@ -864,17 +865,24 @@ MOVED = "Adopted pull request"  # adopted_moved()'s words: the tick clears them 
 
 def adopted_moved(s, t, v):
     """What moved on an adopted pull request since adoption verified it, for the person; None when
-    nothing did, or it wasn't adopted. Its base must still be the task's and its head the branch's
-    tip here: what merges is what was verified, not whatever the pull request holds now. Accept and
-    the tick both read it, so a move shows at once and goes once it's put back."""
+    nothing did, or it wasn't adopted. Its base must still be the task's, and its head and the
+    branch's tip here both the head adoption verified and recorded (adopted_head): what merges is
+    what was verified, not whatever the pull request holds now. Only adopting again records another
+    (adopt_existing()); one adopted before heads were recorded refuses until then. Accept and the
+    tick both read it, so a move shows at once and goes once it's put back."""
     if not t["pr"].get("adopted"):
         return None
-    n, base, tip = t["pr"]["number"], t.get("base") or "main", branch_tip(s, t)
+    n, base, tip, verified = t["pr"]["number"], t.get("base") or "main", branch_tip(s, t), t["pr"].get("adopted_head")
+    again = f"`herdr-task adopt {s.ref(t)} --pr {n}`"
     if v.get("baseRefName") != base:
         return f"{MOVED} #{n} now targets {v.get('baseRefName')}, not {base}, which adoption verified. Retarget it to {base}, then accept again."
-    if v.get("headRefOid") != tip:
-        return (f"{MOVED} #{n} is at {str(v.get('headRefOid'))[:7]}, and {t.get('branch')} is at {str(tip)[:7]} here, which isn't "
-                "what adoption verified. Bring them to the same commit, then accept again.")
+    if not verified:
+        return (f"{MOVED} #{n} has no head recorded from its adoption, so what merges can't be checked against what was verified. "
+                f"Run {again} to verify it, then accept again.")
+    if v.get("headRefOid") != verified or tip != verified:
+        return (f"{MOVED} #{n} is at {str(v.get('headRefOid'))[:7]}, and {t.get('branch')} is at {str(tip)[:7]} here; adoption "
+                f"verified {verified[:7]}, so that isn't what adoption verified. Bring both back to {verified[:7]}, or run "
+                f"{again} to verify the new head, then accept again.")
     return None
 
 
@@ -903,6 +911,7 @@ def merge_now(s, t):
     n, repo = str(t["pr"]["number"]), t["pr"]["repo"]
     v, why = pr_read(t)
     s.dirty = True
+    matched = None  # the head GitHub was asked to merge (--match-head-commit)
     if not v:
         return f"{UNREACHED} #{n} on GitHub ({plain(why or 'no answer')}). Nothing merged. Repair {GH_ACCESS}, then try again."
     if v.get("state") != "MERGED":
@@ -912,8 +921,9 @@ def merge_now(s, t):
             return problem
         if pr_pending(v):
             return "Checks are still running."
+        matched = v.get("headRefOid") or ""
         ok, _, err = gh("pr", "merge", n, "--repo", repo, "--squash", "--delete-branch",
-                        "--match-head-commit", v.get("headRefOid") or "")
+                        "--match-head-commit", matched)
         # A one-off GitHub error can come after the merge went through: asked again.
         again = None if ok else pr_view(t)
         if not ok and (again or {}).get("state") == "MERGED":
@@ -930,6 +940,11 @@ def merge_now(s, t):
     watch_main(s, t, ((v.get("mergeCommit") or {}).get("oid")) if v.get("state") == "MERGED" else None)
     update_main(s, t)
     t["merged"] = True
+    # What merged, for finish(): the head GitHub merged on --match-head-commit, or one merged by hand
+    # as gh says it merged. Never the squash commit. (gh, given --repo, deletes only GitHub's branch.)
+    head = matched or v.get("headRefOid")
+    if isinstance(head, str) and head:
+        t["merged_head"] = head
     finish(s, t, even_if_busy=True)
     return None
 
@@ -957,6 +972,7 @@ def cmd_merge(args):
                 error += " Merge again when they pass."
         else:
             no_local_merge(s, t)
+            merge_into_branch(s, t)
             t["merge_requested"] = now()
             s.dirty = True
             sent, started = tell(s, t, local_merge_msg(s, t), args)
@@ -985,18 +1001,22 @@ def in_base(s, t):
 def ff_merge(s, t):
     """Lands a task's branch in its base branch here when that is a fast-forward (the base is
     checked out in the main folder and the branch already holds it: exactly the tested work, no
-    new combination). Returns whether it did; git refuses to touch uncommitted files. Both go by
-    their full names, as a same-named tag would otherwise be what lands."""
+    new combination). Returns the tip it landed (finish() removes the branch only at that tip), or
+    None; git refuses to touch uncommitted files. Both go by their full names, as a same-named tag
+    would otherwise be what lands."""
     main, br, base = s.loc["folder"], t.get("branch"), t.get("base") or "main"
     head, target = f"refs/heads/{br}", f"refs/heads/{base}"
     ok, cur, _ = git(main, "symbolic-ref", "HEAD")
-    if not (br and git(main, "merge-base", "--is-ancestor", local_base(base), head)[0]):
-        return False
+    tip_ok, tip, _ = git(main, "rev-parse", "--verify", "--quiet", head)
+    if not (br and tip_ok and tip and git(main, "merge-base", "--is-ancestor", local_base(base), head)[0]):
+        return None
     if ok and cur == target:
-        return git(main, "merge", "--ff-only", head)[0]
-    # A base not checked out here (a task's own --base): its branch moves forward to the task's
-    # (git refuses unless it's a fast-forward, or when another worktree has it checked out).
-    return git(main, "fetch", ".", f"{head}:{target}")[0]
+        landed = git(main, "merge", "--ff-only", head)[0]
+    else:
+        # A base not checked out here (a task's own --base): its branch moves forward to the task's
+        # (git refuses unless it's a fast-forward, or when another worktree has it checked out).
+        landed = git(main, "fetch", ".", f"{head}:{target}")[0]
+    return tip if landed else None
 
 
 @for_the_person
@@ -1031,7 +1051,6 @@ def cmd_accept(args):
             raise Fail(f"{s.ref(t)} isn't ready ({t['state']}); only a Ready task can be accepted.")
         t.pop("attention", None)
         wt = t.get("worktree") if t.get("mode") == "worktree" else None
-        t["accepted_at"] = now()
         s.dirty = True
         if not wt:
             # Worked in the folder itself: nothing to merge.
@@ -1047,16 +1066,22 @@ def cmd_accept(args):
             t["merged"] = merged_here(s, t)
             finish(s, t, even_if_busy=True)
         else:
-            # A real merge, with no pull request: only in a repo not on GitHub.
+            # A real merge, with no pull request: only in a repo not on GitHub, into a branch.
             no_local_merge(s, t)
-            if ff_merge(s, t):
+            merge_into_branch(s, t)
+            landed = ff_merge(s, t)
+            if landed:
                 how = "merged"
-                t["merged"] = True
+                t["merged"], t["merged_head"] = True, landed
                 finish(s, t, even_if_busy=True)
             else:
                 how = "agent"
                 t["merge_requested"] = now()
                 sent, started = tell(s, t, local_merge_msg(s, t), args)
+        if not error:
+            # The person accepted it: done, merged, waiting on its checks or asked of its agent. A
+            # refusal (merge_refused()) never counts.
+            t["accepted_at"] = now()
         v = view(s, t)
     if error:
         merge_refused(args, v, error)

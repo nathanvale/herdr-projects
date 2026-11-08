@@ -98,7 +98,7 @@ def remote_urls(main):
     return sorted(line.split(None, 1)[-1] for line in out.splitlines()) if ok else []
 
 
-def github(s):
+def github(s, fresh=False):
     """The repo on GitHub ("owner/name"), asked again after an hour or once the remotes change (a
     saved answer keeps a hash of them, as a URL can hold a token). None: tasks merge locally. That
     takes a repo with no remotes, or only remotes on another forge (ELSEWHERE_URL): gh isn't asked,
@@ -107,7 +107,9 @@ def github(s):
     name saved for these same remotes (one saved before hashes were kept counts as that), as gh may
     have lost that host's sign-in. Every other failure refuses (GhFailed), saving nothing: signed
     out, no network, or a host only gh can place. gh not installed refuses for a github.com remote
-    or a saved name, and is taken as a no otherwise; a gh that is there and can't run isn't that (gh())."""
+    or a saved name, and is taken as a no otherwise; a gh that is there and can't run isn't that (gh()).
+    fresh: gh is asked whatever was saved. s.github_saved says whether this answer was a saved one."""
+    s.github_saved = False
     if s.loc["kind"] != "repo":
         return None
     g, urls = s.data.get("github") or {}, remote_urls(s.loc["folder"])
@@ -116,7 +118,8 @@ def github(s):
             s.dirty = True
         return None
     mark = hashlib.sha256("\n".join(urls).encode()).hexdigest()[:16]
-    if g.get("remotes") == mark and now() - g.get("at", 0) < 3600000:
+    if not fresh and g.get("remotes") == mark and now() - g.get("at", 0) < 3600000:
+        s.github_saved = True
         return g.get("repo")
     ok, out, err = gh("repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner", cwd=s.loc["folder"])
     named = any(GITHUB_URL.match(url) for url in urls)
@@ -132,8 +135,12 @@ def github(s):
 
 def no_local_merge(s, task):
     """Refuses a local merge of a task in a repo on GitHub (Fail): there it goes through its pull
-    request, and with no answer from gh (github()) nobody can say none exists."""
-    if github(s):
+    request, and with no answer from gh (github()) nobody can say none exists. A saved "not on
+    GitHub" is asked once more first, as a merge here can't be taken back; reads keep the saved one."""
+    repo = github(s)
+    if not repo and getattr(s, "github_saved", False):
+        repo = github(s, fresh=True)
+    if repo:
         raise Fail(f"{s.ref(task)} has no pull request recorded, and this repo merges through one. Run ready to open it, "
                    f"or `herdr-task adopt {s.ref(task)} --pr <number>` to record the one that exists.")
 
@@ -141,6 +148,28 @@ def no_local_merge(s, task):
 def remote_of(main):
     names = git(main, "remote")[1].split()
     return "origin" if "origin" in names else (names[0] if names else "origin")
+
+
+ONLY_A_COMMIT = "only a commit, not a branch"
+
+
+def is_branch(main, base):
+    """The base is a branch here: its own, or its remote's copy. A commit id never is one."""
+    return not OID.fullmatch(base) and any(git(main, "rev-parse", "--verify", "--quiet", ref)[0]
+                                           for ref in (f"refs/heads/{base}", f"refs/remotes/{remote_of(main)}/{base}"))
+
+
+def only_a_commit(main, base):
+    """The base names a commit here, by its id or a tag, and no branch: nothing to merge into."""
+    return not is_branch(main, base) and git(main, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}")[0]
+
+
+def merge_into_branch(s, task):
+    """Refuses (Fail) a merge here into a base that is only a commit: there's no branch to land it on."""
+    base = task.get("base") or "main"
+    if only_a_commit(s.loc["folder"], base):
+        raise Fail(f"{s.ref(task)}'s base {base} is {ONLY_A_COMMIT}, so there's nowhere here to merge it. {STAYS}. "
+                   f"Merge it where you want it by hand, then run `herdr-task done {s.ref(task)}`.")
 
 
 OID = re.compile(r"[0-9a-f]{40,64}")
@@ -265,7 +294,9 @@ BRANCH = re.compile(r"[\w./@+-]+")  # as launch.base_ref(), which imports from h
 
 def adopt_existing(s, task, given):
     """Records a pull request that already exists on a started task, by hand (herdr-task adopt): its
-    number, or its link. True: recorded. False: it already was, and nothing changed. Refuses (Fail)
+    number, or its link, and the head it verified (adopted_head), the one Accept merges. True:
+    recorded. False: it already was, at this branch tip, and nothing changed; adopting it again once
+    the branch has moved verifies it again and records the new head. Refuses (Fail)
     with what to do, leaving the task as it was, unless it is this repo's own open pull request for
     the task's branch, at exactly its tip, and its base is proved from commits (below). On success
     the task's base becomes the pull request's, the old one kept in adopted_from, and it merges only
@@ -295,9 +326,14 @@ def adopt_existing(s, task, given):
     have = task.get("pr") or {}
     if have.get("number"):
         if have["number"] == number and str(have.get("repo")).lower() == repo.lower():
-            return False
-        raise Fail(f"{ref} already records pull request #{have['number']} of {have.get('repo')}, and a task keeps the one it "
-                   f"records. Carry on with that one, or use a new task for #{number}.")
+            # Adopted again: verified again, and its head recorded again, once the branch has moved
+            # from the head adoption recorded (or none was recorded). Otherwise nothing changes.
+            here = git(main, "rev-parse", "--verify", "--quiet", f"refs/heads/{br}")[1]
+            if not have.get("adopted") or (have.get("adopted_head") and have["adopted_head"] == here):
+                return False
+        else:
+            raise Fail(f"{ref} already records pull request #{have['number']} of {have.get('repo')}, and a task keeps the one it "
+                       f"records. Carry on with that one, or use a new task for #{number}.")
     ok, out, err = gh("pr", "view", str(number), "--repo", repo, "--json",
                       "number,url,state,isCrossRepository,headRefName,headRefOid,baseRefName")
     if not ok:
@@ -346,9 +382,15 @@ def adopt_existing(s, task, given):
         raise Fail(f"Can't prove #{number}'s base {base} matches {ref}: the task started at {start[:7]}, and its tip meets "
                    f"{base_oid[:7]} at {met}, so the pull request wouldn't carry exactly the task's work. Retarget it or rebase "
                    "the branch so they meet at the start, or leave it unadopted.")
-    old = task.get("base")
-    if old and old != base:
+    # The task's base as it merges today: none recorded is main. A commit isn't a branch to merge into.
+    old = task.get("base") or "main"
+    if old != base:
+        if OID.fullmatch(old):
+            raise Fail(f"{ref}'s recorded base {old[:7]} is {ONLY_A_COMMIT}, so nothing shows {base} holds it. Nothing was "
+                       "adopted.")
         copies = [c for c in (branch_commit(repo, old), git(main, "rev-parse", "--verify", "--quiet", f"refs/heads/{old}")[1]) if c]
+        if not copies and only_a_commit(main, old):
+            raise Fail(f"{ref}'s recorded base {old} is {ONLY_A_COMMIT}, so nothing shows {base} holds it. Nothing was adopted.")
         if not copies:
             raise Fail(f"{ref}'s recorded base {old} isn't on GitHub or here, so nothing shows {base} holds it. Restore it, then "
                        "adopt again.")
@@ -357,7 +399,8 @@ def adopt_existing(s, task, given):
                 raise Fail(f"{ref}'s recorded base {old} at {commit[:7]} isn't in {base} at {base_oid[:7]}, so adopting would "
                            f"silently replace its merge target. Bring {old} into {base} (or fetch it, if that commit isn't here), "
                            "then adopt again.")
-    task["pr"] = {"number": number, "url": p["url"], "repo": repo, "adopted": now()}
+    # The head verified here is the one Accept merges (adopted_moved()): only adopting again records another.
+    task["pr"] = {**have, "number": number, "url": p["url"], "repo": repo, "adopted": now(), "adopted_head": tip}
     if old != base:
         task["adopted_from"] = {"base": old, "at": now(), "pr": number}
         task["base"], task["base_set"], task["base_by"] = base, True, "pull-request"
@@ -413,10 +456,11 @@ def pr_pending(v):
 def update_main(s, task):
     """After a merge on GitHub: the base branch here catches up when it's checked out and clean.
     Named in full wherever a commit lands on it: a same-named tag there, or a tag here called
-    remote/base, would otherwise move it to that tag's commit."""
+    remote/base, would otherwise move it to that tag's commit. So is what's fetched: a bare name
+    reads the remote's same-named tag first, and the remote's copy of the branch wouldn't move."""
     main, base = s.loc["folder"], task.get("base") or "main"
     remote, head = remote_of(main), f"refs/heads/{base}"
-    git(main, "fetch", remote, base)
+    git(main, "fetch", remote, f"+{head}:refs/remotes/{remote}/{base}")
     ok, cur, _ = git(main, "symbolic-ref", "HEAD")
     if ok and cur == head and not git(main, "status", "--porcelain", "--untracked-files=no")[1]:
         git(main, "merge", "--ff-only", f"refs/remotes/{remote}/{base}")
@@ -481,19 +525,67 @@ def own_work(s, task):
     return task.get("own")
 
 
+def merged_head(s, task, tip):
+    """The commit of the task's branch that merged, for finish(); None when that can't be said. One
+    a merge recorded (merged_head: what merge_now() asked GitHub to merge, or the tip a fast-forward
+    landed) stands. A pull request merged by hand: its head, as gh says it merged; never its squash
+    commit, which the branch never holds. No pull request: the branch tip, once it is in the task's
+    base branch (base_commit(), never a same-named tag)."""
+    if task.get("merged_head"):
+        return task["merged_head"]
+    if task.get("pr"):
+        v = pr_view(task)
+        head = (v or {}).get("headRefOid") if (v or {}).get("state") == "MERGED" else None
+    else:
+        main = s.loc["folder"]
+        head = tip if tip and git(main, "merge-base", "--is-ancestor", tip, base_commit(main, task.get("base") or "main"))[0] else None
+    if isinstance(head, str) and OID.fullmatch(head):
+        task["merged_head"] = head
+        return head
+    return None
+
+
+def kept_because(s, task):
+    """Why finish() keeps the task's branch and worktree, for the done task's note; None when both go:
+    the branch tip is exactly what merged, and the worktree holds nothing uncommitted (ignored files
+    aside). The worktree goes with its branch, never alone."""
+    wt, br, main = task["worktree"], task.get("branch"), s.loc["folder"]
+    kept = f"Kept {br} and its worktree {wt}"
+    tip = git(main, "rev-parse", "--verify", "--quiet", f"refs/heads/{br}")[1] if br else ""
+    if not tip:
+        # No branch left: nothing of it to lose, and a worktree still here is kept, as nothing shows what merged.
+        return f"{kept}: {br or 'its branch'} isn't here to compare with what merged, so nothing was removed." if os.path.isdir(wt) else None
+    head = merged_head(s, task, tip)
+    if not head:
+        if task.get("pr"):
+            return f"{kept}: gh didn't confirm which commit of pull request #{task['pr'].get('number')} merged, so nothing was removed."
+        return f"{kept}: {br} at {tip[:7]} isn't in {task.get('base') or 'main'}, so it holds work that didn't merge."
+    if tip != head:
+        return f"{kept}: {br} is at {tip[:7]}, and what merged was {head[:7]}, so it holds work that didn't merge."
+    if os.path.isdir(wt):
+        ok, out, _ = git(wt, "status", "--porcelain", "--untracked-files=normal")
+        if not ok or out:
+            return f"{kept}: the worktree has uncommitted changes or files git doesn't track, so nothing was removed."
+    return None
+
+
 def finish(s, task, even_if_busy=False):
-    """Done, its branch merged: removes the worktree and branch when nothing is left uncommitted
-    there and (unless the person merged from Herdr) no agent still works in it."""
+    """Done, its branch merged: removes the worktree and branch when the branch holds nothing that
+    didn't merge, nothing is left uncommitted there and (unless the person merged from Herdr) no agent
+    still works in it. Whatever stays is said on the done task (kept), which needs nothing more."""
     task["state"], task["done_at"] = "done", now()
-    for k in ("attention", "merge_requested", "queue", "queued_at"):
+    for k in ("attention", "merge_requested", "queue", "queued_at", "kept"):
         task.pop(k, None)
     s.dirty = True
     wt, br, main = task.get("worktree"), task.get("branch"), s.loc["folder"]
     if not wt or (not even_if_busy and any(agent_running(k) for k in live_agents(s.key(task)))):
         return
-    if os.path.isdir(wt):
-        ok, out, _ = git(wt, "status", "--porcelain", "--untracked-files=no")
-        if not ok or out or not git(main, "worktree", "remove", "--force", wt)[0]:
-            return
+    why = kept_because(s, task)
+    if why:
+        task["kept"] = why
+        return
+    if os.path.isdir(wt) and not git(main, "worktree", "remove", "--force", wt)[0]:
+        task["kept"] = f"Kept {br} and its worktree {wt}: git couldn't remove the worktree, so the branch stays too."
+        return
     if br:
         git(main, "branch", "-D", br)
