@@ -14,7 +14,7 @@ from .agents import agent_log, agent_running, busy_again, detail, held_ask, live
 from .provider import NUDGE, provider_cut, provider_error, PROVIDER_WAITS
 from .sessions import find_lost_logs, refresh_sessions, session_of
 from .github import GhFailed, finish, merged_here, watch_main
-from .forge import already_merged, pr_merged, pr_pending, pr_problem, pr_view, repository
+from .forge import already_merged, pr_merged, pr_pending, pr_problem, pr_view, reach, repository
 from .launch import default_space
 from .store import locate, read_list, Store, store_files
 from .queues import machine_hold, refresh_ext, running_count, set_hold, waiting_ext, waiting_for
@@ -107,9 +107,13 @@ def squash_merged(s, t):
     pull request, recorded on the task, or None."""
     where = repository(s)
     try:
+        if where:
+            reach(where, "nothing was recorded", "the tick looks again")
         found = pr_merged(t, where) if where else None
     except GhFailed:
         return None  # gh couldn't say: this pass skips it, the next looks again
+    except Fail:
+        return None  # the folder on another host (reach()): nothing recorded or finished; the tick goes on
     if not found or found.get("headRefOid") != (t.get("own") or t.get("head")):
         return None
     t["pr"] = {"number": found["number"], "url": found["url"], "repo": where["repo"]}

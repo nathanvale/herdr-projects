@@ -257,5 +257,73 @@ class AFolderOnAnotherHost(unittest.TestCase):
         self.assertEqual((t["state"], t["pr"]["url"]), ("ready", "https://git.example.com/o/r/pull/9"))
         self.assertEqual(f.remote_tip("task/1"), f.tip)
 
+@publication.ON_CI
+class AnExistingPullRequestOnAnotherHost(unittest.TestCase):
+    """issue #7: a folder gh places on an Enterprise host, GH_HOST unset, and a same-named github.com
+    pull request at the task's branch and head. Adopt, Accept's already-exists path, merge, Accept
+    with one recorded and the tick's merged read all refuse before any call about it (forge.reach()):
+    nothing recorded, merged or finished, and the worktree and branch stay."""
+
+    def setUp(self):
+        self.f = f = fixture(self)
+        f.git(f.repo, "remote", "set-url", "origin", publication.ENTERPRISE)
+        f.git(f.repo, "config", "--add", f"url.{f.bare}.insteadOf", publication.ENTERPRISE)
+        f.github(prs=[f.pr()])
+
+    def refused(self, *args, words="Set GH_HOST to git.example.com"):
+        f = self.f
+        before = f.task()
+        unasked(f)
+        error = f.refused(*args, "--folder", f.repo)
+        self.assertIn(words, error)
+        t = f.task()
+        self.assertEqual(t, before)  # the task as it was: no pull request recorded, not done, no merged_head
+        for key in ("merged", "merged_head", "done_at"):
+            self.assertNotIn(key, t)
+        self.assertEqual(f.calls("pr"), [])  # never asked to view, list or merge it
+        self.assertEqual((os.path.isdir(f.wt), f.rev("refs/heads/task/1")), (True, f.tip))
+        return error
+
+    def recorded(self):
+        self.f.seed(state="ready", ready_at=1, base="target", pr=dict(LEGACY))
+
+    def test_adopt_refuses(self):
+        self.refused("adopt", "1", "--pr", "7")
+        self.assertNotIn("pr", self.f.task())
+
+    def test_accepts_already_exists_path_refuses(self):
+        self.f.seed(state="ready", ready_at=1, base="target",
+                    attention='Couldn\'t open a pull request: a pull request for branch "task/1" already exists')
+        self.refused("accept", "1")
+        self.assertNotIn("pr", self.f.task())
+
+    def test_merge_refuses(self):
+        self.recorded()
+        self.refused("merge", "1")
+
+    def test_accept_with_a_recorded_pull_request_refuses(self):
+        self.recorded()
+        self.refused("accept", "1")
+
+    def test_the_ticks_merged_read_records_nothing(self):
+        f = self.f
+        f.seed(own=f.tip, head=f.tip)  # Working, its agent between turns
+        f.github(prs=[f.pr(state="MERGED", baseRefName="old-base", mergeCommit={"oid": "e" * 40})])
+        unasked(f)
+        self.assertEqual(f.ok("tick", "--folder", f.repo)["done"], [])
+        t = f.task()
+        self.assertEqual(t["state"], "running")
+        for key in ("pr", "merged", "merged_head", "done_at"):
+            self.assertNotIn(key, t)
+        self.assertEqual(f.calls("pr"), [])
+        self.assertEqual((os.path.isdir(f.wt), f.rev("refs/heads/task/1")), (True, f.tip))
+
+    def test_a_folder_host_gh_didnt_name_refuses(self):
+        self.f.git(self.f.repo, "remote", "set-url", "origin", publication.URL)
+        self.f.github(prs=[self.f.pr()], repo_url=None)
+        self.recorded()
+        self.refused("merge", "1", words="didn't say which host")
+
+
 if __name__ == "__main__":
     unittest.main()

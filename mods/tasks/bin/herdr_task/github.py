@@ -77,6 +77,7 @@ class GhFailed(Caused):
         said = f"gh couldn't {doing} ({plain(err)}). {STAYS} and nothing merged here."
         super().__init__("gh", f"{said} {GH_ACCESS} is the person's to repair: {HANDOFF}")
         self.person = f"{said} Repair {GH_ACCESS}, then try again."
+        self.reason = plain(err)  # gh's own words alone, for a caller that says what couldn't be reached
 
 
 def push_problem(wt, branch, remote, there, err):
@@ -333,7 +334,7 @@ PR_LINK = re.compile(rf"https://[^/]+/([^/]+/[^/]+)/pull/({PR_NUMBER})/?")
 BRANCH = re.compile(r"[\w./@+-]+")  # as launch.base_ref(), which imports from here
 
 
-def adopt_existing(s, task, given):
+def adopt_existing(s, task, given, reach=None):
     """Records a pull request that already exists on a started task, by hand (herdr-task adopt): its
     number, or its link, and the head it verified (adopted_head), the one Accept merges. True:
     recorded. False: it already was, at this branch tip, and nothing changed; adopting it again once
@@ -357,6 +358,8 @@ def adopt_existing(s, task, given):
     repo = github(s)
     if not repo:
         raise Fail(f"{main} has no remote gh can place on GitHub, so there is no pull request to adopt.")
+    if reach:
+        reach(s)  # the forge's folder-host check (forge.reach()), before any call about the pull request
     link = PR_LINK.fullmatch(given.strip())
     word = link.group(2) if link else given.strip().lstrip("#")
     if not re.fullmatch(PR_NUMBER, word):

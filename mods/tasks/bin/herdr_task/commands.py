@@ -26,8 +26,8 @@ from .github import (
     update_main, watch_main,
 )
 from .forge import (
-    admit, adopt_existing, already_merged, integrate, no_local_merge, pr_adopt, pr_open, pr_pending, pr_problem, pr_read,
-    pr_view, repository,
+    admit, adopt_existing, already_merged, integrate, merge_reach, no_local_merge, pr_adopt, pr_open, pr_pending, pr_problem,
+    pr_read, pr_view, repository,
 )
 from .launch import (
     base_ref, brief, caller_labels, caller_space, current_base, default_space, folder_for, handoff, launch, name_tabs,
@@ -1022,6 +1022,14 @@ def merge_now(s, t):
     couldn't, or why one already merged doesn't finish the task (merged_elsewhere()); None when
     it's merged (and the task done)."""
     n = str(t["pr"]["number"])
+    # The folder's host first (forge.reach()): on another host, or none named, nothing is read as this
+    # task's and nothing merges or changes. gh failing to place the folder is gh failing to reach it.
+    try:
+        merge_reach(s, t)
+    except GhFailed as e:
+        return f"{UNREACHED} #{n} on GitHub ({e.reason or 'no answer'}). Nothing merged. Repair {GH_ACCESS}, then try again."
+    except Fail as e:
+        return str(e)
     v, why = pr_read(t)
     s.dirty = True
     matched = None  # the head GitHub was asked to merge (--match-head-commit)

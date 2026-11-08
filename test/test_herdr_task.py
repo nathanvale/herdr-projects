@@ -840,8 +840,11 @@ class BackToWork(unittest.TestCase):
         views, merges = list(views), list(merges)
         done = []
         # Only `gh pr merge` answers from `merges`; any other gh call (adopting one) goes to the gh already faked.
+        # The folder is on github.com, the host gh is sent to, as gh would place it (forge.reach()).
+        import herdr_task.forge as forge
         others = self.github.gh
-        patches = [(self.commands, "pr_read", lambda t: (views.pop(0), None)), (self.commands, "pr_view", lambda t: views.pop(0)),
+        patches = [(forge, "repository", lambda s, fresh=False: {"provider": "github", "repo": "o/r", "host": "github.com"}),
+                   (self.commands, "pr_read", lambda t: (views.pop(0), None)), (self.commands, "pr_view", lambda t: views.pop(0)),
                    (self.github, "gh", lambda *a, **k: merges.pop(0) if a[:2] == ("pr", "merge") else others(*a, **k)),
                    (self.commands, "watch_main", lambda *a: None), (self.commands, "update_main", lambda *a: None),
                    (self.commands, "finish", lambda s, t, even_if_busy=False: (t.update(state="done"), done.append(t["id"])))]
@@ -973,7 +976,7 @@ class BackToWork(unittest.TestCase):
         t = self.ready(mode="worktree", worktree="/w", branch="b",
                        attention="Couldn't open a pull request: a pull request for branch \"b\" already exists")
         self.merging([{"state": "MERGED", "mergeCommit": {"oid": "f00"}}], [])
-        with self.mock.patch.object(self.commands, "repository", lambda s: {"provider": "github", "repo": "o/r"}):
+        with self.mock.patch.object(self.commands, "repository", lambda s: {"provider": "github", "repo": "o/r", "host": "github.com"}):
             self.commands.cmd_accept(self.args())
         self.assertEqual((t["state"], t["pr"]["number"]), ("done", 599))
         self.assertNotIn("attention", t)
@@ -1423,7 +1426,7 @@ class MergedOnlyWithOwnWork(unittest.TestCase):
             if a[:2] == ("pr", "create"):
                 return True, "https://github.com/o/r/pull/705", ""
             return True, "", ""
-        where = lambda s, fresh=False: {"provider": "github", "repo": "o/r"}
+        where = lambda s, fresh=False: {"provider": "github", "repo": "o/r", "host": "github.com"}
         for mod, name, value in ((github, "gh", fake), (github, "github", lambda s: "o/r"), (self.commands, "repository", where),
                                  (github, "watch_main", lambda *a: None), (self.commands, "watch_main", lambda *a: None),
                                  (self.tick, "repository", where)):

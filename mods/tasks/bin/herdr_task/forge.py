@@ -88,6 +88,33 @@ def no_local_merge(s, task):
     return github.no_local_merge(s, task)
 
 
+def reach(where, nothing="nothing was pushed", then="run ready again"):
+    """Refuses (Fail) a folder whose repository the forge places on another host than the one its
+    adapter sends commands to, or on none it named: gh is sent `--repo owner/name` alone, so it goes
+    to its default host, not necessarily the folder's. Refused, never skipped. The one owner of this
+    check: publication, adoption, merging and the tick's merged read all call it, before any call
+    about a pull request. nothing, then: what didn't happen, and what to do after setting GH_HOST."""
+    w, there = adapter_of(where), where.get("host")
+    if not there:
+        raise Fail(f"{w.NAME} didn't say which host {where['repo']} is on, so its pull request can't be kept to {w.host()}; "
+                   f"{nothing}. Try again; if it says the same, set GH_HOST to that repository's host.")
+    if there != w.host():
+        raise Fail(f"This folder's repository is on {there}, and herdr-task reaches {w.NAME} at {w.host()} here, so its pull "
+                   f"request would go to the wrong host; {nothing}. Set GH_HOST to {there}, then {then}.")
+
+
+def merge_reach(s, task):
+    """reach() for merging the task's saved pull request, before anything reads it: the folder's
+    repository as the forge places it now (a folder it no longer places refuses as one with no host).
+    One no adapter here reaches is left to pr_read(), which refuses it without any call."""
+    try:
+        route(task["pr"])
+    except Fail:
+        return
+    where = repository(s) or {"provider": provider_of(task["pr"]), "repo": task["pr"].get("repo")}
+    reach(where, "nothing was merged", "try again")
+
+
 # ---- publishing -----------------------------------------------------------------------------
 
 def pr_open(s, task, where, summary=None):
@@ -96,15 +123,7 @@ def pr_open(s, task, where, summary=None):
     when it is another provider's, host's or repository's, its forge doesn't answer (the adapter's
     own refusal), or answers for another pull request."""
     saved, state = task.get("pr"), None
-    # gh is sent `--repo owner/name` alone, so it goes to its default host, not necessarily the folder's:
-    # refused, never skipped, when they differ or the folder's host is unknown.
-    there, w = where.get("host"), adapter_of(where)
-    if not there:
-        raise Fail(f"{w.NAME} didn't say which host {where['repo']} is on, so its pull request can't be kept to {w.host()}; "
-                   "nothing was pushed. Try again; if it says the same, set GH_HOST to that repository's host.")
-    if there != w.host():
-        raise Fail(f"This folder's repository is on {there}, and herdr-task reaches {w.NAME} at {w.host()} here, so its pull "
-                   f"request would go to the wrong host; nothing was pushed. Set GH_HOST to {there}, then run ready again.")
+    reach(where)
     if saved:
         a = route(saved)
         if provider_of(saved) != provider_of(where) or saved.get("repo") not in (None, where["repo"]):
@@ -122,7 +141,9 @@ def pr_open(s, task, where, summary=None):
 
 
 def pr_adopt(task, where):
-    """The open pull request for the task's branch in `where`, recorded when its own link is there."""
+    """The open pull request for the task's branch in `where`, recorded when its own link is there;
+    refused (reach()) before anything is asked when `where` is on another host."""
+    reach(where, "nothing was adopted", "accept again")
     return adapter_of(where).pr_adopt(task, where["repo"])
 
 
@@ -130,7 +151,9 @@ def adopt_existing(s, task, given):
     """Records an existing pull request by hand (the adapter checks it is the task's), refused first
     when the one already saved is unreachable here."""
     admit(task)
-    return github.adopt_existing(s, task, given)
+    # The folder's host, once gh has placed it (the adapter's own lookup, asked once), before any
+    # call about the pull request.
+    return github.adopt_existing(s, task, given, lambda s: reach(repository(s), "nothing was adopted", "adopt again"))
 
 
 def pr_merged(task, where):

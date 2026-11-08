@@ -314,13 +314,19 @@ those earlier phases admitted are S1's from here, and their pins are S1's.
   on that host; `adopt` refuses a link or answer on another host.
 - The folder's host is gh's own: `gh repo view --json nameWithOwner,url` in the folder,
   the one lookup `github()` makes, gives the link on the host gh resolves from the remote,
-  SSH aliases included. Publication refuses before any push when that host differs from
-  the one `--repo owner/name` reaches, or when gh gave none, saying to set `GH_HOST`.
+  SSH aliases included. `forge.reach()` is the one owner of comparing it with the host
+  `--repo owner/name` reaches: a different host, or none given, refuses with nothing
+  changed and says to set `GH_HOST`. Publication calls it before any push; adopt, Accept's
+  already-exists adoption, every merge (`merge_now()` from merge, Accept, Ready's and the
+  tick's auto merge) and the tick's merged read (`squash_merged()`, which skips the task
+  for that pass) call it before any call about a pull request. gh failing to place the
+  folder at a merge reads as gh failing to reach the pull request, as N1 words it.
 - Not covered: read-only presentation in `service/worktree.ts` and `mods/task-pr/main.js`,
   and GitHub news (`T/ghnews.py`), still read the saved `repo` (B1/B2); Ready's SHEP-59
-  read and the tick read the merged list before publication's host check (their answers
-  must still be on the reached host, at the task's tip). Host-qualified GitHub transport
-  is not added.
+  read (also the tick's, for a Ready task) reads the merged list before the host check,
+  and the tick's read of a recorded pull request isn't gated by it (their answers must
+  still be on the reached host, at the task's tip, and a recorded one passed it when
+  saved). Host-qualified GitHub transport is not added.
 - Regression: `test/test_forge.py` runs `ready`, `merge` and `tick` as processes on the N1
   fixture. Existing assertions are unchanged; `test_herdr_task.py`'s patch points moved
   to the seam, and the merge fake answers only `gh pr merge`. Fixtures answer as gh does:

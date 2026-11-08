@@ -38,13 +38,13 @@
       "phase": "S1",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "d2463e1a37c0aeefaee51eec7480d3de3df1f40d",
-      "sha256": "408a50c9ecd12a99e75c62a0417c888331ff71603c6d4cf05212c17587f51dd6"
+      "sha256": "c39cba6785b67f2978e06cf79aba1b8a6aa5722b819daf4da6ab65642a4a31c0"
     },
     {
       "phase": "S1",
       "path": "mods/tasks/bin/herdr_task/github.py",
       "upstream_blob": "e28e2fe4f68da9e52fbbe8cbee1e293d5b22558c",
-      "sha256": "6188015843d3ac4d89d27775bc205d8d02b8d370f89468ffa4e8a85dba5dcae3"
+      "sha256": "71cbcdf46a899245043528030a26e6623efea401e217e5e008d13c5f7c9c6293"
     },
     {
       "phase": "A1",
@@ -68,7 +68,7 @@
       "phase": "S1",
       "path": "mods/tasks/bin/herdr_task/tick.py",
       "upstream_blob": "079934ac912d084b2c4803e772007778d5791d71",
-      "sha256": "5273ff840aeb6a7df29c44791e6df28695057537dbc9fbe2a610d93563681c9e"
+      "sha256": "cbe6efe7ea1a68b03f3811b4ee7eb3162595ebe6d4345377d630cc31b88cd39e"
     },
     {
       "phase": "A1",
@@ -92,7 +92,7 @@
       "phase": "S1",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "82cfa36fd73760a95a88b6d07a09e9cc03dfa167",
-      "sha256": "dabf664f9b27ea4b12421dd36279a6e6953a518d1b73d4eaebed9484283459fb"
+      "sha256": "853ddb6e3a91373794e77d3fff646f63b605c8f88577b9a6049c07b3b33d227c"
     },
     {
       "phase": "S1",
@@ -278,7 +278,7 @@
       "phase": "S1",
       "path": "mods/tasks/bin/herdr_task/forge.py",
       "upstream_blob": null,
-      "sha256": "b671437393602c7efc294859542e01d5c2c09b6756212ad1d01ff1147aa49877"
+      "sha256": "c5c720093512ed8cc5e0eb09ddd3dcfab57f88f8906fd47a68a4c0f426704364"
     },
     {
       "phase": "S1",
@@ -290,7 +290,7 @@
       "phase": "S1",
       "path": "test/test_forge.py",
       "upstream_blob": null,
-      "sha256": "56b83c09f8e635846f5f09b59c6744efbefe8648a2c7a7f55d34024eb9219bd7"
+      "sha256": "846c49a867588c3f813b85025db1f11378af536fd3098f6d724c61bdf77d052d"
     }
   ],
   "requirements": [
