@@ -560,7 +560,10 @@ function TaskList(_: { placeId: string }) {
       {/* the filter row: All statuses, and a chip for each status that holds something now */}
       <StatusFilters counts={counts} filter="all" />
       <div ref={list} className="relative">
-        {!loaded ? <Empty className="pt-3 text-fg3">Reading tasks…</Empty> : null}
+        {/* no space and no task in the snapshot (#747): whether the service has read the task lists yet, a snapshot
+            doesn't say (it can send one before its first read), so this says only that nothing is shown: never
+            "Reading…" (it would never end with no spaces) and never that there are no tasks */}
+        {!loaded ? <Empty className="pt-3 text-fg3">Nothing to show here.</Empty> : null}
         {groups.filter((g) => g !== archivedGroup).flatMap((g, i) => {
           // Machine › Space: a machine's name over its groups, once, with how many tasks they hold
           const m = g.machine
