@@ -40,6 +40,7 @@ test/test_native_publication.py'''.split()),
 mods/chat/core/chat-log.js mods/chat/main.js mods/coordinator/core/agents.js mods/newspace/core/agents.js
 mods/shepherdr-settings/core/agents.js mods/tasks/bin/herdr_task/news.py mods/tasks/bin/herdr_task/sessions.py
 service/actions.ts service/agents.ts service/watch.ts test/test_session_discovery.py'''.split()),
+    'W1': frozenset('docs/web.md service/jobs-flags.test.ts service/jobs.ts'.split()),
 }
 
 

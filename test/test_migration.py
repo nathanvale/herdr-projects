@@ -36,14 +36,14 @@ class SourceCheckpoint(unittest.TestCase):
         self.assertEqual(observed['candidate_readiness'], 'blocked')
         self.assertEqual(observed['requirements'], 40)
         self.assertEqual(observed['file_dispositions'], 121)
-        self.assertEqual((observed['phase'], observed['source_deltas']), ('C1', 31))
+        self.assertEqual((observed['phase'], observed['source_deltas']), ('W1', 34))
 
     def test_candidate_gate_refuses_even_when_source_validation_passes(self):
         result, observed = self.run_check('--require-ready')
         self.assertEqual(result.returncode, 3)
         self.assertEqual(observed['source_validation'], 'passed')
         self.assertEqual(observed['candidate_readiness'], 'blocked')
-        self.assertIn('C1 is source-only', result.stderr)
+        self.assertIn('W1 is source-only', result.stderr)
         self.assertIn('Complete required ports', result.stderr)
 
     def test_existing_discovery_cannot_be_dropped(self):
@@ -90,14 +90,14 @@ class SourceCheckpoint(unittest.TestCase):
         self.assertIn('Native foundation differs from exact U', observed['error'])
 
     def test_an_unadmitted_owner_cannot_join_the_phase(self):
-        for phase in ('A1', 'N1', 'C1'):
+        for phase in ('A1', 'N1', 'C1', 'W1'):
             with self.subTest(phase=phase):
                 def widen(data):
                     data['source_deltas'].append({'phase': phase, 'path': 'mods/tasks/bin/herdr_task/revive.py',
                                                   'upstream_blob': None, 'sha256': '0' * 64})
                 result, observed = self.fixture(MANIFEST, widen, '--manifest')
                 self.assertEqual(result.returncode, 1)
-                self.assertIn('admitted owners of phase C1', observed['error'])
+                self.assertIn('admitted owners of phase W1', observed['error'])
 
     def test_a_delta_cannot_drop_its_upstream_provenance(self):
         for name in ('github.py', 'takeover.py'):
@@ -157,7 +157,7 @@ class NativeFoundation(unittest.TestCase):
 
     def test_an_admitted_path_refuses_any_content_but_the_pinned_one(self):
         for path in ('core/chat-log.js', 'mods/tasks/bin/herdr_task/github.py', 'mods/tasks/bin/herdr_task/launch.py',
-                     'mods/tasks/bin/herdr_task/providers.py', 'test/test_native_publication.py'):
+                     'mods/tasks/bin/herdr_task/providers.py', 'service/jobs.ts', 'test/test_native_publication.py'):
             with self.subTest(path=path):
                 code, observed = self.changed(path, lambda target: target.write_bytes(target.read_bytes() + b'\n'))
                 self.assertEqual(code, 1)

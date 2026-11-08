@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "phase": "C1",
+  "phase": "W1",
   "architecture": "full-upstream-3.x",
   "candidate_readiness": "blocked",
   "inputs": {
@@ -195,6 +195,24 @@
       "path": "test/test_session_discovery.py",
       "upstream_blob": null,
       "sha256": "a358820e2ff62079a8cf06ce5454bfc66478ee8bf909bb385d21a884b69e81e4"
+    },
+    {
+      "phase": "W1",
+      "path": "docs/web.md",
+      "upstream_blob": "70eb15e77333c77d108784a2172ef1d571efc226",
+      "sha256": "257dd73978610069e6dc066d92b8ce8597190f32ce153feca308a36d3c970198"
+    },
+    {
+      "phase": "W1",
+      "path": "service/jobs-flags.test.ts",
+      "upstream_blob": null,
+      "sha256": "90581587e1174b5a94c5ac33646043ba5d8c8d0a45069f7688656b2c25b9eb74"
+    },
+    {
+      "phase": "W1",
+      "path": "service/jobs.ts",
+      "upstream_blob": "49126d5ddb6d2f360bfbfd2c7cc5b4e1644e0802",
+      "sha256": "1684b5bf3d72e7f2bf54174b344b59c2534e1c08ea9e6b72463fa4c66b3d4e66"
     }
   ],
   "requirements": [
@@ -1114,7 +1132,7 @@
     }
   ],
   "inventory": "upstream-v3.1.3-files.json",
-  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held, N1 native pull request adoption and fail-closed publication, and the C1 session discovery under each agent's own folder; no required fork port is complete, CI-proved or runtime-qualified",
+  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held, N1 native pull request adoption and fail-closed publication, the C1 session discovery under each agent's own folder, and the W1 web chat flag kept apart from background work; no required fork port is complete, CI-proved or runtime-qualified",
   "azure_cli_design": {
     "skill": "my-second-brain-playground:cli-design",
     "route": "maintain/extend existing-project",

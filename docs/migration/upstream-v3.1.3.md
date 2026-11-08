@@ -2,8 +2,9 @@
 
 S0 is a source-only foundation; A1 adds provider launch plans and deployment discovery
 owners on it, with Azure dispatch held, N1 adds native pull request adoption and
-fail-closed publication, and C1 finds a Claude Code session under its own agent's
-folder. Required Bitbucket, Azure and lifecycle ports are
+fail-closed publication, C1 finds a Claude Code session under its own agent's
+folder, and W1 keeps a web page's chat flag apart from background work. Required
+Bitbucket, Azure and lifecycle ports are
 pending. This checkpoint is not deployable or ready for application use. Check's
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
@@ -42,6 +43,7 @@ owners, not implemented interfaces.
 | S1 | Reviewed S0 | New `T/forge.py`, existing `T/github.py`, commands/proof/worktree consumers; preserve GitHub defaults. Smallest next customization. |
 | A1 | Reviewed S0 | New `T/providers.py` and `service/azure-deployments.ts`; nonsecret bindings, supported authentication and discovery custody. |
 | C1 | S0, separately authorized | `core/chat-log.js` FIND and `T/sessions.py`; a Claude Code session is found under its own process's folder, for reading only, and nothing starts such an agent again. Not a port. |
+| W1 | S0, separately authorized | `service/jobs.ts`; a chat a web page follows keeps its ask flag with background work off, and nothing else runs. Not a port. |
 | B1 | S1 | New `T/bitbucket.py`, `T/bitbucket_http.py`; qualified identity, host credentials and complete exact-head reads. |
 | B2 | B1 | New `T/publications.py`, commands/output/CLI; durable claims, publication/readiness and current admission. |
 | A2 | A1 | Shared settings/agents, desktop/web controls, `T/settings.py`, launch/resume; discovery, selectors and binding parity. |
@@ -187,6 +189,46 @@ for each candidate process and never for the caller:
   take it only when run on macOS.
 - This fix is not a required port. No inventory requirement changes status.
 
+### W1 web chat flag checkpoint
+
+Claude Code's question hook (`mods/chat/ask-hook.sh`) asks a chat only while
+`data/chat-asks/open/<terminal>` is under 15 s old. On the web only `service/jobs.ts`
+touched it, and only with background work on, so with `SHEPHERDR_JOBS=off`, or a 3.0
+window keeping that work, a web page got no cards. W1 starts that flag's round before
+the background work's gate. Nothing else moves.
+
+- Background work keeps its gate: the task tick, `scheduler --ensure`, other machines'
+  ticks and `herdr-secret serve` run only as before. `/api/health`'s `jobs` is unchanged.
+- The flag is kept only for a live Claude agent's chat that a page follows, as before.
+  Another machine's agent keeps its flag there through `machine.exec`, the same one
+  `touch` with background work on or off; the cards there are already read and answered
+  through that link (`service/asks.ts`).
+- While herdr-core is away, flags here are touched from its last list as before: they and
+  the answers are files, so an outage doesn't affect them. Behaviour change, with background
+  work on too: another machine's flag isn't touched then, where each touch used to wait and
+  land once the core was back, perhaps for a terminal gone since; the first round after it's
+  back sends one (at its usual 8 s spacing) instead of a queued touch landing at once, so an
+  outage ending 12 to 15 s after the last touch now lets that flag go stale where it didn't
+  before. An outage covering the round that would refresh it is enough, however short; one
+  over about 12 s always is.
+- Existing limitation, the same with background work on: a window closing an agent's chat
+  on that agent's own machine (`close()` in `mods/chat/main.js`; a window showing another
+  machine's agent leaves its flag alone) deletes the flag and empties every request waiting
+  on that terminal, so a card about to be answered on a page goes to the terminal instead.
+  The service makes the flag again for the next request: within 4 s for an agent on the
+  service's machine, and for another machine's agent at its next remote touch, up to about
+  12 s later with the 8 s spacing, plus the link's delay. While the window and
+  a page show one chat, both can answer one request; the hook takes the first answer file
+  it sees.
+- With background work off and a window there, a request from an agent whose chat a page
+  follows now waits for a chat's answer instead of going straight to the terminal, as it
+  already did with background work on. The window's own flag code is unchanged.
+- Untouched: `mods/chat/ask-hook.sh`, `service/asks.ts`, request identity, the answer
+  path, `service/main.ts` and every permission restriction.
+- `service/jobs-flags.test.ts` runs `service/jobs.ts` in a child process with stand-ins for
+  herdr-task, herdr-secret and the hub. A real Claude, its hook and a real page are not run.
+- This fix is not a required port. No inventory requirement changes status.
+
 ### Bitbucket contract
 
 Port P's behavior into native owners, not its old server paths. GitHub retains
@@ -287,8 +329,9 @@ silently considered covered by default tests.
 Root runs `python3 bin/check-migration`, its public-CLI checkpoint tests
 (`test/test_migration.py`), the A1 provider and discovery tests (`test/test_providers.py`,
 `service/azure-deployments.test.ts`), the N1 publication tests (`test/test_native_publication.py`),
-the C1 discovery tests (`core/chat-find.test.js`, `test/test_session_discovery.py`)
-and every native Check command. CI owns frozen dependency installation, web
+the C1 discovery tests (`core/chat-find.test.js`, `test/test_session_discovery.py`),
+the W1 flag tests (`service/jobs-flags.test.ts`) and every native Check command. CI owns
+frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.
 Missing dependencies/generated web sources are prerequisite blockers, not authority
