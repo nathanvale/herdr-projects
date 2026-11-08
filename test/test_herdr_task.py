@@ -888,7 +888,9 @@ class BackToWork(unittest.TestCase):
         def fake(*a, **k):
             calls.append(a[:2])
             if a[:2] == ("pr", "list"):
-                return True, json.dumps(prs), ""
+                # As gh: open pull requests answer --state open (its default) and all, never merged or closed.
+                state = a[a.index("--state") + 1] if "--state" in a else "open"
+                return True, json.dumps(prs if state in ("open", "all") else []), ""
             if a[:2] == ("pr", "create"):
                 if any(not p["isCrossRepository"] and p["baseRefName"] == "main" for p in prs):
                     return False, "", "a pull request for branch \"b\" into branch \"main\" already exists"
@@ -946,6 +948,8 @@ class BackToWork(unittest.TestCase):
                 state = a[a.index("--state") + 1]
                 return True, json.dumps([] if state == "open" else [{"number": 704, "url": "u", "isCrossRepository": False,
                                                                      "baseRefName": "main", "headRefOid": "old"}]), ""
+            if a[:1] == ("api",):
+                return False, "", "gh: Not Found (HTTP 404)"  # as gh: the branch isn't on GitHub yet
             return True, "", ""
         with self.mock.patch.object(github, "gh", fake), self.mock.patch.object(github, "git", lambda *a: (True, "abc", "")):
             t = self.ready(mode="worktree", worktree="/w", branch="b")
@@ -1807,22 +1811,37 @@ class CleanEnv(unittest.TestCase):
         return dict(l.split("=", 1) for l in out.stdout.splitlines() if "=" in l)
 
     def test_a_task_agent_starts_without_a_parent_claude_session(self):
+        import shutil
         from types import SimpleNamespace
         from unittest import mock
         sys.path.insert(0, BIN)
         import herdr_task.launch as L
-        ran = []
+        import herdr_task.settings as settings
+        ran, admitted = [], []
 
         def run(argv, *a, **k):
             ran.append(argv)
             return subprocess.CompletedProcess(argv, 0, json.dumps({"address": "t9"}), "")
-        s = SimpleNamespace(key=lambda t: "dev#6", dirty=False)
+
+        real_admit = L.admit_launch
+
+        def admit(s, argv, space=None):
+            # The fork's provider gate (A1) runs first, for real: with no settings, Personal passes.
+            admitted.append((argv, space))
+            return real_admit(s, argv, space)
+        none = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, none, True)
+        # loc: the folder A1's gate reads its settings for (a store always has one).
+        s = SimpleNamespace(key=lambda t: "dev#6", dirty=False, loc={"folder": "/tmp", "kind": "repo"})
         task = {"id": 6, "title": "fake", "agents": []}
         with mock.patch.object(L, "run", run), mock.patch.object(L, "folder_for", lambda s, t: "/tmp"), \
                 mock.patch.object(L, "agent_name", lambda *a: "dev-6-fake"), mock.patch.object(L, "track", lambda *a: None), \
                 mock.patch.object(L, "coordinator_tab", lambda a: None), mock.patch.object(L, "own_argv", lambda a: a), \
-                mock.patch.object(L, "in_shell", lambda a: a), mock.patch.object(L, "low_priority", lambda a, n: a):
+                mock.patch.object(L, "in_shell", lambda a: a), mock.patch.object(L, "low_priority", lambda a, n: a), \
+                mock.patch.object(L, "admit_launch", admit), \
+                mock.patch.object(settings, "SETTINGS", os.path.join(none, "shepherdr.json")):
             L.launch(s, task, ["env"], "sp1")
+        self.assertEqual(admitted, [(["env"], "sp1")])
         hc = ran[0]
         self.assertEqual(hc[:2], ["hc", "run"])
         env = self.agent_env(hc[hc.index("--") + 1:])
