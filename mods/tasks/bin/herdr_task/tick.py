@@ -66,6 +66,9 @@ def facts(s, t, report):
                 return
             t["merged"] = True
             watch_main(s, t, (v.get("mergeCommit") or {}).get("oid"))
+            if (pr.get("provider") or "github") != "github" and isinstance(v.get("headRefOid"), str):
+                # What merged, as this very read says (finish() never asks gh about another forge's).
+                t["merged_head"] = v["headRefOid"]
             finish(s, t)
             report["done"].append(t["id"])
             return
@@ -76,7 +79,10 @@ def facts(s, t, report):
         problem = issue or (moved if t["state"] == "ready" else None)
         t["_pr_fresh"] = not (issue or moved) and not pr_pending(v)
         try:
-            pr_news(s, t, v, report)
+            # GitHub news asks GitHub: never for another forge's pull request (its name would be read
+            # there as GitHub's). Bitbucket feedback is outside B1.
+            if (v.get("provider") or "github") == "github" and (pr.get("provider") or "github") == "github":
+                pr_news(s, t, v, report)
         except Exception as e:  # never stops the tick
             report.setdefault("github_error", []).append(f"{s.ref(t)}: {e}")
         # Kept up to date while it is back at work too (a fix pushed: the problem goes away), so its

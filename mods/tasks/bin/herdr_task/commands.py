@@ -26,8 +26,8 @@ from .github import (
     update_main, watch_main,
 )
 from .forge import (
-    admit, adopt_existing, already_merged, integrate, merge_reach, no_local_merge, pr_adopt, pr_open, pr_pending, pr_problem,
-    pr_read, pr_view, repository,
+    access_of, admit, adopt_existing, already_merged, integrate, merge_reach, name_of, no_local_merge, no_merge, pr_adopt,
+    pr_open, pr_pending, pr_problem, pr_read, pr_view, publication, repository,
 )
 from .launch import (
     base_ref, brief, caller_labels, caller_space, current_base, default_space, folder_for, handoff, launch, name_tabs,
@@ -660,8 +660,10 @@ def finalize(s, t):
     always asks: ready never merges it. Publishing comes first, and gh or git failing there refuses
     (Fail): on GitHub, Ready means published. Returns what to say."""
     worktree_here(s, t)
-    # A saved pull request no forge adapter here reaches refuses before any host is asked anything.
+    # A saved pull request no forge adapter here reaches refuses before any host is asked anything, and
+    # so does one its forge can't publish from here (Bitbucket's, until B2): Ready means published.
     admit(t)
+    publication(t)
     worktree = t.get("mode") == "worktree" and t.get("worktree")
     where = repository(s) if worktree else None
     if worktree and not where and getattr(s, "github_saved", False):
@@ -1034,12 +1036,19 @@ def merge_now(s, t):
     s.dirty = True
     matched = None  # the head GitHub was asked to merge (--match-head-commit)
     if not v:
-        return f"{UNREACHED} #{n} on GitHub ({plain(why or 'no answer')}). Nothing merged. Repair {GH_ACCESS}, then try again."
+        return (f"{UNREACHED} #{n} on {name_of(t['pr'])} ({plain(why or 'no answer')}). Nothing merged. "
+                f"Repair {access_of(t['pr'])}, then try again.")
     if v.get("state") != "MERGED":
         problem = pr_problem(v) or adopted_moved(s, t, v)
         if problem:
             t["attention"], t["attention_at"] = problem, now()
             return problem
+        # A forge that can't merge at the head read (Bitbucket's): never asked, and never merged another
+        # way, even once its checks pass. One merged by hand finishes as any (above and the tick).
+        refusal = no_merge(t)
+        if refusal:
+            t["attention"], t["attention_at"] = refusal, now()
+            return refusal
         if pr_pending(v):
             return "Checks are still running."
         matched = v.get("headRefOid") or ""
@@ -1072,7 +1081,8 @@ def merge_now(s, t):
 
 def merge_refused(args, v, error):
     """Accept or merge stopped at merge_now(): why, and with --json whether gh was the cause."""
-    cause = {"cause": "gh"} if error.startswith((UNREACHED, MERGE_FAILED)) else {}
+    github = (v.get("pr") or {}).get("provider") in (None, "github")
+    cause = {"cause": "gh"} if github and error.startswith((UNREACHED, MERGE_FAILED)) else {}
     say(args, {**v, "error": error, **cause}, None) if args.json else print(f"herdr-task: {error}", file=sys.stderr)
     sys.exit(1)
 

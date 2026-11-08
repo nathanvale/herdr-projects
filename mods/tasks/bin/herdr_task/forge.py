@@ -1,18 +1,25 @@
 """The forge: the one way commands, the tick and the Accept card reach a task's pull request,
 whichever provider hosts it. Each provider's adapter owns its transport and how its answers read
-(GitHub: github.py). Local Git, task state, approval and cleanup stay with their own owners.
+(GitHub: github.py; Bitbucket Cloud: bitbucket.py, which reads only, B1). Local Git, task state,
+approval and cleanup stay with their own owners.
 
 A saved pull request that names no provider ({number, url, repo}: every record written so far) is
 GitHub's. One naming a provider without an adapter here, or saved for a host other than the one its
 adapter reaches, is refused before anything is sent to any host. One its forge answers for with
 another host, repository, number or link is refused before anything is pushed, commented on,
-recorded or merged: never read as someone else's."""
+recorded or merged: never read as someone else's.
 
-from . import github
+A folder's repository is still GitHub's or none (repository()): a Bitbucket pull request is one saved
+as Bitbucket's, read from the task's own checkout, whose remote must bind that repository (B2 makes
+Bitbucket folders publish). Ready refuses one (publication()), and so does a merge (no_merge()): only
+a merge done on Bitbucket by hand finishes its task."""
+
+from . import bitbucket, github
 from .base import Fail
 
 GITHUB = "github"
-ADAPTERS = {GITHUB: github}
+BITBUCKET = bitbucket.PROVIDER
+ADAPTERS = {GITHUB: github, BITBUCKET: bitbucket}
 REFUSED = "REFUSED"
 
 
@@ -44,9 +51,36 @@ def route(pr):
     a = adapter_of(pr)
     there = host_of(pr)
     if there and there != a.host():
+        hint = f" If {there} is where it should go, set GH_HOST to {there}." if a is github else ""
         raise Fail(f"This task's pull request {mine(pr)} is on {there}, and herdr-task reaches {a.NAME} at {a.host()} here; "
-                   f"nothing was sent to either. If {there} is where it should go, set GH_HOST to {there}.")
+                   f"nothing was sent to either.{hint}")
     return a
+
+
+def name_of(pr):
+    """The name of the forge a saved pull request is on, for the person (GitHub when it names none
+    or one without an adapter here)."""
+    return ADAPTERS.get(provider_of(pr), github).NAME
+
+
+def access_of(pr):
+    """What the person repairs when that forge can't be read."""
+    return bitbucket.ACCESS if provider_of(pr) == BITBUCKET else github.GH_ACCESS
+
+
+def publication(task):
+    """Refuses (Fail) Ready for a task whose saved pull request its forge can't publish from here
+    (Bitbucket's, until B2), before anything is pushed or sent."""
+    pr = task.get("pr")
+    if pr and provider_of(pr) == BITBUCKET:
+        raise Fail(bitbucket.publish_refusal(pr, f"{github.STAYS}: {github.HANDOFF}"))
+
+
+def no_merge(task):
+    """Why its forge isn't asked to merge the task's saved pull request at all, for the person; None
+    when it is. Bitbucket's merge can't be held to the head that was accepted, so it is never sent."""
+    pr = task.get("pr") or {}
+    return bitbucket.merge_refusal(pr) if provider_of(pr) == BITBUCKET else None
 
 
 def admit(task):
@@ -106,9 +140,11 @@ def reach(where, nothing="nothing was pushed", then="run ready again"):
 def merge_reach(s, task):
     """reach() for merging the task's saved pull request, before anything reads it: the folder's
     repository as the forge places it now (a folder it no longer places refuses as one with no host).
-    One no adapter here reaches is left to pr_read(), which refuses it without any call."""
+    One no adapter here reaches is left to pr_read(), which refuses it without any call, and so is a
+    Bitbucket one: its adapter binds the task's own checkout before anything is sent (bitbucket.pr_read())."""
     try:
-        route(task["pr"])
+        if route(task["pr"]) is not github:
+            return
     except Fail:
         return
     where = repository(s) or {"provider": provider_of(task["pr"]), "repo": task["pr"].get("repo")}
@@ -189,13 +225,14 @@ def already_merged(s, task):
 def pr_read(task):
     """The task's pull request as its forge reads it now, and why not: (view, None), or (None, the
     forge's reason). A refused view (and no reason) when it is unreachable here or the forge answered
-    for another one: nothing is sent for one that is unreachable."""
+    for another one: nothing is sent for one that is unreachable, or one its adapter refuses to read
+    before sending anything (a Bitbucket checkout that doesn't bind it)."""
     saved = task["pr"]
     try:
         a = route(saved)
+        v, why = a.pr_read(task)
     except Fail as e:
         return refused(str(e)), None
-    v, why = a.pr_read(task)
     if not v:
         return v, why
     wrong = mismatch(saved, a.pr_identity(v), a.NAME)

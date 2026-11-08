@@ -628,8 +628,9 @@ MAIN_WATCH_MS = 3 * 3600000  # how long main is watched after a task merges thro
 
 def watch_main(s, task, sha=None):
     """A task just merged through its pull request: its base branch on GitHub is watched for a few
-    hours (ghnews.main_pass), so the Assistant hears once if it goes red (as Shepherdr)."""
-    if not task.get("pr"):
+    hours (ghnews.main_pass), so the Assistant hears once if it goes red (as Shepherdr). Only GitHub's:
+    main_pass asks GitHub, so another forge's repository name would be read there as GitHub's."""
+    if not task.get("pr") or (task["pr"].get("provider") or "github") != "github":
         return
     base = task.get("base") or "main"
     w = s.data.setdefault("main_watch", {}).setdefault(base, {})
@@ -683,9 +684,12 @@ def merged_head(s, task, tip):
     a merge recorded (merged_head: what merge_now() asked GitHub to merge, or the tip a fast-forward
     landed) stands. A pull request merged by hand: its head, as gh says it merged; never its squash
     commit, which the branch never holds. No pull request: the branch tip, once it is in the task's
-    base branch (base_commit(), never a same-named tag)."""
+    base branch (base_commit(), never a same-named tag). Another forge's pull request is never asked of
+    gh: its head comes only from that forge's own read, which records it (the tick's merged_head)."""
     if task.get("merged_head"):
         return task["merged_head"]
+    if task.get("pr") and (task["pr"].get("provider") or "github") != "github":
+        return None
     if task.get("pr"):
         v = pr_view(task)
         head = (v or {}).get("headRefOid") if (v or {}).get("state") == "MERGED" else None
@@ -712,7 +716,8 @@ def kept_because(s, task):
     head = merged_head(s, task, tip)
     if not head:
         if task.get("pr"):
-            return f"{kept}: gh didn't confirm which commit of pull request #{task['pr'].get('number')} merged, so nothing was removed."
+            who = "gh" if (task["pr"].get("provider") or "github") == "github" else "its forge"
+            return f"{kept}: {who} didn't confirm which commit of pull request #{task['pr'].get('number')} merged, so nothing was removed."
         if task.get("landed"):
             return (f"{kept}: its work is in {task.get('base') or 'main'} as other commits (squashed), not as {br} at "
                     f"{tip[:7]}, so nothing was removed.")
