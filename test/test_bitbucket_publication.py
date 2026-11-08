@@ -36,6 +36,7 @@ KEY = "bitbucket.org/o/r:task/1"
 # git's SSH command for the alias: its last word is git's own (git-receive-pack 'o/r.git'), run as
 # `git receive-pack 'o/r.git'` in the folder that holds o/r.git.
 SSH = '''#!/bin/sh
+[ -z "$FAKE_SSH_FAIL" ] || exit 255
 for last; do :; done
 cd "$FAKE_SSH_ROOT" || exit 1
 exec sh -c "git ${last#git-}"
@@ -58,19 +59,20 @@ class Model:
                            capture_output=True, text=True)
         return r.stdout.strip() or None
 
-    def open(self, number=7, base="main", description="", draft=False, source="task/1"):
-        """A pull request opened on Bitbucket by someone else (by hand, or another machine's)."""
+    def open(self, number=7, base="main", description="", draft=False, source="task/1", fork=None):
+        """A pull request opened on Bitbucket by someone else (by hand, another machine's, or from a fork)."""
         self.prs[number] = {"id": number, "title": "By hand", "description": description, "draft": draft, "state": "OPEN",
-                            "close_source_branch": False, "reviewers": [], "source": source, "base": base}
+                            "close_source_branch": False, "reviewers": [], "source": source, "base": base, "fork": fork}
         self.next = max(self.next, number + 1)
         return self.prs[number]
 
     def row(self, pr):
         head = self.head(f"refs/heads/{pr['source']}") or "0" * 40
+        fork = pr.get("fork") and {"full_name": pr["fork"], "links": {"html": {"href": f"https://bitbucket.org/{pr['fork']}"}}}
         return {"type": "pullrequest", "id": pr["id"], "title": pr["title"], "description": pr["description"], "state": pr["state"],
                 "draft": pr["draft"], "close_source_branch": pr["close_source_branch"],
                 "reviewers": [{"type": "user", "uuid": r["uuid"], "display_name": "Rev"} for r in pr["reviewers"]],
-                "source": {"repository": REPOSITORY, "branch": {"name": pr["source"]}, "commit": {"hash": head[:12]}},
+                "source": {"repository": fork or REPOSITORY, "branch": {"name": pr["source"]}, "commit": {"hash": head[:12]}},
                 "destination": {"repository": REPOSITORY, "branch": {"name": pr["base"]}, "commit": {"hash": "0" * 12}},
                 "links": {"html": {"href": f"https://bitbucket.org/o/r/pull-requests/{pr['id']}"}}}
 
@@ -235,6 +237,47 @@ class Publishing(unittest.TestCase):
                          (f.tip, draft_id, "confirmed", ready_id, "confirmed"))
         shown = f.ok("show", "1", "--folder", f.repo)["publication"]
         self.assertEqual((shown["draft"]["operation"], shown["ready"]["state"], shown["pushed"]["head"]), (draft_id, "confirmed", f.tip))
+
+    def test_no_merge_setting_promises_a_merge_bitbucket_wont_get(self):
+        for policy in ("checks", "auto"):
+            with self.subTest(policy=policy):
+                self.f = f = fixture(self)
+                f.seed(set={"merge": policy})
+                out = self.ready()
+                self.assertIn("Merge pull request #7 on Bitbucket yourself", out["message"])
+                self.assertNotIn("merges by itself", out["message"])
+                t = f.task()
+                self.assertEqual((t["state"], t.get("auto_merge"), t.get("attention")), ("ready", None, None))
+                self.assertFalse(any("merge" in r["path"] for r in f.bb.seen))
+
+    def test_a_forks_branch_of_the_same_name_is_left_out(self):
+        self.f.model.open(number=3, fork="someone/r")
+        self.ready()
+        self.assertEqual((self.f.task()["pr"]["number"], len(self.writes("POST"))), (7, 1))
+
+    def test_someone_elses_commits_on_the_branch_are_never_pushed_over(self):
+        f = self.f
+        other = f.sibling("a reviewer's fixup")
+        f.git(f.repo, "push", "-q", f.bare_bb, f"{other}:refs/heads/task/1")
+        out = self.ready(1)
+        self.assertIn("would drop someone's commits", out["error"])
+        self.assertEqual((out["publication"]["result"], self.there(), self.writes("POST")), ("refused", other, []))
+        # One the branch holds (it only moves forward) is pushed over, as nothing is lost.
+        self.f = f = fixture(self)
+        f.git(f.repo, "push", "-q", f.bare_bb, f"{f.start}:refs/heads/task/1")
+        self.ready()
+        self.assertEqual(self.there(), f.tip)
+
+    def test_a_push_git_cant_confirm_or_read_back_is_uncertain_and_keeps_the_claim(self):
+        f = self.f
+        f.env["FAKE_SSH_FAIL"] = "1"
+        out = self.ready(1)
+        self.assertIn("may or may not have happened", out["error"])
+        self.assertEqual((out["publication"]["result"], self.writes("POST"), self.there()), ("uncertain", [], None))
+        self.assertIsNotNone(self.claim())
+        del f.env["FAKE_SSH_FAIL"]
+        self.ready()
+        self.assertEqual((self.there(), f.task()["state"]), (f.tip, "ready"))
 
     def test_merge_stays_refused_once_published(self):
         f = self.f

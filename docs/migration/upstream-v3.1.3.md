@@ -461,10 +461,13 @@ those earlier phases admitted are B2's from here, and their pins are B2's.
   3. Refused with nothing sent: two pull requests open from the branch, one into another base (no
      second pull request), one whose description carries another operation's id, or this task's own
      not open from the branch into its base now.
-  4. The push, unless Bitbucket's branch holds the commit already: `git push --force-with-lease=
-     refs/heads/<branch>:<what Bitbucket said it holds>` to the frozen URL, prompts off. A push git
-     can't confirm is read back there (`ls-remote`), never pushed again in that command. A confirmed
-     push is saved in the claim at once.
+  4. The push, unless Bitbucket's branch holds the commit already, and only when that branch is absent,
+     held in the commit pushed (a fast-forward), or the commit this task itself last pushed there (as
+     P leases on its own pushed head): anything else is someone's commits, and it refuses with nothing
+     pushed. Then `git push --force-with-lease=refs/heads/<branch>:<that commit>` to the frozen URL,
+     prompts off. A push git can't confirm is read back there (`ls-remote`), never pushed again in that
+     command; one it can't read back either is `uncertain` and keeps the claim. A confirmed push is
+     saved in the claim at once.
   5. The draft: the task's saved record, or one opened by hand at exactly that head carrying no
      operation id (adopted, as GitHub's SHEP-13), or a new one: `POST` with `draft: true`,
      `close_source_branch: false`, the source branch at exactly that commit, the title
@@ -491,22 +494,29 @@ those earlier phases admitted are B2's from here, and their pins are B2's.
   positive evidence only. Without it the stage stays uncertain: Ready then sends nothing that changes
   anything (no push, no second pull request, no preparation) until Bitbucket shows exactly one open
   pull request from the branch into its base, at the head that step was sent for, whose description
-  carries that same id (for ready, also no longer a draft). That confirms it under the same id. An
+  carries that same id (for ready, also no longer a draft); another open beside it is refused right
+  after, with that one confirmed. That confirms it under the same id. An
   empty or failed lookup or a changed remote keeps it uncertain. Nothing releases it automatically; the
   refusal names the id and the line, so the person can open or mark it on Bitbucket by hand.
-- Output: a refused Ready's `--json` carries `publication`: `result` is `refused` (nothing changed on
+- Output: a Ready refused in publication's own steps gives `--json` `publication` (a remote on
+  bitbucket.org that doesn't bind refuses before them, with `error` alone): `result` is `refused` (nothing changed on
   Bitbucket in that command), `changed` (with `changed`: `pushed`, `draft`, each confirmed),
   `uncertain` (a write it sent may have happened) or `held` (an earlier one still is uncertain),
-  with the claim's facts. `show` (and `show --evidence`) carries the same facts as `publication`, and
-  one text line.
+  with the claim's facts; the text names what was done before it stopped. `show` (and
+  `show --evidence`) carries the same facts as `publication` (or `unreadable` with why), and one text
+  line. Ready on a pull request herdr-task never merges says so, whatever the merge setting, and sets
+  no auto merge.
 - Concurrency, as it actually is: exclusion holds on one execution host, across its folders, tasks
   and commands. herdr-task keeps no shared store between machines, and runs a folder's commands on the
   machine holding it, so a second host doesn't see the first one's claim. Between hosts, only
   Bitbucket's answers stand. A host never opens a pull request while any is open from the branch.
   It never adopts, reconciles or prepares one carrying another operation's id, so neither host takes
   over the other's effect. Two hosts publishing one branch at the same moment can each open one, as
-  Bitbucket has no conditional create; the next Ready of either sees two open and refuses. A
-  canonical cross-machine claim (`bitbucket-two-machine`'s `service/store.ts`) isn't built.
+  Bitbucket has no conditional create; the next Ready of either sees two open and refuses. So the
+  ticket's "two execution hosts cannot independently claim the same owned effect" is not met: it
+  needs a store both hosts share, and a canonical cross-machine claim (`bitbucket-two-machine`'s
+  `service/store.ts`) isn't built. That is held for a decision. A fork's branch of the same name is
+  another branch and is left out of the open pull requests read.
 - Merge: B1's refusal is unchanged for every published record. Nothing sends a Bitbucket merge or
   merges another way.
 - Regression: `test/test_bitbucket_publication.py` runs `ready`, `show`, `accept` and `merge` as
@@ -514,9 +524,10 @@ those earlier phases admitted are B2's from here, and their pins are B2's.
   are a bare repository's, reached by git through the remote's rewrite to an SSH alias and a test SSH
   transport. It covers the happy path with fields people set kept, lost replies found at once and on
   reopening (no second `POST`, same id), an empty lookup that never releases, an uncertain preparation,
-  a refused write that keeps its push, zero-effect refusals, a remote changed before the push and before
-  the write, a push URL git would rewrite, claims of another task or machine, and an unreadable claims
-  file.
+  a refused write that keeps its push, zero-effect refusals, someone's commits on the branch never
+  pushed over, a push that can't be read back, merge settings that promise nothing, a fork's branch
+  left out, a remote changed before the push and before the write, a push URL git would rewrite,
+  claims of another task or machine, and an unreadable claims file.
 - Not covered: Bitbucket's real answers (the list query's `q`, a `/` in `refs/branches/<name>`
   sent as `%2F`, draft and reviewer fields, the 255-character title bound and the 32000-character
   description bound are as P and its documentation give them), a real helper, account and push, two

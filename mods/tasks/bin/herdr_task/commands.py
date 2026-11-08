@@ -271,7 +271,9 @@ def cmd_show(args):
         text.append(f"for AGENTS.md: {v['agents_md']}")
     if v.get("pr"):
         text.append(f"pull request: #{v['pr']['number']} {v['pr']['url']}")
-    if v.get("publication"):
+    if (v.get("publication") or {}).get("unreadable"):
+        text.append(f"publication: {v['publication']['unreadable']}")
+    elif v.get("publication"):
         p = v["publication"]
         steps = [f"{name} {p[name]['state']} ({p[name]['operation']})" for name in ("draft", "ready") if p.get(name)]
         pushed = f"pushed {p['pushed']['head'][:7]}" if p.get("pushed") else "not pushed"
@@ -697,6 +699,12 @@ def finalize(s, t):
         pr["checked"] = 0
         msg = f"{s.ref(t)} is ready: pull request #{pr['number']}, {pr['url']}."
     policy = "ask" if (t.get("pr") or {}).get("adopted") else merge_policy(s, t)
+    refusal = no_merge(t) if t.get("pr") else None
+    if refusal:
+        # A pull request herdr-task never merges (Bitbucket's): whatever Settings say, nothing waits to merge
+        # by itself; the person merges it on its forge, and the tick finishes the task then.
+        t.pop("auto_merge", None)
+        return f"{msg} {refusal}"
     if policy in ("auto", "checks"):
         t["auto_merge"] = policy
         if t.get("pr"):

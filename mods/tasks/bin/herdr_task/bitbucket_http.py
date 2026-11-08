@@ -421,7 +421,8 @@ class Reader:
         return full
 
     def open_from(self, branch):
-        """Every open pull request from this repository's branch, each read in full, into any base."""
+        """Every open pull request from this repository's branch, each read in full, into any base (a fork's
+        branch of the same name is another branch: left out)."""
         q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"', safe="")
         rows = self.pages(f"{self.root}/pullrequests?q={q}&pagelen=50")
         if len(rows) > LIMITS["open"]:
@@ -431,6 +432,10 @@ class Reader:
             n = row.get("id") if isinstance(row, dict) else None
             if type(n) is not int or n < 1 or any(p["number"] == n for p in out):
                 raise Failure("malformed-response")
+            src = row.get("source") if isinstance(row.get("source"), dict) else {}
+            repo = src.get("repository") if isinstance(src.get("repository"), dict) else {}
+            if isinstance(repo.get("full_name"), str) and repo["full_name"].lower() != self.repo.lower():
+                continue  # a fork's branch of the same name: not this repository's branch, never the task's
             pr = self.pull_request(n)
             if pr["source"] != branch or pr["state"] != "OPEN":
                 raise Failure("identity-changed")  # the query answered for another branch or state

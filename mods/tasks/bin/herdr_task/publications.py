@@ -11,14 +11,20 @@ remote it was bound by, and each stage:
   at exactly that commit). A fact: kept whatever fails after it.
 - draft: opening the draft pull request. Its operation id (a UUID) is saved as uncertain before the
   write is sent, and goes in the pull request's description (a last line `Herdr-Operation: <id>`).
+  Exactly one open pull request carrying that id is that draft.
 - ready: preparing it for review (draft off, the summary as description), with its own operation id.
 
 A stage whose answer didn't come back whole stays uncertain. Ready then sends nothing that changes
 anything (no push, no second pull request, no preparation) until Bitbucket shows positive, exact
 evidence: for the draft, exactly one open pull request from the branch into its base, at the head
-that was sent, whose description carries that same id; for ready, that pull request open at the head
-that was sent with draft off. Then the stage is confirmed under the same id. An empty or failed
-lookup, or anything that changed, leaves it uncertain: never released, retried or replaced here.
+that was sent, whose description carries that same id (another one open beside it is refused after);
+for ready, that pull request open at the head that was sent with draft off and that id. Then the stage
+is confirmed under the same id. An empty or failed lookup, or anything that changed, leaves it
+uncertain: never released, retried or replaced here. A push git can't confirm or read back keeps the
+claim too (uncertain), and the next ready reads what Bitbucket's branch holds.
+
+The push never drops anyone's commits: it goes only when Bitbucket's branch is absent, held in the
+commit pushed, or the commit this task itself last pushed there, leased on exactly that.
 
 Concurrency, as it actually is. One execution host: one claim per repository branch across all its
 folders and tasks, taken under the claims file's lock before the push, so a second task, folder or
@@ -28,7 +34,8 @@ sees the other's claim. Between them only Bitbucket's own answers stand: a host 
 request while any is open from the branch, and never adopts, reconciles or prepares one whose
 description carries another operation's id, so neither takes over the other's. Two hosts publishing
 the same branch at the same moment can each open one, as Bitbucket offers no conditional create;
-the next ready of either then sees two open and refuses, for the person.
+the next ready of either then sees two open and refuses, for the person. So two hosts are not
+excluded from the same effect: that needs a store both share, which herdr-task doesn't have.
 
 Merging stays refused (bitbucket.py): nothing here asks Bitbucket, git or an agent to merge."""
 
@@ -61,7 +68,12 @@ class Outcome(Fail):
     uncertain, and this command sent nothing that changes anything). The claim's facts come with it."""
 
     def __init__(self, words, result, claim=None, changed=()):
-        super().__init__(words)
+        kept = []
+        if "pushed" in changed and (claim or {}).get("pushed"):
+            kept.append(f"{claim['branch']} pushed at {claim['pushed']['head'][:7]}")
+        if "draft" in changed and ((claim or {}).get("draft") or {}).get("pr"):
+            kept.append(f"draft {claim['draft']['pr']['url']} opened")
+        super().__init__(words + (f" Done before it stopped, and kept: {'; '.join(kept)}." if kept else ""))
         self.publication = {"result": "changed" if result == "refused" and changed else result,
                             "changed": list(changed), **(facts_of(claim) if claim else {})}
 
@@ -150,6 +162,11 @@ def owner_of(s, t):
             "machine": machine_name() or socket.gethostname()}
 
 
+def same_owner(a, b):
+    """The same task of the same folder on the same machine (a worktree moved since is still its own)."""
+    return all((a or {}).get(k) == (b or {}).get(k) for k in ("task", "folder", "machine"))
+
+
 def facts(s, t):
     """The claim this task holds on this host, as public output gives it; None without one."""
     if (t.get("pr") or {}).get("provider") != "bitbucket" and not os.path.exists(CLAIMS):
@@ -158,10 +175,10 @@ def facts(s, t):
         with Claims(write=False) as c:
             mine = owner_of(s, t)
             for claim in c.data["claims"].values():
-                if isinstance(claim, dict) and claim.get("owner") == mine:
+                if isinstance(claim, dict) and same_owner(claim.get("owner"), mine):
                     return facts_of(claim)
-    except Fail:
-        return None
+    except Fail as e:
+        return {"unreadable": str(e)}
     return None
 
 
@@ -252,8 +269,8 @@ def publish(s, t, where, summary=None):
     for name in (br, base):
         if not http.branch_name(name):
             raise Outcome(f"{name!r} isn't a branch name herdr-task sends Bitbucket; nothing was pushed or sent. {stays}.", "refused")
-    ok, head, _ = http_git(wt, "rev-parse", "--verify", "--quiet", f"refs/heads/{br}")
-    if not ok or not http.COMMIT.fullmatch(head or "") or head != t.get("head"):
+    head = branch_head(wt, br)
+    if not head or head != t.get("head"):
         raise Outcome(f"{br} here isn't at the commit ready was run at ({(t.get('head') or '')[:7]}); nothing was pushed or "
                       f"sent. Commit, then run ready again.", "refused")
     remote = remote_of(wt)
@@ -278,7 +295,7 @@ def publish(s, t, where, summary=None):
             fresh.append(True)
             return {"repo": bound["repo"], "branch": br, "base": base, "owner": owner, "route": route,
                     "pushed": None, "draft": None, "ready": None, "made": now()}
-        if claim.get("owner") != owner:
+        if not same_owner(claim.get("owner"), owner):
             o = claim.get("owner") or {}
             if not finished(s, claim):
                 raise Outcome(f"{bound['repo']}'s branch {br} is claimed for publication by {o.get('task')} in {o.get('folder')} "
@@ -293,14 +310,19 @@ def publish(s, t, where, summary=None):
         if claim.get("base") != base and claim.get("draft"):
             raise Outcome(f"{br}'s pull request was claimed into {claim.get('base')}, and this task merges into {base}; nothing "
                           f"was pushed or sent. {stays}.", "refused", claim)
-        return {**claim, "base": base, "route": route}
-    claim = update(key, take)
+        return {**claim, "owner": owner, "base": base, "route": route}
+    try:
+        claim = update(key, take)
+    except Outcome:
+        raise
+    except Fail as e:  # a claims file that doesn't read: nothing is claimed, pushed or sent
+        raise Outcome(str(e), "refused")
     changed = []  # what this command changed on Bitbucket, each confirmed: pushed, draft
 
     def refuse(words, result="refused"):
         nonlocal claim
         if fresh and result == "refused" and not claim.get("pushed") and not claim.get("draft"):
-            claim = update(key, lambda c: None if c and c.get("owner") == owner and not (c.get("pushed") or c.get("draft")) else c) or claim
+            claim = update(key, lambda c: None if c and same_owner(c.get("owner"), owner) and not (c.get("pushed") or c.get("draft")) else c) or claim
         raise Outcome(words, result, claim, changed)
 
     def save(change):
@@ -368,20 +390,30 @@ def publish(s, t, where, summary=None):
             refuse(f"This task's pull request {pr['url']} is into {mine[0]['base']} now, not {base}; nothing was pushed or sent. "
                    f"{stays}.")
 
-    # 4. The push: only over what Bitbucket said the branch holds, on the route that was bound.
+    # 4. The push, on the route that was bound, only over a branch whose commits it keeps or this task's
+    # own last push: Bitbucket's branch absent, already held in this commit, or the commit this task last
+    # pushed there (then rewritten, as the task's own). Anything else is someone else's work: refused.
+    mine_last = (claim.get("pushed") or {}).get("head")
+    if there and there != head and there != mine_last and not contains(wt, there, head):
+        refuse(f"Bitbucket's {br} is at {there[:7]}, which this branch doesn't hold and this task didn't push there, so pushing "
+               f"would drop someone's commits; nothing was pushed or sent. Bring them into {br} here (git fetch, then merge or "
+               f"rebase), then run ready again.")
     if there != head:
-        if http_git(wt, "rev-parse", "--verify", "--quiet", f"refs/heads/{br}")[1] != head:
+        if branch_head(wt, br) != head:
             refuse(f"{br} moved here while ready ran; nothing was pushed or sent. Run ready again.")
         try:
             r.still()  # the last check before the push
         except http.Failure as e:
             refuse(said(e.category, "nothing was pushed or sent"))
         pushed = push(wt, url, br, head, there)
+        if pushed is None:  # it may have landed: the claim stays, and the next ready reads what Bitbucket holds
+            refuse(f"git couldn't push {br} to {url}, and couldn't read back what that branch holds, so the push may or may not "
+                   f"have happened. No pull request was opened or changed. {stays}. git push works with this machine's own Git "
+                   "credentials, and they're the person's to repair: say why in your chat and end your turn.", "uncertain")
         if not pushed:
-            how = "git couldn't say whether it reached Bitbucket" if pushed is None else "Bitbucket's branch doesn't hold it"
-            refuse(f"git couldn't push {br} to {url}: {how}. No pull request was opened or changed. {stays}. git push works "
-                   f"with this machine's own Git credentials, and they're the person's to repair: say why in your chat and end "
-                   f"your turn.", "held" if held_of(claim) else "refused")
+            refuse(f"git couldn't push {br} to {url}: Bitbucket's branch doesn't hold {head[:7]}. No pull request was opened or "
+                   f"changed. {stays}. git push works with this machine's own Git credentials, and they're the person's to "
+                   "repair: say why in your chat and end your turn.")
         save(lambda c: {**c, "pushed": {"head": head, "to": url, "at": now()}})
         changed.append("pushed")
         r.started = time.monotonic()  # the push is git's, bounded by itself; Bitbucket's budget starts again
@@ -453,7 +485,7 @@ def publish(s, t, where, summary=None):
         now_pr, kept = r.current(pr["number"])
         if (now_pr["source"], now_pr["base"], now_pr["state"]) != (br, base, "OPEN") or not heads(now_pr, head):
             raise http.Failure("identity-changed")
-        if http_git(wt, "rev-parse", "--verify", "--quiet", f"refs/heads/{br}")[1] != head:
+        if branch_head(wt, br) != head:
             raise http.Failure("identity-changed")
         r.still()  # the last check before the claim and the write
     except http.Failure as e:
@@ -473,9 +505,19 @@ def publish(s, t, where, summary=None):
     return t["pr"]
 
 
-def http_git(wt, *args):
-    out = http.git_out(wt, *args)
-    return out is not None, out or "", None
+def branch_head(wt, branch):
+    """The commit the branch holds here, or None."""
+    out = http.git_out(wt, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")
+    return out if out and http.COMMIT.fullmatch(out) else None
+
+
+def contains(wt, older, head):
+    """head holds older (here): a push of head over it loses nothing."""
+    try:
+        return subprocess.run(["git", "-C", wt, "merge-base", "--is-ancestor", older, head], stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL, timeout=10).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def held_of(claim):
