@@ -108,7 +108,9 @@ def github(s, fresh=False):
     have lost that host's sign-in. Every other failure refuses (GhFailed), saving nothing: signed
     out, no network, or a host only gh can place. gh not installed refuses for a github.com remote
     or a saved name, and is taken as a no otherwise; a gh that is there and can't run isn't that (gh()).
-    fresh: gh is asked whatever was saved. s.github_saved says whether this answer was a saved one."""
+    fresh: gh is asked whatever was saved. s.github_saved says whether this answer was a saved one:
+    an answer gh gave earlier in this same command isn't, so a recheck of a saved no (no_local_merge(),
+    Ready's) asks gh once per command, never twice; one saved by an earlier command still is."""
     s.github_saved = False
     if s.loc["kind"] != "repo":
         return None
@@ -119,7 +121,7 @@ def github(s, fresh=False):
         return None
     mark = hashlib.sha256("\n".join(urls).encode()).hexdigest()[:16]
     if not fresh and g.get("remotes") == mark and now() - g.get("at", 0) < 3600000:
-        s.github_saved = True
+        s.github_saved = not getattr(s, "github_asked", False)
         return g.get("repo")
     ok, out, err = gh("repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner", cwd=s.loc["folder"])
     named = any(GITHUB_URL.match(url) for url in urls)
@@ -130,6 +132,7 @@ def github(s, fresh=False):
         raise GhFailed("say which GitHub repository this folder is", err or "no answer")
     s.data["github"] = {"repo": out if ok and out else None, "at": now(), "remotes": mark}
     s.dirty = True
+    s.github_asked = True  # gh's answer in this command: fresh while it runs (above)
     return s.data["github"]["repo"]
 
 
