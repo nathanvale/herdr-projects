@@ -20,8 +20,18 @@ const EMPTY = {
   panels: ['files', 'changes'],
 }
 
-// The page's world, before kernel.ts loads: what it reads at once and what the socket handler touches.
+// The page's world, before kernel.ts loads: what it reads at once and what the socket handler touches. React's
+// server renderer (for the panel tests) wants useSyncExternalStore's server snapshot, which the page's store, made
+// for the browser only, never passes: here its one getter serves for both.
 const BROWSER = `
+import { createRequire } from 'node:module'
+const require = createRequire(process.env.KERNEL)  // the worktree's own React, the one the page imports
+const React = require('react')
+const sync = React.useSyncExternalStore
+React.useSyncExternalStore = (subscribe, get, server) => sync(subscribe, get, server ?? get)
+// DOMPurify (the chat's Markdown, which the Tasks panel's imports reach) needs a real DOM to load: a stand-in that the
+// panels rendered here never call (no Markdown on an empty list)
+Bun.plugin({ name: 'page-stand-ins', setup(b) { b.module('dompurify', () => ({ loader: 'object', exports: { default: { addHook() {}, sanitize: () => { throw new Error('the DOMPurify stand-in was used') } } } })) } })
 const store = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k), clear: () => m.clear() } }
 const errors = []
 const node = () => ({ style: {}, setAttribute() {}, appendChild() {}, remove() {}, addEventListener() {}, classList: { add() {}, remove() {}, toggle() {} } })
@@ -56,7 +66,7 @@ let n = 0
 async function page(code: string, env: Record<string, string> = {}) {
   const script = join(root, `page-${n++}.mjs`)
   writeFileSync(script, BROWSER + code)
-  const p = Bun.spawn([process.execPath, script], { env: { PATH: process.env.PATH ?? '', KERNEL, ...env }, stdout: 'pipe', stderr: 'pipe' })
+  const p = Bun.spawn([process.execPath, script], { env: { PATH: process.env.PATH ?? '', KERNEL, TASKS: join(import.meta.dir, '..', 'plugins', 'tasks', 'client.tsx'), ...env }, stdout: 'pipe', stderr: 'pipe' })
   const [text, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()])
   await p.exited
   const last = text.trim().split('\n').pop() ?? ''
@@ -166,6 +176,37 @@ finish()
   expect(r.handled).toEqual({ ok: true })
   expect([r.found, r.fallback, r.name, r.ladder, r.keys]).toEqual(['p1', 'p1', 'proj', 'proj', 'p1'])
   expect(r.watch).toEqual(['p1'])
+}, 30_000)
+
+// The Tasks panel with what a snapshot holds (a test fixture). A snapshot doesn't say whether the service has read the
+// task lists yet (service/model.ts builds one on any terminal event, before its first read is done), so with no
+// spaces and no tasks the panel can't know: it says nothing is shown here, never that there are no tasks, and never
+// that it is still reading (that would never end).
+const panel = (snapshot: unknown) => page(`
+const { renderToStaticMarkup } = require('react-dom/server')
+const P = await import(process.env.TASKS)
+K.installPlugins([P.default], ['tasks'])
+K.connect()
+sock().onopen()
+deliver({ type: 'snapshot', snapshot: ${JSON.stringify(snapshot)} })
+out.html = run('render', () => renderToStaticMarkup(React.createElement(K.registry.views.tasks, { placeId: '' })))
+finish()
+`)
+const ABSENCE = ['No tasks', 'Nothing to do', 'Nothing in ']
+
+test('the Tasks panel with no spaces: neither "Reading tasks" nor a claim that there are none, but that nothing is shown', async () => {
+  const r = await panel(EMPTY)
+  expect(r.html).toMatchObject({ ok: true })
+  expect(r.html.value).not.toContain('Reading tasks')
+  for (const words of ABSENCE) expect(r.html.value).not.toContain(words)
+  expect(r.html.value).toContain('Nothing to show here.')
+}, 30_000)
+
+test('the Tasks panel with a space and no tasks: upstream\'s words, as before', async () => {
+  const r = await panel(ONE)
+  expect(r.html).toMatchObject({ ok: true })
+  expect(r.html.value).toContain('No tasks on any machine. Ask an Assistant to plan some.')
+  expect(r.html.value).not.toContain('Nothing to show here.')
 }, 30_000)
 
 process.on('exit', () => rmSync(root, { recursive: true, force: true }))
