@@ -511,7 +511,8 @@ export function setUI(patch: Partial<UI> | ((ui: UI) => Partial<UI>)) {
   // another task (or none) closes the sheet and the menu the last one had open
   if (p.task !== undefined && p.task !== state.ui.task) p = { sheet: null, taskMenu: false, ...p }
   // a link to a place the screen doesn't list (All machines with a single machine) goes to the top
-  if (p.place !== undefined && state.snap) p.place = placeOf(state.snap, p.place).id
+  // (with no space at all there is nothing to go to: the id stays, and the screen says there are no spaces)
+  if (p.place !== undefined && state.snap) p.place = placeOf(state.snap, p.place)?.id ?? p.place
   // following, another place puts back its own chips: what was edited stayed with the place it was edited at
   if (p.place !== undefined && p.place !== state.ui.place && !p.lists && !state.ui.lists.pinned && state.ui.lists.at) p = { ...p, lists: { pinned: false, chips: [], at: null } }
   // split, a place picked (the sidebar, search, a key) opens in the focused pane
@@ -804,8 +805,9 @@ export function connect() {
     else if (msg.type === 'terminal') state = { ...state, terms: { ...state.terms, [msg.chat]: { ansi: msg.ansi, cols: msg.cols, rows: msg.rows } } }
     else if (msg.type === 'update') state = { ...state, update: msg.update }
     else if (msg.type === 'build' && BUILD && msg.id && msg.id !== BUILD) reloadSoon()
-    if (msg.type === 'snapshot') watchVisible()
+    // drawn first: what the page then tells the server (watchVisible) can't keep a snapshot from showing (#747)
     emit()
+    if (msg.type === 'snapshot') watchVisible()
   }
   sock.onclose = () => drop(sock)
 }
@@ -1032,7 +1034,9 @@ function awaited(snap: Snapshot, id: string): Place | undefined {
   return { id, name: home ? 'home' : m[2], machine: label, ...(home ? { home: true } : {}), level: home ? 1 : 2, status: 'idle', mode: 'regular', chat: id, connecting: true }
 }
 
-export function placeOf(snap: Snapshot, id: string) {
+/** The space an id names, else the nearest one shown; none when the screen lists no space at all (GitHub #747: a
+ *  first run, or the last space closed), and every caller says what it shows then. */
+export function placeOf(snap: Snapshot, id: string): Place | undefined {
   const shown = shownPlaces(snap)
   return shown.find((p) => p.id === id) ?? awaited(snap, id) ?? shown.find((p) => p.id === placeIdOf(snap, id)) ?? shown.find((p) => p.id === home(snap)) ?? shown[0]
 }
@@ -1053,6 +1057,7 @@ export function subtree(snap: Snapshot, id: string): string[] {
 /** "gtm · vm-str" with more machines, else the space's name */
 export function ladder(snap: Snapshot, id: string) {
   const p = placeOf(snap, id)
+  if (!p) return ''
   return manyMachines(snap) ? `${p.name} · ${machineName(snap.machines, p.machine)}` : p.name
 }
 
@@ -1236,13 +1241,14 @@ export function chatName(snap: Snapshot, key: string) {
     return `${id} ${role.toLowerCase()}`
   }
   // a coordinator keeps its own name, even one the screen doesn't list (All machines with a single machine)
-  return (snap.places.find((p) => p.chat === key) ?? placeOf(snap, key)).name
+  return (snap.places.find((p) => p.chat === key) ?? placeOf(snap, key))?.name ?? key
 }
 
 export function visibleChats(ui: UI, snap: Snapshot): string[] {
   // a space's other agent tab shown as its chat (3.0's Chat | Terminal) takes the place of its Assistant's chat
   const tabChat = ui.term?.startsWith('t:') && ui.tabView?.[ui.term] === 'chat' ? ui.term : null
-  const place = tabChat ?? placeOf(snap, ui.place).chat
+  // (no space at all: no chat of one to watch)
+  const place = tabChat ?? placeOf(snap, ui.place)?.chat ?? null
   const ag = agentChat(ui, snap)?.chat
   const subs = ui.subs ?? []
   // a phone shows one chat (with a task open, its place's chat waits under it as it last was, unseen)
@@ -1527,22 +1533,24 @@ export function placeOfPane(snap: Snapshot, p: Pane): string | null {
 
 /** the chat a pane shows, if any */
 export function paneChat(snap: Snapshot, p: Pane): string | null {
-  if (p.kind === 'place') return placeOf(snap, p.id).chat
+  if (p.kind === 'place') return placeOf(snap, p.id)?.chat ?? null
   if (p.kind === 'task') return taskOf(snap, p.id)?.agent?.chat ?? null
   return null
 }
 
-/** the chat the keys work on (/, T, A, E): the focused pane's, else the open task's, else the place's */
-export function keysChat(ui: UI, snap: Snapshot): string {
+/** the chat the keys work on (/, T, A, E): the focused pane's, else the open task's, else the place's; none with no
+ *  space at all */
+export function keysChat(ui: UI, snap: Snapshot): string | null {
   const p = panesHere(ui)[ui.split.pane]
-  return (p && paneChat(snap, p)) ?? agentChat(ui, snap)?.chat ?? placeOf(snap, ui.place).chat
+  return (p && paneChat(snap, p)) ?? agentChat(ui, snap)?.chat ?? placeOf(snap, ui.place)?.chat ?? null
 }
 
 /** the patch that puts the panes at `v`, the place following the focused one */
 function splitTo(v: Panes): Partial<UI> {
   const p = v.panes[v.pane]
   const place = p && state.snap ? placeOfPane(state.snap, p) : null
-  return { split: v, ...(place && state.snap ? { place: placeOf(state.snap, place).id } : {}) }
+  const to = place && state.snap ? placeOf(state.snap, place)?.id : undefined
+  return { split: v, ...(to ? { place: to } : {}) }
 }
 
 /** split, a place picked opens in the focused pane (or focuses the pane that has it) */
@@ -1566,7 +1574,10 @@ export function openSplit(p: Pane) {
     const snap = state.snap
     if (ui.device !== 'desktop' || !snap) return {}
     // what the middle shows now is the first pane
-    const start: Pane = taskInMiddle(ui, snap) ? { kind: 'task', id: ui.task! } : { kind: 'place', id: placeOf(snap, ui.place).id }
+    const here = placeOf(snap, ui.place)
+    // no space and no task in the middle: nothing to split from
+    if (!here && !taskInMiddle(ui, snap)) return {}
+    const start: Pane = taskInMiddle(ui, snap) ? { kind: 'task', id: ui.task! } : { kind: 'place', id: here!.id }
     const v = normal(opened(ui.split, start, p, roomFor(ui, snap)))
     // a task leaves the right for its pane (or the middle it was in)
     const task = v.panes.some((x) => x.kind === 'task' && x.id === ui.task) || start.kind === 'task' ? { task: null } : {}

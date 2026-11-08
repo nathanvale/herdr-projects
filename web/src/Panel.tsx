@@ -33,7 +33,7 @@ export function FocusToggle({ task }: { task: Task }) {
   // in the middle (the lists pinned) it hides places and the pinned list
   const middle = useStore((s) => taskInMiddle(s.ui, s.snap))
   const snap = useSnap()!
-  const name = placeOf(snap, task.place).name
+  const name = placeOf(snap, task.place)?.name ?? 'places'
   return (
     <IconButton label={focus ? `Show ${name}` : middle ? `Focus on ${task.id}` : `Hide ${name}`} pressed={focus} aria-expanded={!focus} onClick={toggleFocus}>
       <SidebarIcon className={ic} />

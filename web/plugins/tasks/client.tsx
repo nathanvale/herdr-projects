@@ -286,10 +286,10 @@ function TaskMenu({ t, menu }: { t: Task; menu: RowMenuState }) {
  *  heading says it ("vm-str · gtm") */
 function whereOf(snap: Snapshot, t: Task, names: TaskGroup['names']) {
   const p = placeOf(snap, t.place)
-  const m = names.machine && p.machine !== snap.host ? snap.machines?.find((x) => x.machine === p.machine) : undefined
+  const m = names.machine && p && p.machine !== snap.host ? snap.machines?.find((x) => x.machine === p.machine) : undefined
   // Settings › Window › Show space on task rows off: no place on the right
   if (snap.look?.place === false) return []
-  return [m?.name, names.project ? (t.listName || p.name) : undefined].filter((x): x is string => !!x)
+  return [m?.name, names.project ? (t.listName || p?.name) : undefined].filter((x): x is string => !!x)
 }
 
 /** 3.0's statuses (core/tasks.js ORDER) as the web's task statuses, and their words */
@@ -421,7 +421,7 @@ function StatusFilterRow({ counts, filter }: { counts: Record<string, number>; f
  *  number, or where it is: its space or list, and machine */
 function found(snap: Snapshot, t: Task, q: string) {
   const p = placeOf(snap, t.place)
-  return matches(q, refOf(t.id), t.name, t.sub, t.report?.msg, t.pr && `#${t.pr.number}`, t.listName, p.name, machineName(snap.machines, t.on))
+  return matches(q, refOf(t.id), t.name, t.sub, t.report?.msg, t.pr && `#${t.pr.number}`, t.listName, p?.name, machineName(snap.machines, t.on))
 }
 
 /** what an automation's row says of where it is: its machine (with more than one) and space, whatever the grouping,
@@ -487,7 +487,8 @@ function TaskList(_: { placeId: string }) {
   const filter = filters && FILTER_ORDER.includes(wanted) && (counts[wanted] || q) ? wanted : 'all'
   // what rows say of where they are: all of it in a flat list or by status; by machine, the space; by space, nothing
   const names = filter !== 'all' || by === 'status' ? { machine: true, project: true } : by === 'machine' ? { machine: false, project: true } : { machine: false, project: false }
-  const footer = q || filter !== 'all' ? null : registry.tasksFooter.map((F, i) => <F key={i} place={place} list={view} />)
+  // (no space at all: no space's footer)
+  const footer = q || filter !== 'all' || !place ? null : registry.tasksFooter.map((F, i) => <F key={i} place={place} list={view} />)
   // one status picked: its rows alone, no headings
   if (filter !== 'all') {
     const rows = filter === 'needs' ? live.filter((t) => t.status === 'need') : filter === 'automations' ? [] : live.filter((t) => t.status === FILTER_STATUS[filter])
@@ -531,7 +532,7 @@ function TaskList(_: { placeId: string }) {
   const autoRow = (a: Automation, bare = false) => <AutoRow key={`${a.machine ?? ''}:${a.listName}:${a.name}`} a={a} where={bare ? undefined : autoWhere(snap, a)} from={autoFrom(snap, a)} />
   // Split by space: the automations per machine · space too, as a status's tasks
   const autoSubs = by === 'status' && chosen.split && view.level < 2
-    ? bySpace(autos, (a) => ({ on: a.machine || snap.host, name: a.listName ?? '' }), snap.places, snap.machines ?? [], multiMachine(snap) ? 0 : 1, place.id)
+    ? bySpace(autos, (a) => ({ on: a.machine || snap.host, name: a.listName ?? '' }), snap.places, snap.machines ?? [], multiMachine(snap) ? 0 : 1, place?.id ?? '')
     : []
   const autoGroup = autos.length ? (
     <div key="automations" data-flip="automations">
@@ -626,7 +627,7 @@ function TaskList(_: { placeId: string }) {
         {/* Automations: their own group, last */}
         {autoGroup}
         {/* nothing at all: said once, never "yet" (3.0's) */}
-        {loaded && nothing && !q ? <Empty className="pt-3 text-fg3">{here ? `Nothing in ${place.name}.` : snap.tasks.length ? 'Nothing to do.' : 'No tasks on any machine. Ask an Assistant to plan some.'}</Empty> : null}
+        {loaded && nothing && !q ? <Empty className="pt-3 text-fg3">{here && place ? `Nothing in ${place.name}.` : snap.tasks.length ? 'Nothing to do.' : 'No tasks on any machine. Ask an Assistant to plan some.'}</Empty> : null}
         {archivedGroup ? (
           <div key="archived">
             <GroupHeading label="Archived" count={archivedGroup.tasks.length} flip="group:archived" />

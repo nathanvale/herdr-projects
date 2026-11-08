@@ -887,7 +887,7 @@ function stepPlace(e: KeyboardEvent, ui: UI, snap: Snapshot) {
   const id = e.key === 'ArrowUp' ? all.slice(0, Math.max(0, i)).findLast((x) => shown.has(x)) : all.slice(i + 1).find((x) => shown.has(x))
   if (!id) return true
   goPlace(id)
-  setUI({ focus: placeOf(snap, id).chat, kb: true })
+  setUI({ focus: placeOf(snap, id)?.chat ?? null, kb: true })
   return true
 }
 

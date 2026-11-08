@@ -665,7 +665,8 @@ function ArtifactList(_: { placeId: string }) {
   const keys = useUI((u) => u.device === 'desktop' || u.kb)
   const here = placeOf(snap, place)
   // the folder the shown space's artifacts are kept for, and its name ("~" at home), as the window's header
-  const store = here.store
+  // (no space at all: no folder, and no artifacts of one)
+  const store = here?.store
   const key = `list:${view.key}`
   // one shown in the panel takes the list's place
   const shown = useShown(key)
@@ -678,7 +679,7 @@ function ArtifactList(_: { placeId: string }) {
   // with All, every folder's on the shown space's machine (the window's `list --all` there)
   const machineOf = (a: Artifact) => a.machine ?? snap.host
   const items = (snap.artifacts ?? [])
-    .filter((a) => (all ? machineOf(a) === here.machine : store?.key && a.store ? a.store === store.key : a.place === here.id))
+    .filter((a) => !!here && (all ? machineOf(a) === here.machine : store?.key && a.store ? a.store === store.key : a.place === here.id))
     .sort((a, b) => b.at - a.at)
   // by its title, the task that made it, who made it, and (with All) its folder
   const list = q ? items.filter((a) => matches(q, a.title, a.task, a.by, all ? a.folderName : undefined, all ? a.folder : undefined)) : items
@@ -688,7 +689,7 @@ function ArtifactList(_: { placeId: string }) {
     <>
       <div className="flex items-center gap-2 px-3 pt-2 phone:px-4">
         <span className="shrink-0 font-semibold">Artifacts</span>
-        <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-fg3 phone:text-[0.9375rem]">{all ? 'All folders' : store?.name ?? here.name}</span>
+        <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-fg3 phone:text-[0.9375rem]">{all ? 'All folders' : store?.name ?? here?.name ?? ''}</span>
         <button type="button" aria-pressed={all} onClick={() => setAll(!all)}
           className="press-dim h-7 shrink-0 rounded-full px-2.5 text-[0.8125rem] font-medium text-fg2 hover:bg-hover hover:text-fg aria-pressed:bg-sel aria-pressed:text-fg coarse:h-9 phone:h-9 phone:text-[0.875rem]">
           All
@@ -705,7 +706,7 @@ function ArtifactList(_: { placeId: string }) {
           <PageIcon className={clsx(ic, 'text-fg3')} />
           <p className="pt-1 font-medium">No artifacts.</p>
           <p className="max-w-64 text-[0.8125rem] text-pretty text-fg2 phone:text-[0.9375rem]">
-            {all ? 'Reports, boards and forms agents make show here.' : `Reports, boards and forms agents make for ${store?.name ?? here.name} show here. Ask an agent to make one.`}
+            {all || !here ? 'Reports, boards and forms agents make show here.' : `Reports, boards and forms agents make for ${store?.name ?? here.name} show here. Ask an agent to make one.`}
           </p>
         </div>
       ) : list.length ? (
