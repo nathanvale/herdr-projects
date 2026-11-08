@@ -109,8 +109,8 @@ def binding(seen):
              for line in seen[view].splitlines()]
     for configured, url in views:
         if re.match(r"https://", url, re.I):
-            u = urllib.parse.urlsplit(url)
             try:
+                u = urllib.parse.urlsplit(url)
                 port = u.port
             except ValueError:
                 return None

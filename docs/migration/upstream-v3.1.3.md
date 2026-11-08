@@ -377,10 +377,17 @@ are B1's from here, and their pins are B1's.
   `GCM_INTERACTIVE=never`) and a 5 s bound. The request carries `protocol=https`,
   `host=bitbucket.org`, the HTTPS path (else `<repo>.git`) and only a username written in an
   HTTPS URL; git's own configuration decides whether the path takes part (`credential.useHttpPath`).
-  Only an ordinary username and password answer counts, its password sent as Bearer; any
-  negotiated `authtype`/`credential` answer, a non-token password, a missing answer or a remote
-  that changed since it was bound refuses before any request. No other account, store, setting or
-  Basic fallback. herdr-task never approves, rejects or stores a credential.
+  <!-- coderabbit-ai-generated:v1 -->
+
+  <!-- coderabbit-ai-generated-section:v1:0d711d765838b691d4a85275b9c787cc8e20676b4f8c43033f5ca59a71db480c -->
+
+  Only an ordinary username and password answer counts. The Git credential helper must supply a
+  REST-capable token as its password: `bitbucket_http.py` cannot distinguish an ordinary password
+  before sending it as Bearer. A negotiated `authtype`/`credential` answer, a missing answer or a
+  remote that changed since it was bound refuses before any request. No other account, store,
+  setting or Basic fallback. herdr-task never approves, rejects or stores a credential.
+
+  <!-- /coderabbit-ai-generated:v1 -->
 - Remote and contained execution: Bitbucket is reached only by herdr-task itself, on the machine
   holding the checkout (`herdr-task --on <machine>` runs it there, with that machine's helper).
   Native 3.x has no contained-repository owner, so nothing here claims one. The service's and the
