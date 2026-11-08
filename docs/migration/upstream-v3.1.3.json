@@ -98,7 +98,7 @@
       "phase": "N1",
       "path": "test/test_native_publication.py",
       "upstream_blob": null,
-      "sha256": "d6ec14ea271834a2e5101d0a1cc2a32716d25c5b26828f5f6610037370bffd8b"
+      "sha256": "b1ed0e3ac32e72890d3efae8aad358078c06fd90c8956a4d39d9b986335279c2"
     },
     {
       "phase": "A1",

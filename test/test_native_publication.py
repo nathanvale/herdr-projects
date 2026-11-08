@@ -90,9 +90,14 @@ if st.get("fail") and st.get("fail_on") in (None, argv[0]):
 if argv[:2] == ["repo", "view"]:
     show({"nameWithOwner": st["repo"]})
 elif argv[:2] == ["pr", "list"]:
+    # As gh v2.101.0 (pkg/cmd/pr/shared/lister.go): --state defaults to open, and closed includes merged.
+    states = {"open": ["OPEN"], "closed": ["CLOSED", "MERGED"], "merged": ["MERGED"],
+              "all": ["OPEN", "CLOSED", "MERGED"]}.get((value("--state") or "open").lower())
+    if states is None:
+        refuse("gh stand-in: no such --state " + str(value("--state")))
     fields = value("--json").split(",")
     print(json.dumps([{k: p.get(k) for k in fields} for p in st["prs"]
-                      if p["state"] == "OPEN" and p["headRefName"] == value("--head")]))
+                      if p["state"] in states and p["headRefName"] == value("--head")]))
 elif argv[:2] == ["pr", "view"]:
     print(st["answer"]) if "answer" in st else show(pr())
 elif argv[:2] == ["pr", "create"]:
@@ -145,6 +150,7 @@ class Fixture:
                         HERDR_TASK_STORE=join("tasks"), HERDR_TASK_SETTINGS=join("shepherdr.json"),
                         HERDR_TASK_TEMPLATES=join("templates"))
         self.github(prs=[])
+        self.made = 0  # commit()'s files so far, each named for its own
         os.makedirs(self.repo)
         self.git(self.repo, "init", "-q", "-b", "main")
         for k, v in (("user.name", "T"), ("user.email", "t@example.invalid"), ("commit.gpgsign", "false")):
@@ -169,7 +175,14 @@ class Fixture:
         return subprocess.run(["git", "-C", cwd, *args], check=True, capture_output=True, text=True, env=self.env).stdout.strip()
 
     def commit(self, cwd, words):
-        self.git(cwd, "commit", "-q", "--allow-empty", "-m", words)
+        """A commit that adds a file of its own, as real work does: an empty one would read as already
+        merged to SHEP-59's landed(), whose merge of it into any base changes nothing."""
+        self.made += 1
+        name = f"work-{self.made}.txt"
+        with open(os.path.join(cwd, name), "w") as f:
+            f.write(words + "\n")
+        self.git(cwd, "add", "--", name)
+        self.git(cwd, "commit", "-q", "-m", words)
         return self.git(cwd, "rev-parse", "HEAD")
 
     def rev(self, ref):
