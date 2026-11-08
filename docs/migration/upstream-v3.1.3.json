@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "phase": "S1",
+  "phase": "E1",
   "architecture": "full-upstream-3.x",
   "candidate_readiness": "blocked",
   "inputs": {
@@ -291,6 +291,66 @@
       "path": "test/test_forge.py",
       "upstream_blob": null,
       "sha256": "9934521733dde37ee0c0e899b06a2f9934db3f06f6379a3de6e575efcf4fc42c"
+    },
+    {
+      "phase": "E1",
+      "path": "web/plugins/artifacts/client.tsx",
+      "upstream_blob": "56a7552383ee93be817665849fabcbcf9b1cb278",
+      "sha256": "3385ea57334a280e8818a990789f957c4cffe10a99da6ce7189bd13d65eff30b"
+    },
+    {
+      "phase": "E1",
+      "path": "web/plugins/keyboard/client.tsx",
+      "upstream_blob": "7538ad70ee65de8cc0f82ce83d05482b5b6ecb56",
+      "sha256": "2e7bdaf5067b1ddd45af212d703aca96f81cd5b176ccc5793f6349b029770c12"
+    },
+    {
+      "phase": "E1",
+      "path": "web/plugins/places/client.tsx",
+      "upstream_blob": "422fbc3f98e66d54534b48130b6b494b63431cc7",
+      "sha256": "3596d9dcfdc7dd725fc8efb431d24813c1cad502ed61034b0d9dc8eda0975589"
+    },
+    {
+      "phase": "E1",
+      "path": "web/plugins/tasks/client.tsx",
+      "upstream_blob": "ea530b4150e977ceeb0cb868f378e03686b3496a",
+      "sha256": "6b4af8cabeecbb179b86cf1670a5a0bf6815b88bf5f9712663f158cdd5eda870"
+    },
+    {
+      "phase": "E1",
+      "path": "web/plugins/terminal/client.tsx",
+      "upstream_blob": "c24a6c23c427629d6c628065a61572e591747b76",
+      "sha256": "031812bfaf8aed4a8278a247a9458f70feade4584c89a40b89a824ba38cf7207"
+    },
+    {
+      "phase": "E1",
+      "path": "web/plugins/voice/client.tsx",
+      "upstream_blob": "579437104c13e44b7d942d9e664880e9731ae5a2",
+      "sha256": "42b0f43f492f6ed7b8c391457ce902d68f2bed395101d877d3211a7f150fe529"
+    },
+    {
+      "phase": "E1",
+      "path": "web/src/App.tsx",
+      "upstream_blob": "2afb4669e37db4482835df4f9c23b3a70726eddb",
+      "sha256": "b6c4b8cb1560b23d57f8096dacbfb5c4da0f3094000cbe4537294c3417ac5245"
+    },
+    {
+      "phase": "E1",
+      "path": "web/src/Panel.tsx",
+      "upstream_blob": "6b693911d73c8b125d82a176b41d91a774669e49",
+      "sha256": "caaa75dbdad3b15ebafd023a3a4a3bcf9c1ff4a070fd2c605bd91ea291d18217"
+    },
+    {
+      "phase": "E1",
+      "path": "web/src/empty-snapshot.test.ts",
+      "upstream_blob": null,
+      "sha256": "75b281cb6e481f36eee596b90669e9d49849f8fa7e1ad58fd61b02125291a79e"
+    },
+    {
+      "phase": "E1",
+      "path": "web/src/kernel.ts",
+      "upstream_blob": "8c59b8bf3932bcb509781749a58f144585383a3b",
+      "sha256": "c09b89f2ca76667595dab15628d5101f803f22f9d712bc097d448de986b2f8e7"
     }
   ],
   "requirements": [

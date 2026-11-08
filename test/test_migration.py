@@ -36,14 +36,14 @@ class SourceCheckpoint(unittest.TestCase):
         self.assertEqual(observed['candidate_readiness'], 'blocked')
         self.assertEqual(observed['requirements'], 40)
         self.assertEqual(observed['file_dispositions'], 121)
-        self.assertEqual((observed['phase'], observed['source_deltas']), ('S1', 47))
+        self.assertEqual((observed['phase'], observed['source_deltas']), ('E1', 57))
 
     def test_candidate_gate_refuses_even_when_source_validation_passes(self):
         result, observed = self.run_check('--require-ready')
         self.assertEqual(result.returncode, 3)
         self.assertEqual(observed['source_validation'], 'passed')
         self.assertEqual(observed['candidate_readiness'], 'blocked')
-        self.assertIn('S1 is source-only', result.stderr)
+        self.assertIn('E1 is source-only', result.stderr)
         self.assertIn('Complete required ports', result.stderr)
 
     def test_existing_discovery_cannot_be_dropped(self):
@@ -89,6 +89,12 @@ class SourceCheckpoint(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('admitted owners of phase H1', observed['error'])
 
+    def test_e1_cannot_be_named_back_to_s1(self):
+        """S1 admits none of the empty-guest web repair's paths, so its name can't hold E1's deltas."""
+        result, observed = self.fixture(MANIFEST, lambda data: data.update(phase='S1'), '--manifest')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('admitted owners of phase S1', observed['error'])
+
     def test_phase_cannot_roll_back_by_dropping_its_deltas_too(self):
         result, observed = self.fixture(MANIFEST, lambda data: data.update(phase='S0', source_deltas=[]), '--manifest')
         self.assertEqual(result.returncode, 1)
@@ -96,14 +102,14 @@ class SourceCheckpoint(unittest.TestCase):
         self.assertIn('Native foundation differs from exact U', observed['error'])
 
     def test_an_unadmitted_owner_cannot_join_the_phase(self):
-        for phase in ('A1', 'N1', 'C1', 'W1', 'H1', 'S1'):
+        for phase in ('A1', 'N1', 'C1', 'W1', 'H1', 'S1', 'E1'):
             with self.subTest(phase=phase):
                 def widen(data):
                     data['source_deltas'].append({'phase': phase, 'path': 'mods/tasks/bin/herdr_task/revive.py',
                                                   'upstream_blob': None, 'sha256': '0' * 64})
                 result, observed = self.fixture(MANIFEST, widen, '--manifest')
                 self.assertEqual(result.returncode, 1)
-                self.assertIn('admitted owners of phase S1', observed['error'])
+                self.assertIn('admitted owners of phase E1', observed['error'])
 
     def test_a_delta_cannot_drop_its_upstream_provenance(self):
         for name in ('github.py', 'takeover.py'):
@@ -164,7 +170,8 @@ class NativeFoundation(unittest.TestCase):
     def test_an_admitted_path_refuses_any_content_but_the_pinned_one(self):
         for path in ('core/chat-log.js', 'mods/tasks/bin/herdr_task/github.py', 'mods/tasks/bin/herdr_task/launch.py',
                      'mods/tasks/bin/herdr_task/providers.py', 'service/jobs.ts', 'service/main.ts',
-                     'test/test_native_publication.py', 'mods/tasks/bin/herdr_task/forge.py', 'test/test_forge.py'):
+                     'test/test_native_publication.py', 'mods/tasks/bin/herdr_task/forge.py', 'test/test_forge.py',
+                     'web/src/App.tsx', 'web/src/empty-snapshot.test.ts'):
             with self.subTest(path=path):
                 code, observed = self.changed(path, lambda target: target.write_bytes(target.read_bytes() + b'\n'))
                 self.assertEqual(code, 1)
@@ -184,7 +191,8 @@ class NativeFoundation(unittest.TestCase):
         self.assertEqual((code, observed['error']), (1, 'Native foundation path is a symbolic link at keys.json'))
 
     def test_an_admitted_path_keeps_its_mode(self):
-        for path in ('mods/tasks/bin/herdr_task/providers.py', 'test/test_native_publication.py', 'mods/tasks/bin/herdr_task/forge.py'):
+        for path in ('mods/tasks/bin/herdr_task/providers.py', 'test/test_native_publication.py', 'mods/tasks/bin/herdr_task/forge.py',
+                     'web/src/empty-snapshot.test.ts'):
             with self.subTest(path=path):
                 code, observed = self.changed(path, lambda target: target.chmod(0o755))
                 self.assertEqual((code, observed['error']), (1, 'Admitted source path is executable at ' + path))

@@ -51,6 +51,11 @@ service/private-domain.ts'''.split()),
     'S1': frozenset('''mods/tasks/bin/herdr_task/__init__.py mods/tasks/bin/herdr_task/commands.py
 mods/tasks/bin/herdr_task/forge.py mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/proof.py
 mods/tasks/bin/herdr_task/tick.py test/test_forge.py test/test_herdr_task.py test/test_native_publication.py'''.split()),
+    # The empty-guest web repair (upstream GitHub #747; reviewed as 37589654): the web app shows and
+    # works with no spaces. Its owners are U paths no earlier phase admits, plus its new test.
+    'E1': frozenset('''web/plugins/artifacts/client.tsx web/plugins/keyboard/client.tsx web/plugins/places/client.tsx
+web/plugins/tasks/client.tsx web/plugins/terminal/client.tsx web/plugins/voice/client.tsx web/src/App.tsx
+web/src/Panel.tsx web/src/empty-snapshot.test.ts web/src/kernel.ts'''.split()),
 }
 # The shared table's second half (PR 19 decision D5, issue #7): what accepted changes add beyond exact
 # U and outside every phase's owners, admitted by name and left to review for content. With U's paths

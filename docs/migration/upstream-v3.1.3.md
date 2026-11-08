@@ -343,13 +343,32 @@ those earlier phases admitted are S1's from here, and their pins are S1's.
   publishes.
 - The shared table (PR 19 decision D5's deferred enumeration, issue #7): every path a
   commit could hold, tracked or new and not ignored, must be U's, an admitted phase
-  owner's (A1, N1, C1, W1, H1, S1) or an addition named in `NAMED` by the accepted change
+  owner's (A1, N1, C1, W1, H1, S1, E1) or an addition named in `NAMED` by the accepted change
   that added it: S0's foundation documents and checker, A1's `docs/azure-launch-plans.md`,
   and PR 20's checkout access (`.claude/.gitignore`, `.claude/checkout-access.json`,
   `bin/checkout-access`, `test/test_checkout_access.py`). Named additions are admitted by
   name only; their content relies on review. Any other path refuses by name, a document
   as much as source; ignored paths are no commit and pass.
 - This is not a required port. No inventory requirement changes status.
+
+### E1 empty-guest web checkpoint
+
+E1 follows S1 as its own row in `PHASES`. It carries upstream's empty-guest web repair
+(GitHub #747) as reviewed at `37589654a115817cfb30537968e4696e00561a88`: four commits after
+U, cherry-picked unchanged onto the S1 integration head, so each owner's content equals
+that commit's. Its owners are U paths no earlier phase admits: `web/src/App.tsx`,
+`web/src/Panel.tsx`, `web/src/kernel.ts` and the artifacts, keyboard, places, tasks,
+terminal and voice `client.tsx` plugins, plus the new `web/src/empty-snapshot.test.ts`.
+
+- With no spaces, the socket's empty snapshot shows the app instead of a blank page:
+  first run, closing the last space, navigation and New space, desktop and phone chat
+  visibility, the ordinary nonempty fallback, and the Tasks panel saying nothing is
+  shown with no spaces (and its ordinary wording otherwise). The eight cases live in
+  `web/src/empty-snapshot.test.ts`, run by CI's Bun web tests.
+- Every other path still matches exact U or its earlier phase's pin; F, U, P and B
+  provenance, the earlier phases and all 40 obligations are unchanged.
+- This is not a required port and not runtime proof: no Linux or Mac web runtime has
+  run this head. No inventory requirement changes status, and readiness stays blocked.
 
 ### Bitbucket contract
 
@@ -453,7 +472,8 @@ Root runs `python3 bin/check-migration`, its public-CLI checkpoint tests
 `service/azure-deployments.test.ts`), the N1 publication tests (`test/test_native_publication.py`),
 the C1 discovery tests (`core/chat-find.test.js`, `test/test_session_discovery.py`),
 the W1 flag tests (`service/jobs-flags.test.ts`), the H1 listener tests
-(`service/private-domain.test.ts`), the S1 forge tests (`test/test_forge.py`) and every
+(`service/private-domain.test.ts`), the S1 forge tests (`test/test_forge.py`), the E1 web test
+(`web/src/empty-snapshot.test.ts`, in CI's Bun web tests) and every
 native Check command. CI owns
 frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
