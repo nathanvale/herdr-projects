@@ -620,7 +620,10 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
     if admission.config_dir:
         a["config_dir"] = admission.config_dir
     # The journal keeps this record too: a reconcile after a lost reply or a crash puts it on the task.
-    job = {"folder": s.loc["folder"], "id": task["id"], "space": bare(space), "role": role, "agent": dict(a)}
+    # made: what this start set up before sending (worktree, branch, base, start commit, mode), which a
+    # reconcile restores when the start's own task list was never saved.
+    made = {k: task[k] for k in ("mode", "worktree", "branch", "base", "start") if task.get(k) not in (None, "")}
+    job = {"folder": s.loc["folder"], "id": task["id"], "space": bare(space), "role": role, "agent": dict(a), "made": made}
     out = admission.submit(["run", "--bg", "--json", "--keep", "--cwd", folder, "--name", name, *labels, *rel, "--",
                             *low_priority(clean_env(["env", f"HERDR_BROWSER_TASK={key}", *in_shell(cmd, admission.config_dir)]), name)],
                            parent_live=live_parent, record={"task": job})

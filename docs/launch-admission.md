@@ -48,6 +48,11 @@ its own kept terminal, and `service/watch.ts` types a fresh start into a live on
    then puts the agent on the task and watches it, and any other command names
    `launch reconcile`, which puts it there for a person and starts its watcher.
 
+A reconcile also restores what the start set up before sending: its worktree, branch, base, start
+commit and mode. A backup whose start may have been sent is recorded as `uncertain` with its launch
+id, never as failed, and the stuck agent is left as it is. The chat adopts an agent that shows up
+late in its slot only when it carries this start's own launch id.
+
 A task refused before its start is sent keeps its queue, hold and state, so a tick that saves it
 never drops what was queued. Once sent, a tick keeps the task started whatever follows (it may be
 running), so it never starts it again. A start, resume or switch command that fails after sending
@@ -62,8 +67,9 @@ is not ended. A worktree the start made stays the task's.
   step with the serving machine and writes without that mark, refuses too: this machine's node
   record in herdr-core's documents (`shepherdr.node`, read from
   `${XDG_STATE_HOME:-~/.local/state}/herdr-core/default/docs.json`) says it doesn't serve. No
-  documents (no Shepherdr service here) reads as its own; documents that can't be read, or a node
-  record with no `serving` flag, refuse. Personal never reads them.
+  documents, or no node record in them (no Shepherdr service here), read as its own; documents that
+  can't be read, or a node record that is there but malformed (not a document, no value, no
+  `serving` flag), refuse. Personal never reads them.
 - **Claude Code folder (carried from C1).** A task's Claude Code start exports its folder
   (`CLAUDE_CONFIG_DIR`) inside the person's shell after its startup files, so they can't change it
   and a `claude()` function still runs, and records it on the start and its agent. After a
@@ -117,6 +123,16 @@ herdr-task launch run --role coordinator|agent --space SPACE [--slot TAB] [--con
 - `recover` releases only a `never-submitted` start (its herdr-task ended before sending): its claim
   is revoked, so if its sender is still running it sends nothing when it reaches submit. A
   `submission-uncertain` start refuses.
+- `status` marks each start that is still unresolved as held and lists those first: never
+  submitted, uncertain, confirmed but not on its task (it names the `reconcile` that records it;
+  one its task list already holds isn't held), and a claim whose record is gone (shown as unknown).
+- Each command points at the other when it is the one that helps: `recover` on a confirmed start
+  its task doesn't hold names `reconcile`; `reconcile` on a claimed, never-submitted start names
+  `recover`; a second `recover` says it was released earlier and releases nothing.
+- `run --check` refuses what the run would refuse from its words (its own launch label, an
+  `--on` machine name that isn't one word).
+- hc's own reply is never repeated in a refusal or the journal (it could carry an argv word or an
+  environment value): only "hc exited N".
 - Nothing calls `recover` or `reconcile` by itself. No automatic recovery exists.
 
 ## Held, not invented
@@ -144,6 +160,8 @@ recording and before submission, unrelated edits, a refused tick start, and corr
 missing settings. Switch, backup and automation starts share the same owner calls but have no
 journal case of their own.
 `service/launch-sites.test.ts` proves the service's two sites start through `herdr-task launch run`
-and show its refusal. A source gate in the Python file keeps the five sites from running `hc run`
+and say a refusal: the first message's start refuses with the owner's words, and a web-only New
+space keeps the space and reports the refusal to its caller (`/api/spaces` answers `assistantError`;
+the page doesn't show it yet). A source gate in the Python file keeps the five sites from running `hc run`
 for an agent themselves. The chat mod's start and the window's paths are source-inspected only.
 None of this proves herdr-core's behaviour, a real host crash or reboot, or an agent's sign-in.

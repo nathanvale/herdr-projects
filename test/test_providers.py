@@ -713,7 +713,7 @@ class Binding(unittest.TestCase):
                         self.p.clean(c["field"], c["value"])
                     self.assertNotIn(c["value"].strip(), str(e.exception))
 
-    def backup(self, provider):
+    def backup(self, provider, launch=None):
         with open(self.file, "w") as f:
             json.dump({"everywhere": {"provider": provider}}, f)
         ran, started = [], []
@@ -722,7 +722,7 @@ class Binding(unittest.TestCase):
         k = {"address": "t1", "labels": {"herdr.agent": "claude", "herdr.task.space": "sp1"}}
         patches = {"backup_for": lambda s, t, running: ("codex", None), "backup_argv": lambda s, t, kind: ["codex", "--no-daemon"],
                    "handover": lambda *a: "handover", "brief": lambda *a: "brief",
-                   "launch": lambda s, t, argv, space, text, parent=None, admission=None: started.append(argv) or {"address": "t2"},
+                   "launch": launch or (lambda s, t, argv, space, text, parent=None, admission=None: started.append(argv) or {"address": "t2"}),
                    "run": lambda args, **kw: ran.append(args)}
         for name, value in patches.items():
             p = self.mock.patch.object(self.takeover, name, value)
@@ -741,6 +741,22 @@ class Binding(unittest.TestCase):
     def test_a_backup_starts_on_personal(self):
         row, task, started, ran = self.backup({"route": "personal"})
         self.assertEqual((row, task["backup"]["state"], started, ran), (None, "started", [["codex", "--no-daemon"]], [["hc", "kill", "t1"]]))
+
+    def test_a_backup_that_may_have_started_is_uncertain_not_failed(self):
+        """A backup whose start was sent but never confirmed keeps its launch id as uncertain (L1), and the stuck agent
+        isn't ended; a known failure stays failed."""
+        def uncertain(*a, **k):
+            e = self.p.Fail("hc didn't confirm this start")
+            e.launch = {"launch": "6f1c2d3e-4a5b-4c6d-8e7f-001122334455", "identity": "task:f#1", "state": "submission-uncertain"}
+            raise e
+        row, task, started, ran = self.backup({"route": "personal"}, launch=uncertain)
+        self.assertEqual((task["backup"]["state"], task["backup"]["launch"], ran), ("uncertain", "6f1c2d3e-4a5b-4c6d-8e7f-001122334455", []))
+        self.assertIn("may have started", row["reason"])
+
+        def broken(*a, **k):
+            raise self.p.Fail("git worktree add failed")
+        row, task, started, ran = self.backup({"route": "personal"}, launch=broken)
+        self.assertEqual((task["backup"]["state"], "launch" in task["backup"], ran), ("failed", False, []))
 
     def test_a_backup_the_provider_holds_isnt_spent(self):
         row, task, started, ran = self.backup({"route": "azure-foundry", **CODEX})

@@ -218,9 +218,12 @@ def settings_source():
         return "unknown"
     if not isinstance(docs, dict):
         return "unknown"
-    node = (docs.get(NODE_DOC) or {}).get("value") if isinstance(docs.get(NODE_DOC), dict) else None
-    if node is None:
+    # No node record: no Shepherdr service here, so nothing syncs the file. One that is there but
+    # malformed (not a document, no value, no serving flag) can't say whose the file is.
+    if NODE_DOC not in docs:
         return "own"
+    entry = docs[NODE_DOC]
+    node = entry.get("value") if isinstance(entry, dict) else None
     if not isinstance(node, dict) or not isinstance(node.get("serving"), bool):
         return "unknown"
     # This machine's own service decides serving (a host record it rejected doesn't count), so its flag is the answer.

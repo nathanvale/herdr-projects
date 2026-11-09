@@ -237,6 +237,13 @@ def takeover(s, t, k, row, log, report):
             text = handover(s, t, running, kind, row["reason"], log) + "\n\n" + brief(s, t, adm.parent, space, argv)
             a = launch(s, t, argv, space, text, parent=adm.parent, admission=adm)
     except Exception as e:  # never a second try: the person decides
+        sent = getattr(e, "launch", None)
+        if sent:
+            # It may have started (submission uncertain): not a failure. Its launch id is kept, the stuck agent
+            # is left as it is, and nothing retries it (launch reconcile confirms it).
+            t["backup"].update(state="uncertain", launch=sent.get("launch"), error=str(e)[:300])
+            row["reason"] = fit(f"{head(row['reason'])}, backup may have started (uncertain)")
+            return row
         t["backup"].update(state="failed", error=str(e)[:300])
         row["reason"] = fit(f"{head(row['reason'])}, backup didn't start")
         return row

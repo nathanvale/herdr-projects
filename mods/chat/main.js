@@ -1672,7 +1672,11 @@ export default class Chat extends View {
       // its own (trust this folder, in a new folder on another machine): hc took too long, but the
       // agent runs. Then this chat sends the template's words and the task itself once the agent is
       // idle past that screen (follow()), so the Assistant never starts without its instructions.
-      const late = !refused && (r.code !== 0 || !out.address) && this.slotAgent();
+      // Only a terminal carrying this start's own launch id (herdr.launch) is taken: a slot label alone
+      // could be another start's agent.
+      const lid = out.launch?.launch;
+      const slotted = !refused && lid && (r.code !== 0 || !out.address) ? this.slotAgent() : null;
+      const late = slotted && terminals().find((k) => k.address === slotted)?.labels?.["herdr.launch"] === lid ? slotted : null;
       if (late) out = { address: late, first_message: { sent: false } };
       if (out.address && out.first_message?.sent === false && words) this.firstSend = [words, task].filter(Boolean).join("\n\n");
       if (r.code !== 0 && !late || !out.address) {

@@ -15,6 +15,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 import unittest
@@ -73,9 +74,14 @@ if verb == "run":
         pass
     st["n"] += 1
     t = {"address": "t%d" % st["n"], "state": "live", "labels": labels_of(words)}
-    if mode != "hidden":
+    if mode not in ("hidden", "leak"):
         st["terminals"].append(t)
     save()
+    if mode == "leak":
+        # hc's own words carrying something that must never be repeated (an argv word, an environment value)
+        print("hc: refused " + os.environ.get("FAKE_HC_MARKER", ""), file=sys.stderr)
+        print("partial " + os.environ.get("FAKE_HC_MARKER", ""))
+        sys.exit(1)
     if mode == "ok":
         print(json.dumps({"address": t["address"], "first_message": {"sent": True}}))
         sys.exit(0)
@@ -138,6 +144,7 @@ class Fixture:
         if settings is not None:
             self.write_settings(settings)
         self.procs = []
+        self.bin = BIN  # the herdr-task run: this tree's, or an older one extracted from git history
         test.addCleanup(self.reap)
 
     def reap(self):
@@ -155,7 +162,7 @@ class Fixture:
             json.dump(d, f)
 
     def argv(self, *args):
-        return [sys.executable, os.path.join(BIN, "herdr-task"), *args]
+        return [sys.executable, os.path.join(self.bin, "herdr-task"), *args]
 
     def run(self, *args):
         return subprocess.run(self.argv(*args), capture_output=True, text=True, env=self.env, timeout=120)
@@ -581,22 +588,124 @@ class TaskStarts(unittest.TestCase):
         self.assertEqual(len(f.runs()), 1)
 
 
+# The last head before the G1 repair: its herdr-task is the negative control.
+BEFORE_G1 = "8a44f942e000884d10aa66eb4d2821558d0399c3"
+
+
+@ON_CI
+class OwnerWords(unittest.TestCase):
+    """What `launch status`, `recover`, `reconcile` and `run` say, so each points at the next step."""
+
+    def lose_record(self, f, tid=1):
+        """The task list put back as a herdr-task that died after confirming would have left it."""
+        path = next(os.path.join(f.store, n) for n in os.listdir(f.store) if n.endswith(".json") and not n.startswith("."))
+        with open(path) as fh:
+            d = json.load(fh)
+        next(x for x in d["tasks"] if x["id"] == tid).update(state="todo", agents=[])
+        with open(path, "w") as fh:
+            json.dump(d, fh)
+
+    def test_status_marks_what_is_unresolved_and_names_the_step(self):
+        f = Fixture(self)
+        f.add()
+        self.assertEqual(f.start().returncode, 0)
+        [row] = f.ok("launch", "status")["launches"]
+        self.assertEqual((row["state"], row["held"]), ("confirmed", False))  # its task holds it
+        self.lose_record(f)
+        [row] = f.ok("launch", "status")["launches"]
+        self.assertEqual(row["held"], True)
+        text = f.run("launch", "status").stdout
+        self.assertIn(f"held, not yet on its task; `herdr-task launch reconcile {row['identity']} {row['launch']}`", text)
+        said = f.ok("launch", "recover", row["identity"], row["launch"])
+        self.assertEqual(said["released"], False)
+        self.assertIn("launch reconcile", f.run("launch", "recover", row["identity"], row["launch"]).stdout)
+
+    def test_a_second_recover_says_nothing_was_released_and_reconcile_points_at_recover(self):
+        f = Fixture(self)
+        f.add()
+        f.hold("get repo-1-fix-login")
+        a = f.background("start", "1", "--folder", f.repo, "--space", "sp1", "--now")
+        f.reached()
+        a.send_signal(signal.SIGKILL)
+        a.wait()
+        f.release()
+        [rec] = f.starts()
+        self.assertIn(f"herdr-task launch recover {rec['identity']} {rec['launch']}",
+                      f.run("launch", "reconcile", rec["identity"], rec["launch"]).stdout)
+        self.assertEqual(f.ok("launch", "recover", rec["identity"], rec["launch"])["released"], True)
+        again = f.run("launch", "recover", rec["identity"], rec["launch"])
+        self.assertIn("nothing to release. It was released earlier.", again.stdout)
+        self.assertNotIn("released, and its sender", again.stdout)
+
+    def test_a_claim_with_no_record_is_shown_held(self):
+        f = Fixture(self)
+        os.makedirs(f.store, exist_ok=True)
+        lid = str(uuid.uuid4())
+        with open(os.path.join(f.store, ".launches.json"), "w") as fh:
+            json.dump({"version": 1, "launches": {}, "claims": {"task:x#9": lid}}, fh)
+        [row] = f.ok("launch", "status")["launches"]
+        self.assertEqual((row["identity"], row["launch"], row["state"], row["held"]), ("task:x#9", lid, "unknown", True))
+        self.assertIn("its record is gone", f.run("launch", "status", "task:x#9").stdout)
+
+    def test_check_and_run_refuse_alike_and_a_bad_machine_name_refuses(self):
+        f = Fixture(self)
+        own = ["--label", "herdr.launch=" + str(uuid.uuid4()), "assistant"]
+        for extra in (["--check"], []):
+            with self.subTest(extra=extra):
+                p = f.run("launch", "run", "--role", "coordinator", "--space", "sp1", *extra, "--json", "--", *own)
+                self.assertEqual(p.returncode, 1)
+                self.assertIn("launch owner's own", json.loads(p.stdout)["error"])
+        p = f.run("launch", "run", "--role", "coordinator", "--space", "sp1", "--json", "--", "--on", "bad machine", "assistant")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("single word", json.loads(p.stdout)["error"])
+        self.assertEqual(f.calls(), [])
+
+    def test_hcs_own_words_are_never_repeated(self):
+        """G6: a planted marker in hc's reply reaches neither the refusal nor the journal."""
+        marker = "marker-hc-reply-6d1e"
+        f = Fixture(self)
+        f.env["FAKE_HC_MARKER"] = marker
+        f.add()
+        f.set_mode("leak")
+        p = f.start()
+        self.assertEqual(p.returncode, 1)
+        self.assertEqual(json.loads(p.stdout)["launch"]["state"], "submission-uncertain")
+        [rec] = f.starts()
+        self.assertEqual(rec["reply"], "hc exited 1")
+        with open(os.path.join(f.store, ".launches.json")) as fh:
+            journal = fh.read()
+        self.assertNotIn(marker, p.stdout + p.stderr + journal + f.run("launch", "status").stdout)
+
+
 @ON_CI
 class WorktreeReconcile(unittest.TestCase):
-    """G1: a worktree task's start whose reply is lost, so its herdr-task saves nothing, then
-    launch reconcile. The task must record the worktree, branch, base and start commit its agent
-    runs in, not only the agent.
+    """G1, with a negative control: a worktree task's start whose reply is lost (its herdr-task
+    saves nothing), then launch reconcile, run the same way twice. herdr-task as it was at
+    BEFORE_G1 (extracted from git history) records the agent but loses the worktree, branch, base
+    and start commit it runs in; this tree's records them. One run tells the two apart.
 
     HOME can't be a throwaway here: herdr-task refuses every hc call when HOME isn't the account's
-    own (base.not_real), so the start would stop there. The worktree goes under
-    ~/.herdr/worktrees/<this repo's own unique name>, removed afterwards."""
+    own (base.not_real), so a start would stop there. Each run's worktree goes under
+    ~/.herdr/worktrees/<its own unique repo name>, removed afterwards."""
 
     def git(self, *args):
         return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout.strip()
 
-    def test_a_reconciled_worktree_start_records_its_worktree_branch_base_and_start(self):
+    def old_bin(self):
+        """mods/tasks/bin as it was at BEFORE_G1, from this repository's history (CI fetches it whole)."""
+        where = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, where, True)
+        tar = subprocess.run(["git", "-C", ROOT, "archive", "--format=tar", BEFORE_G1, "mods/tasks/bin"],
+                             check=True, capture_output=True).stdout
+        with tarfile.open(fileobj=__import__("io").BytesIO(tar)) as t:
+            t.extractall(where, filter="data")
+        return os.path.join(where, "mods", "tasks", "bin")
+
+    def lost_reply_then_reconcile(self, bin):
+        """The task as its list holds it after reconcile, and what the start made on disk."""
         name = "lwt" + uuid.uuid4().hex[:10]
         f = Fixture(self, name=name)
+        f.bin = bin
         self.addCleanup(shutil.rmtree, os.path.join(os.path.expanduser("~"), ".herdr", "worktrees", name), True)
         tid = f.ok("add", "Fix login", "--folder", f.repo, "--space", "sp1")["id"]
         f.set_mode("hidden")
@@ -614,13 +723,19 @@ class WorktreeReconcile(unittest.TestCase):
         # Its terminal shows up carrying the launch id; reconcile puts the start on its task.
         f.set_mode("ok")
         f.seed(address="t70", state="live", labels={"herdr.launch": rec["launch"]})
-        out = f.ok("launch", "reconcile", rec["identity"], rec["launch"])
-        self.assertEqual(out["state"], "confirmed")
+        self.assertEqual(f.ok("launch", "reconcile", rec["identity"], rec["launch"])["state"], "confirmed")
         t = f.task(tid)
-        self.assertEqual([a["address"] for a in t["agents"]], ["t70"])
-        self.assertEqual((os.path.realpath(t.get("worktree") or ""), t.get("branch"), t.get("base"), t.get("start")),
-                         (worktree, branch, "main", start))
-        self.assertEqual(len(f.runs()), 1)
+        self.assertEqual(([a["address"] for a in t["agents"]], len(f.runs())), (["t70"], 1))
+        recorded = (os.path.realpath(t["worktree"]) if t.get("worktree") else None, t.get("branch"), t.get("start"))
+        return recorded, (worktree, branch, start), t.get("base")
+
+    def test_a_reconciled_worktree_start_records_its_worktree_branch_base_and_start(self):
+        # (a) Before the repair: the agent is recorded, its worktree, branch and start commit are lost.
+        recorded, made, _ = self.lost_reply_then_reconcile(self.old_bin())
+        self.assertEqual(recorded, (None, None, None), "the negative control no longer shows G1's loss")
+        # (b) This tree: the same scenario records them, with the base it branched from.
+        recorded, made, base = self.lost_reply_then_reconcile(BIN)
+        self.assertEqual((recorded, base), (made, "main"))
 
 
 @ON_CI
@@ -673,7 +788,12 @@ class SettingsOwner(unittest.TestCase):
         node = lambda serving: {"shepherdr.node": {"value": {"id": "n1", "serving": serving}, "version": 3},
                                 "shepherdr.host": {"value": {"id": "n1" if serving else "n2"}, "version": 1}}
         for docs, words in ((node(False), "kept in step with the machine that serves the web app"),
-                            ("{ broken", "can't be read now"), (node(True), None)):
+                            ("{ broken", "can't be read now"), (node(True), None),
+                            # Present but malformed node records can't say whose the file is; absent stays its own.
+                            ({"shepherdr.node": "not a document"}, "can't be read now"),
+                            ({"shepherdr.node": {"version": 1}}, "can't be read now"),
+                            ({"shepherdr.node": {"value": {"id": "n1"}}}, "can't be read now"),
+                            ({"shepherdr.host": {"value": {"id": "n2"}}}, None)):
             with self.subTest(docs=str(docs)[:30]):
                 f = Fixture(self)
                 d = json.loads(json.dumps(PERSONAL))

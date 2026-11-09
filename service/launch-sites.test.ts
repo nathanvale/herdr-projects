@@ -72,6 +72,18 @@ test("a web-only new space starts its Assistant through launch admission", async
   expect(read(HC_CALLS)).toEqual([]);
 });
 
+test("a web-only new space whose Assistant start is refused is still made, and says why", async () => {
+  const why = "Provider is Azure Foundry here, but an Assistant's start can't carry a launch plan yet (pending: settings and selectors): it would start on the CLI's own sign-in. Nothing was started.";
+  writeFileSync(REPLY, JSON.stringify({ error: why }));
+  writeFileSync(`${REPLY}.code`, "1");
+  const s = store(), said: string[] = [];
+  const place = await SP.newSpace(hub, { machine: null, path: FOLDER, store: s, refused: (w) => said.push(w) });
+  expect(place).toBe(s.d.spaces[0].id);
+  expect(said).toEqual([why]);
+  expect(read(TASK_CALLS)).toHaveLength(1);
+  expect(read(HC_CALLS)).toEqual([]);
+});
+
 test("a space's first message starts its Assistant through launch admission", async () => {
   const r: any = await A.act(hub, { type: "send", chat: "p:sp1", text: "Plan the week" }, compat(FOLDER));
   expect(r).toMatchObject({ ok: true, started: true });

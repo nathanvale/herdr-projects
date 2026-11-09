@@ -88,7 +88,7 @@ export const placeId = (space: string, machine: string | null) => (!machine || s
  *  createSpace): a missing folder is made, makeRepo makes a folder outside git a repo (main, an empty first commit), it
  *  is named as Herdr names it ("Home" at home, else its repo's or folder's name; unnamed: left to follow its folder, as
  *  a worktree's), and `icon` is kept as the sidebar's Rename keeps it. */
-export async function newSpace(hub: Hub, opts: { machine: string | null; path: string; name?: string; unnamed?: boolean; makeRepo?: boolean; icon?: string | null; store: { value(k: string): any; set(k: string, v: unknown): Promise<unknown> } }) {
+export async function newSpace(hub: Hub, opts: { machine: string | null; path: string; name?: string; unnamed?: boolean; makeRepo?: boolean; icon?: string | null; store: { value(k: string): any; set(k: string, v: unknown): Promise<unknown> }; refused?: (why: string) => void }) {
   const { machine } = opts;
   if (!opts.path || opts.path.includes("\0")) throw new Error("Pick a folder.");
   const home = (await homeOf(hub, machine)) ?? "";
@@ -128,11 +128,18 @@ export async function newSpace(hub: Hub, opts: { machine: string | null; path: s
   if (opts.store.value("coordinator.auto") === false) return machine ? `${machine}/${id}` : id;
   const t = await execTemplate(hub, "assistant", machine);
   // through launch admission (herdr-task launch run): Personal only, claimed, rechecked and recorded as sent, then hc
-  // run. A refused start leaves the space without its Assistant, as a failed one always has. SHEPHERDR_HERDR_TASK: a
-  // test's stand-in (as SHEPHERDR_HC for hc); unset, herdr-task on PATH as before.
-  await run([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", "launch", "run", "--role", "coordinator", "--space", id, "--json", "--",
+  // run. A refused or failed start keeps the space, without its Assistant, and says why (opts.refused, and the log).
+  // SHEPHERDR_HERDR_TASK: a test's stand-in (as SHEPHERDR_HC for hc); unset, herdr-task on PATH as before.
+  const r = await run([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", "launch", "run", "--role", "coordinator", "--space", id, "--json", "--",
     "--bg", "--keep", "--no-parent", ...(machine ? ["--on", machine] : []), "--cwd", abs,
     "--label", "herdr.role=coordinator", "--label", `herdr.coordinator.space=${id}`, "--label", `herdr.space=${id}`, t.name]);
   t.done();
+  let out: any = {};
+  try { out = JSON.parse(r.out || "{}"); } catch {}
+  if (r.code !== 0 || !out.address) {
+    const why = String(out.error || r.err.trim().split("\n").pop() || "The Assistant didn't start.");
+    console.error(`new space ${id}: its Assistant didn't start: ${why}`);
+    opts.refused?.(why);
+  }
   return machine ? `${machine}/${id}` : id;
 }

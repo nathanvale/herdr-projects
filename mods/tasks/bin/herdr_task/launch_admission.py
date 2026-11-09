@@ -66,7 +66,7 @@ REVOKED = ("This start's claim ({}) was revoked or already used before it was se
 PARENT_CHANGED = ("Its Assistant ({}) ended or was replaced while this start was being prepared. Nothing was started; "
                   "start it again to report to the current one.")
 BROKEN = ("The launch journal ({}) can't be read. It is never read as empty, since it may hold a start that was sent. "
-          "Nothing was started; move it aside only once every start it names is known.")
+          "Nothing was started or changed; move it aside only once every start it names is known.")
 SHUTDOWN = "stopped before it was sent ({})"
 NO_CONFIG_DIR = ("CLAUDE_CONFIG_DIR isn't one absolute path to a Claude Code folder, so this start can't say which "
                  "profile its agent would use. Nothing was started; set it to an absolute path, or unset it.")
@@ -144,7 +144,7 @@ def busy_words(identity, rec, lid, who=None):
     who = who or identity
     if not rec:
         return (f"{who} has a claimed start ({lid}) the journal no longer describes, so whether it was sent is unknown. "
-                f"Nothing was started. `herdr-task launch status {identity}` shows it.")
+                f"Nothing was started. `herdr-task launch status {identity}` shows the claim. {HELD_UNCERTAIN}")
     if rec["state"] == NEVER:
         return (f"{who} is already starting (launch {lid}, claimed and not sent). Nothing was started. If that start's "
                 f"herdr-task has ended, release it with `herdr-task launch recover {identity} {lid}`.")
@@ -164,6 +164,10 @@ def put_on(t, rec):
     if recorded_on(t, rec):
         return False
     t.setdefault("reviewers" if job.get("role") else "agents", []).append({**job["agent"], "address": rec["address"], "launch": rec["launch"]})
+    # What the start set up before it was sent (its worktree, branch, base and start commit): the agent runs there.
+    for k, v in (job.get("made") or {}).items():
+        if t.get(k) in (None, "") or k == "mode":
+            t[k] = v
     if not job.get("role"):
         if t["state"] in ("todo", "scheduled", "queued", "done"):
             t["state"] = "running"
@@ -173,6 +177,19 @@ def put_on(t, rec):
         if job.get("space"):
             t["space"] = job["space"]
     return True
+
+
+def on_its_task(rec):
+    """Whether confirmed task start rec's agent is in its task list as saved (read only): a
+    claim can be held after its own start saved, until the next start of that task releases it."""
+    from .store import locate, read_list, store_path
+    job = rec.get("task") or {}
+    try:
+        path = store_path(locate(job["folder"])["folder"])[1]
+    except (Fail, KeyError, TypeError):
+        return False
+    t = next((x for x in (read_list(path) or {}).get("tasks") or [] if x.get("id") == job.get("id")), None)
+    return bool(t) and recorded_on(t, rec)
 
 
 def refuse_busy(d, identity, who=None, task=None, repair=False):
@@ -344,7 +361,9 @@ class Admission:
             self._close(UNCERTAIN, CONFIRMED, address=found[0], reconciled=True)
             return {**out, "address": found[0], "first_message": {"sent": False}, "launch": self.launch, "state": CONFIRMED,
                     "reconciled": True}
-        said = ((r.stderr or r.stdout or "").strip().splitlines() or ["no reply"])[-1][:200]
+        # hc's own words are never repeated (they could carry an argv word or an environment value):
+        # only how it ended.
+        said = f"hc exited {r.returncode}" + ("" if (r.stdout or "").strip() else " with no reply")
         self._close(UNCERTAIN, UNCERTAIN, reply=said)
         e = Fail(f"hc didn't confirm this start ({said}), and it may have started anyway, so it is kept as launch "
                  f"{self.launch}, submission uncertain. Nothing will retry it. `herdr-task launch reconcile {self.identity} "
@@ -474,6 +493,8 @@ def admit_assistant_start(role, space, hc_args, slot=None, config_dir=None):
     here or on the machine its --on names; an earlier start of the same space (and slot) still
     open refuses."""
     machine = on_machine(hc_args)
+    if machine is not None and not WORD.fullmatch(machine):
+        raise Fail("`hc run --on` names a machine as a single word (letters, digits, dots, dashes). Nothing was started.")
 
     def revise():
         d = read_strict()
@@ -502,11 +523,32 @@ def cmd_launch(args):
         if args.identity and not IDENTITY.fullmatch(args.identity):
             raise Fail("That isn't a launch identity: `herdr-task launch status` lists them.")
         with journal() as d:
-            rows = sorted((r for r in d["launches"].values() if not args.identity or r.get("identity") == args.identity),
-                          key=lambda r: (r.get("state") not in OPEN, -(r.get("at") or 0)))
-        text = "\n".join(f"{r['identity']} {r['launch']} {r['state']}" + (f" {r['address']}" if r.get("address") else "")
-                         for r in rows) or "No starts in the launch journal."
-        return say(args, {"launches": rows}, text)
+            recs = [r for r in d["launches"].values() if not args.identity or r.get("identity") == args.identity]
+            claims = dict(d["claims"])
+            known = {r["launch"] for r in d["launches"].values()}
+        rows = []
+        for rec in recs:
+            r = {k: v for k, v in rec.items() if k != "task"}
+            # Claimed still: unresolved (never submitted, uncertain, or confirmed but not yet on its task). A confirmed
+            # start whose task list holds it is resolved, though its claim waits for that task's next start.
+            r["held"] = claims.get(rec["identity"]) == rec["launch"] and not (
+                rec.get("state") == CONFIRMED and isinstance(rec.get("task"), dict) and on_its_task(rec))
+            rows.append(r)
+        # A claim whose record is gone: held, and shown, since nothing can say whether it was sent.
+        rows += [{"identity": i, "launch": l, "state": "unknown", "held": True} for i, l in claims.items()
+                 if l not in known and (not args.identity or i == args.identity)]
+        rows.sort(key=lambda r: (not r["held"], -(r.get("at") or 0)))
+
+        def line(r):
+            w = f"{r['identity']} {r['launch']} {r['state']}" + (f" {r['address']}" if r.get("address") else "")
+            if r["held"] and r["state"] == CONFIRMED:
+                w += f": held, not yet on its task; `herdr-task launch reconcile {r['identity']} {r['launch']}` records it"
+            elif r["held"] and r["state"] == "unknown":
+                w += ": held, its record is gone; whether it was sent is unknown"
+            elif r["held"]:
+                w += ": held"
+            return w
+        return say(args, {"launches": rows}, "\n".join(map(line, rows)) or "No starts in the launch journal.")
     ident, lid = args.identity, args.id
     if not ident or not IDENTITY.fullmatch(ident) or not LAUNCH_ID.fullmatch(lid or ""):
         raise Fail("Give the start's exact identity and launch id, as `herdr-task launch status` shows them.")
@@ -525,11 +567,21 @@ def cmd_launch(args):
                      f"Nothing was changed.")
             e.launch = {"launch": lid, "identity": ident, "state": UNCERTAIN}
             raise e
-        if rec["state"] == NEVER and d["claims"].get(ident) == lid:
+        released = rec["state"] == NEVER and d["claims"].get(ident) == lid
+        if released:
             rec.update(state=CANCELLED, revoked=True, reason="released by launch recover: never sent", updated=now())
             d["claims"].pop(ident, None)
-        out = dict(rec)
-    say(args, out, f"{ident} {lid} is {out['state']}" + (": released, and its sender can no longer send it." if out.get("revoked") else "."))
+        held = d["claims"].get(ident) == lid and not (isinstance(rec.get("task"), dict) and on_its_task(rec))
+        out = {k: v for k, v in rec.items() if k != "task"}
+    out["released"] = released
+    if released:
+        said = ": released, and its sender can no longer send it."
+    elif out["state"] == CONFIRMED and held:
+        said = (f": it was sent and confirmed, so there is nothing to release; its task doesn't hold it yet, and "
+                f"`herdr-task launch reconcile {ident} {lid}` records it there.")
+    else:
+        said = ": nothing to release." + (" It was released earlier." if out.get("revoked") else "")
+    say(args, out, f"{ident} {lid} is {out['state']}{said}")
 
 
 def reconcile(args, say, ident, lid):
@@ -559,7 +611,9 @@ def reconcile(args, say, ident, lid):
             e.launch = {"launch": lid, "identity": ident, "state": UNCERTAIN}
             raise e
     elif not (state == CONFIRMED and held):
-        return say(args, {k: v for k, v in rec.items() if k != "task"}, f"{ident} {lid} is {state}: nothing to reconcile.")
+        hint = (f" It was never sent; if its herdr-task has ended, `herdr-task launch recover {ident} {lid}` releases it."
+                if state == NEVER and held else "")
+        return say(args, {k: v for k, v in rec.items() if k != "task"}, f"{ident} {lid} is {state}: nothing to reconcile.{hint}")
     # Confirmed, and its task may not hold its agent yet: put it there, then release the claim.
     with journal() as d:
         rec = dict(d["launches"][lid])
@@ -609,14 +663,16 @@ def launch_run(args, say):
     folder = args.config_dir or None
     if folder and (not folder.startswith("/") or re.search(r"[\x00-\x1f\x7f]", folder)):
         raise Fail("--config-dir is the absolute Claude Code folder its start carries.")
+    # The same refusals for --check as for the run: words that carry its own launch label, or name a machine
+    # (--on) that can't be an identity, refuse either way; only the run needs words at all.
+    if any(a.startswith(f"{LABEL}=") or a.startswith(f"--label={LABEL}=") for a in options_of(words)):
+        raise Fail("A start's launch label is the launch owner's own: leave it out.")
     if args.check:
         # Preflight only, before the start site changes anything: its route and an earlier start still open.
         adm = admit_assistant_start(args.role, space, words, args.slot if args.role == "agent" else None, folder)
         return say(args, {"admitted": True, "identity": adm.identity}, f"{adm.identity}: admitted.")
     if not words:
         raise Fail("Give the hc run words after \"--\".")
-    if any(a.startswith(f"{LABEL}=") or a.startswith(f"--label={LABEL}=") for a in options_of(words)):
-        raise Fail("A start's launch label is the launch owner's own: leave it out.")
     adm = admit_assistant_start(args.role, space, words, args.slot if args.role == "agent" else None, folder)
     with adm.claimed():
         extra = adm.label() + ([] if "--json" in options_of(words) else ["--json"])
