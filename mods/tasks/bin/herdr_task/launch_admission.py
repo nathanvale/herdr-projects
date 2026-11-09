@@ -46,7 +46,8 @@ import uuid
 
 from .base import Fail, guard, HOME, now, run, STORE
 from .providers import admit_assistant, admit_launch, AZURE, PERSONAL, read_strict, STALE_SELECTION
-from .settings import agent_key, bare
+# TEMPLATES_DIR: herdr-core's templates folder (HERDR_TASK_TEMPLATES, else ~/.config/herdr-core/templates).
+from .settings import agent_key, bare, TEMPLATES as TEMPLATES_DIR
 
 LABEL = "herdr.launch"
 NEVER, UNCERTAIN, CONFIRMED, CANCELLED = "never-submitted", "submission-uncertain", "confirmed", "cancelled"
@@ -680,7 +681,6 @@ def launch_folder(args, say):
     say(args, {"folder": folder, "default": folder == os.path.join(HOME, ".claude")}, folder)
 
 
-TEMPLATES_DIR = os.path.join(HOME, ".config", "herdr-core", "templates")
 NOT_PLAIN = ("The {} template's command isn't one plain agent command (claude or codex and its words, nothing a shell "
              "expands, chains or redirects), so an Azure Foundry plan can't be applied to it. Nothing was started.")
 

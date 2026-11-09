@@ -3,7 +3,7 @@
 Source phase L1 of the [migration contract](migration/upstream-v3.1.3.md). One owner,
 `mods/tasks/bin/herdr_task/launch_admission.py`, admits every agent start on a machine and keeps a
 durable journal of each one. This is source and its regressions only: CI runs them, nothing here is
-deployed or natively qualified, and Azure dispatch stays held ([Azure launch plans](azure-launch-plans.md)).
+deployed or natively qualified. Since A2 a valid Azure plan is dispatched where its start records it ([Azure selectors](azure-selectors.md)).
 
 ## What goes through it
 
@@ -25,9 +25,10 @@ its own kept terminal, and `service/watch.ts` types a fresh start into a live on
 
 1. **Preflight.** The settings file is read once and strictly. A file that is there but can't be
    read (not JSON, not an object, or not readable) refuses; a missing file keeps Personal. The
-   provider owner admits the route: for a task's agent, Personal passes and Azure is held, as A1
-   left it; for an Assistant or a tab agent, only Personal passes, here or on the machine an
-   `hc run --on` names, because those sites can't carry a launch plan yet. A task's Assistant (its
+   provider owner admits the route: for a task's agent, Personal passes and a valid Azure plan is
+   planned (since A2; a recorded conversation's resume plans from its record); for an Assistant's
+   new start (`--new-start`), the same on this machine only; for a restart of an Assistant or a tab
+   agent, only Personal passes, here or on the machine an `hc run --on` names (L2). A task's Assistant (its
    parent) is resolved. A start of the same identity that is still open refuses, naming the command
    that resolves it. Nothing has changed yet; `restart.sh` runs this step alone (`--check`) before
    it relabels the old Assistant's workers or saves its handoff.
@@ -114,7 +115,8 @@ herdr-task launch status [IDENTITY] [--json]
 herdr-task launch reconcile IDENTITY LAUNCH [--json]
 herdr-task launch recover IDENTITY LAUNCH [--json]
 herdr-task launch folder PID [--json]
-herdr-task launch run --role coordinator|agent --space SPACE [--slot TAB] [--config-dir DIR] [--check] [--json] -- <hc run words>
+herdr-task launch run --role coordinator|agent --space SPACE [--slot TAB] [--config-dir DIR] [--new-start WORD [--source TEMPLATE]
+  [--argv JSON] [--deployment NAME --revision REV]] [--replaced-route ROUTE] [--check] [--json] -- <hc run words>
 ```
 
 - `reconcile` confirms a `submission-uncertain` start only when exactly one terminal carries its

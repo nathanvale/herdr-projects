@@ -7,9 +7,11 @@ folder, W1 keeps a web page's chat flag apart from background work, H1 adds an
 opt-in private custom-domain listener, S1 routes pull requests through the forge
 seam with GitHub as its first adapter, B1 reads a saved Bitbucket pull request and
 its head's complete checks through a second, B2 publishes a Bitbucket folder's task on
-Ready (a push on a frozen route, a draft, then ready for review) under durable claims, and L1
-admits every task and Assistant start through one owner with a durable launch journal.
-Required Azure and lifecycle ports are pending, and no Bitbucket or lifecycle port is qualified. This checkpoint is not deployable or ready for application use. Check's
+Ready (a push on a frozen route, a draft, then ready for review) under durable claims, L1
+admits every task and Assistant start through one owner with a durable launch journal, and A2
+adds the person's Provider settings, save-only new-start selectors and recorded bindings that
+resume keeps, dispatching Azure where a start records its binding.
+Required Azure and lifecycle ports are pending, and no Azure, Bitbucket or lifecycle port is qualified. This checkpoint is not deployable or ready for application use. Check's
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
 
@@ -607,6 +609,31 @@ and `service/agents.ts` through `restart.sh` or `herdr-task switch`), which now 
   reopened journal and task list) and `service/launch-sites.test.ts`. CI pending; native
   qualification pending. The chat mod's start is source-inspected only.
 
+### A2 Azure selectors checkpoint
+
+Detail, decisions and authored regressions: [Azure selectors and bound starts](../azure-selectors.md).
+
+- Settings: `core/settings.js` (rows, words, `providerValue`, judged by the shared field table),
+  `service/settings.ts` (web rows, validated writes, Refresh), `mods/shepherdr-settings/
+  provider-section.js` (the window's rows). Four role deployments join the `provider` section.
+- Discovery: A1's `service/azure-deployments.ts`, reached only by an explicit Refresh; a pick
+  carries its list's revision and a stale one refuses (`service/main.ts`, `service/settings.ts`).
+- Selectors: `herdr-task select` (a task's save-only, revision-bound choice, locked once it has a
+  recorded agent; a deployment choice bound to its routing) and `provider show`; the web's
+  `web/plugins/tasks/select.tsx` through `service/selections.ts`; the window chat's Assistant pick.
+- Starts: `launch.py` composes the admitted plan, exports its nonsecret variables in the agent's
+  shell with a credential-presence check, labels the terminal and records the binding; `commands.py`
+  resumes a recorded conversation on its record (`--fresh` for a new one). An Assistant's new start
+  (`launch run --new-start`, from `service/spaces.ts`, `service/actions.ts`, `mods/chat/main.js`) runs
+  an owner-written one-off template and records its binding in the journal.
+- Held for L2: `restart.sh`, the window's and the web's Restart and Switch agent (`lib/agent.js`,
+  `service/agents.ts`, `herdr-task switch --restart`), fork, a lost session's new start
+  (`service/watch.ts`, the chat) and `revive.py` admit Personal only and refuse an Azure-started agent
+  (`core/agents.js providerRefusal`, `--replaced-route`).
+- Not qualified: every native route, the credential check's timing (after the terminal exists),
+  Codex's root overrides before `resume`, managed or required-provider layers, and content revisions
+  that can't see settings changed away and back.
+
 ### Bitbucket contract
 
 Port P's behavior into native owners, not its old server paths. GitHub retains
@@ -712,7 +739,9 @@ the W1 flag tests (`service/jobs-flags.test.ts`), the H1 listener tests
 (`service/private-domain.test.ts`), the S1 forge tests (`test/test_forge.py`), the B1
 Bitbucket read tests (`test/test_bitbucket.py`), the B2 publication tests
 (`test/test_bitbucket_publication.py`), the L1 launch admission tests
-(`test/test_launch_admission.py`, `service/launch-sites.test.ts`) and every native Check command. CI owns
+(`test/test_launch_admission.py`, `service/launch-sites.test.ts`), the A2 selector tests
+(`service/settings.test.ts`, `service/selections.test.ts`, with A2's cases in `test/test_providers.py`
+and `test/test_launch_admission.py`) and every native Check command. CI owns
 frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.

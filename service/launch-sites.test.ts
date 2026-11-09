@@ -67,13 +67,16 @@ test("a web-only new space starts its Assistant through launch admission", async
   const id = s.d.spaces[0].id;
   expect(place).toBe(id);
   const [call] = read(TASK_CALLS);
-  expect(call.startsWith(`launch run --role coordinator --space ${id} --json -- --bg --keep --no-parent --cwd `)).toBe(true);
-  expect(call).toContain(`--label herdr.role=coordinator --label herdr.coordinator.space=${id} --label herdr.space=${id} herdr-assistant-`);
+  // a new start (A2): the template word it runs, for launch admission to plan for its provider
+  const word = /--new-start (herdr-assistant-\S+) --source assistant --json -- /.exec(call)?.[1];
+  expect(word).toBeTruthy();
+  expect(call.startsWith(`launch run --role coordinator --space ${id} --new-start ${word} --source assistant --json -- --bg --keep --no-parent --cwd `)).toBe(true);
+  expect(call).toContain(`--label herdr.role=coordinator --label herdr.coordinator.space=${id} --label herdr.space=${id} ${word}`);
   expect(read(HC_CALLS)).toEqual([]);
 });
 
 test("a web-only new space whose Assistant start is refused is still made, and says why", async () => {
-  const why = "Provider is Azure Foundry here, but an Assistant's start can't carry a launch plan yet (pending: settings and selectors): it would start on the CLI's own sign-in. Nothing was started.";
+  const why = "Set an explicit Azure deployment name for Claude Code (letters, digits, dots, dashes and underscores).";
   writeFileSync(REPLY, JSON.stringify({ error: why }));
   writeFileSync(`${REPLY}.code`, "1");
   const s = store(), said: string[] = [];
@@ -100,14 +103,16 @@ test("a space's first message starts its Assistant through launch admission", as
   const r: any = await A.act(hub, { type: "send", chat: "p:sp1", text: "Plan the week" }, compat(FOLDER));
   expect(r).toMatchObject({ ok: true, started: true });
   const [call] = read(TASK_CALLS);
-  expect(call.startsWith(`launch run --role coordinator --space sp1 --json -- --bg --json --no-parent --keep --cwd ${FOLDER} `)).toBe(true);
-  expect(call).toContain("--label herdr.role=coordinator --label herdr.coordinator.space=sp1 --label herdr.space=sp1 herdr-assistant-");
+  const word = /--new-start (herdr-assistant-\S+) --source assistant --json -- /.exec(call)?.[1];
+  expect(word).toBeTruthy();
+  expect(call.startsWith(`launch run --role coordinator --space sp1 --new-start ${word} --source assistant --json -- --bg --json --no-parent --keep --cwd ${FOLDER} `)).toBe(true);
+  expect(call).toContain(`--label herdr.role=coordinator --label herdr.coordinator.space=sp1 --label herdr.space=sp1 ${word}`);
   expect(call.endsWith(" Plan the week")).toBe(true);
   expect(read(HC_CALLS)).toEqual([]);
 });
 
 test("a refused first-message start says the owner's words and starts nothing", async () => {
-  const why = "Provider is Azure Foundry here, but an Assistant's start can't carry a launch plan yet (pending: settings and selectors): it would start on the CLI's own sign-in. Nothing was started.";
+  const why = "Set an explicit Azure deployment name for Claude Code (letters, digits, dots, dashes and underscores).";
   writeFileSync(REPLY, JSON.stringify({ error: why }));
   writeFileSync(`${REPLY}.code`, "1");
   await expect(A.act(hub, { type: "send", chat: "p:sp1", text: "Plan the week" }, compat(FOLDER))).rejects.toThrow(why);

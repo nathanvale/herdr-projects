@@ -17,6 +17,7 @@ import subprocess
 import sys
 import io
 import tarfile
+import re
 import tempfile
 import time
 import unittest
@@ -66,6 +67,14 @@ def labels_of(words):
     return out
 verb = args[0] if args else ""
 if verb == "run":
+    # A template the run names that is there now (an Assistant's one-off, written by launch admission): its words are
+    # kept in the log as the start saw them, since the owner removes the file once hc has run.
+    tdir = os.environ.get("HERDR_TASK_TEMPLATES")
+    for w in args:
+        tp = os.path.join(tdir, w + ".md") if tdir and "/" not in w else None
+        if tp and w.startswith("herdr-") and os.path.isfile(tp):
+            with open(tp) as tf, open(os.environ["FAKE_HC_LOG"], "a") as f:
+                f.write(json.dumps(["template", w, tf.read()]) + "\n")
     words = args[1:args.index("--")] if "--" in args else args[1:]
     mode = os.environ.get("FAKE_HC_MODE", "ok")
     try:
@@ -817,7 +826,7 @@ class SettingsOwner(unittest.TestCase):
                     self.assertIn(words, f.refused("start", "1", "--folder", f.repo, "--space", "sp1", "--now")["error"])
                     self.assertEqual(f.runs(), [])
                 else:
-                    self.assertEqual((p.returncode, json.loads(p.stdout)["dispatch"]), (0, "held"))
+                    self.assertEqual((p.returncode, json.loads(p.stdout)["dispatch"]), (0, "planned"))
 
     def test_personal_never_reads_whose_file_it_is(self):
         f = Fixture(self)
@@ -930,7 +939,8 @@ class AssistantStarts(unittest.TestCase):
                 p = self.run_start(f, words=words)
                 self.assertEqual(p.returncode, 1, p.stdout)
                 err = json.loads(p.stdout)["error"]
-                self.assertIn({"azure": "can't carry a launch plan yet", "azure-remote": "would run on vm1",
+                # Without --new-start a start is a restart's (L2): Personal only.
+                self.assertIn({"azure": "can't carry an Azure Foundry binding yet", "azure-remote": "would run on vm1",
                                "corrupt": "can't be read"}[kind], err)
                 self.assertEqual(f.calls(), [])
                 self.assertFalse(os.path.exists(os.path.join(f.store, ".launches.json")) and f.starts("coordinator:"))
@@ -972,8 +982,94 @@ class AssistantStarts(unittest.TestCase):
 
     def test_its_launch_label_is_the_owners_own(self):
         f = Fixture(self)
-        p = self.run_start(f, words=["--label", "herdr.launch=00000000-0000-4000-8000-000000000000", *self.WORDS])
+        for label in ("herdr.launch=00000000-0000-4000-8000-000000000000", "herdr.provider=azure-foundry"):
+            p = self.run_start(f, words=["--label", label, *self.WORDS])
+            self.assertEqual(p.returncode, 1)
+        self.assertEqual(f.calls(), [])
+
+    def template(self, f, command="claude --dangerously-skip-permissions"):
+        os.makedirs(os.path.join(f.tmp, "templates"), exist_ok=True)
+        with open(os.path.join(f.tmp, "templates", "assistant.md"), "w") as fh:
+            fh.write(f"---\nname: assistant\ndescription: the Assistant\ncommand: {command}\n---\nYou are the Assistant.\n")
+
+    def azure(self, f, **more):
+        d = json.loads(json.dumps(PERSONAL))
+        d["everywhere"]["provider"] = {**AZURE, **more}
+        f.write_settings(d)
+
+    def test_a_personal_new_start_keeps_its_words_and_reads_no_template(self):
+        f = Fixture(self)
+        p = self.run_start(f, "--new-start", "assistant", "--source", "assistant")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        [run] = f.runs()
+        self.assertEqual(run[3:], self.WORDS)
+        self.assertNotIn("herdr.provider=azure-foundry", run)
+        [rec] = f.starts("coordinator:")
+        self.assertNotIn("provider", rec)
+
+    def test_an_azure_new_start_runs_the_owners_own_one_off_template_and_records_its_binding(self):
+        for auth, credential in (("entra-id", None), ("api-key", "ANTHROPIC_FOUNDRY_API_KEY")):
+            with self.subTest(auth=auth):
+                f = Fixture(self)
+                self.template(f)
+                self.azure(f, claude_auth=auth, coordinator_claude_deployment="assistant-deployment")
+                f.env["ANTHROPIC_FOUNDRY_API_KEY"] = "marker-foundry-key-7f3a"
+                p = self.run_start(f, "--new-start", "assistant", "--source", "assistant")
+                self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+                [run] = f.runs()
+                [rec] = f.starts("coordinator:")
+                one = [c for c in f.calls() if c[0] == "template"]
+                self.assertEqual(len(one), 1, f.calls())
+                name, text = one[0][1], one[0][2]
+                self.assertRegex(name, r"^herdr-assistant-az-[0-9a-f]{8}$")
+                # Its own one-off in the template word's place, its route labelled, everything else the site's words.
+                self.assertEqual(run[run.index(name) + 1:], ["hello"])
+                self.assertNotIn("assistant", run[3:])
+                self.assertIn("herdr.provider=azure-foundry", run)
+                command = re.search(r"^command: (.+)$", text, re.M).group(1)
+                # The template's own agent, routed: the plan's --settings first, its deployment the one model, its words kept.
+                self.assertIn("exec claude --settings ", command)
+                self.assertIn(" --model assistant-deployment --dangerously-skip-permissions", command)
+                self.assertIn("CLAUDE_CODE_USE_FOUNDRY", command)
+                self.assertTrue(text.rstrip().endswith("You are the Assistant."))
+                if credential:
+                    self.assertIn(f'if [ -z "${{{credential}:-}}" ]', command)
+                else:
+                    self.assertNotIn("if [ -z", command)
+                self.assertEqual(rec["provider"], {"route": "azure-foundry", "agent": "claude", "target": "example",
+                                                   "deployment": "assistant-deployment", "auth": auth, "fingerprint": rec["provider"]["fingerprint"]})
+                # Removed once hc ran; no credential value in anything kept or handed on.
+                self.assertFalse(os.path.exists(os.path.join(f.tmp, "templates", name + ".md")))
+                self.assertNotIn("marker-foundry-key-7f3a", json.dumps(f.calls()) + json.dumps(f.journal()) + p.stdout + p.stderr)
+
+    def test_a_chats_choice_is_bound_to_the_routing_it_was_made_under(self):
+        f = Fixture(self)
+        self.template(f)
+        self.azure(f)
+        shown = json.loads(f.run("provider", "show", "--role", "coordinator", "--space", "sp1", "--folder", f.repo, "--json").stdout)
+        rev = shown["clis"]["claude"]["revision"]
+        argv = json.dumps(["claude", "--effort", "high"])
+        # The routing changed since the choice was made: refused before anything is recorded or run.
+        self.azure(f, claude_auth="api-key")
+        p = self.run_start(f, "--new-start", "assistant", "--argv", argv, "--deployment", "chosen", "--revision", rev)
         self.assertEqual(p.returncode, 1)
+        self.assertIn("changed since this start was chosen", json.loads(p.stdout)["error"])
+        self.assertEqual(f.calls(), [])
+        # Under the routing it was made in, the chosen deployment and argv start.
+        self.azure(f)
+        p = self.run_start(f, "--new-start", "assistant", "--argv", argv, "--deployment", "chosen", "--revision", rev)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        [one] = [c for c in f.calls() if c[0] == "template"]
+        self.assertIn(" --model chosen --effort high", one[2])
+        self.assertEqual(f.starts("coordinator:")[0]["provider"]["deployment"], "chosen")
+
+    def test_a_template_command_that_isnt_plain_is_refused_on_azure(self):
+        f = Fixture(self)
+        self.template(f, "claude $(cat /tmp/x)")
+        self.azure(f)
+        p = self.run_start(f, "--new-start", "assistant")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("isn't one plain agent command", json.loads(p.stdout)["error"])
         self.assertEqual(f.calls(), [])
 
 
@@ -1019,6 +1115,16 @@ class RestartScript(unittest.TestCase):
         i = run.index("CLAUDE_CONFIG_DIR=" + profile)
         self.assertEqual((run[i - 1], run[i + 1], rec["config_dir"]), ("env", "claude", profile))
 
+    def test_an_assistant_that_started_on_azure_is_not_restarted_personal(self):
+        f = Fixture(self)
+        f.seed(address="t900", state="live", keep=True, template="assistant", cwd=f.repo,
+               labels={"herdr.space": "sp1", "herdr.tab": "tb1", "herdr.role": "coordinator", "herdr.provider": "azure-foundry"})
+        p = self.restart(f)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("the agent it replaces started on Azure Foundry", p.stderr)
+        self.assertEqual([c[0] for c in f.calls()], ["get"])
+        self.assertFalse(os.path.exists(os.path.join(f.store, ".launches.json")) and f.starts("coordinator:"))
+
     def test_a_refused_restart_changes_nothing_and_says_why(self):
         f = Fixture(self)
         d = json.loads(json.dumps(PERSONAL))
@@ -1027,7 +1133,7 @@ class RestartScript(unittest.TestCase):
         self.seed_assistant(f)
         p = self.restart(f)
         self.assertEqual(p.returncode, 1)
-        self.assertIn("can't carry a launch plan yet", p.stderr)
+        self.assertIn("can't carry an Azure Foundry binding yet", p.stderr)
         verbs = [c[0] for c in f.calls()]
         self.assertEqual(verbs, ["get"])  # only its own look at the old agent: no read, label, run or kill
         self.assertFalse(os.path.exists(os.path.join(f.store, ".launches.json")) and f.starts("coordinator:"))

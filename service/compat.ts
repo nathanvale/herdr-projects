@@ -205,7 +205,7 @@ export class Compat {
   /** chat key -> terminal address, from the last build */
   private chats = new Map<string, string>();
   /** task id -> where herdr-task finds it */
-  private tasks = new Map<string, { ref: string; folder: string; machine: string | null; key: string; pin: string; where: Where }>();
+  private tasks = new Map<string, { ref: string; folder: string; machine: string | null; key: string; pin: string; where: Where; space: string | null }>();
 
   taskOf(id: string) { return this.tasks.get(id) ?? null; }
 
@@ -360,7 +360,9 @@ export class Compat {
 
     // every agent's own helper agents (SHEP-54): their chats open by t:<address>, as a tab's
     for (const k of (this as any).terminalsAll?.() ?? []) if (isHelper(k)) chats.set(`t:${k.address}`, k.address);
+    // space: the space whose settings a task's new start takes (an Azure selector's level, service/selections.ts)
     this.tasks = new Map(rows.map((r) => [taskId(r), { ref: r.ref, folder: r.folder, machine: r.machine ?? null, key: `${r.slug}#${r.id}`, pin: r.key,
+      space: typeof r.space === "string" && r.space ? (r.machine ? `${r.machine}/${r.space}` : r.space) : null,
       where: { folder: r.worktree, machine: r.machine ?? null, base: r.base, start: r.start, branch: r.branch, pr: r.pr } }]));
     // one older than 10 minutes was left by a quit (as the window reads it)
     const acc = this.shared?.value("tasks.accepting") ?? {};

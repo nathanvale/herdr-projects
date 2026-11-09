@@ -1,6 +1,6 @@
 import * as APc from "../core/autopilot.js";
 import { expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -267,4 +267,109 @@ test("Feedback offers and its repo", () => {
   expect(() => s.set("agents.feedback_repo", "acme/x", "sp7", sp)).toThrow();
   s.set("agents.feedback_repo", "", "all");
   expect(JSON.parse(readFileSync(file, "utf8")).everywhere?.agents).toBeUndefined();
+});
+
+// ---- Settings › Agents › Provider (A2) ----------------------------------------------------------------------------
+// The person's own Azure Foundry connection rows, checked as herdr-task checks them (one field table both judge), with a
+// stand-in `az` for Refresh: no Azure, no sign-in and no agent. They prove the rows, the file and stale-pick refusal.
+const { AzureDeployments } = await import("./azure-deployments.ts");
+const BINDING: any = (await import("../test/azure-binding.cases.json")).default;
+const providerOf = (level: string, scopes: any[] = []) => {
+  const s = new Settings();
+  s.start();
+  return { s, rows: () => s.sections(null, scopes).find((x) => x.name === "Agents" && x.level === level)!.rows.filter((r) => r.key.startsWith("provider.")) };
+};
+const fileNow = () => JSON.parse(readFileSync(file, "utf8"));
+
+test("the provider's fields are judged as herdr-task judges them, a refused one never repeated", () => {
+  for (const c of BINDING.cases) {
+    if (c.ok) expect(CORE.providerValue(c.field, c.value)).toBe(c.kept);
+    else {
+      let said = "";
+      try { CORE.providerValue(c.field, c.value); } catch (e) { said = (e as Error).message; }
+      expect(said).not.toBe("");
+      expect(said).not.toContain(c.value.trim());
+    }
+  }
+  expect(CORE.providerValue("route", "Azure Foundry")).toBe("azure-foundry");
+  expect(CORE.providerValue("claude_auth", "Bearer token")).toBe("bearer-token");
+  expect(() => CORE.providerValue("codex_auth", "Entra ID")).toThrow("API key only");
+  expect(() => CORE.providerValue("api_key", "x")).toThrow();
+});
+
+test("Personal shows the route alone; Azure Foundry shows each CLI's connection, kept as the file's values", () => {
+  const { s, rows } = providerOf("all");
+  expect(rows().map((r) => r.key)).toEqual(["provider.route"]);
+  expect(rows()[0]).toMatchObject({ value: "Personal", options: ["Personal", "Azure Foundry"] });
+  s.set("provider.route", "Azure Foundry");
+  s.set("provider.claude_resource", " example ");
+  s.set("provider.claude_auth", "API key");
+  s.set("provider.codex_endpoint", "https://example.openai.azure.com/openai/v1/");
+  expect(fileNow().everywhere.provider).toEqual({ route: "azure-foundry", claude_resource: "example", claude_auth: "api-key",
+    codex_endpoint: "https://example.openai.azure.com/openai/v1" });
+  const keys = rows().map((r) => r.key);
+  expect(keys).toContain("provider.claude_deployment");
+  expect(keys).toContain("provider.coordinator_codex_deployment");
+  expect(rows().find((r) => r.key === "provider.claude_deployment")).toMatchObject({ text: true, discovery: { kind: "claude", busy: false, options: [], revision: "" } });
+  // A URL where a resource name goes, or a key pasted in: refused, the value never repeated, the file unchanged.
+  const before = readFileSync(file, "utf8");
+  expect(() => s.set("provider.claude_resource", "https://example.services.ai.azure.com/anthropic")).toThrow("not a URL");
+  let said = "";
+  try { s.set("provider.claude_deployment", "sk-marker pasted"); } catch (e) { said = (e as Error).message; }
+  expect(said).not.toContain("sk-marker");
+  expect(readFileSync(file, "utf8")).toBe(before);
+  s.set("provider.route", "Personal");
+  // Under Personal the half-set Azure setup is kept, only not shown.
+  expect(rows().map((r) => r.key)).toEqual(["provider.route"]);
+  expect(fileNow().everywhere.provider.claude_resource).toBe("example");
+});
+
+test("a space inherits field by field; its empty value is its own, and Reset follows Everywhere again", () => {
+  const scope = { id: "sp7", name: "api", machine: null, folder: "/api7" };
+  const { s, rows } = providerOf("sp7", [scope]);
+  s.set("provider.route", "Azure Foundry");
+  s.set("provider.claude_deployment", "everywhere-deployment");
+  expect(rows().find((r) => r.key === "provider.claude_deployment")).toMatchObject({ value: "everywhere-deployment", from: "Everywhere" });
+  s.set("provider.claude_deployment", "", "sp7", scope);
+  expect(fileNow().spaces.sp7.provider).toEqual({ claude_deployment: "" });
+  expect(rows().find((r) => r.key === "provider.claude_deployment")).toMatchObject({ value: "", inherits: { value: "everywhere-deployment", from: "Everywhere" } });
+  s.set("provider.claude_deployment", null, "sp7", scope);
+  expect(fileNow().spaces.sp7.provider).toBeUndefined();
+  s.set("provider.route", "Personal");
+});
+
+test("Refresh's list is read only when asked, and a pick from a list read under another resource is refused", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "shep-az-settings-")), az = join(dir, "az");
+  const SUB = "1111aaaa-2222-3333-4444-555555555555";
+  writeFileSync(join(dir, "inventory.json"), JSON.stringify([
+    { name: "opus-deployment", properties: { model: { name: "claude-opus-5-5", format: "Anthropic", version: "1" }, provisioningState: "Succeeded", capabilities: { chatCompletion: "true" } } }]));
+  writeFileSync(az, `#!/bin/sh\necho "$*" >> "${dir}/calls"\ncase "$1 $2 $3" in\n"account show"*) echo '{"id":"${SUB}","environmentName":"AzureCloud"}';;\n"cognitiveservices account deployment") cat "${dir}/inventory.json";;\n"cognitiveservices account list") echo '[{"name":"example","resourceGroup":"g1"}]';;\n*) exit 2;;\nesac\n`, { mode: 0o755 });
+  const { s, rows } = providerOf("all");
+  s.deployments = new AzureDeployments({ az });
+  s.set("provider.route", "Azure Foundry");
+  s.set("provider.claude_resource", "example");
+  // Showing the rows asks Azure nothing.
+  rows();
+  expect(existsSync(join(dir, "calls"))).toBe(false);
+  const view = await s.refreshDeployments("claude", "all", null);
+  expect(view.options.map((o: any) => o.value)).toEqual(["opus-deployment"]);
+  const shown = rows().find((r) => r.key === "provider.claude_deployment")!.discovery!;
+  expect(shown.options).toEqual([{ value: "opus-deployment", label: "opus-deployment · claude-opus-5-5 (1)", model: "claude-opus-5-5" }]);
+  expect(shown.revision).not.toBe("");
+  // Refresh selects nothing.
+  expect(fileNow().everywhere.provider.claude_deployment).toBeUndefined();
+  s.set("provider.claude_deployment", "opus-deployment", "all", null, shown.revision);
+  expect(fileNow().everywhere.provider.claude_deployment).toBe("opus-deployment");
+  // The resource changed: the list is gone, and a pick still carrying its revision is refused, the file unchanged.
+  s.set("provider.claude_resource", "other");
+  expect(rows().find((r) => r.key === "provider.claude_deployment")!.discovery!.options).toEqual([]);
+  expect(() => s.set("provider.claude_deployment", "another", "all", null, shown.revision)).toThrow("refresh again");
+  expect(fileNow().everywhere.provider.claude_deployment).toBe("opus-deployment");
+  // Typed by hand, a deployment needs no list.
+  s.set("provider.claude_deployment", "typed-deployment");
+  expect(fileNow().everywhere.provider.claude_deployment).toBe("typed-deployment");
+  // Everywhere with another machine connected has no single machine to read on: refused before asking Azure.
+  s.sections(null, [], ["vm1"]);
+  await expect(s.refreshDeployments("claude", "all", null)).rejects.toThrow("one machine");
+  s.set("provider.route", "Personal");
 });

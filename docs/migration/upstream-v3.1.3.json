@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "phase": "L1",
+  "phase": "A2",
   "architecture": "full-upstream-3.x",
   "candidate_readiness": "blocked",
   "inputs": {
@@ -29,16 +29,16 @@
       "sha256": "29a393ecd604f70bb599538463e18680d4668daf851c5a41148b518ceb22c69d"
     },
     {
-      "phase": "L1",
+      "phase": "A2",
       "path": "mods/tasks/bin/herdr_task/cli.py",
       "upstream_blob": "af0c7d2ee16ea26fa1fa458020f6d9181d78774d",
-      "sha256": "85aa62c71e602dfc96f543a2e4fca1d81cd121a0469495b92d44aa8cdf7aa607"
+      "sha256": "f95d1ad0b066dd0a7111adaa835cc690082266840169ba9ea37669c2c7172069"
     },
     {
-      "phase": "L1",
+      "phase": "A2",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "d2463e1a37c0aeefaee51eec7480d3de3df1f40d",
-      "sha256": "dbff88cd74274ee5891e82a670fac0f74f8640508cc1dc1e7029b3b2ffb1dc6d"
+      "sha256": "875b823573502902fafb0bf264d7a388f8f58b31663126d56bce9cc39e4141cb"
     },
     {
       "phase": "B1",
@@ -47,16 +47,16 @@
       "sha256": "21259c10695409e45b50f3dc22a1d1664ed58e19f0060fb6192751fb9452f9cb"
     },
     {
-      "phase": "L1",
+      "phase": "A2",
       "path": "mods/tasks/bin/herdr_task/launch.py",
       "upstream_blob": "a3b9182213360bd11294a57d57144747fce36fba",
-      "sha256": "023ff8d84216775521231cf06844488d7f1f7ea87d6c0beba234fde9963737a1"
+      "sha256": "c5de059ccaea714c67e1328eb84a88f786fa41396438fd3ce469ac753a0c39c4"
     },
     {
-      "phase": "L1",
+      "phase": "A2",
       "path": "mods/tasks/bin/herdr_task/providers.py",
       "upstream_blob": null,
-      "sha256": "d033afa07ed2fc51b2a6dd5f7d13168c8cc882592e03362f65c06ef9af60b1ed"
+      "sha256": "7f129ee2ca7a5781f0338381022fb4e1a32d392dfef1e352b291c36bc4b12764"
     },
     {
       "phase": "L1",
@@ -101,16 +101,16 @@
       "sha256": "6029cb7c77a0b1c3db33ee76cd88fc264f56f63bf27f44320b3bf9785f851b4b"
     },
     {
-      "phase": "L1",
+      "phase": "A2",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "41774dba70734058251f56b263a9add75a2ce1750ac3546b8a01ab73bcbeba94"
+      "sha256": "7f618547dab388cac8127419abfd0fcdf56864d1899c12702499e4d150157876"
     },
     {
-      "phase": "C1",
+      "phase": "A2",
       "path": "core/agents.js",
       "upstream_blob": "572c3762eb072dc3e15215c46971aa88963a2fbe",
-      "sha256": "e43d7550c400b241331030dbd44f4fa35ac2b5e02f28e91e06b2fde123210263"
+      "sha256": "b99d0ad708efcb26444f2ef7aa7bf73cbd7b83b6569e226eac261ba383df5b11"
     },
     {
       "phase": "C1",
@@ -125,10 +125,10 @@
       "sha256": "851713bb6a5b48a2f581a7a2d3b197703272536804a0f69ec596026efceac778"
     },
     {
-      "phase": "C1",
+      "phase": "A2",
       "path": "mods/chat/core/agents.js",
       "upstream_blob": "572c3762eb072dc3e15215c46971aa88963a2fbe",
-      "sha256": "e43d7550c400b241331030dbd44f4fa35ac2b5e02f28e91e06b2fde123210263"
+      "sha256": "b99d0ad708efcb26444f2ef7aa7bf73cbd7b83b6569e226eac261ba383df5b11"
     },
     {
       "phase": "C1",
@@ -137,28 +137,28 @@
       "sha256": "851713bb6a5b48a2f581a7a2d3b197703272536804a0f69ec596026efceac778"
     },
     {
-      "phase": "L1",
+      "phase": "A2",
       "path": "mods/chat/main.js",
       "upstream_blob": "4cdd115719ff5ea07827776304cd093aec0f11b3",
-      "sha256": "bdfadaa2f85e9210967e2fe24b7449ec97bd2ff0398b0f6227c9ec8e7fb361b7"
+      "sha256": "c660dfefd9d2ef19c0e78d7b023ac9247ef13d6dfe9e5eed707757f6ec7a3900"
     },
     {
-      "phase": "C1",
+      "phase": "A2",
       "path": "mods/coordinator/core/agents.js",
       "upstream_blob": "572c3762eb072dc3e15215c46971aa88963a2fbe",
-      "sha256": "e43d7550c400b241331030dbd44f4fa35ac2b5e02f28e91e06b2fde123210263"
+      "sha256": "b99d0ad708efcb26444f2ef7aa7bf73cbd7b83b6569e226eac261ba383df5b11"
     },
     {
-      "phase": "C1",
+      "phase": "A2",
       "path": "mods/newspace/core/agents.js",
       "upstream_blob": "572c3762eb072dc3e15215c46971aa88963a2fbe",
-      "sha256": "e43d7550c400b241331030dbd44f4fa35ac2b5e02f28e91e06b2fde123210263"
+      "sha256": "b99d0ad708efcb26444f2ef7aa7bf73cbd7b83b6569e226eac261ba383df5b11"
     },
     {
-      "phase": "C1",
+      "phase": "A2",
       "path": "mods/shepherdr-settings/core/agents.js",
       "upstream_blob": "572c3762eb072dc3e15215c46971aa88963a2fbe",
-      "sha256": "e43d7550c400b241331030dbd44f4fa35ac2b5e02f28e91e06b2fde123210263"
+      "sha256": "b99d0ad708efcb26444f2ef7aa7bf73cbd7b83b6569e226eac261ba383df5b11"
     },
     {
       "phase": "C1",
@@ -173,22 +173,22 @@
       "sha256": "89832c671ca9a4dd5c19a93df568aa06c29a7ffcf5fcc9ca09df511bb16d42fe"
     },
     {
-      "phase": "L1",
+      "phase": "A2",
       "path": "service/actions.ts",
       "upstream_blob": "3151c718fa60aa19e317cf3a61b6b11541573ef2",
-      "sha256": "8f1a9814713523f5a0c5b7124274fb45d292c13d4a258d8615dd626c8fc67e44"
+      "sha256": "010f8f3a9a6fec997e9d940a05cb358ca7cc3a38aa90e751dda173767b614429"
     },
     {
-      "phase": "C1",
+      "phase": "A2",
       "path": "service/agents.ts",
       "upstream_blob": "485c1f38b787d9c40f2a84fb87441f9e37e8cf8d",
-      "sha256": "251916744bc4873656ebcde12c0c5f89614a4fa7417186cc98c12b436424e333"
+      "sha256": "a24f7a12b641a77f4db70279804d1c4f54ee9f233429e49098f28c5f3a256bf1"
     },
     {
-      "phase": "C1",
+      "phase": "A2",
       "path": "service/watch.ts",
       "upstream_blob": "7e38406d2becbab5a05014de9afa229d7250f160",
-      "sha256": "432119138f7034f34c28e1d3e668816818c2b490aea4a60e46658e7bc9650873"
+      "sha256": "46e66bb951b05dd9b5af2282ecb466fae16c0b410b3cb0a31b6d75cb261bc8d9"
     },
     {
       "phase": "C1",
@@ -245,10 +245,10 @@
       "sha256": "576e9999953a45201bbc876ef6dbe60fa14c4772f6b136e04b2260a8122134b8"
     },
     {
-      "phase": "L1",
+      "phase": "A2",
       "path": "service/main.ts",
       "upstream_blob": "22e86c459746c8a3941db0a3ea3db6c5ce59ead4",
-      "sha256": "51640af014392288b1ff6d8066e03ab2e751f2c85db305e5659ca71f29f2a504"
+      "sha256": "5f0ad1d94b6e393f61bdfb4214ad2969037c4f4bbe6504b911c617ac313f79a8"
     },
     {
       "phase": "H1",
@@ -263,10 +263,10 @@
       "sha256": "011960742225c910b2654c9ed3873b425aa3b4b983fb205b531e45bf936ab3ea"
     },
     {
-      "phase": "C1",
+      "phase": "A2",
       "path": "mods/chat-models/core/agents.js",
       "upstream_blob": "572c3762eb072dc3e15215c46971aa88963a2fbe",
-      "sha256": "e43d7550c400b241331030dbd44f4fa35ac2b5e02f28e91e06b2fde123210263"
+      "sha256": "b99d0ad708efcb26444f2ef7aa7bf73cbd7b83b6569e226eac261ba383df5b11"
     },
     {
       "phase": "C1",
@@ -335,46 +335,172 @@
       "sha256": "e58611687e7c1eca2fbda340673e0d13db42bf2fd381a23b8692efcdb90b3240"
     },
     {
-      "phase": "L1",
+      "phase": "A2",
       "path": "mods/coordinator/restart.sh",
       "upstream_blob": "3e19fcf877ae17eac7ae88e86b29279aa70fd2de",
-      "sha256": "b4a292ba7de4cada7158a83e81df3fbbfe7a4447d77e1a79ad325de040631869"
+      "sha256": "d36cc9a850bd9b4b2e12ecd07abb1141e0d7c5da3f630ed4d8fe64253b24bc28"
     },
     {
-      "phase": "L1",
+      "phase": "A2",
       "path": "mods/tasks/bin/herdr_task/launch_admission.py",
       "upstream_blob": null,
-      "sha256": "75c89a956b4882a5e4f10fa4623ab314f4b08203f5570e0437ce18f06cf452ca"
+      "sha256": "3ed3105f111a45c0eaec901f87bc2a291bb396ed5ab17ccb597adbef4f3852ec"
     },
     {
-      "phase": "L1",
+      "phase": "A2",
       "path": "mods/tasks/bin/herdr_task/settings.py",
       "upstream_blob": "62075dff7688c21aaa7771034ac79d96e8f30473",
-      "sha256": "3e6b3364ff9035e807632a6856b67e425200772c10d4c8763c4b10c184ea8eca"
+      "sha256": "1a749fa8b795c7edeeb1954dd0cb9899aa10b4ded70dfd5cf1e74f24e26723a7"
     },
     {
-      "phase": "L1",
+      "phase": "A2",
       "path": "service/launch-sites.test.ts",
       "upstream_blob": null,
-      "sha256": "3f2f2edc6c461214a44f00f3a6632ed2016c79c109c502cb50ef3816c2734509"
+      "sha256": "08988f29546c6a064a831a9bd7e4294779c8848351a2e4f25286e1250057bcfd"
     },
     {
-      "phase": "L1",
+      "phase": "A2",
       "path": "service/spaces.ts",
       "upstream_blob": "75b6df86b5bc13aa6fb83bbdff7742c5af75622d",
-      "sha256": "8e5db039a8f22e1f8e4a8a0be8dcdb01f445e3ce5cf1d090ab76bad914eed00c"
+      "sha256": "a4816ccdeb9957090cee12163d917478514e0f53d53e272275242def8c4bfaee"
     },
     {
-      "phase": "L1",
+      "phase": "A2",
       "path": "test/test_launch_admission.py",
       "upstream_blob": null,
-      "sha256": "3c58aeb72b2a25dd4462c049b92c511417fb0e63440323e8ac6797d087fbad8e"
+      "sha256": "d65687b0fc642c72ad35c6efde6243b388698f3a9ff15c731ebcf90bc094503b"
     },
     {
       "phase": "L1",
       "path": "web/plugins/places/add.tsx",
       "upstream_blob": "5ff16a9c3a212f93f78d69ffca05147cba707155",
       "sha256": "f90a54b82e7a6f17c587c690fb772b8d7d4fe43a6a28de72a55017a075e441e3"
+    },
+    {
+      "phase": "A2",
+      "path": "core/settings.js",
+      "upstream_blob": "3462fae4bf004887f2b13a736d99735954cdbffc",
+      "sha256": "f824ed1493c56b3717777dd43ccb9b14a53363bbfd0a57447dedee78f2dc5039"
+    },
+    {
+      "phase": "A2",
+      "path": "lib/agent.js",
+      "upstream_blob": "55fa97c8fda93efde489cb42efb7fbc49199b32f",
+      "sha256": "178803ddfe50cbdc0d84c5bc383b292d8742d05b77508cd0d5347c06f1acc02e"
+    },
+    {
+      "phase": "A2",
+      "path": "mods/chat/agent.js",
+      "upstream_blob": "55fa97c8fda93efde489cb42efb7fbc49199b32f",
+      "sha256": "178803ddfe50cbdc0d84c5bc383b292d8742d05b77508cd0d5347c06f1acc02e"
+    },
+    {
+      "phase": "A2",
+      "path": "mods/chat/core/settings.js",
+      "upstream_blob": "3462fae4bf004887f2b13a736d99735954cdbffc",
+      "sha256": "f824ed1493c56b3717777dd43ccb9b14a53363bbfd0a57447dedee78f2dc5039"
+    },
+    {
+      "phase": "A2",
+      "path": "mods/coordinator/core/settings.js",
+      "upstream_blob": "3462fae4bf004887f2b13a736d99735954cdbffc",
+      "sha256": "f824ed1493c56b3717777dd43ccb9b14a53363bbfd0a57447dedee78f2dc5039"
+    },
+    {
+      "phase": "A2",
+      "path": "mods/newspace/agent.js",
+      "upstream_blob": "55fa97c8fda93efde489cb42efb7fbc49199b32f",
+      "sha256": "178803ddfe50cbdc0d84c5bc383b292d8742d05b77508cd0d5347c06f1acc02e"
+    },
+    {
+      "phase": "A2",
+      "path": "mods/newspace/core/settings.js",
+      "upstream_blob": "3462fae4bf004887f2b13a736d99735954cdbffc",
+      "sha256": "f824ed1493c56b3717777dd43ccb9b14a53363bbfd0a57447dedee78f2dc5039"
+    },
+    {
+      "phase": "A2",
+      "path": "mods/shepherdr-settings/agent.js",
+      "upstream_blob": "55fa97c8fda93efde489cb42efb7fbc49199b32f",
+      "sha256": "178803ddfe50cbdc0d84c5bc383b292d8742d05b77508cd0d5347c06f1acc02e"
+    },
+    {
+      "phase": "A2",
+      "path": "mods/shepherdr-settings/core/settings.js",
+      "upstream_blob": "3462fae4bf004887f2b13a736d99735954cdbffc",
+      "sha256": "f824ed1493c56b3717777dd43ccb9b14a53363bbfd0a57447dedee78f2dc5039"
+    },
+    {
+      "phase": "A2",
+      "path": "mods/shepherdr-settings/main.js",
+      "upstream_blob": "e062ac4d804ceda0f9db227e28324b3d430076a9",
+      "sha256": "0e5e2d2e8ae8184188e64b4150c5910b4ba7cd6c16b2e28598c5b71122bcce46"
+    },
+    {
+      "phase": "A2",
+      "path": "mods/shepherdr-settings/provider-section.js",
+      "upstream_blob": null,
+      "sha256": "aaafa79adb0d790d2b3ed4f834d8273557e70fa6818818e5a421b42910700822"
+    },
+    {
+      "phase": "A2",
+      "path": "mods/tasks/bin/herdr_task/revive.py",
+      "upstream_blob": "1ed629e083e5ede0f620e0be32c2ccc08bffb0c3",
+      "sha256": "755e71a4e0a5959b7b0f8f7d14ae20cec877380f7ebc9168e7832a20fc55ccf8"
+    },
+    {
+      "phase": "A2",
+      "path": "service/compat.ts",
+      "upstream_blob": "a336a209c254ee5911139b8f4eddfe854f0e48a1",
+      "sha256": "5597e2ad769ca46825ef38780cbded1d57ec614ddf72d1e49a18461b940e0400"
+    },
+    {
+      "phase": "A2",
+      "path": "service/selections.test.ts",
+      "upstream_blob": null,
+      "sha256": "ea16b7beeba9e337964f64314ed7070c7a80ead703c112b6244db154ec840daf"
+    },
+    {
+      "phase": "A2",
+      "path": "service/selections.ts",
+      "upstream_blob": null,
+      "sha256": "cbbc46818c7bd52284f083d3c67f9fef718a8727bc22b03639610f959fac3b90"
+    },
+    {
+      "phase": "A2",
+      "path": "service/settings.test.ts",
+      "upstream_blob": "7396abe90becf0d86780d7a4eaa2e147b0d398b4",
+      "sha256": "d2236c415a3a824d293a28010d1101849937af91f08a2f003401ee35d5c45765"
+    },
+    {
+      "phase": "A2",
+      "path": "service/settings.ts",
+      "upstream_blob": "3d4d6ffc5c494c21504853b9eccbf0677de82538",
+      "sha256": "4fc013b2016cb9a549cf587945e522577456662738fb0db6b82c5d6099f42163"
+    },
+    {
+      "phase": "A2",
+      "path": "web/plugins/tasks/client.tsx",
+      "upstream_blob": "ea530b4150e977ceeb0cb868f378e03686b3496a",
+      "sha256": "f6c6f4065a2b2b9ccb07c5bd14613b05d2adaf88d186518c5dce9374e58ca184"
+    },
+    {
+      "phase": "A2",
+      "path": "web/plugins/tasks/select.tsx",
+      "upstream_blob": null,
+      "sha256": "cd5c56db59ce86d650bca2881a0cec90d756193c6a613af08068ed6d4823e4a4"
+    },
+    {
+      "phase": "A2",
+      "path": "web/shared/types.ts",
+      "upstream_blob": "c5b1cd6fef2d8a21e71bbdf7a6af3676f1b91ce9",
+      "sha256": "04b5dcc17746352703dbb68233e29221daa7c1dbde8fcedd77b910a31f20375f"
+    },
+    {
+      "phase": "A2",
+      "path": "web/src/Settings.tsx",
+      "upstream_blob": "71e14b83da06c2a3ca8af76d29eac1f2f81c98b6",
+      "sha256": "6adce6939677f008a460b5a55181680aebaa94c74b58bf44a2126c73c40244b3"
     }
   ],
   "requirements": [
@@ -795,7 +921,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "A1 source and authored regressions: the planner names variables only and refuses an argv that carries the plan's credential variable; L1 records each start's execution machine and refuses an Assistant's start on another machine unless Personal; a Serve-from client's copy refuses Azure (its herdr-core node record says another machine serves); credential-presence preflight moves with the first Azure dispatch (A2, L2); CI and native qualification pending"
+      "evidence": "A1 source and authored regressions: the planner names variables only and refuses an argv that carries the plan's credential variable; L1 records each start's execution machine and refuses an Assistant's start on another machine unless Personal; a Serve-from client's copy refuses Azure; A2: a start's recorded binding and journal record hold no value, and the agent's own shell checks the credential variable's presence by name before its CLI starts (after the terminal exists); CI and native qualification pending"
     },
     {
       "id": "azure-discovery",
@@ -819,7 +945,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "A1 discovery owner and authored regressions; A2 settings surfaces, CI and native qualification pending"
+      "evidence": "A1 discovery owner; A2: Settings' Refresh for both CLIs in the web and window rows through the service, typed entry without it; authored regressions (service/settings.test.ts); CI and native qualification pending"
     },
     {
       "id": "azure-discovery-scope",
@@ -839,7 +965,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "A1 discovery owner and authored regressions; A2 settings surfaces, CI and native qualification pending"
+      "evidence": "A1 discovery owner; A2 reaches it per Settings level and CLI, Everywhere only with one execution machine; authored regressions; CI and native qualification pending"
     },
     {
       "id": "azure-discovery-stale",
@@ -859,7 +985,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "A1 discovery owner and authored regressions; A2 settings surfaces, CI and native qualification pending"
+      "evidence": "A1 discovery owner; A2: a resource, endpoint, subscription or route save drops every list, and a pick carrying a list's revision read under another configuration refuses (service and window); authored regressions; CI and native qualification pending"
     },
     {
       "id": "azure-settings-surfaces",
@@ -887,7 +1013,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; hard prerequisite recorded by A1: coordinator launch sites must refuse or plan through T/providers.py before any control, command or selector can set an Azure route; since L1 all five refuse any route but Personal through `herdr-task launch run` (planning an Assistant's Azure start stays A2's); native qualification pending"
+      "evidence": "A2 source: Settings › Agents › Provider in the window (provider-section.js) and the web (service/settings.ts, Settings.tsx), checked by core/settings.js providerValue against the shared field table; the coordinator launch-site prerequisite is met (new starts plan through the owner, restarts Personal only); authored regressions; CI and native qualification pending"
     },
     {
       "id": "azure-new-start",
@@ -915,7 +1041,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; hard prerequisite recorded by A1: coordinator launch sites must refuse or plan through T/providers.py before any control, command or selector can set an Azure route; since L1 all five refuse any route but Personal through `herdr-task launch run` (planning an Assistant's Azure start stays A2's); native qualification pending"
+      "evidence": "A2 source: herdr-task select (save-only, revision-bound, locked once recorded, bound to its routing), provider show, the web task selector and the window chat's Assistant pick; the Assistant's three new-start sites plan through launch run --new-start with owner-written one-off templates; authored regressions; CI and native qualification pending"
     },
     {
       "id": "azure-bound-resume",
@@ -943,7 +1069,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A2 source: each start records its nonsecret binding; resume and switch of a recorded conversation plan from it (Claude Foundry --settings env rebuilt, Codex provider table and recorded deployment) and refuse changed routing before effects; revive, watch and manual restart refuse Azure-started agents (L2 carries the binding); authored regressions; CI and native qualification pending"
     },
     {
       "id": "selection-effort-fast",
@@ -967,7 +1093,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A2 source: a resume keeps the recorded argv's effort, Fast and permission words beside the rebuilt routing; selectors offer effort levels only for deployments whose model the CLI's catalogue knows; authored regressions; native Codex/Claude effort and Fast behavior on Azure pending"
     },
     {
       "id": "settings-inheritance",
@@ -990,7 +1116,7 @@
         "test/core-settings.test.ts",
         "docs/settings.md"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "A2 source: provider fields inherit field by field at Everywhere and a space, \"\" is a level's own empty value and Reset removes it (window and web); authored regressions; CI and native qualification pending"
     },
     {
       "id": "ordinary-resume",

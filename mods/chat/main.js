@@ -51,6 +51,7 @@ import * as mentions from "./core/mentions.js";
 import * as agent from "./agent.js";
 import { cleanCommand } from "./core/clean-env.js";
 import * as choices from "./settings.js";
+import { localService, localToken } from "./local.js";
 import { Dictation, BUN_PATH, warmAudio } from "./dictate.js";
 
 // Writing down after Done this long says it's taking longer than usual (SHEP-63).
@@ -199,6 +200,21 @@ function parts(text) {
 }
 
 let bound = false;
+
+// An Assistant's new-start choices on Azure Foundry at a space ("all": Everywhere), from this machine's service
+// (service/selections.ts: herdr-task provider show, and what Settings' Refresh found): null on Personal, or when the
+// service can't say (the window then offers its usual list, and launch admission plans the Assistant's deployment).
+async function azureChoices(place) {
+  try {
+    const token = await localToken();
+    const svc = token ? await localService().catch(() => null) : null;
+    if (!svc) return null;
+    const r = await fetch(`${svc.base}/api/action`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ type: "azure-choices", place }) });
+    const j = await r.json().catch(() => null);
+    return j?.ok && j.route === "azure-foundry" && j.menus ? j : null;
+  } catch { return null; }
+}
 
 export default class Chat extends View {
   init(_props, cx) {
@@ -1639,7 +1655,12 @@ export default class Chat extends View {
       // template's command under sh -c, and where sh is dash (Debian, Ubuntu) the shell would stay
       // the terminal's program, so the chat wouldn't know its CLI.
       let launch = template, oneOff = null, words = "";
-      const st = this.choice?.sel ?? props()?.settings;
+      // On Azure Foundry the pick's model is a deployment: it goes to launch admission as one, with the revision its
+      // list was read under (a deployment typed by hand gets Default effort: what it supports isn't known).
+      const pick = this.choice?.sel ?? props()?.settings;
+      const az = this.choice?.data?.azure;
+      const known = az && this.choice.data.menus?.[pick?.agent]?.models?.find((m) => m.id === pick?.model);
+      const st = az && pick?.agent ? { ...pick, deployment: pick.model, revision: az.revision?.[pick.agent], effort: known?.efforts?.includes(pick.effort) ? pick.effort : null } : pick;
       const on = machine ? { on: machine } : {};
       const there = !machine || !st?.agent ? true : (await knownAgents(on).catch(() => []))
         .some((a) => (a.key === st.agent || (a.run ?? [])[0] === st.agent) && a.installed !== false);
@@ -1754,7 +1775,18 @@ export default class Chat extends View {
         let kept = null;
         try { kept = JSON.parse(localStorage.getItem(`choice:${this.slot}`) ?? "null"); } catch {}
         const st = kept?.agent ? kept : props()?.settings;
-        const sel = st?.agent && data.menus[st.agent] ? { perm: data.permDefault[st.agent], effort: null, fast: false, ...st } : { ...data.defaults };
+        // An Assistant's new start on Azure Foundry (here only): its list is each CLI's deployments (what Settings'
+        // Refresh found, the saved ones), and the pick is bound to the routing it was made under (azureChoices).
+        const az = this.role === "coordinator" && !space?.machine ? await azureChoices(space?.id ?? "all") : null;
+        if (az) {
+          data.menus = Object.fromEntries(Object.entries(az.menus).filter(([k]) => data.menus[k]));
+          data.azure = { revision: Object.fromEntries(Object.entries(az.clis ?? {}).map(([k, c]) => [k, c.revision])) };
+        }
+        const fits = st?.agent && data.menus[st.agent] && (!az || data.menus[st.agent].models.some((m) => m.id === st.model));
+        const first = Object.keys(data.menus)[0];
+        const sel = fits ? { perm: data.permDefault[st.agent], effort: null, fast: false, ...st }
+          : az && first ? { agent: first, model: az.clis?.[first]?.deployment || data.menus[first].models[0]?.id || null, effort: null, fast: false, perm: data.permDefault[first] }
+          : { ...data.defaults };
         this.choice = { sel, data, key: this.choice.key };
       } catch { this.choice = null; }
       cx.notify();

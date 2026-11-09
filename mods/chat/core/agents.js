@@ -162,6 +162,20 @@ export function menuFor(agent, dflt, current = null) {
   return { name: NAMES.codex, perms: PERMS.codex, models: all };
 }
 
+// An Azure Foundry new-start selector's list for one CLI, in menuFor's shape so the model menu draws it: each deployment
+// Refresh found (service/azure-deployments.ts: its id is what is kept; its label says the model and version apart), and
+// the saved ones (keep) first when Refresh didn't find them. A deployment is never a model alias: effort levels come
+// only where its model is one this CLI's own catalogue knows (matched by the deployment's id or the model inventory
+// reports); an unknown one gets Default only. Fast isn't offered: what a deployment supports isn't known here.
+export function azureMenu(kind, options, keep, dflt) {
+  const base = menuFor(kind, dflt);
+  const known = (id) => (id ? base.models.find((m) => m.id === id || (kind === "claude" && CLAUDE_MODELS.find((c) => c.id === m.id)?.match.includes(id))) : null);
+  const row = (id, name, model) => ({ id, name, efforts: (known(id) ?? known(model))?.efforts ?? [], defaultEffort: null, fast: false, deployment: true });
+  const rows = (options ?? []).map((o) => row(o.value, o.label ?? o.value, o.model));
+  for (const id of [...(keep ?? [])].reverse()) if (id && !rows.some((r) => r.id === id)) rows.unshift(row(id, id, null));
+  return { name: NAMES[kind], perms: PERMS[kind], models: rows, azure: true };
+}
+
 // The levels a model typed by id gets: its agent's usual ones.
 export function typedModel(agent, id) {
   return { id, name: agent === "claude" ? modelName(id) : id, efforts: agent === "claude" ? CLAUDE_EFFORTS : ["low", "medium", "high", "xhigh"], defaultEffort: null, fast: false, typed: true };
@@ -383,6 +397,15 @@ export async function lostRefusal(kind, t, read, path = null) {
   if (inOtherFolder(kind, path) || argv.slice(0, agentAt(argv) + 1).some((a) => String(a).startsWith("CLAUDE_CONFIG_DIR="))) return OTHER_FOLDER;
   const pid = t?.state === "live" ? t.foreground?.pid : null;
   return pid && folderWord(await read(pid)) === "other" ? OTHER_FOLDER : null;
+}
+
+// An agent whose start recorded Azure Foundry (its terminal's herdr.provider label, set by herdr-task's launch owner):
+// a restart, a fork, a lost session's new start and revival can't carry its provider binding yet (the migration's L2),
+// so each refuses it rather than move its conversation to the CLI's own sign-in. Personal (no label) refuses nothing.
+export const PROVIDER_HELD = "It started on Azure Foundry, and restarting it here can't carry that yet, so its conversation would move to another provider. Nothing was restarted. Resume or switch a task's agent with herdr-task.";
+export function providerRefusal(t) {
+  const route = t?.labels?.["herdr.provider"];
+  return route && route !== "personal" ? PROVIDER_HELD : null;
 }
 
 // The conversation's id, from its log's file name; none for one nothing may continue (inOtherFolder).

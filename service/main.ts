@@ -40,6 +40,7 @@ import { voiceTool, type VoiceIO, type Where } from "./voice-tools.ts";
 import { Artifacts } from "./artifacts.ts";
 import { TaskLogs } from "./task-logs.ts";
 import { Settings, onWritten, PUSH, pushBody } from "./settings.ts";
+import { assistantChoices, taskSelection } from "./selections.ts";
 import { Secrets, SecretsHome } from "./secrets.ts";
 import { Agents } from "./agents.ts";
 import { Machines } from "./machines.ts";
@@ -483,6 +484,40 @@ async function doAction(body: any): Promise<Response> {
     try { await setWindow(body.key, typeof body.value === "string" ? body.value : null, (k, v) => store.set(k, v)); return json({ ok: true }); }
     catch (err) { return json({ ok: false, error: (err as Error).message }); }
   }
+  if (body?.type === "azure-refresh" && (body.kind === "claude" || body.kind === "codex")) {
+    // Settings › Agents › Provider's Refresh: one CLI's deployments at a level, read with this machine's Azure CLI login
+    // (service/azure-deployments.ts). It selects and saves nothing; the rows show what it found, or a fixed repair line.
+    try {
+      const level = typeof body.place === "string" ? body.place : "all";
+      const sp = level !== "all" ? model.spaceById(level) : null;
+      if (level !== "all" && !sp) throw new Error("That space isn't here any more.");
+      const view = await settings.refreshDeployments(body.kind, level, sp ? { id: sp.id, name: sp.name, machine: sp.machine ?? null } : null);
+      model.rebuild();
+      return json({ ok: !view.warn, ...(view.warn ? { error: view.warn } : {}), view });
+    } catch (err) { return json({ ok: false, error: (err as Error).message }); }
+  }
+  if (body?.type === "azure-choices") {
+    // an Assistant's new start in a space (the window's chat, the web's): what it can pick on Azure Foundry, and the
+    // revision a pick is bound to (herdr-task provider show)
+    try {
+      const sp = typeof body.place === "string" && body.place !== "all" ? model.spaceById(body.place) : null;
+      return json(await assistantChoices(settings, sp ? { id: sp.id, folder: sp.folder ?? null } : null, await compat.agents!.ownDefaults()));
+    } catch (err) { return json({ ok: false, error: (err as Error).message }); }
+  }
+  if (body?.type === "task-select" && typeof body.chat === "string") {
+    // a task's row menu › Model for its start: its save-only choice (herdr-task select), shown or saved with the
+    // revision it was shown at; saving starts nothing and keeps its holds
+    try {
+      const t = compat.taskOf(body.chat.split("/")[0]);
+      if (!t) throw new Error("That task isn't here any more.");
+      const c = body.change && typeof body.change === "object" ? body.change : null;
+      const change = c ? { ...(c.default ? { default: true } : {}), ...(typeof c.agent === "string" ? { agent: c.agent } : {}),
+        ...(typeof c.deployment === "string" ? { deployment: c.deployment } : {}), ...(typeof c.effort === "string" ? { effort: c.effort } : {}),
+        revision: typeof c.revision === "string" ? c.revision : "" } : null;
+      return json(await taskSelection(settings, { ref: t.ref, folder: t.folder, machine: t.machine ?? null, space: t.space }, change,
+        await compat.agents!.ownDefaults()));
+    } catch (err) { return json({ ok: false, error: (err as Error).message }); }
+  }
   if (body?.type === "setting" && typeof body.key === "string") {
     try {
       // a space's own: its name, machine and repo folder go with it (herdr-task finds a space's settings by folder)
@@ -503,7 +538,8 @@ async function doAction(body: any): Promise<Response> {
           exec(hub, ["git", "-C", folder || sp.folder || "~", "show-ref", "--verify", "--quiet", ref], sp.machine ?? null).catch(() => null)))).some((r) => r?.code === 0);
         if (!there) return json({ ok: false, error: SC.BASE.missing(want) });
       }
-      settings.set(body.key, value, level, sp ? { id: sp.id, name: sp.name, machine: sp.machine ?? null, folder } : null);
+      settings.set(body.key, value, level, sp ? { id: sp.id, name: sp.name, machine: sp.machine ?? null, folder } : null,
+        typeof body.inventory === "string" ? body.inventory : undefined);
       if (body.key.startsWith("autopilot.")) { await model.readAutopilot(); model.rebuild(); }
       return json({ ok: true });
     } catch (err) { return json({ ok: false, error: (err as Error).message }); }

@@ -11,9 +11,11 @@ import * as M from "../core/machines.js";
 import * as HC from "../core/host.js";
 import * as APc from "../core/autopilot.js";
 import type { SettingRow, SettingSection } from "../web/shared/types.ts";
+import { AzureDeployments, type AzureKind } from "./azure-deployments.ts";
 
 const { TASK_ROWS, DEFAULTS, wordFor, valueFor, ROLES: CORE_ROLES, NOTES: CORE_NOTES, ABOUT, BACKUP, REACTIONS, STAR, starState, FEEDBACK, feedbackRepo, upgradeReactions, BASE, BRANCH, branchPattern, MACHINES, OLD_NAMES, SECTIONS,
-  WEB, modelLabel, roleSel, otherCli, otherCliWords, backupProblem, homeAbout, webState, fromWord, LOADING_AGENTS, RESET, machineLabel } = C as any;
+  WEB, modelLabel, roleSel, otherCli, otherCliWords, backupProblem, homeAbout, webState, fromWord, LOADING_AGENTS, RESET, machineLabel,
+  PROVIDER, PROVIDER_FIELDS, DISCOVERY_FIELDS, providerValue, providerWords } = C as any;
 const AP = APc as any;
 /** Autopilot as Everywhere has it now (herdr-task's view: what Settings keeps, else what it kept before, else the
  *  defaults): its schedule's words, events, heartbeat words and what wakes it in plain words */
@@ -83,7 +85,12 @@ export function writeSettings(next: any) {
 const written = new Set<(file: any) => void>();
 export const onWritten = (fn: (file: any) => void) => written.add(fn);
 
+/** A stale pick: the deployment came from an inventory read under another resource, endpoint or subscription. */
+export const STALE_INVENTORY = "Those deployments were found under another resource, endpoint or subscription. Nothing was saved; refresh again.";
+
 export class Settings {
+  /** Azure deployment discovery (service/azure-deployments.ts): memory only, per level and CLI, read only on Refresh. */
+  deployments = new AzureDeployments({ changed: () => { for (const fn of this.listeners) fn(); } });
   private file: any = {};
   private host = LOCAL;
   private machineNames: string[] = [];
@@ -178,11 +185,55 @@ export class Settings {
   }
   private scopes: Scope[] = [];
 
+  /** A level's provider configuration for one CLI's discovery: the resource or endpoint and the discovery subscription. */
+  private discoveryConfig(scope: string | null, kind: AzureKind) {
+    const target = this.pick(scope, "provider", kind === "claude" ? "claude_resource" : "codex_endpoint").value;
+    const subscription = this.pick(scope, "provider", "azure_subscription").value;
+    return { target: typeof target === "string" ? target : "", subscription: typeof subscription === "string" ? subscription : "" };
+  }
+
+  /** What one CLI's deployment picker shows at a level now: Refresh's last inventory under today's configuration (none
+   *  under another), and its revision (when it was read), which a pick from it carries back. */
+  discovery(scope: string | null, kind: AzureKind) {
+    const v = this.deployments.view(scope ?? "all", kind, this.discoveryConfig(scope, kind));
+    return { kind, busy: v.busy, options: v.options.map((o) => ({ value: o.value, label: o.label, model: o.model })), hint: v.hint,
+      ...(v.warn ? { warn: v.warn } : {}), revision: v.checkedAt === undefined ? "" : String(v.checkedAt) };
+  }
+
+  /** Refresh, asked for by the person: one CLI's deployments at a level (a space: its machine; Everywhere: every
+   *  machine agents run on, which must be one). Never selects or saves anything. */
+  refreshDeployments(kind: AzureKind, level: string, scope: Scope | null) {
+    const at = level === "all" ? null : level;
+    const machines = at ? [scope?.machine ?? null] : [null, ...this.machineNames];
+    return this.deployments.refresh({ scope: level, kind, machines, ...this.discoveryConfig(at, kind) });
+  }
+
+  /** Settings › Agents' Provider rows at a level: the route, and on Azure Foundry each CLI's resource or endpoint,
+   *  deployment (Refresh or typed) and sign-in, the discovery subscription and the roles' own deployments. A half-set
+   *  Azure setup is kept under Personal, only not shown. */
+  private provider(s: Scope | null): SettingRow[] {
+    const scope = s?.id ?? null;
+    const azure = this.pick(scope, "provider", "route").value === "azure-foundry";
+    const rows: SettingRow[] = [];
+    for (const r of PROVIDER.rows) {
+      if (r.field !== "route" && !azure) continue;
+      const p = this.pick(scope, "provider", r.field);
+      const words = (v: any) => (r.field === "route" ? providerWords("route", v || "personal") : providerWords(r.field, v ?? ""));
+      const row: SettingRow = { label: r.label, key: `provider.${r.field}`, value: words(p.value), hint: r.about, group: "Provider",
+        ...this.follows(s, p, (v) => words(v) || (r.role ? PROVIDER.follows : ""), "provider", r.field) } as SettingRow;
+      if (r.choices) row.options = PROVIDER[r.choices].map(([, w]: string[]) => w);
+      else { row.text = true; row.placeholder = r.placeholder ?? (r.role ? PROVIDER.follows : undefined); }
+      if (r.discover) row.discovery = this.discovery(scope, r.discover);
+      rows.push(row);
+    }
+    return rows;
+  }
+
   private agents(s: Scope | null): SettingSection {
     const scope = s?.id ?? null;
     const worker = this.pick(scope, "worker", null).value?.agent ?? "claude";
     const menus = this.choices?.menus;
-    const rows: SettingRow[] = ROLES.map((r) => {
+    const rows: SettingRow[] = [...this.provider(s), ...ROLES.map((r) => {
       const p = this.pick(scope, r.id, null);
       // as the window's model button: what it runs, "Opus 5.5 · 1M · High"; an unset Reviewer says "Other CLI (Codex)"
       const button = (v: any) => {
@@ -195,7 +246,7 @@ export class Settings {
       return { label: r.title, key: `role.${r.id}`, value: button(p.value), hint: r.about,
         agent: { role: r.id, pick: p.value ?? null, sel, unset, other: !s && r.id === "reviewer" && !unset },
         ...(s ? {} : { file: r.file }), ...this.follows(s, p, button, r.id, null) } as SettingRow;
-    });
+    })];
     // Backup: the other CLI takes over a task once when its agent can't go on (on: unset or a CLI; off: "off"); a
     // machine where the other CLI can't is one more line under it
     const b = this.pick(scope, "backup", "agent");
@@ -359,7 +410,7 @@ export class Settings {
   /** A row changed on the web, at a level ("all", a space's id, "m:<machine>"): its new words, written as the value
    *  the file keeps. null: back to what it follows. scope: the space's name, machine and repo folder (herdr-task
    *  finds a space's settings by its folder). */
-  set(key: string, word: string | null, level = "all", scope?: Scope | null) {
+  set(key: string, word: string | null, level = "all", scope?: Scope | null, inventory?: string) {
     // a machine's own row on the Machines page: machine.<field>@<machine>
     const atMachine = /^(machine\.[a-z_]+)@([\w.-]+)$/.exec(key);
     if (atMachine) { key = atMachine[1]; level = `m:${atMachine[2]}`; }
@@ -432,6 +483,15 @@ export class Settings {
       put("tasks", "branch", v || null);
     } else if (section === "tasks" && /^(start|finish)_notes$/.test(field)) {
       put("tasks", field, word === null ? null : word.slice(0, 8000));
+    } else if (section === "provider" && PROVIDER_FIELDS.includes(field)) {
+      // Settings › Agents' Provider rows, the person's own: checked as herdr-task checks them (core/settings.js
+      // providerValue), never repeating a refused value. "" is this level's own empty value; null follows the level
+      // above again (Reset). A deployment picked from Refresh's list must come from the inventory shown now.
+      const row = PROVIDER.rows.find((r: any) => r.field === field);
+      if (inventory !== undefined && row?.discover && inventory !== this.discovery(space, row.discover).revision) throw new Error(STALE_INVENTORY);
+      put("provider", field, word === null ? null : providerValue(field, word));
+      // A resource, endpoint, subscription or route changed: every inventory read under the old one is stale.
+      if (DISCOVERY_FIELDS.includes(field)) this.deployments.invalidate();
     } else if (section === "role" && ROLES.some((r) => r.id === field)) {
       // a role's agent: { agent, model, effort, fast } as the window's model button keeps it
       let v: any = null;

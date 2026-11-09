@@ -185,6 +185,77 @@ export function chooseModel(menus, permDefault, sel, agent, id) {
   return next;
 }
 
+// ---- Provider: Personal or Azure Foundry (A2) ---------------------------------------------------------------------
+// Settings › Agents' connection rows: the "provider" section of a level (Everywhere, a space), as herdr-task reads it
+// (herdr_task/providers.py: FIELDS, clean). These are the person's controls: herdr-task and agents never write them.
+// A field a level leaves out follows the level above; "" is that level's own empty value; Reset removes it. Nothing
+// here is a credential: keys and tokens stay in the execution host's environment.
+export const PROVIDER = {
+  routes: [["personal", "Personal"], ["azure-foundry", "Azure Foundry"]],
+  claudeAuth: [["entra-id", "Entra ID"], ["api-key", "API key"], ["bearer-token", "Bearer token"]],
+  codexAuth: [["api-key", "API key"]],
+  refresh: "Refresh",
+  refreshing: "Refreshing…",
+  found: "Found deployments",
+  follows: "Its CLI's deployment",
+  // each row: its field, label, line, what it chooses from (choices) or a deployment found by Refresh (discover)
+  rows: [
+    { field: "route", label: "Provider", about: "Personal keeps each CLI's own configuration and sign-in (it doesn't force a personal account). Azure Foundry applies to new starts; running and recorded conversations keep theirs. Choosing it checks no sign-in.", choices: "routes" },
+    { field: "claude_resource", label: "Claude Code resource", about: "The Azure resource's name, not a URL.", placeholder: "my-resource" },
+    { field: "claude_deployment", label: "Claude Code deployment", about: "Refresh lists this resource's ready Anthropic deployments with this machine's Azure CLI login, or type one's name.", discover: "claude" },
+    { field: "claude_auth", label: "Claude Code sign-in", about: "Entra ID uses the Azure SDK's credential chain on this machine (an az login, say). API key and bearer token come from ANTHROPIC_FOUNDRY_API_KEY or ANTHROPIC_FOUNDRY_AUTH_TOKEN in this machine's environment. Never type a key here.", choices: "claudeAuth" },
+    { field: "codex_endpoint", label: "Codex endpoint", about: "https://RESOURCE.openai.azure.com/openai/v1, with no key or query in it.", placeholder: "https://my-resource.openai.azure.com/openai/v1" },
+    { field: "codex_deployment", label: "Codex deployment", about: "Refresh lists this endpoint's ready OpenAI deployments that serve the Responses API, or type one's name.", discover: "codex" },
+    { field: "codex_auth", label: "Codex sign-in", about: "An API key only, from AZURE_OPENAI_API_KEY in this machine's environment: Microsoft's Codex guide says Entra ID isn't available for Codex.", choices: "codexAuth" },
+    { field: "azure_subscription", label: "Discovery subscription", about: "Optional: the subscription Refresh reads (a UUID). Empty: the Azure CLI's own. It changes no sign-in.", placeholder: "Azure CLI's own" },
+    { field: "coordinator_claude_deployment", label: "Assistant's Claude Code deployment", about: "New Assistants only. Empty: the Claude Code deployment above.", discover: "claude", role: true },
+    { field: "coordinator_codex_deployment", label: "Assistant's Codex deployment", about: "New Assistants only. Empty: the Codex deployment above.", discover: "codex", role: true },
+    { field: "worker_claude_deployment", label: "Workers' Claude Code deployment", about: "New task agents only. Empty: the Claude Code deployment above.", discover: "claude", role: true },
+    { field: "worker_codex_deployment", label: "Workers' Codex deployment", about: "New task agents only. Empty: the Codex deployment above.", discover: "codex", role: true },
+  ],
+  bad: {
+    route: "Provider is Personal or Azure Foundry.",
+    azure_subscription: "The discovery subscription is an Azure subscription ID (a UUID), or empty for the Azure CLI's own.",
+    claude_resource: "Set the Claude Azure resource name, not a URL.",
+    codex_endpoint: "Use https://RESOURCE.openai.azure.com/openai/v1, without credentials or query parameters.",
+    deployment: "A deployment's name is letters, digits, dots, dashes and underscores.",
+    claude_auth: "Claude Code on Azure Foundry signs in with Entra ID, an API key or a bearer token.",
+    codex_auth: "Codex on Azure signs in with an API key only: Microsoft's Codex guide says Entra ID isn't available for Codex.",
+    field: "That isn't one of the provider's settings.",
+  },
+};
+const P_DEPLOYMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const P_RESOURCE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}[A-Za-z0-9])?$/;
+const P_SUBSCRIPTION = /^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
+const P_ENDPOINT = /^(https:\/\/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?\.openai\.azure\.com\/openai\/v1)\/?$/;
+export const PROVIDER_FIELDS = PROVIDER.rows.map((r) => r.field);
+// A provider field's value as the file keeps it, from what was typed or picked (a choice's words or its value): ""
+// stays "" (not set yet, allowed while configuring); anything that can't be one throws a fixed line that never
+// repeats the value (it could be a pasted secret). The same judgement as herdr-task's clean (test/azure-binding.cases.json).
+export function providerValue(field, word) {
+  const row = PROVIDER.rows.find((r) => r.field === field);
+  if (!row) throw new Error(PROVIDER.bad.field);
+  const v = String(word ?? "").trim();
+  if (!v) return v;
+  if (row.choices) {
+    const hit = PROVIDER[row.choices].find(([value, label]) => value === v || label === v);
+    if (!hit) throw new Error(PROVIDER.bad[field] ?? PROVIDER.bad.field);
+    return hit[0];
+  }
+  if (field === "azure_subscription") { if (!P_SUBSCRIPTION.test(v)) throw new Error(PROVIDER.bad.azure_subscription); return v; }
+  if (field === "claude_resource") { if (!P_RESOURCE.test(v)) throw new Error(PROVIDER.bad.claude_resource); return v; }
+  if (field === "codex_endpoint") { const m = P_ENDPOINT.exec(v); if (!m) throw new Error(PROVIDER.bad.codex_endpoint); return m[1]; }
+  if (!P_DEPLOYMENT.test(v)) throw new Error(PROVIDER.bad.deployment);
+  return v;
+}
+// A provider field's value in the row's words: a choice's label, else the value itself.
+export function providerWords(field, value) {
+  const row = PROVIDER.rows.find((r) => r.field === field);
+  return (row?.choices && PROVIDER[row.choices].find(([v]) => v === value)?.[1]) || String(value ?? "");
+}
+// Which fields a Refresh's inventory was read under: changing one makes it stale (service/azure-deployments.ts).
+export const DISCOVERY_FIELDS = ["route", "claude_resource", "codex_endpoint", "azure_subscription"];
+
 // ---- Tasks -----------------------------------------------------------------------------------------------------
 // One line under each row's title (by its key, section.field).
 export const ABOUT = {

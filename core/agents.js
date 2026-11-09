@@ -162,6 +162,20 @@ export function menuFor(agent, dflt, current = null) {
   return { name: NAMES.codex, perms: PERMS.codex, models: all };
 }
 
+// An Azure Foundry new-start selector's list for one CLI, in menuFor's shape so the model menu draws it: each deployment
+// Refresh found (service/azure-deployments.ts: its id is what is kept; its label says the model and version apart), and
+// the saved ones (keep) first when Refresh didn't find them. A deployment is never a model alias: effort levels come
+// only where its model is one this CLI's own catalogue knows (matched by the deployment's id or the model inventory
+// reports); an unknown one gets Default only. Fast isn't offered: what a deployment supports isn't known here.
+export function azureMenu(kind, options, keep, dflt) {
+  const base = menuFor(kind, dflt);
+  const known = (id) => (id ? base.models.find((m) => m.id === id || (kind === "claude" && CLAUDE_MODELS.find((c) => c.id === m.id)?.match.includes(id))) : null);
+  const row = (id, name, model) => ({ id, name, efforts: (known(id) ?? known(model))?.efforts ?? [], defaultEffort: null, fast: false, deployment: true });
+  const rows = (options ?? []).map((o) => row(o.value, o.label ?? o.value, o.model));
+  for (const id of [...(keep ?? [])].reverse()) if (id && !rows.some((r) => r.id === id)) rows.unshift(row(id, id, null));
+  return { name: NAMES[kind], perms: PERMS[kind], models: rows, azure: true };
+}
+
 // The levels a model typed by id gets: its agent's usual ones.
 export function typedModel(agent, id) {
   return { id, name: agent === "claude" ? modelName(id) : id, efforts: agent === "claude" ? CLAUDE_EFFORTS : ["low", "medium", "high", "xhigh"], defaultEffort: null, fast: false, typed: true };

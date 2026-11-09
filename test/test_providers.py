@@ -1,6 +1,9 @@
 """Provider bindings and launch plans (herdr_task/providers.py), across herdr-task's own command
-line: Personal starts as it always did, an Azure binding is refused before anything is started or
-changed (by start, resume, switch, the tick's queue and an automation), `provider plan` shows the
+line: Personal starts as it always did; an Azure binding starts a task's agent on its plan and
+records its nonsecret binding (start, queue, resume, switch, the tick's queue and an automation);
+resuming a recorded conversation keeps that binding when the defaults change and refuses before any
+effect when its routing changed; a task's save-only selection is revision-bound and keeps its holds;
+unsupported combinations refuse before anything is started or changed; `provider plan` shows the
 official plan for each supported sign-in, and no credential's value is ever read or written.
 
 The command-line tests run on CI only, as herdr-task's others: HOME stays the account's own, the
@@ -55,8 +58,8 @@ FP = {"entra-id": "b4ff5e524c831cf3eb23385562a1e07606b2f98a18ab17b71030acd4286ad
       "bearer-token": "ac9a02f2e525b63cb6119359c4c065981f15a9b17383a990cfecfb3d5c80493e",
       "codex": "44e019ec9ff5b99ccb91a33d83e95ec6c5d75bfd66c5d3b91e6bd7bb6fe9169b",
       "space": "05c67c012ea6fc16ea0739ba8dbffac40c853fd73df3a2ac9acfc646e756536c"}
-# Launch admission (L1) exists and holds every Azure start; what dispatch still waits for:
-PENDING = ["bound resume", "settings and selectors", "native qualification"]
+# What an Azure plan still waits for since A2 (restart and revival stay Personal only):
+PENDING = ["restart and revival (L2)", "native qualification"]
 # Settings' start limits off: the runner's own load, memory or disk never decides what a tick starts.
 ROOM = {"machine": {"start_load": None, "start_memory": None, "start_disk": None}}
 INLINE = "marker-inline-credential-3b9d"
@@ -138,6 +141,23 @@ class Fixture:
 
     def add(self, *extra):
         return self.ok("add", "Fix login", "--folder", self.repo, "--space", "sp1", *extra)["id"]
+
+    def give_session(self, tid, session, agent=-1):
+        """Its agent's conversation, as the watcher records one it finds (sessions.refresh_sessions): the fixture's
+        stand-in for a session log, written into the task list herdr-task reopens."""
+        path = self.ok("where", "--folder", self.repo)["store"]
+        with open(path) as fh:
+            d = json.load(fh)
+        t = next(x for x in d["tasks"] if x["id"] == tid)
+        t["agents"][agent]["session"] = session
+        with open(path, "w") as fh:
+            json.dump(d, fh, indent=2)
+
+    def agent_words(self, run):
+        """(shell script, agent argv) of one hc run that started a task's agent: what in_shell() runs."""
+        at = run.index("herdr-low")
+        cmd = run[at + 5:]
+        return cmd[4], cmd[6:]
 
     def calls(self):
         try:
@@ -239,9 +259,11 @@ class PersonalPassThrough(unittest.TestCase):
         self.started_plainly(f)
         self.assertEqual([a["argv"] for a in f.task()["agents"]], [["claude", "--settings", '{"fastMode": false}']])
         f.settle()
-        self.assertEqual(f.plan("--agent", "claude"), {
-            "route": "personal", "agent": "claude", "fingerprint": "personal", "deployment": None, "auth": None, "credential": None,
-            "settings_env": {}, "args": [], "env": {}, "argv": ["claude"], "dispatch": "pass-through", "pending": []})
+        plan = f.plan("--agent", "claude")
+        self.assertRegex(plan.pop("revision"), r"^[0-9a-f]{16}$")
+        self.assertEqual(plan, {
+            "route": "personal", "agent": "claude", "fingerprint": "personal", "deployment": None, "auth": None, "target": None,
+            "credential": None, "settings_env": {}, "args": [], "env": {}, "argv": ["claude"], "dispatch": "pass-through", "pending": []})
         f.no_secret()
 
     def test_personal_with_a_half_filled_azure_setup_is_still_untouched(self):
@@ -282,10 +304,20 @@ class PersonalPassThrough(unittest.TestCase):
                 f.settle(tid=tid)
 
 
+def record(auth="entra-id", kind="claude", deployment=None):
+    """The nonsecret binding a start records, written out apart from the code."""
+    if kind == "codex":
+        return {"route": "azure-foundry", "agent": "codex", "target": "https://example.openai.azure.com/openai/v1",
+                "deployment": deployment or "code-deployment", "auth": "api-key", "fingerprint": FP["codex"]}
+    return {"route": "azure-foundry", "agent": "claude", "target": "example", "deployment": deployment or "claude-deployment",
+            "auth": auth, "fingerprint": FP[auth]}
+
+
 @ON_CI
 class AzureRefusesBeforeEffects(unittest.TestCase):
-    """Under an Azure binding no start, queue or resume happens: unsupported combinations say what
-    is wrong, and a valid one is held, each before a worktree, the task list or hc is touched."""
+    """Under an Azure binding that can't be planned, no start, queue or resume happens: each
+    unsupported or incomplete combination says what is wrong before a worktree, the task list or hc
+    is touched."""
 
     def refuse_start(self, provider, words, agent=None, **top):
         f = Fixture(self)
@@ -300,18 +332,10 @@ class AzureRefusesBeforeEffects(unittest.TestCase):
         f.no_secret()
         return f, why
 
-    def test_each_supported_sign_in_is_planned_and_held(self):
-        for auth in ("entra-id", "api-key", "bearer-token"):
-            with self.subTest(auth=auth):
-                _, why = self.refuse_start({"route": "azure-foundry", **CLAUDE, "claude_auth": auth}, "this version only plans it")
-                self.assertIn("Nothing was started or changed", why)
-        self.refuse_start({"route": "azure-foundry", **CODEX, "codex_auth": "api-key"}, "this version only plans it", agent="codex")
-
     def test_codex_with_entra_id_is_unsupported(self):
         for auth in ("entra-id", "bearer-token"):
             with self.subTest(auth=auth):
-                _, why = self.refuse_start({"route": "azure-foundry", **CODEX, "codex_auth": auth}, "API key only", agent="codex")
-                self.assertNotIn("only plans it", why)
+                self.refuse_start({"route": "azure-foundry", **CODEX, "codex_auth": auth}, "API key only", agent="codex")
 
     def test_an_incomplete_or_unknown_binding_is_refused(self):
         self.refuse_start({"route": "azure-foundry", "claude_resource": "example"}, "explicit Azure deployment name for Claude Code")
@@ -359,87 +383,273 @@ class AzureRefusesBeforeEffects(unittest.TestCase):
     def test_a_copy_of_the_settings_on_another_machine_never_starts_azure(self):
         self.refuse_start({"route": "azure-foundry", **CLAUDE}, "this machine's are a copy", pushed_from="herdr-app", here="vm")
 
-    def test_a_task_that_would_queue_is_not_queued(self):
-        f = Fixture(self)
-        first, second = f.add(), f.add("--after", "1")
-        # Personal: it waits its turn behind the first.
-        self.assertEqual(f.ok("start", str(second), "--folder", f.repo, "--space", "sp1")["queued"], True)
-        f.ok("reopen", str(second), "--folder", f.repo)
-        f.provider({"route": "azure-foundry", **CLAUDE})
-        before = f.snapshot()
-        self.assertIn("only plans it", f.refused("start", str(second), "--folder", f.repo, "--space", "sp1"))
-        f.nothing_started(before)
-        self.assertEqual((f.task(first)["state"], f.task(second)["state"]), ("todo", "todo"))
-
-    def test_resume_is_refused_and_personal_resumes_again_after(self):
-        f = Fixture(self)
-        tid = f.add("--here")
-        f.ok("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now")
-        f.settle()
-        f.provider({"route": "azure-foundry", **CLAUDE})
-        before, started = f.snapshot(), len(f.launches())
-        for verb in ("resume", "switch"):
-            with self.subTest(verb=verb):
-                self.assertIn("only plans it", f.refused(verb, str(tid), "--folder", f.repo, "--space", "sp1"))
-                self.assertEqual((f.store_text(), len(f.launches())), (before[0], started))
-                # no terminal was asked for, and the old one wasn't ended
-                self.assertEqual([c for c in f.calls()[before[1]:] if c and c[0] in EFFECTS], [])
-        # Back on Personal the same conversation's task starts again: the refusal left it whole.
-        f.provider({"route": "personal"})
-        self.assertRegex(f.ok("resume", str(tid), "--folder", f.repo, "--space", "sp1")["terminal"], r"^t\d+$")
-        self.assertEqual(len(f.launches()), started + 1)
-        f.settle(2)
-        f.no_secret()
-
-    def test_the_tick_does_not_start_a_queued_task_and_personal_starts_it_after(self):
+    def test_the_tick_keeps_a_queued_task_it_cant_plan_and_starts_it_once_it_can(self):
         f = Fixture(self)
         f.provider({"route": "personal"}, also=ROOM)
         first, second = f.add("--here"), f.add("--here", "--after", "1")
-        # Personal: it waits its turn behind the first, then nothing holds it.
         self.assertEqual(f.ok("start", str(second), "--folder", f.repo, "--space", "sp1")["queued"], True)
         f.ok("rm", str(first), "--folder", f.repo)
-        f.provider({"route": "azure-foundry", **CLAUDE}, also=ROOM)
-        report = f.ok("tick", "--folder", f.repo)
-        self.assertEqual(report["started"], [])
+        # Azure with no deployment: nothing to plan, so it keeps its place and says why.
+        f.provider({"route": "azure-foundry", "claude_resource": "example"}, also=ROOM)
+        self.assertEqual(f.ok("tick", "--folder", f.repo)["started"], [])
         task = f.task(second)
         self.assertEqual((task["state"], task["agents"], "queue" in task), ("queued", [], True))
-        self.assertTrue(task["attention"].startswith("Couldn't start: Azure Foundry is set for Claude Code"), task["attention"])
-        self.assertIn("only plans it", task["attention"])
+        self.assertIn("explicit Azure deployment name for Claude Code", task["attention"])
         self.assertEqual((f.launches(), f.worktrees(), f.branches()), ([], [f"worktree {f.repo}"], ["main"]))
-        # Back on Personal the next tick starts it: the refusal left its place in the queue whole.
-        f.provider({"route": "personal"}, also=ROOM)
-        report = f.ok("tick", "--folder", f.repo)
-        self.assertEqual([x["id"] for x in report["started"]], [second])
+        # Set in full, the next tick starts it on its plan, its binding recorded.
+        f.provider({"route": "azure-foundry", **CLAUDE}, also=ROOM)
+        self.assertEqual([x["id"] for x in f.ok("tick", "--folder", f.repo)["started"]], [second])
         self.assertEqual(len(f.launches()), 1)
-        task = f.task(second)
-        self.assertEqual((task["state"], "attention" in task, "queue" in task), ("running", False, False))
+        self.assertEqual(f.task(second)["agents"][0]["provider"], record())
         f.settle(tid=second)
         f.no_secret()
 
-    def test_an_automation_neither_queues_nor_starts_its_task(self):
+
+@ON_CI
+class AzureStartsBound(unittest.TestCase):
+    """A task's agent starts on its Azure plan and records its nonsecret binding; resuming that
+    conversation keeps it (A2)."""
+
+    def start(self, f, provider, *extra, tid=None):
+        f.provider(provider)
+        tid = tid or f.add("--here")
+        f.ok("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now", *extra)
+        return tid
+
+    def test_each_supported_sign_in_starts_on_its_plan_and_records_its_binding(self):
+        for auth, credential in (("entra-id", None), ("api-key", "ANTHROPIC_FOUNDRY_API_KEY"), ("bearer-token", "ANTHROPIC_FOUNDRY_AUTH_TOKEN")):
+            with self.subTest(auth=auth):
+                f = Fixture(self)
+                tid = self.start(f, {"route": "azure-foundry", **CLAUDE, "claude_auth": auth})
+                [run] = f.launches()
+                self.assertIn("herdr.provider=azure-foundry", run)
+                script, agent = f.agent_words(run)
+                # The deployment is the argv's one model; the plan's env joins the --settings it already has.
+                self.assertEqual((agent[0], agent[agent.index("--model") + 1], agent.count("--settings"), agent.count("--model")),
+                                 ("claude", "claude-deployment", 1, 1))
+                settings = json.loads(agent[agent.index("--settings") + 1])
+                self.assertEqual((settings["env"], settings["fastMode"]), (claude_env("claude-deployment", credential), False))
+                self.assertIn("permissions", settings)  # its own herdr-task commands, as on Personal
+                # The credential is only looked for, by name, in the agent's own shell before the CLI starts.
+                if credential:
+                    self.assertIn(f'if [ -z "${{{credential}:-}}" ]', script)
+                    self.assertIn(f"Azure Foundry needs {credential}", script)
+                else:
+                    self.assertNotIn("if [ -z", script)
+                self.assertEqual(f.task(tid)["agents"][0]["provider"], record(auth))
+                f.settle(tid=tid)
+                f.no_secret()
+
+    def test_codex_starts_on_its_provider_table_with_openai_variables_blanked(self):
         f = Fixture(self)
-        room = {**ROOM, "tasks": {"max_running": 1}}
-        f.provider({"route": "personal"}, also=room)
-        busy = f.add("--here")
-        f.ok("start", str(busy), "--folder", f.repo, "--space", "sp1", "--now")
-        auto = f.ok("auto", "add", "Nightly check", "--folder", f.repo, "--space", "sp1", "--on", "merged", "--here")
-        # Personal: with one task at work its task waits its turn, as a start would.
-        out = f.ok("auto", "run-now", str(auto["id"]), "--folder", f.repo)
-        self.assertEqual(out["runs"][-1].get("queued"), "1 task is running here")
-        self.assertEqual(f.task(busy + 1)["state"], "queued")
-        f.provider({"route": "azure-foundry", **CLAUDE}, also=room)
-        launched = len(f.launches())
-        out = f.ok("auto", "run-now", str(auto["id"]), "--folder", f.repo)
-        self.assertIn("only plans it", out["last_error"]["message"])
-        self.assertEqual((out["last_error"]["kind"], "queued" in out["runs"][-1]), ("start", False))
-        self.assertIn("only plans it", out["runs"][-1]["error"])
-        # Its task is there for the person, saying why: not queued, not started, no worktree.
-        task = f.task(busy + 2)
-        self.assertEqual((task["state"], task["agents"], "queue" in task, "queued_at" in task), ("todo", [], False, False))
-        self.assertTrue(task["attention"].startswith("Couldn't start: Azure Foundry is set for Claude Code"), task["attention"])
-        self.assertEqual((len(f.launches()), f.worktrees(), f.branches()), (launched, [f"worktree {f.repo}"], ["main"]))
-        f.settle(tid=busy)
+        tid = self.start(f, {"route": "azure-foundry", **CODEX}, "--agent", "codex")
+        [run] = f.launches()
+        script, agent = f.agent_words(run)
+        ident = "shepherdr_azure_" + FP["codex"]
+        self.assertEqual((agent[0], agent[1], agent[2]), ("codex", "-c", f'model_provider="{ident}"'))
+        self.assertEqual(agent[agent.index("-m") + 1], "code-deployment")
+        self.assertIn("export OPENAI_BASE_URL=''; export OPENAI_API_KEY=''; ", script)
+        self.assertIn('if [ -z "${AZURE_OPENAI_API_KEY:-}" ]', script)
+        self.assertEqual(f.task(tid)["agents"][0]["provider"], record(kind="codex"))
+        f.settle(tid=tid)
         f.no_secret()
+
+    def test_a_workers_own_deployment_wins_over_the_clis(self):
+        f = Fixture(self)
+        tid = self.start(f, {"route": "azure-foundry", **CLAUDE, "worker_claude_deployment": "worker-deployment",
+                             "coordinator_claude_deployment": "assistant-deployment"})
+        [run] = f.launches()
+        _, agent = f.agent_words(run)
+        self.assertEqual(agent[agent.index("--model") + 1], "worker-deployment")
+        self.assertEqual(f.task(tid)["agents"][0]["provider"]["deployment"], "worker-deployment")
+        f.settle(tid=tid)
+
+    def test_resume_keeps_the_recorded_deployment_when_the_default_changes(self):
+        f = Fixture(self)
+        tid = self.start(f, {"route": "azure-foundry", **CLAUDE, "claude_auth": "api-key"})
+        f.settle(tid=tid)
+        f.give_session(tid, "11111111-2222-4333-8444-555555555555")
+        f.provider({"route": "azure-foundry", **CLAUDE, "claude_auth": "api-key", "claude_deployment": "new-default"})
+        out = f.ok("resume", str(tid), "--folder", f.repo, "--space", "sp1")
+        self.assertTrue(out["resumed"])
+        run = f.launches()[-1]
+        script, agent = f.agent_words(run)
+        # Claude Code's Foundry environment is rebuilt from the record: its deployment, not the new default.
+        self.assertEqual(agent[agent.index("--model") + 1], "claude-deployment")
+        self.assertEqual(json.loads(agent[agent.index("--settings") + 1])["env"], claude_env("claude-deployment", "ANTHROPIC_FOUNDRY_API_KEY"))
+        self.assertEqual(agent[agent.index("--resume") + 1], "11111111-2222-4333-8444-555555555555")
+        self.assertIn('if [ -z "${ANTHROPIC_FOUNDRY_API_KEY:-}" ]', script)
+        self.assertEqual(f.task(tid)["agents"][-1]["provider"], record("api-key"))
+        f.settle(2, tid=tid)
+        f.no_secret()
+
+    def test_codex_resume_keeps_its_provider_deployment_effort_and_fast(self):
+        f = Fixture(self)
+        argv = ["codex", "--no-daemon", "-c", 'model_reasoning_effort="high"', "-c", 'service_tier="fast"']
+        tid = self.start(f, {"route": "azure-foundry", **CODEX}, "--argv", json.dumps(argv))
+        f.settle(tid=tid)
+        f.give_session(tid, "22222222-3333-4444-8555-666666666666")
+        f.provider({"route": "azure-foundry", **CODEX, "codex_deployment": "new-default"})
+        self.assertTrue(f.ok("resume", str(tid), "--folder", f.repo, "--space", "sp1")["resumed"])
+        _, agent = f.agent_words(f.launches()[-1])
+        ident = "shepherdr_azure_" + FP["codex"]
+        at = agent.index("resume")
+        # Its provider table and its recorded deployment go before the subcommand; its effort, Fast and session after.
+        self.assertEqual(agent[1:3], ["-c", f'model_provider="{ident}"'])
+        self.assertEqual(agent[agent.index("-m") + 1], "code-deployment")
+        self.assertLess(agent.index("-m"), at)
+        self.assertEqual(agent[at:], ["resume", "--no-daemon", "-c", 'model_reasoning_effort="high"', "-c", 'service_tier="fast"',
+                                      "22222222-3333-4444-8555-666666666666"])
+        self.assertNotIn("new-default", json.dumps(agent))
+        f.settle(2, tid=tid)
+        f.no_secret()
+
+    def test_changed_routing_refuses_before_anything_changes(self):
+        for changed, words in (({"claude_resource": "other"}, "Azure Foundry other with Entra ID"),
+                               ({"claude_auth": "api-key"}, "Azure Foundry example with API key"),
+                               ({"route": "personal"}, "Personal (the CLI's own sign-in)")):
+            with self.subTest(changed=changed):
+                f = Fixture(self)
+                tid = self.start(f, {"route": "azure-foundry", **CLAUDE})
+                f.settle(tid=tid)
+                f.give_session(tid, "33333333-4444-4555-8666-777777777777")
+                f.provider({"route": "azure-foundry", **CLAUDE, **changed})
+                before = f.snapshot()
+                for verb in ("resume", "switch"):
+                    why = f.refused(verb, str(tid), "--folder", f.repo, "--space", "sp1")
+                    self.assertIn("conversation started on Azure Foundry example with Entra ID", why)
+                    self.assertIn(words, why)
+                    self.assertIn("--fresh", why)
+                    # nothing started, and switch's old agent was not ended
+                    f.nothing_started(before)
+                # A new conversation with a handoff takes today's settings and records them.
+                out = f.ok("resume", str(tid), "--folder", f.repo, "--space", "sp1", "--fresh")
+                self.assertFalse(out["resumed"])
+                rec = f.task(tid)["agents"][-1].get("provider")
+                self.assertEqual(rec if rec is None else rec["route"], None if changed.get("route") == "personal" else "azure-foundry")
+                f.settle(2, tid=tid)
+                f.no_secret()
+
+    def test_a_personal_conversation_is_never_moved_to_azure(self):
+        f = Fixture(self)
+        tid = self.start(f, {"route": "personal"})
+        f.settle(tid=tid)
+        f.give_session(tid, "44444444-5555-4666-8777-888888888888")
+        f.provider({"route": "azure-foundry", **CLAUDE})
+        before = f.snapshot()
+        why = f.refused("resume", str(tid), "--folder", f.repo, "--space", "sp1")
+        self.assertIn("conversation started on Personal (the CLI's own sign-in)", why)
+        f.nothing_started(before)
+        # Personal again, it resumes as it always did.
+        f.provider({"route": "personal"})
+        self.assertTrue(f.ok("resume", str(tid), "--folder", f.repo, "--space", "sp1")["resumed"])
+        self.assertNotIn("provider", f.task(tid)["agents"][-1])
+        f.settle(2, tid=tid)
+
+    def test_a_model_menus_restart_stays_personal_only(self):
+        f = Fixture(self)
+        tid = self.start(f, {"route": "azure-foundry", **CLAUDE})
+        f.settle(tid=tid)
+        before = f.snapshot()
+        why = f.refused("switch", str(tid), "--folder", f.repo, "--space", "sp1", "--restart")
+        self.assertIn("can't carry an Azure Foundry binding yet", why)
+        f.nothing_started(before)
+        # A Personal agent under Azure settings: what it would start isn't Personal either.
+        g = Fixture(self)
+        tid = self.start(g, {"route": "personal"})
+        g.settle(tid=tid)
+        g.provider({"route": "azure-foundry", **CLAUDE})
+        before = g.snapshot()
+        self.assertIn("Provider is Azure Foundry here", g.refused("switch", str(tid), "--folder", g.repo, "--space", "sp1", "--restart"))
+        g.nothing_started(before)
+
+    def test_an_automation_starts_its_task_on_the_plan(self):
+        f = Fixture(self)
+        f.provider({"route": "azure-foundry", **CLAUDE}, also=ROOM)
+        auto = f.ok("auto", "add", "Nightly check", "--folder", f.repo, "--space", "sp1", "--on", "merged", "--here")
+        f.ok("auto", "run-now", str(auto["id"]), "--folder", f.repo)
+        self.assertEqual(len(f.launches()), 1)
+        self.assertEqual(f.task(1)["agents"][0]["provider"], record())
+        f.settle(tid=1)
+        f.no_secret()
+
+
+@ON_CI
+class TaskSelection(unittest.TestCase):
+    """`herdr-task select`: a task's save-only new-start choice, bound to the revision it was
+    shown at and to the routing it was chosen under."""
+
+    def test_a_save_is_revision_bound_and_changes_nothing_else(self):
+        f = Fixture(self)
+        f.provider({"route": "azure-foundry", **CLAUDE, **CODEX}, also=ROOM)
+        first, tid = f.add("--here"), f.add("--here", "--after", "1")
+        self.assertEqual(f.ok("start", str(tid), "--folder", f.repo, "--space", "sp1")["queued"], True)
+        shown = f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1")
+        self.assertEqual((shown["locked"], shown["route"], shown["selection"]), (False, "azure-foundry", {"agent": None, "deployment": None, "effort": None}))
+        self.assertEqual(shown["clis"]["codex"]["deployment"], "code-deployment")
+        before = f.task(tid)
+        calls = len(f.calls())
+        # A stale or missing revision changes nothing.
+        for rev in ("0" * 16, ""):
+            self.assertIn("changed since this selector was opened",
+                          f.refused("select", str(tid), "--folder", f.repo, "--space", "sp1", "--agent", "codex", "--revision", rev))
+        self.assertEqual(f.task(tid), before)
+        saved = f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1", "--agent", "codex", "--deployment", "picked-deployment",
+                     "--effort", "high", "--revision", shown["revision"])
+        self.assertEqual(saved["selection"], {"agent": "codex", "deployment": "picked-deployment", "effort": "high"})
+        after = f.task(tid)
+        # Its state, place in the queue, dependency and hold are as they were; nothing was started or sent.
+        for k in ("state", "queued_at", "after", "held", "scheduled_for", "agents"):
+            self.assertEqual(after.get(k), before.get(k), k)
+        self.assertEqual(after["queue"]["argv"][0], "codex")
+        self.assertEqual([c for c in f.calls()[calls:] if c and c[0] in EFFECTS], [])
+        # The revision it was shown at is spent: a second save with it refuses, even to the same values.
+        self.assertIn("changed since this selector was opened",
+                      f.refused("select", str(tid), "--folder", f.repo, "--space", "sp1", "--agent", "codex", "--revision", shown["revision"]))
+        # Its first start runs on the choice and records it; then the choice is locked.
+        f.ok("rm", str(first), "--folder", f.repo)
+        self.assertEqual([x["id"] for x in f.ok("tick", "--folder", f.repo)["started"]], [tid])
+        _, agent = f.agent_words(f.launches()[-1])
+        self.assertEqual(agent[agent.index("-m") + 1], "picked-deployment")
+        self.assertIn('model_reasoning_effort="high"', agent)
+        rec = f.task(tid)["agents"][0]["provider"]
+        self.assertEqual({k: rec[k] for k in ("route", "agent", "deployment", "auth")}, {"route": "azure-foundry", "agent": "codex",
+                                                                                         "deployment": "picked-deployment", "auth": "api-key"})
+        self.assertNotEqual(rec["fingerprint"], FP["codex"])  # the deployment is part of the binding
+        now = f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1")
+        self.assertTrue(now["locked"])
+        self.assertIn("locked", f.refused("select", str(tid), "--folder", f.repo, "--space", "sp1", "--default", "--revision", now["revision"]))
+        f.settle(tid=tid)
+        f.no_secret()
+
+    def test_a_choice_made_under_one_routing_refuses_under_another(self):
+        f = Fixture(self)
+        f.provider({"route": "azure-foundry", **CLAUDE})
+        tid = f.add("--here")
+        shown = f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1")
+        f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1", "--agent", "claude", "--deployment", "chosen", "--revision", shown["revision"])
+        for changed in ({"route": "personal"}, {"route": "azure-foundry", **CLAUDE, "claude_resource": "other"}):
+            with self.subTest(changed=changed):
+                f.provider(changed)
+                before = f.snapshot()
+                self.assertIn("changed since this start was chosen", f.refused("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now"))
+                f.nothing_started(before)
+        # Back to configured defaults, it starts on today's settings.
+        shown = f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1")
+        f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1", "--default", "--revision", shown["revision"])
+        self.assertEqual(f.task(tid).get("deployment"), None)
+        f.ok("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now")
+        _, agent = f.agent_words(f.launches()[-1])
+        self.assertEqual(agent[agent.index("--model") + 1], "claude-deployment")
+        f.settle(tid=tid)
+
+    def test_a_deployment_that_cant_be_one_is_refused_and_never_repeated(self):
+        f = Fixture(self)
+        tid = f.add("--here")
+        shown = f.ok("select", str(tid), "--folder", f.repo)
+        why = f.refused("select", str(tid), "--folder", f.repo, "--agent", "claude", "--deployment", INLINE + " x", "--revision", shown["revision"])
+        self.assertIn("explicit Azure deployment name", why)
+        self.assertNotIn(INLINE, f.seen + f.store_text())
 
 
 @ON_CI
@@ -450,6 +660,8 @@ class LaunchPlans(unittest.TestCase):
     def planned(self, f, *args):
         out = f.plan(*args)
         self.assertEqual(f.calls(), [])  # a plan runs no hc at all
+        # The revision a selector's choice made now is bound to: a short digest of the routing, never a value.
+        self.assertRegex(out.pop("revision"), r"^[0-9a-f]{16}$")
         f.no_secret()
         # An Azure plan names what can outrank it on the execution host, each with its evidence and
         # what is seen of it here (L1): it never says the plan is what will run.
@@ -472,7 +684,8 @@ class LaunchPlans(unittest.TestCase):
                 argv = out.pop("argv")
                 self.assertEqual(out, {
                     "route": "azure-foundry", "agent": "claude", "fingerprint": FP[auth], "deployment": "claude-deployment", "auth": auth,
-                    "credential": credential, "settings_env": env, "args": [], "env": {}, "dispatch": "held", "pending": PENDING})
+                    "target": "example", "credential": credential, "settings_env": env, "args": [], "env": {}, "dispatch": "planned",
+                    "pending": PENDING})
                 self.assertEqual(argv[:2] + argv[3:], ["claude", "--settings", "--model", "claude-deployment"])
                 self.assertEqual(json.loads(argv[2]), {"env": env})
                 if credential:
@@ -493,8 +706,9 @@ class LaunchPlans(unittest.TestCase):
                 'env_key="AZURE_OPENAI_API_KEY",wire_api="responses",requires_openai_auth=false}']
         self.assertEqual(self.planned(f, "--agent", "codex"), {
             "route": "azure-foundry", "agent": "codex", "fingerprint": FP["codex"], "deployment": "code-deployment", "auth": "api-key",
-            "credential": "AZURE_OPENAI_API_KEY", "settings_env": {}, "args": args, "env": {"OPENAI_BASE_URL": "", "OPENAI_API_KEY": ""},
-            "argv": ["codex", *args, "-m", "code-deployment", "--no-daemon"], "dispatch": "held", "pending": PENDING})
+            "target": "https://example.openai.azure.com/openai/v1", "credential": "AZURE_OPENAI_API_KEY", "settings_env": {}, "args": args,
+            "env": {"OPENAI_BASE_URL": "", "OPENAI_API_KEY": ""}, "argv": ["codex", *args, "-m", "code-deployment", "--no-daemon"],
+            "dispatch": "planned", "pending": PENDING})
 
     def test_the_agents_own_effort_fast_and_permissions_are_kept(self):
         f = Fixture(self)
@@ -670,13 +884,37 @@ class LaunchPlans(unittest.TestCase):
         p = f.run("provider", "plan", "--folder", f.repo, "--agent", "claude")
         self.assertEqual((p.returncode, p.stderr), (0, ""))
         for words in ("claude: Azure Foundry, deployment claude-deployment, API key.", "the ANTHROPIC_FOUNDRY_API_KEY variable on the execution host",
-                      "Dispatch is held in this version", "no sign-in, credential or model request was tried"):
+                      "Restart and revival (L2) stay Personal only", "no sign-in, credential or model request was tried"):
             self.assertIn(words, p.stdout)
         p = f.run("provider", "plan", "--help")
         self.assertEqual(p.returncode, 0, p.stderr)
-        for words in ("--agent", "--argv", "--space", "--folder", "--json", "Reads no credential, starts nothing, signs in nowhere"):
+        for words in ("--agent", "--argv", "--space", "--role", "--deployment", "--folder", "--json", "Reads no credential, starts nothing, signs in nowhere"):
             self.assertIn(words, " ".join(p.stdout.split()))  # argparse wraps its lines
         self.assertIn("provider", f.run("--help").stdout)
+        self.assertEqual(f.calls(), [])
+        f.no_secret()
+
+
+@ON_CI
+class SelectorView(unittest.TestCase):
+    """`provider show`: what a new-start selector shows for a role, read-only."""
+
+    def test_it_shows_each_clis_routing_deployment_and_revision_and_starts_nothing(self):
+        f = Fixture(self)
+        f.provider({"route": "azure-foundry", **CLAUDE, "coordinator_claude_deployment": "assistant-deployment", "claude_auth": "api-key"})
+        out = f.ok("provider", "show", "--folder", f.repo, "--space", "sp1", "--role", "coordinator")
+        self.assertEqual((out["route"], out["role"]), ("azure-foundry", "coordinator"))
+        self.assertEqual(out["clis"]["claude"]["deployment"], "assistant-deployment")
+        self.assertEqual(out["clis"]["claude"]["routing"], "Azure Foundry example with API key")
+        self.assertIsNone(out["clis"]["claude"]["problem"])
+        # Codex isn't set up: it says what is missing instead of refusing the view.
+        self.assertIn("Codex", out["clis"]["codex"]["problem"])
+        rev = out["clis"]["claude"]["revision"]
+        # A deployment default is not routing: the revision stays; the sign-in method is, and it changes.
+        f.provider({"route": "azure-foundry", **CLAUDE, "claude_auth": "api-key", "claude_deployment": "other"})
+        self.assertEqual(f.ok("provider", "show", "--folder", f.repo, "--space", "sp1", "--role", "coordinator")["clis"]["claude"]["revision"], rev)
+        f.provider({"route": "azure-foundry", **CLAUDE})
+        self.assertNotEqual(f.ok("provider", "show", "--folder", f.repo, "--space", "sp1", "--role", "coordinator")["clis"]["claude"]["revision"], rev)
         self.assertEqual(f.calls(), [])
         f.no_secret()
 
@@ -759,10 +997,44 @@ class Binding(unittest.TestCase):
         row, task, started, ran = self.backup({"route": "personal"}, launch=broken)
         self.assertEqual((task["backup"]["state"], "launch" in task["backup"], ran), ("failed", False, []))
 
-    def test_a_backup_the_provider_holds_isnt_spent(self):
-        row, task, started, ran = self.backup({"route": "azure-foundry", **CODEX})
+    def test_a_backup_on_azure_starts_on_its_plan(self):
+        """A backup is a new conversation in the other CLI: it takes today's plan for its CLI (A2), never the stuck
+        agent's recorded binding."""
+        admitted = []
+
+        def launch(s, t, argv, space, text, parent=None, admission=None):
+            admitted.append(admission.plan)
+            return {"address": "t2"}
+        row, task, started, ran = self.backup({"route": "azure-foundry", **CODEX}, launch=launch)
+        self.assertEqual((row, task["backup"]["state"], ran), (None, "started", [["hc", "kill", "t1"]]))
+        self.assertEqual([(p["route"], p["agent"], p["deployment"]) for p in admitted], [("azure-foundry", "codex", "code-deployment")])
+
+    def test_a_backup_the_provider_cant_plan_isnt_spent(self):
+        row, task, started, ran = self.backup({"route": "azure-foundry", **CODEX, "codex_auth": "entra-id"})
         # The refusal's own words follow "backup held", cut to the reason's one line.
-        self.assertEqual((row["reason"], "backup" in task, started, ran), ("Out of allowance, backup held: Azure…", False, [], []))
+        self.assertEqual(("backup" in task, started, ran), (False, [], []))
+        self.assertTrue(row["reason"].startswith("Out of allowance, backup held: Codex"), row["reason"])
+        self.assertLessEqual(len(row["reason"]), 40)
+
+    def test_the_credential_check_runs_the_agent_only_when_its_variable_is_set(self):
+        """The guard in_shell() puts in the agent's own shell, run by a real POSIX shell: missing or empty, it names
+        the variable and runs nothing; set, the agent runs. Only presence is looked at, never the value."""
+        from herdr_task.launch import in_shell
+        env = {k: v for k, v in os.environ.items() if k != "AZURE_OPENAI_API_KEY"}
+        env["SHELL"] = "/bin/sh"
+        p = self.mock.patch.dict(os.environ, {"SHELL": "/bin/sh"})
+        p.start()
+        self.addCleanup(p.stop)
+        words = in_shell(["echo", "agent-ran"], None, {"OPENAI_BASE_URL": ""}, "AZURE_OPENAI_API_KEY")
+        # in_shell keeps the person's shell after the agent: replace its last exec so the test's shell ends.
+        script = words[2].replace('exec "$0" -i', "true")
+        for value, ran in ((None, False), ("", False), ("marker-azure-openai-key-52de", True)):
+            with self.subTest(value=value):
+                e = dict(env, **({"AZURE_OPENAI_API_KEY": value} if value is not None else {}))
+                r = subprocess.run(["/bin/sh", "-c", script, "sh", "echo", "agent-ran"], capture_output=True, text=True, env=e, timeout=30)
+                self.assertEqual("agent-ran" in r.stdout, ran, r.stdout + r.stderr)
+                self.assertEqual("Azure Foundry needs AZURE_OPENAI_API_KEY" in r.stderr, not ran)
+                self.assertNotIn("marker-azure-openai-key-52de", r.stdout + r.stderr)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,8 @@
 // a machine set for everything before (the old machine scope) still apply and show there, with Reset.
 // Writes ~/.herdr/shepherdr.json at once, no Save step (coordinator.js documents the shape;
 // herdr-task reads it too). Other machines get their share pushed (pushRemotes) for their
-// herdr-task. Agents use the chat's own model button (settings.js and agent.js from lib/).
+// herdr-task. Agents use the chat's own model button (settings.js and agent.js from lib/), and
+// its Provider rows (provider-section.js) are the person's own Azure Foundry connection.
 // The window draws its own frame (frame: "none"), most of Herdr's height, at most 900.
 
 import { View, div, svg } from "gpui-kit";
@@ -24,6 +25,7 @@ import { layoutSection } from "./layout.js";
 import { manifest } from "./addons.js";
 import { secretsInit, secretsSection } from "./secrets-section.js";
 import { baseInit, baseRow } from "./base-branch.js";
+import { providerInit, providerRows } from "./provider-section.js";
 import { branchInit, branchRow } from "./branch-names.js";
 import { feedbackInit, feedbackRow, feedbackRepoRow } from "./feedback-repo.js";
 import { autopilotInit, autopilotSection, autopilotFlush } from "./autopilot-section.js";
@@ -88,6 +90,7 @@ export default class ShepherdrSettings extends View {
     this.secFor();
     // Tasks > Base branch, a space's (base-branch.js).
     this.bb = baseInit(this);
+    this.pv = providerInit(this);
     // Tasks > Branch names, Everywhere's or a space's (branch-names.js).
     this.bn = branchInit(this);
     this.fr = feedbackInit(this);
@@ -477,6 +480,8 @@ export default class ShepherdrSettings extends View {
     this.saveRoles(cx);
     return v_flex()
       .child(this.title(t, page("agents")))
+      // Provider: Personal or Azure Foundry, and on Azure each CLI's connection (provider-section.js)
+      .children(providerRows(this, t))
       .children(ROLES.map((r) => this.roleRow(t, r, cx)))
       .child(this.backupRow(t))
       .child(this.reactionsRow(t))
