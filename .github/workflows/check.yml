@@ -79,7 +79,7 @@ jobs:
           bun install --cwd tools/fallow --frozen-lockfile
           fallow() {
             code=0; bun run --cwd tools/fallow "$@" || code=$?
-            if [ "$code" -ge 2 ]; then echo "::error::Fallow could not run ($*): exit $code"; exit "$code"; fi
+            if [ "$code" -ge 2 ]; then echo "::error::Fallow could not run ($*): exit $code" >&2; exit "$code"; fi
           }
           fallow report --format github-summary --quiet >> "$GITHUB_STEP_SUMMARY"
           if [ "$EVENT" = pull_request ]; then
