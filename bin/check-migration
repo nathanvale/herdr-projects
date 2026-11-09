@@ -85,6 +85,10 @@ docs/migration/upstream-v3.1.3.md test/test_migration.py''',
     'A1': 'docs/azure-launch-plans.md',
     'L1': 'docs/launch-admission.md',
     'PR 20': '.claude/.gitignore .claude/checkout-access.json bin/checkout-access test/test_checkout_access.py',
+    # MIG-12, a tooling unit outside every phase: the report-only Fallow setup (docs/fallow.md). Its pinned tool
+    # package lives apart from U's package.json and bun.lock, which stay exact U.
+    'MIG-12': '''.fallowrc.json docs/fallow.md fallow-baselines/dead-code.json fallow-baselines/dupes.json
+fallow-baselines/health.json test/test_fallow_config.py tools/fallow/bun.lock tools/fallow/package.json''',
 }
 
 
