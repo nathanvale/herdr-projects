@@ -2073,12 +2073,12 @@
      ]
     }
    ],
-   "held": "Ported at compose(), which keeps a Personal launch's argv and environment as they are (provider plan and every start take their environment from it); the regression checks Claude Code's, where the fork's step checked both CLIs.",
+   "held": "Ported at a task start's Personal guard (launch.py: Personal adds no variable to the agent's shell), as the fork's step targeted Personal launches; the regression's start must export nothing of a provider's. Claude Code only, where the fork's step checked both CLIs. compose()'s Personal branch, which provider plan and revival read, has native regressions but no guard-removal proof; an Assistant's Personal start skips compose() in launch_admission.py.",
    "mutation": {
     "runner": "unittest",
-    "file": "mods/tasks/bin/herdr_task/providers.py",
-    "before": "    if plan[\"route\"] == PERSONAL:\n        return list(argv), {}",
-    "after": "    if plan[\"route\"] == PERSONAL:\n        return list(argv), {\"OPENAI_BASE_URL\": \"https://invalid.example\"}",
+    "file": "mods/tasks/bin/herdr_task/launch.py",
+    "before": "    penv = {}\n    if plan[\"route\"] != PERSONAL:\n        cmd, penv = compose(plan, cmd)",
+    "after": "    penv = {\"OPENAI_BASE_URL\": \"https://invalid.example\"}\n    if plan[\"route\"] != PERSONAL:\n        cmd, penv = compose(plan, cmd)",
     "test_file": "test/test_providers.py",
     "test": "test_no_provider_setting_starts_the_cli_as_before"
    }
