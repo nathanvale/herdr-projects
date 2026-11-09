@@ -18,6 +18,7 @@ guard/herdr-app          the window guard (--guard)
 keys.json                Shepherdr's keys, merged into the person's
 test/                    python tests: repo rules, the installer in throwaway roots, herdr-task
 scripts/parity.py        a scratch install against this machine's live Herdr home, file by file
+tools/fallow/            the pinned Fallow tool package; .fallowrc.json and fallow-baselines/ (docs/fallow.md)
 RECIPE.md, preview.png   the herdr.dev listing (repo topic herdr-layout)
 ```
 

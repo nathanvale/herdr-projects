@@ -69,23 +69,6 @@ jobs:
           bunx tsc --noEmit -p .
           bun test service core web
           bun run build
-      - name: Fallow maintainability report (report-only)
-        # docs/fallow.md. Needs the step above (node_modules, web/generated). Fallow exits 1 on findings: reported,
-        # never enforced here. 2 or above is a broken config or tool, which fails the step.
-        env:
-          FALLOW_AUDIT_BASE: origin/${{ github.base_ref }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          bun install --cwd tools/fallow --frozen-lockfile
-          fallow() {
-            code=0; bun run --cwd tools/fallow "$@" || code=$?
-            if [ "$code" -ge 2 ]; then echo "::error::Fallow could not run ($*): exit $code" >&2; exit "$code"; fi
-          }
-          fallow report --format github-summary --quiet >> "$GITHUB_STEP_SUMMARY"
-          if [ "$EVENT" = pull_request ]; then
-            fallow audit --format github-summary --quiet >> "$GITHUB_STEP_SUMMARY"
-            fallow audit --format github-annotations --quiet
-          fi
       - name: shell scripts parse
         # each with the shell its first line names (bash scripts use bash-only syntax; sh is dash here)
         run: |
@@ -101,6 +84,23 @@ jobs:
           ./install.sh --root "$root" --yes
           python3 bin/shepherdr doctor --root "$root"
           python3 bin/shepherdr uninstall --root "$root"
+      - name: Fallow maintainability report (report-only)
+        # docs/fallow.md. Last, so it never stops the checks above; it reuses their node_modules and web/generated.
+        # Fallow exits 1 on findings: reported, never enforced here. 2 or above is a broken config or tool, which fails.
+        env:
+          BASE: origin/${{ github.base_ref }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          bun install --cwd tools/fallow --frozen-lockfile
+          fallow() {
+            code=0; tools/fallow/node_modules/.bin/fallow --root . "$@" || code=$?
+            if [ "$code" -ge 2 ]; then echo "::error::Fallow could not run ($*): exit $code" >&2; exit "$code"; fi
+          }
+          fallow --format github-summary --quiet >> "$GITHUB_STEP_SUMMARY"
+          if [ "$EVENT" = pull_request ]; then
+            fallow audit --base "$BASE" --format github-summary --quiet >> "$GITHUB_STEP_SUMMARY"
+            fallow audit --base "$BASE" --format github-annotations --quiet
+          fi
 
   candidate-readiness:
     name: candidate-readiness

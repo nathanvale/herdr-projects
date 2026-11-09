@@ -5,7 +5,7 @@
   "scripts": {
     "report": "fallow --root ../..",
     "audit": "fallow audit --root ../.. --base ${FALLOW_AUDIT_BASE:-origin/integrate/upstream-v3.1.3}",
-    "baselines": "cd ../.. && fallow dead-code --save-baseline fallow-baselines/dead-code.json && fallow health --save-baseline fallow-baselines/health.json && fallow dupes --save-baseline fallow-baselines/dupes.json"
+    "baselines": "cd ../.. && sh -c 'for c in dead-code health dupes; do fallow $c --save-baseline fallow-baselines/$c.json --quiet > /dev/null; s=$?; [ $s -lt 2 ] || exit $s; echo \"saved fallow-baselines/$c.json\"; done'"
   },
   "devDependencies": {
     "fallow": "3.41.0"
