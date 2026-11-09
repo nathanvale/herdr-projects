@@ -5,7 +5,9 @@
 //   show too; a screen both saw shows once.
 // - a session that is gone ("No conversation found"): a new one starts with a short handover, once, as the window's
 //   chat does (core/chat-view.js lostMessage). The window does it first when it watches the agent: this waits a
-//   little, then acts only when the window hasn't (its shared "chat.lost" says so, or a CLI runs there again).
+//   little, then acts only when the window hasn't (its shared "chat.lost" says so, or a CLI runs there again). Both
+//   go through herdr-task's launch owner (L2): at its shell, `launch revive --lost` types the new one there (the same
+//   owner as the tick's revival, so one agent never comes back twice); ended, restart.sh starts it behind its chat.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Hub } from "./hub.ts";
@@ -17,21 +19,25 @@ import { FOLDER } from "../core/chat-log.js";
 import { sh } from "./model.ts";
 
 const { ScreenWatch, starting, cliOf, readScreen, screenText, pressKeys, SCREEN } = SC as any;
-const { LOST, lostMessage, shellWord, WORDS, sessionStarted, sessionFailed } = CV as any;
-const { freshArgv, lostRefusal, providerRefusal, routeRefusal, routeArgs } = AG as any;
+const { LOST, lostMessage, WORDS, sessionStarted, sessionFailed } = CV as any;
+const { freshArgv, lostRefusal } = AG as any;
 const APP = process.env.HERDR_APP_HOME || join(HOME, ".config", "herdr-app");
 type Run = (args: string[]) => Promise<{ code: number; stdout: string; stderr?: string }>;
 /** an agent to watch: its address, and its task's id when it is a task's worker */
 export type Watched = { addr: string; ref?: string | null };
 
-/** herdr-task's provider owner on the route an agent's role and space have now (`provider show --json`), or null when it
- *  can't say. SHEPHERDR_HERDR_TASK: a test's stand-in, as service/spaces.ts. */
-async function routeOf(args: string[]) {
-  try {
-    const p = Bun.spawn([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", ...args], { stdout: "pipe", stderr: "ignore", stdin: "ignore" });
-    const [out, code] = await Promise.all([new Response(p.stdout).text(), p.exited]);
-    return code === 0 ? JSON.parse(out) : null;
-  } catch { return null; }
+/** herdr-task's launch owner bringing a lost agent back at its own shell (`launch revive TERMINAL --lost`, on the agent's
+ *  machine): its session gone, a new conversation there on the binding its start recorded, claimed in the launch journal
+ *  first. Throws the owner's own refusal. SHEPHERDR_HERDR_TASK: a test's stand-in, as service/spaces.ts. */
+async function reviveLost(addr: string) {
+  const [machine, term] = addr.includes("/") ? addr.split("/") : [null, addr];
+  const p = Bun.spawn([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", ...(machine ? ["--on", machine] : []), "launch", "revive", term, "--lost", "--json"],
+    { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+  const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+  let said: any = null;
+  try { said = JSON.parse(out || "null"); } catch {}
+  if (code !== 0) throw new Error(said?.error || err.trim().split("\n").pop() || "It didn't start.");
+  if (said?.how === "none") throw new Error("It was brought back already, or an agent runs there.");
 }
 
 export class AgentWatch {
@@ -109,25 +115,19 @@ export class AgentWatch {
     if (done() || (now?.state === "live" && cliOf(now))) return;
     this.note(addr, WORDS.sessionGone);
     try {
-      // an agent that started on Azure Foundry, or a route here that isn't Personal: a new start here can't carry a
-      // binding or a plan (L2, core/agents.js), so it is refused, asked of herdr-task's provider owner
-      const held = providerRefusal(t);
-      if (held) throw new Error(held);
       const machine = addr.includes("/") ? addr.split("/")[0] : null;
       // fresh drops what its launch set, and a new start carries no CLAUDE_CONFIG_DIR (core/agents.js)
       const why = await lostRefusal(kind, t, (pid: number) => sh(this.hub, FOLDER, ["folder", String(pid)], machine).then((r: any) => r.stdout, () => ""));
       if (why) throw new Error(why);
-      const off = routeRefusal(await routeOf(routeArgs(t, machine)));
-      if (off) throw new Error(off);
+      // Its provider and route are the launch owner's to plan (L2): a binding it can't carry refuses there, with why.
       const named = /^([a-z][a-z0-9]*)-(\d+)(?:-|$)/.exec(t.name ?? "");
       const ref = w.ref ?? (t.labels?.["herdr.task"] && named ? `${named[1].toUpperCase()}-${named[2]}` : null);
       const tplFile = join(HOME, ".config", "herdr-core", "templates", "assistant.md");
       const template = t.labels?.["herdr.role"] === "coordinator" && !addr.includes("/") && existsSync(tplFile) ? readFileSync(tplFile, "utf8") : null;
       const msg = lostMessage({ ref, template });
       if (t.state === "live") {
-        // hc send pastes the line into the shell and presses Enter
-        const r = await this.hub.send(addr, [...fresh, msg].map(shellWord).join(" "));
-        if (r.code !== 0) throw new Error((r.stderr ?? "").trim() || "It didn't go through.");
+        // the launch owner types it into the shell, as the tick's revival does (herdr-task launch revive --lost)
+        await reviveLost(addr);
       } else {
         // herdr-task would resume the same gone session again: its task starts it anew
         if (t.labels?.["herdr.task"]) throw new Error("ask the Assistant to resume its task.");

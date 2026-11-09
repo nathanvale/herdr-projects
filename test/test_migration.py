@@ -36,14 +36,14 @@ class SourceCheckpoint(unittest.TestCase):
         self.assertEqual(observed['candidate_readiness'], 'blocked')
         self.assertEqual(observed['requirements'], 40)
         self.assertEqual(observed['file_dispositions'], 121)
-        self.assertEqual((observed['phase'], observed['source_deltas']), ('A2', 93))
+        self.assertEqual((observed['phase'], observed['source_deltas']), ('L2', 94))
 
     def test_candidate_gate_refuses_even_when_source_validation_passes(self):
         result, observed = self.run_check('--require-ready')
         self.assertEqual(result.returncode, 3)
         self.assertEqual(observed['source_validation'], 'passed')
         self.assertEqual(observed['candidate_readiness'], 'blocked')
-        self.assertIn('A2 is source-only', result.stderr)
+        self.assertIn('L2 is source-only', result.stderr)
         self.assertIn('Complete required ports', result.stderr)
 
     def test_existing_discovery_cannot_be_dropped(self):
@@ -113,6 +113,13 @@ class SourceCheckpoint(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('admitted owners of phase L1', observed['error'])
 
+    def test_l2_cannot_be_named_back_to_a2(self):
+        """A2 admits neither the revival owner, the lost-session and restart sites' changes nor their regressions, so its
+        name can't hold L2's deltas."""
+        result, observed = self.fixture(MANIFEST, lambda data: data.update(phase='A2'), '--manifest')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('admitted owners of phase A2', observed['error'])
+
     def test_phase_cannot_roll_back_by_dropping_its_deltas_too(self):
         result, observed = self.fixture(MANIFEST, lambda data: data.update(phase='S0', source_deltas=[]), '--manifest')
         self.assertEqual(result.returncode, 1)
@@ -120,14 +127,14 @@ class SourceCheckpoint(unittest.TestCase):
         self.assertIn('Native foundation differs from exact U', observed['error'])
 
     def test_an_unadmitted_owner_cannot_join_the_phase(self):
-        for phase in ('A1', 'N1', 'C1', 'W1', 'H1', 'S1', 'B1', 'B2', 'L1', 'A2'):
+        for phase in ('A1', 'N1', 'C1', 'W1', 'H1', 'S1', 'B1', 'B2', 'L1', 'A2', 'L2'):
             with self.subTest(phase=phase):
                 def widen(data):
                     data['source_deltas'].append({'phase': phase, 'path': 'mods/tasks/bin/herdr_task/archive.py',
                                                   'upstream_blob': None, 'sha256': '0' * 64})
                 result, observed = self.fixture(MANIFEST, widen, '--manifest')
                 self.assertEqual(result.returncode, 1)
-                self.assertIn('admitted owners of phase A2', observed['error'])
+                self.assertIn('admitted owners of phase L2', observed['error'])
 
     def test_a_delta_cannot_drop_its_upstream_provenance(self):
         for name in ('github.py', 'takeover.py'):

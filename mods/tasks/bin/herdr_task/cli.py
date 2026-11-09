@@ -462,8 +462,9 @@ def main():
     la = sub.add_parser("launch", help="the launch journal: every agent start here, claimed before it is sent "
                                        "(never submitted, submission uncertain, confirmed, cancelled)").add_subparsers(dest="launch")
     run_help = ("start an Assistant (--role coordinator) or a tab agent (--role agent) through launch admission: a new "
-                "start planned for its provider (--new-start), any other Personal only; claimed, rechecked, recorded as "
-                "sent, then the hc run words after \"--\" (given its herdr.launch label and --json); prints hc's reply")
+                "start planned for its provider (--new-start), a restart (--replaces) on its recorded binding or today's "
+                "settings, a tab agent Personal only; claimed, rechecked, recorded as sent, then the hc run words after "
+                "\"--\" (given its herdr.launch label and --json); prints hc's reply")
     c = la.add_parser("run", help=run_help, description=run_help)
     c.add_argument("--role", required=True, help="coordinator or agent")
     c.add_argument("--space", required=True, help="the space it starts in (its id)")
@@ -474,11 +475,12 @@ def main():
                                                        "name template WORD: planned for its provider; on Azure Foundry "
                                                        "the owner puts its own one-off template in WORD's place")
     c.add_argument("--source", help="--new-start: the template whose words and command it starts with (default: assistant)")
-    c.add_argument("--argv", help="--new-start: the agent's argv as a JSON list (default: --source's command)")
+    c.add_argument("--argv", help="--new-start or --replaces: the agent's argv as a JSON list (default: --source's command)")
     c.add_argument("--deployment", help="--new-start: a chat's chosen Azure deployment, instead of the Assistant's")
     c.add_argument("--revision", help="--new-start: the revision that choice was made under (provider show); changed refuses")
-    c.add_argument("--replaced-route", help="a restart: the route the agent it replaces started on (its herdr.provider "
-                                            "label); restarts are Personal only (L2)")
+    c.add_argument("--replaces", metavar="TERMINAL", help="a restart: the terminal of the agent it replaces. Continuing "
+                                                          "that agent's conversation keeps the provider binding it recorded; "
+                                                          "a new conversation plans from today's settings (L2)")
     c.add_argument("--json", action="store_true")
     c.add_argument("hc_args", nargs=argparse.REMAINDER, help="-- then its hc run words")
     c.set_defaults(fn=cmd_launch)
@@ -496,6 +498,16 @@ def main():
     c = la.add_parser("folder", help="the Claude Code folder a running agent's process uses, from its own environment "
                                      "(restart.sh carries it into the agent it starts)")
     c.add_argument("identity", metavar="PID", help="the agent's process id")
+    c.add_argument("--json", action="store_true")
+    c.set_defaults(fn=cmd_launch)
+    revive_help = ("type an Assistant or a task's agent back into its own kept terminal, through launch admission: its "
+                   "session resumed on its recorded provider binding, or with --lost (its screen says the session is gone) "
+                   "a new conversation that says so. Claimed in the journal before anything is typed; a send hc doesn't "
+                   "confirm stays submission uncertain. With no TERMINAL: every one here the core gave a plain shell (the "
+                   "tick's pass)")
+    c = la.add_parser("revive", help=revive_help, description=revive_help)
+    c.add_argument("identity", metavar="TERMINAL", nargs="?", help="the agent's terminal on this machine")
+    c.add_argument("--lost", action="store_true", help="its CLI said its session is gone: start a new one there")
     c.add_argument("--json", action="store_true")
     c.set_defaults(fn=cmd_launch)
     c = la.add_parser("recover", help="release a start that was claimed and never sent (its herdr-task ended): its claim "

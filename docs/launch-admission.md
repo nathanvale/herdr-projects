@@ -17,9 +17,10 @@ deployed or natively qualified. Since A2 a valid Azure plan is dispatched where 
 
 `service/agents.ts` starts nothing itself: a task's agent goes through `herdr-task switch`, anything
 else through `restart.sh`. Not agent starts, so not here: the scheduler's own terminal, the task
-browser's view and Add machine's `hc machine add`. Revival (`revive.py`) types an agent back into
-its own kept terminal, and `service/watch.ts` types a fresh start into a live one: neither is an
-`hc run`, and both are L2's, outside this owner for now.
+browser's view and Add machine's `hc machine add`. Since L2, revival (`revive.py`) and a lost
+session at its shell (`service/watch.ts`, the window's chat, through `herdr-task launch revive`)
+type the agent back into its own kept terminal through this owner too: claimed, recorded as sent,
+then `hc send` ([native restart and revival](native-restart.md)).
 
 ## The order of a start
 
@@ -28,7 +29,8 @@ its own kept terminal, and `service/watch.ts` types a fresh start into a live on
    provider owner admits the route: for a task's agent, Personal passes and a valid Azure plan is
    planned (since A2; a recorded conversation's resume plans from its record); for an Assistant's
    new start (`--new-start`), the same on this machine only; for a restart of an Assistant or a tab
-   agent, only Personal passes, here or on the machine an `hc run --on` names (L2). A task's Assistant (its
+   agent, its recorded binding when it continues the conversation and today's settings for a new one, never onto
+  another route (L2, [native restart](native-restart.md)). A task's Assistant (its
    parent) is resolved. A start of the same identity that is still open refuses, naming the command
    that resolves it. Nothing has changed yet; `restart.sh` runs this step alone (`--check`) before
    it relabels the old Assistant's workers or saves its handoff.
@@ -90,9 +92,9 @@ is not ended. A worktree the start made stays the task's.
   so C1's lost-session refusal (which looks for that word) doesn't see these folders; a lost
   session's fresh restart from Chat reads the live shell instead, and on macOS, where a shell's
   environment can't be read, it starts on that shell's exported folder, the agent's own. The Assistant's other start sites start fresh and pass
-  none. L2 owns the rest: native revive and resume reconstructing the folder (`T/revive.py`,
-  `service/watch.ts`), and recording sessions found under it (`session_of()` still records only
-  `~/.claude` ones, so a resume there starts with a handoff).
+  none. Since L2 revival records a session found under another folder with that folder and exports
+  it when it types the agent back ([native restart](native-restart.md)); a task's own session record
+  (`refresh_sessions`) still keeps only `~/.claude` ones, so a resume there starts with a handoff.
 
 ## Identities, revisions and the journal
 
@@ -116,12 +118,15 @@ herdr-task launch reconcile IDENTITY LAUNCH [--json]
 herdr-task launch recover IDENTITY LAUNCH [--json]
 herdr-task launch folder PID [--json]
 herdr-task launch run --role coordinator|agent --space SPACE [--slot TAB] [--config-dir DIR] [--new-start WORD [--source TEMPLATE]
-  [--argv JSON] [--deployment NAME --revision REV]] [--replaced-route ROUTE] [--check] [--json] -- <hc run words>
+  [--argv JSON] [--deployment NAME --revision REV]] [--replaces TERMINAL [--argv JSON]] [--check] [--json] -- <hc run words>
+herdr-task launch revive [TERMINAL] [--lost] [--json]
 ```
 
 - `reconcile` confirms a `submission-uncertain` start only when exactly one terminal carries its
   launch id, and puts a task's agent on its task. An empty or failed lookup keeps it, since it
-  doesn't prove the start never happened.
+  doesn't prove the start never happened. A revival's (L2) is confirmed only by an agent running in
+  the terminal its line was typed into.
+- `revive` types an agent back into its own kept terminal (L2, [native restart](native-restart.md)).
 - `recover` releases only a `never-submitted` start (its herdr-task ended before sending): its claim
   is revoked, so if its sender is still running it sends nothing when it reaches submit. A
   `submission-uncertain` start refuses.

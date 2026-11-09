@@ -129,14 +129,17 @@ class SessionOf(unittest.TestCase):
         self.assertEqual((kept["record"]["session"], kept["record"]["log"]), (SESSION, log))
         self.assertEqual(kept["agent"], {"address": "t1", "session": SESSION, "log": log})
 
-    def test_a_session_under_another_folder_is_found_and_never_kept(self):
-        """Nothing may come back on another profile: no revive record, no session on the task for
-        resume, and session_of as those call it says what it said before this folder was read."""
+    def test_a_session_under_another_folder_is_kept_only_with_its_folder(self):
+        """Nothing may come back on another profile. Revival carries the folder (L2), so its record keeps the session
+        with that folder, which it types back as CLAUDE_CONFIG_DIR; the task's resume doesn't carry it from a found
+        session, so nothing is put on the task, and session_of as it calls it says what it said before."""
         folder = self.folder()
         pid, _ = self.agent({"CLAUDE_CONFIG_DIR": folder})
         log = self.session(folder, pid)
         self.assertEqual(self.found(pid), (SESSION, log))
-        self.assertEqual(self.kept(pid), {"session_of": [None, None], "record": None, "agent": {"address": "t1"}})
+        kept = self.kept(pid)
+        self.assertEqual((kept["session_of"], kept["agent"]), ([None, None], {"address": "t1"}))
+        self.assertEqual((kept["record"]["session"], kept["record"]["log"], kept["record"]["config_dir"]), (SESSION, log, folder))
 
     def test_the_default_folder_named_outright_is_kept_with_or_without_its_slash(self):
         for value in (self.fallback, self.fallback + "/"):

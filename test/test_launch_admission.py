@@ -940,8 +940,8 @@ class AssistantStarts(unittest.TestCase):
                 p = self.run_start(f, words=words)
                 self.assertEqual(p.returncode, 1, p.stdout)
                 err = json.loads(p.stdout)["error"]
-                # Without --new-start a start is a restart's (L2): Personal only.
-                self.assertIn({"azure": "can't carry an Azure Foundry binding yet", "azure-remote": "would run on vm1",
+                # Without --new-start, --argv or --replaces it gives no agent command line to plan: Personal only.
+                self.assertIn({"azure": "gives no agent command line to plan", "azure-remote": "would run on vm1",
                                "corrupt": "can't be read"}[kind], err)
                 self.assertEqual(f.calls(), [])
                 self.assertFalse(os.path.exists(os.path.join(f.store, ".launches.json")) and f.starts("coordinator:"))
@@ -1155,17 +1155,22 @@ class RestartScript(unittest.TestCase):
         i = run.index("CLAUDE_CONFIG_DIR=" + profile)
         self.assertEqual((run[i - 1], run[i + 1], rec["config_dir"]), ("env", "claude", profile))
 
-    def test_an_assistant_that_started_on_azure_is_not_restarted_personal(self):
+    def test_an_azure_started_assistant_whose_binding_is_gone_is_never_resumed_personal(self):
+        """L2: continuing its conversation needs the binding its start recorded; with none to be found it refuses,
+        never reading it as Personal."""
         f = Fixture(self)
         f.seed(address="t900", state="live", keep=True, template="assistant", cwd=f.repo,
                labels={"herdr.space": "sp1", "herdr.tab": "tb1", "herdr.role": "coordinator", "herdr.provider": "azure-foundry"})
         p = self.restart(f)
         self.assertEqual(p.returncode, 1)
-        self.assertIn("the agent it replaces started on Azure Foundry", p.stderr)
-        self.assertEqual([c[0] for c in f.calls()], ["get"])
+        self.assertIn("its recorded provider binding can't be found", p.stderr)
+        self.assertIn("never moved to Personal", p.stderr)
+        self.assertEqual({c[0] for c in f.calls()}, {"get"})  # its own and the owner's look at the old agent only
         self.assertFalse(os.path.exists(os.path.join(f.store, ".launches.json")) and f.starts("coordinator:"))
 
     def test_a_refused_restart_changes_nothing_and_says_why(self):
+        """A Personal conversation under an Azure route now: continuing it would move it to another provider (A2's
+        rule for a recorded conversation, L2 at the restart)."""
         f = Fixture(self)
         d = json.loads(json.dumps(PERSONAL))
         d["everywhere"]["provider"] = AZURE
@@ -1173,9 +1178,9 @@ class RestartScript(unittest.TestCase):
         self.seed_assistant(f)
         p = self.restart(f)
         self.assertEqual(p.returncode, 1)
-        self.assertIn("can't carry an Azure Foundry binding yet", p.stderr)
-        verbs = [c[0] for c in f.calls()]
-        self.assertEqual(verbs, ["get"])  # only its own look at the old agent: no read, label, run or kill
+        self.assertIn("Resuming it would move it to another provider", p.stderr)
+        verbs = {c[0] for c in f.calls()}
+        self.assertEqual(verbs, {"get"})  # only looks at the old agent: no read, label, run or kill
         self.assertFalse(os.path.exists(os.path.join(f.store, ".launches.json")) and f.starts("coordinator:"))
 
 

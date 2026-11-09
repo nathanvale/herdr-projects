@@ -1,27 +1,38 @@
-"""Agents come back after a crash, a power loss or a reboot (SHEP-30).
+"""Agents come back after a crash, a power loss or a reboot (SHEP-30), through launch admission (L2).
 
 herdr-core keeps a kept terminal (hc run --keep) through a lost program, but never runs it again:
 the terminal comes back with its labels and a plain shell (its argv becomes that shell, its
 template goes). So while an Assistant or a task's agent runs, each tick here records on its
 terminal (label herdr.resume) how to start it again on its own session: the agent's flags, the
-exact session id and log (session_of(), as the chat finds them), its folder, and the terminal's
+exact session id and log (session_of(), as the chat finds them), its Claude Code folder when it
+isn't ~/.claude, an Assistant's provider binding (a task's stays on its task) and the terminal's
 own process. A terminal whose process changed since (the core gave it a new shell) and where no
 agent runs now gets its agent typed back into that shell: the same terminal, labels, chat and
-task, resuming that very session. Its session gone (no log, or the CLI says "No conversation
-found"): a new one starts there with a short handover (as the chat's lostSession), which its
-chat shows as a New session. Each machine's tick does its own terminals only, under the tick's
-lock, so one agent never comes back twice."""
+task, resuming that very session on the binding it recorded (providers.plan_of_record: the same
+route, resource or endpoint, sign-in and deployment, or held with the reason; never Personal in
+its place). Its session gone (no log, or the CLI says "No conversation found"): a new conversation
+starts there with a short handover (as the chat's lostSession), on the same binding, reported as
+missing history and never as a resume.
+
+Each typing is a start in launch admission's journal under the agent's own identity
+(launch_admission.agent_identity): claimed before anything is typed, recorded submission-uncertain
+before `hc send`, confirmed by hc's success. So a revival and any start of the same agent (a task's
+resume, restart.sh) fence each other, a send hc doesn't confirm is never typed again until
+`launch reconcile` finds an agent running there, and an open start of that agent holds it. Each
+machine's tick does its own terminals only, under the tick's lock; the service's and the window's
+lost-session recovery come through `herdr-task launch revive TERMINAL --lost` (cmd_revive), the
+same owner, so one agent never comes back twice."""
 
 import json
 import os
 import re
 import shlex
 
-from .base import HOME, hc_json, now, run, SHELLS
+from .base import Fail, HOME, hc_json, now, run, SHELLS
 from .agents import agent_running, status_word
-from .sessions import session_of
-from .settings import ASSISTANT_TEMPLATES
-from .launch import CLEAN_ENV
+from .sessions import claude_dir, session_of
+from .settings import ASSISTANT_TEMPLATES, bare
+from .launch import CLEAN_ENV, NO_CREDENTIAL
 
 LABEL = "herdr.resume"
 # Claude Code: "No conversation found with session ID: …". Codex: "ERROR: No saved session found with ID …"
@@ -110,18 +121,27 @@ def lost_message(ref=None, template=None):
     return msg
 
 
-def shell_line(shell, cwd, env, argv, direct=False):
+LINE_SHELLS = ("bash", "zsh", "sh", "dash", "ksh", "fish")
+
+
+def shell_line(shell, cwd, env, argv, direct=False, need=None):
     """The line typed into the recovered shell: into the agent's folder, then the agent. POSIX shells
-    and fish (3.1+) take `&&` and VAR=value before a command; others get the agent alone. `direct`:
-    it started without the person's shell, so their aliases and functions (a claude() adding flags)
-    stay out now too (`command`)."""
+    and fish (3.1+) take `&&` and VAR=value before a command; others get the agent alone (plan()
+    holds an agent whose binding or folder needs more). `direct`: it started without the person's
+    shell, so their aliases and functions (a claude() adding flags) stay out now too (`command`).
+    need: an Azure plan's credential variable: the agent starts only when it is set and not empty,
+    else the shell says which (launch.provider_words' check, typed)."""
     words = " ".join(shlex.quote(str(a)) for a in argv)
-    if os.path.basename(shell or "") not in ("bash", "zsh", "sh", "dash", "ksh", "fish"):
+    if os.path.basename(shell or "") not in LINE_SHELLS:
         return words
     if direct:
         words = f"command {words}"
     pre = " ".join(f"{k}={shlex.quote(str(v))}" for k, v in sorted((env or {}).items()))
     cmd = f"{pre} {words}" if pre else words
+    if need and re.fullmatch(r"[A-Z][A-Z0-9_]*", need):
+        said = shlex.quote(NO_CREDENTIAL.format(need))
+        cmd = (f'if test -n "${need}"; {cmd}; else; echo {said} >&2; end' if os.path.basename(shell) == "fish" else
+               f'if [ -z "${{{need}:-}}" ]; then printf "%s\\n" {said} >&2; else {cmd}; fi')
     line = f"cd {shlex.quote(cwd)} && {cmd}" if cwd else cmd
     # The recovered shell has the holder's environment: clear a parent Claude Code session's markers
     # first (SHEP-86, launch.CLEAN_ENV; POSIX shells: fish has no for-in-do).
@@ -175,11 +195,18 @@ def record_of(k):
             argv[0] = kind
     if not kind:
         return None
-    sid, log = session_of(pid)
+    # Its Claude Code folder, read from its own process (C1's rule): revival carries it, so a session under another
+    # folder is recorded too (L2). Unreadable records nothing, as before: it could come back on another profile.
+    folder = claude_dir(pid) if kind == "claude" else None
+    other = folder if folder and folder != os.path.join(HOME, ".claude") else None
+    sid, log = session_of(pid, any_folder=True) if other else session_of(pid)
     if not sid:
         return None
-    return {"kind": kind, "session": sid, "log": log, "argv": argv, "cwd": fg.get("cwd") or k.get("cwd"),
-            "pid": k.get("pid"), "working": status_word(k) in ("working", "blocked"), "shell": shell}
+    rec = {"kind": kind, "session": sid, "log": log, "argv": argv, "cwd": fg.get("cwd") or k.get("cwd"),
+           "pid": k.get("pid"), "working": status_word(k) in ("working", "blocked"), "shell": shell}
+    if other:
+        rec["config_dir"] = other
+    return rec
 
 
 def task_of(k):
@@ -201,8 +228,11 @@ def task_record(k, t):
         return None
     if (k.get("labels") or {}).get("herdr.role") != "reviewer":
         argv = own_argv(argv)
-    return {"kind": kind, "session": a.get("session"), "log": a.get("log"), "argv": argv, "cwd": k.get("cwd"),
-            "pid": None, "working": t.get("state") == "running", "shell": True}
+    rec = {"kind": kind, "session": a.get("session"), "log": a.get("log"), "argv": argv, "cwd": k.get("cwd"),
+           "pid": None, "working": t.get("state") == "running", "shell": True}
+    if a.get("config_dir"):
+        rec["config_dir"] = a["config_dir"]
+    return rec
 
 
 def template_of(name="assistant"):
@@ -218,24 +248,47 @@ def template_of(name="assistant"):
     return cmd, text
 
 
-def personal_here(labels):
-    """Whether the route at a terminal's space (its labels) is Personal, as launch admission reads it (strictly): True or
-    False; None when the settings file can't be read now (it may be mid-write: the next tick looks again); or, when its
-    provider section can be read but is wrong (a field this version doesn't know, say), the reason why."""
-    from .base import Fail
-    from .launch_admission import space_scope
-    from .providers import binding_for, PERSONAL, read_strict
+def space_of(labels):
     space = labels.get("herdr.task.space") or labels.get("herdr.space") or labels.get("herdr.coordinator.space")
-    space = str(space).split("/")[-1] if space else ""
-    # One read, used for both answers: a second read landing mid-write could never be told from a lasting fault.
+    return bare(str(space)) if space else ""
+
+
+def who_of(k):
+    ref = task_ref(k)
+    if ref:
+        return f"{ref}'s agent ({k['address']})"
+    return f"The task agent in {k['address']}" if (k.get("labels") or {}).get("herdr.task") else f"The Assistant in {k['address']}"
+
+
+UNREAD = object()
+
+
+def binding_here(k, rec, task, kind):
+    """The plan the agent in k comes back on (L2): the binding its start recorded (launch_admission.recorded_binding:
+    its task's row, the copy on its terminal, its start's journal record), rebuilt by the provider owner against the
+    settings at its space now (providers.plan_of_record: the same route, resource or endpoint and sign-in; the recorded
+    deployment kept). UNREAD when the settings file can't be read now (it may be mid-write: the next tick looks
+    again); a Fail with the reason when it can't come back on that binding (held, never started on another)."""
+    from .launch_admission import NO_BINDING, recorded_binding, space_scope
+    from .providers import binding_for, plan_of_record, read_strict
+    labels = k.get("labels") or {}
+    space = space_of(labels)
+    # One read, used for every answer: a second read landing mid-write could never be told from a lasting fault.
     try:
         d = read_strict()
     except Fail:
-        return None
-    try:
-        return binding_for(space_scope(space, d), space, d)["route"] == PERSONAL
-    except Fail as e:
-        return str(e) or "its provider settings can't be read as one"
+        return UNREAD
+    bound = recorded_binding(k, task, rec)
+    if bound is None:
+        raise Fail(NO_BINDING.format(who=who_of(k)))
+    return plan_of_record(bound, binding_for(space_scope(space, d), space, d), kind, who_of(k))
+
+
+def uncomposed(plan, argv):
+    """argv without what an earlier start on plan added in front of its own words (Codex's provider table), so the
+    plan composes onto it once again; Claude Code's --settings and model are merged and replaced by compose()."""
+    extra = plan.get("args") or []
+    return argv[:1] + argv[1 + len(extra):] if extra and argv[1:1 + len(extra)] == extra else list(argv)
 
 
 def restarted(k):
@@ -251,8 +304,11 @@ def bare_shell(k):
 
 
 def plan(k, rec, running):
-    """What to type into `k` now: (how, argv, direct) or None (direct: shell_line's). `running`: the
-    sessions agents run here now."""
+    """What to type into `k` now: (how, argv, direct, carry) or None (direct: shell_line's). how is resume (its own
+    session), fresh (its session is gone: a new conversation, missing history), running (that session runs elsewhere:
+    nothing typed) or held (argv is then the reason). carry: what the line sets besides argv, {env, need, plan,
+    config_dir, previous, kind}. `running`: the sessions agents run here now."""
+    from .providers import compose
     labels = k.get("labels") or {}
     assistant = labels.get("herdr.role") == "coordinator" or k.get("template") in ASSISTANT_TEMPLATES
     # A task's agent only while its task is at work (Working, or Ready for follow-ups): a finished
@@ -260,6 +316,7 @@ def plan(k, rec, running):
     task = task_of(k) if labels.get("herdr.task") else None
     if labels.get("herdr.task") and (task or {}).get("state") not in ("running", "ready"):
         return None
+    previous = (rec or {}).get("session")
     if rec and rec.get("pid") == k.get("pid"):
         # Typed here already: once more only when the resume said its session is gone.
         if rec.get("how") != "resume" or now() - (rec.get("sent") or 0) > LOOK_MS:
@@ -268,36 +325,123 @@ def plan(k, rec, running):
         if not LOST.search("\n".join(screen.split("\n")[-30:])):
             return None
         rec = dict(rec, session=None)
-    # An agent whose start recorded Azure Foundry (herdr.provider): revival types its flags back without its launch
-    # plan's environment or binding (the migration's L2), so it is held, said once (its record then marks it
-    # handled), and left for its task's resume.
-    if labels.get("herdr.provider") not in (None, "", "personal"):
-        return ("held", None, False)
     if not rec:
         # From before records (or lost before the first one): only a terminal the core plainly gave a shell.
         if not bare_shell(k):
             return None
         rec = task_record(k, task) if task else None
+        previous = (rec or {}).get("session")
     if rec and rec.get("session") and rec["session"] in running:
-        return ("running", None, False)
-    # A route at its space that isn't Personal: revival can't carry a plan (L2), so typing the agent back would start
-    # it on the CLI's own sign-in. Held, as for an Azure-started agent; settings that can't be read hold it too.
-    here = personal_here(labels)
-    if here is None:
-        return None  # its settings can't be read now (a write in flight, say): nothing typed, looked at again next tick
-    if here is not True:
-        # Held, said once: the route isn't Personal (False), or the provider section will stay wrong until someone fixes
-        # it (its reason, a string). For "held" the second place is that reason, not an argv.
-        return ("held", here or None, False)
-    if rec and rec.get("session") and rec.get("log") and os.path.isfile(rec["log"]):
-        return ("resume", resume_argv(rec["kind"], rec["argv"], rec["session"], CUT if rec.get("working") else None), not rec.get("shell"))
-    # Its session is gone: a new one, with the handover (and an Assistant's role, its template's words).
-    command, template = template_of() if assistant else (None, None)
-    argv = (rec or {}).get("argv") or (shlex.split(command) if command else None)
-    if not argv:
+        return ("running", None, False, None)
+    command, template = template_of() if assistant and not (rec or {}).get("argv") else (None, None)
+    base = (rec or {}).get("argv") or (shlex.split(command) if command else None)
+    kind = (rec or {}).get("kind") or (kind_of(base[0]) if base else None)
+    if not base or not kind:
         return None
+    # The binding it comes back on: its recorded one, under today's routing (L2). Anything else holds it, said once.
+    try:
+        p = binding_here(k, rec, task, kind)
+    except Fail as e:
+        return ("held", str(e), False, None)
+    if p is UNREAD:
+        return None  # its settings can't be read now (a write in flight, say): nothing typed, looked at again next tick
+    folder = (rec or {}).get("config_dir")
+    shell = os.path.basename(((k.get("argv") or [""])[0]) or "")
+    if (p["route"] != "personal" or folder) and shell not in LINE_SHELLS:
+        return ("held", f"Its shell ({shell or 'unknown'}) can't be given the provider binding or Claude Code folder this "
+                        f"agent started with, so it isn't typed back. Nothing was started.", False, None)
+    base = uncomposed(p, base)
+    if rec and rec.get("session") and rec.get("log") and os.path.isfile(rec["log"]):
+        how, argv = "resume", resume_argv(kind, base, rec["session"], CUT if rec.get("working") else None)
+    else:
+        # Its session is gone: a new one, with the handover (and an Assistant's role, its template's words), on the
+        # same binding: missing history, never a resume.
+        if assistant and template is None:
+            template = template_of()[1]
+        how, argv = "fresh", [*base, lost_message(task_ref(k), template)]
+    try:
+        argv, env = compose(p, argv)
+    except Fail as e:
+        return ("held", str(e), False, None)
+    if folder:
+        env = dict(env, CLAUDE_CONFIG_DIR=folder)
     # Without a record, an Assistant starts as its template does: without the person's shell.
-    return ("fresh", [*argv, lost_message(task_ref(k), template)], not (rec or {}).get("shell"))
+    return (how, argv, not (rec or {}).get("shell"),
+            {"env": env, "need": p.get("credential"), "plan": p, "config_dir": folder, "previous": previous, "kind": kind})
+
+
+def keep_binding(k, new, old):
+    """An Assistant's binding copied onto its revival record while it runs (its start's journal record isn't kept
+    forever), so it comes back on it; a task's agent's stays on its task. Personal adds nothing."""
+    from .launch_admission import recorded_binding
+    from .providers import PERSONAL
+    labels = k.get("labels") or {}
+    if labels.get("herdr.task") or labels.get("herdr.provider") in (None, "", PERSONAL):
+        return new
+    try:
+        b = recorded_binding(k, None, old)
+    except Fail:
+        b = (old or {}).get("provider")
+    return dict(new, provider=b) if b else new
+
+
+def bring_back(k, rec, step, report):
+    """Types step's line into k through launch admission (Admission.type_into), under the agent's own identity: an open
+    start of that agent holds it, and a send hc doesn't confirm is kept uncertain. Records it on the terminal as
+    handled (pid, how, sent, launch) once it was or may have been typed."""
+    from .launch_admission import Admission, agent_identity, digest
+    from .providers import recorded
+    how, argv, direct, carry = step
+    rec = dict(rec or {}, pid=k.get("pid"), how=how, sent=now())
+    if how in ("held", "running"):
+        # Nothing to type: said once (its record marks it handled).
+        write_record(k, rec)
+        if how == "held":
+            report.setdefault("revive_held", []).append({"terminal": k["address"], "why": argv})
+        else:
+            report.setdefault("revived", []).append({"terminal": k["address"], "how": how, "session": rec.get("session")})
+        return
+    shell = (k.get("argv") or [""])[0]
+    line = shell_line(shell, rec.get("cwd") or k.get("cwd"), {**env_of(k), **carry["env"]}, argv, direct, carry["need"])
+    p = carry["plan"]
+    labels = k.get("labels") or {}
+    task = task_of(k) if labels.get("herdr.task") else None
+    identity = agent_identity(k)
+    fixed = {"terminal": k["address"], "pid": k.get("pid"), "line": line}
+
+    def revise():
+        # The binding again from a fresh read: a route, resource, endpoint or sign-in changed since refuses the typing.
+        q = binding_here(k, rec, task, carry["kind"])
+        if q is UNREAD:
+            raise Fail("Shepherdr settings can't be read now, so this revival waits. Nothing was typed.")
+        return digest({**fixed, "route": q["route"], "fingerprint": q["fingerprint"]})
+    facts = {"revival": {"how": how, "missing_history": how == "fresh", "session": rec.get("session") if how == "resume" else None,
+                         "previous_session": carry.get("previous")},
+             "provider": recorded(p)}
+    try:
+        adm = Admission(identity, "revive", space_of(labels) or None, None, revise, who=who_of(k))
+        # claimed(): an open start of the same agent refuses here (its task as read now releases a start it records).
+        adm.task, adm.config_dir = task, carry.get("config_dir")
+        with adm.claimed():
+            out = adm.type_into(k["address"], line, facts, run)
+    except Fail as e:
+        launch = getattr(e, "launch", None)
+        if launch:
+            # It may have been typed: handled, so nothing types it again; its launch id says how to confirm it.
+            write_record(k, dict(rec, launch=launch["launch"]))
+            report.setdefault("revive_uncertain", []).append({"terminal": k["address"], "how": how, **launch, "why": str(e)})
+        else:
+            # Nothing was typed (an open start of the same agent, settings changed): looked at again next tick.
+            report.setdefault("revive_held", []).append({"terminal": k["address"], "why": str(e)})
+        return
+    # Marked as handled before anything else looks: the next tick types nothing here again.
+    write_record(k, dict(rec, launch=out["launch"]))
+    row = {"terminal": k["address"], "how": how, "session": rec.get("session") if how == "resume" else None,
+           "launch": out["launch"]}
+    if how == "fresh":
+        # Missing history: a new conversation, never said as its session resumed.
+        row.update(missing_history=True, previous_session=carry.get("previous"))
+    report.setdefault("revived", []).append(row)
 
 
 def revive_pass(report):
@@ -312,31 +456,64 @@ def revive_pass(report):
         if agent_running(k):
             new = record_of(k)
             if new:
+                new = keep_binding(k, new, rec)
                 running.add(new["session"])
-                if {x: v for x, v in (rec or {}).items() if x not in ("how", "sent")} != new:
+                if {x: v for x, v in (rec or {}).items() if x not in ("how", "sent", "launch")} != new:
                     write_record(k, new)
         elif restarted(k):
             back.append((k, rec))
     for k, rec in back:
         step = plan(k, rec, running)
-        if not step:
-            continue
-        how, argv, direct = step
-        rec = dict(rec or {}, pid=k.get("pid"), how=how, sent=now())
-        if how == "held":
-            write_record(k, rec)
-            why = argv if isinstance(argv, str) else (
-                "its provider isn't Personal (it started on Azure Foundry, or its space routes there): revival can't carry "
-                "that yet (L2). A task's agent: herdr-task resume (--fresh for a new conversation on today's settings); an "
-                "Assistant: a new chat")
-            report.setdefault("revive_held", []).append({"terminal": k["address"], "why": why})
-            continue
-        if argv:
-            shell = (k.get("argv") or [""])[0]
-            r = run(["hc", "send", k["address"], shell_line(shell, rec.get("cwd") or k.get("cwd"), env_of(k), argv, direct)])
-            if r.returncode != 0:
-                report.setdefault("revive_failed", []).append({"terminal": k["address"], "why": (r.stderr or r.stdout).strip()})
-                continue
-        # Marked as handled before anything else looks: the next tick types nothing here again.
-        write_record(k, rec)
-        report.setdefault("revived", []).append({"terminal": k["address"], "how": how, "session": rec.get("session")})
+        if step:
+            bring_back(k, rec, step, report)
+
+
+def lost_record(k):
+    """For `launch revive --lost`: what the terminal's own launch says when it has no revival record yet (an agent the
+    tick hasn't recorded, or one a person or a chat resumed), marked as a resume typed here just now, so plan() looks
+    at its screen and starts a new conversation."""
+    kind, argv = base_argv(k.get("argv"))
+    if not kind:
+        task = task_of(k) if (k.get("labels") or {}).get("herdr.task") else None
+        rec = task_record(k, task) if task else None
+        return rec
+    launch = k.get("argv") or []
+    return {"kind": kind, "session": None, "log": None, "argv": argv, "cwd": k.get("cwd"), "pid": k.get("pid"),
+            "working": False, "shell": any(os.path.basename(str(a)) in SHELLS for a in launch[:launch.index(argv[0])])}
+
+
+def cmd_revive(args, say):
+    """`launch revive [TERMINAL] [--lost]`: the tick's pass, or one terminal here. --lost: its CLI said its session is
+    gone (the service's and the window's lost-session recovery): checked on its screen here, then a new conversation
+    there, once. Nothing is typed where an agent runs."""
+    report = {}
+    if not args.identity:
+        revive_pass(report)
+        return say(args, report, json.dumps(report) if report else "Nothing to bring back here.")
+    if "/" in args.identity:
+        raise Fail("launch revive acts on this machine's terminals: run it there (herdr-task --on MACHINE).")
+    k = hc_json("get", args.identity)
+    if not k or not watched(k):
+        raise Fail(f"{args.identity} isn't an Assistant's or a task agent's terminal here. Nothing was typed.")
+    if not restarted(k):
+        return say(args, {"terminal": args.identity, "how": "none"}, f"{args.identity}: an agent runs there, or it has "
+                   f"ended. Nothing was typed.")
+    rec = read_record(k)
+    if args.lost:
+        if not (rec and rec.get("pid") == k.get("pid") and rec.get("how") in ("fresh", "held")):
+            rec = dict(rec or lost_record(k) or {}, pid=k.get("pid"), how="resume", sent=now())
+    step = plan(k, rec, set())
+    if not step:
+        return say(args, {"terminal": args.identity, "how": "none"}, f"{args.identity}: nothing to bring back (its screen "
+                   f"doesn't say its session is gone, or it was brought back already). Nothing was typed.")
+    bring_back(k, rec, step, report)
+    for key in ("revive_uncertain", "revive_held"):
+        if report.get(key):
+            e = Fail(report[key][0]["why"])
+            if key == "revive_uncertain":
+                e.launch = {x: report[key][0][x] for x in ("launch", "identity", "state")}
+            raise e
+    row = report["revived"][0]
+    said = ("a new conversation started there (its earlier session is gone)" if row["how"] == "fresh" else
+            f"its session {row['session']} resumed" if row["how"] == "resume" else "its session runs elsewhere")
+    say(args, row, f"{args.identity}: {said}.")
