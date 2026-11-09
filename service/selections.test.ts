@@ -23,7 +23,9 @@ const FOUND: Record<string, any> = {
   "all\0claude": { options: [{ value: "opus-deployment", label: "opus-deployment · claude-opus-5-5 (1)", model: "claude-opus-5-5" },
     { value: "custom-deployment", label: "custom-deployment · house-model (2)", model: "house-model" }], revision: "1" },
 };
-const settings: any = { discovery: (space: string | null, kind: string) => FOUND[`${space ?? "all"}\0${kind}`] ?? { options: [], revision: "" } };
+// Settings.discoveryFor's shape: the space's own list, or Everywhere's when read under the space's configuration (that
+// judgement is proved against real Settings in service/settings.test.ts)
+const settings: any = { discoveryFor: (space: string | null, kind: string) => FOUND[`${space ?? "all"}\0${kind}`] ?? FOUND[`all\0${kind}`] ?? { options: [], revision: "" } };
 const SHOWN = { ok: true, id: 3, locked: false, route: "azure-foundry", revision: "abcd1234abcd1234",
   selection: { agent: "claude", deployment: "saved-deployment", effort: null },
   clis: { claude: { routing: "Azure Foundry example with Entra ID", deployment: "claude-default", revision: "r1", problem: null },
@@ -68,7 +70,7 @@ test("Personal offers no deployment list, and an Assistant's choices come from p
   expect(v.menus.claude.models[0].id).toBe("claude-default");
 });
 
-test("a space with no list of its own shows Everywhere's (read under the same configuration)", () => {
+test("a space's list is the one Settings gives for it", () => {
   const menus: any = menusFor(settings, "sp1", { claude: [], codex: [] }, {});
   expect(menus.claude.models.map((m: any) => m.id)).toEqual(["opus-deployment", "custom-deployment"]);
   expect(menus.codex.models).toEqual([]);

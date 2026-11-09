@@ -84,11 +84,16 @@ export function providerRows(view, t) {
   const p = view.pv;
   if (p.scope !== (view.scope ?? null)) {
     p.scope = view.scope ?? null;
-    p.setting = true;
-    for (const field of TEXT_FIELDS) p.boxes[field].set_value(valueOf(view, field));
-    p.setting = false;
     p.err = {};
   }
+  // A box shows what the file says now unless it is being edited or holds a refused value: a pick from Refresh's list,
+  // a Reset or a change elsewhere shows at once, so a later blur never writes the old words back over it.
+  p.setting = true;
+  for (const field of TEXT_FIELDS) {
+    const want = valueOf(view, field);
+    if (!p.focus[field] && !p.err[field] && p.boxes[field].value() !== want) p.boxes[field].set_value(want);
+  }
+  p.setting = false;
   const azure = valueOf(view, "route") === "azure-foundry";
   return PROVIDER.rows.filter((r) => r.field === "route" || azure).map((r) => {
     const scoped = view.scoped("provider", r.field);

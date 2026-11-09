@@ -497,7 +497,7 @@ async function doAction(body: any): Promise<Response> {
     } catch (err) { return json({ ok: false, error: (err as Error).message }); }
   }
   if (body?.type === "azure-choices") {
-    // an Assistant's new start in a space (the window's chat, the web's): what it can pick on Azure Foundry, and the
+    // an Assistant's new start in a space (the window's chat; the web has no Assistant pick): what it can pick on Azure Foundry, and the
     // revision a pick is bound to (herdr-task provider show)
     try {
       const sp = typeof body.place === "string" && body.place !== "all" ? model.spaceById(body.place) : null;

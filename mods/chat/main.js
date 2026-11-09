@@ -1019,9 +1019,14 @@ export default class Chat extends View {
     const mine = t.address === this.addr;
     if (mine) { this.note = { id: `note-${Date.now()}`, text: WORDS.sessionGone }; cx.notify(); }
     try {
-      // An agent that started on Azure Foundry: a new start here can't carry its binding (L2, core/agents.js).
+      // An agent that started on Azure Foundry, or a route here that isn't Personal: a new start here can't carry a
+      // binding or a plan (L2, core/agents.js), so it is refused, asked of herdr-task's provider owner.
       const held = agent.providerRefusal(t);
       if (held) throw new Error(held);
+      const shown = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, agent.routeArgs(t, t.address.includes("/") ? t.address.split("/")[0] : null))
+        .then((r) => (r.code === 0 ? JSON.parse(r.stdout || "null") : null), () => null).catch(() => null);
+      const off = agent.routeRefusal(shown);
+      if (off) throw new Error(off);
       // fresh drops what its launch set, and a new start carries no CLAUDE_CONFIG_DIR (core/agents.js).
       const why = await agent.lostRefusal(kind, t, this.folderReader(t.address), mine ? this.path : null);
       if (why) throw new Error(why);
@@ -1660,7 +1665,8 @@ export default class Chat extends View {
       const pick = this.choice?.sel ?? props()?.settings;
       const az = this.choice?.data?.azure;
       const known = az && this.choice.data.menus?.[pick?.agent]?.models?.find((m) => m.id === pick?.model);
-      const st = az && pick?.agent ? { ...pick, deployment: pick.model, revision: az.revision?.[pick.agent], effort: known?.efforts?.includes(pick.effort) ? pick.effort : null } : pick;
+      // A choice the person made (a pick replaces the shown default, which is marked auto) goes as the deployment.
+      const st = az && pick?.agent && !pick.auto ? { ...pick, deployment: pick.model, revision: az.revision?.[pick.agent], effort: known?.efforts?.includes(pick.effort) ? pick.effort : null } : pick;
       const on = machine ? { on: machine } : {};
       const there = !machine || !st?.agent ? true : (await knownAgents(on).catch(() => []))
         .some((a) => (a.key === st.agent || (a.run ?? [])[0] === st.agent) && a.installed !== false);
@@ -1785,7 +1791,8 @@ export default class Chat extends View {
         const fits = st?.agent && data.menus[st.agent] && (!az || data.menus[st.agent].models.some((m) => m.id === st.model));
         const first = Object.keys(data.menus)[0];
         const sel = fits ? { perm: data.permDefault[st.agent], effort: null, fast: false, ...st }
-          : az && first ? { agent: first, model: az.clis?.[first]?.deployment || data.menus[first].models[0]?.id || null, effort: null, fast: false, perm: data.permDefault[first] }
+          // shown as what it would start on; not a pick (auto), so the Assistant's own deployment still decides
+          : az && first ? { agent: first, model: az.clis?.[first]?.deployment || data.menus[first].models[0]?.id || null, effort: null, fast: false, perm: data.permDefault[first], auto: true }
           : { ...data.defaults };
         this.choice = { sel, data, key: this.choice.key };
       } catch { this.choice = null; }

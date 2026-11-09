@@ -1008,7 +1008,7 @@ class AssistantStarts(unittest.TestCase):
         self.assertNotIn("provider", rec)
 
     def test_an_azure_new_start_runs_the_owners_own_one_off_template_and_records_its_binding(self):
-        for auth, credential in (("entra-id", None), ("api-key", "ANTHROPIC_FOUNDRY_API_KEY")):
+        for auth, credential in (("entra-id", None), ("api-key", "ANTHROPIC_FOUNDRY_API_KEY"), ("bearer-token", "ANTHROPIC_FOUNDRY_AUTH_TOKEN")):
             with self.subTest(auth=auth):
                 f = Fixture(self)
                 self.template(f)
@@ -1041,6 +1041,32 @@ class AssistantStarts(unittest.TestCase):
                 # Removed once hc ran; no credential value in anything kept or handed on.
                 self.assertFalse(os.path.exists(os.path.join(f.tmp, "templates", name + ".md")))
                 self.assertNotIn("marker-foundry-key-7f3a", json.dumps(f.calls()) + json.dumps(f.journal()) + p.stdout + p.stderr)
+
+    def test_a_codex_assistant_starts_on_its_provider_table(self):
+        f = Fixture(self)
+        self.template(f, "codex --no-daemon")
+        d = json.loads(json.dumps(PERSONAL))
+        d["everywhere"]["provider"] = {"route": "azure-foundry", "codex_endpoint": "https://example.openai.azure.com/openai/v1",
+                                       "codex_deployment": "code-deployment"}
+        f.write_settings(d)
+        p = self.run_start(f, "--new-start", "assistant")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        [one] = [c for c in f.calls() if c[0] == "template"]
+        command = re.search(r"^command: (.+)$", one[2], re.M).group(1)
+        self.assertIn("export OPENAI_BASE_URL=''; export OPENAI_API_KEY=''; ", command)
+        self.assertIn('if [ -z "${AZURE_OPENAI_API_KEY:-}" ]', command)
+        self.assertRegex(command, r"exec codex -c 'model_provider=\"shepherdr_azure_[0-9a-f]{64}\"' -c ")
+        self.assertIn(" -m code-deployment --no-daemon", command)
+        rec = f.starts("coordinator:")[0]["provider"]
+        self.assertEqual((rec["agent"], rec["auth"], rec["deployment"]), ("codex", "api-key", "code-deployment"))
+
+    def test_a_remote_azure_new_start_says_so_before_reading_a_template(self):
+        f = Fixture(self)
+        self.azure(f)  # no template on this machine at all
+        p = self.run_start(f, "--new-start", "assistant", words=["--on", "vm1", *self.WORDS])
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("would run on vm1", json.loads(p.stdout)["error"])
+        self.assertEqual(f.calls(), [])
 
     def test_a_chats_choice_is_bound_to_the_routing_it_was_made_under(self):
         f = Fixture(self)

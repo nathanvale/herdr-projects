@@ -75,7 +75,7 @@ the start.
 | Resume or switch of a recorded conversation (same CLI, known session) | Its recorded binding, rebuilt by the same planner. |
 | Resume or switch with `--fresh`, or to another CLI | A new conversation with a handoff, on today's settings. |
 | An Assistant's new start (window chat, New space, first message) | Today's settings for the Assistant's role, or the chat's pick. |
-| Restart, Switch agent, fork, a lost session's new start, revival (L2) | Personal only. Anything else refuses with its reason. |
+| Restart, Switch agent, fork, a lost session's new start, revival (L2) | Personal only: an agent that started on Azure, or a route at its space that isn't Personal (asked of `herdr-task provider show`; unreadable refuses), refuses with its reason. |
 
 - Each Azure start records `{route, agent, target, deployment, auth, fingerprint}` on its agent
   (a task's) or its journal record (an Assistant's), and labels its terminal
@@ -97,6 +97,16 @@ the start.
   word, and is removed once hc has run. A template command that isn't one plain claude or codex
   command refuses on Azure. Personal starts keep the site's own words and template.
 
+## Compatibility
+
+- Output: `provider plan --json` gains `target` and `revision` (Personal too: `target` is null),
+  `dispatch` is `planned` for an Azure plan (A1 said `held`), and `launch run --check --json` gains
+  `route`. All additive; the words and exit codes of existing refusals are kept.
+- Mixed versions: A1's and L1's herdr-task refuse a `provider` field they don't know, on every route.
+  Once a role deployment is saved (and pushed to another machine), a machine still on an older
+  herdr-task refuses its starts, Personal included, until it is updated or the field is removed.
+- A tab agent (a chat of another role) starts Personal only, with its own reason.
+
 ## Held, not invented
 
 - Native behaviour of every route is unproven: the settings `env` blanking, Codex's root `-c`
@@ -106,8 +116,14 @@ the start.
 - The credential check runs after the terminal exists. There is no presence check before effects,
   because herdr-task's environment is not the terminal's.
 - Selection and settings revisions are content digests plus a task's save counter. Settings
-  changed away and back read as unchanged, as in L1.
-- The window's task rows have no selector; the web's do, and so does `herdr-task select`.
+  changed away and back read as unchanged, as in L1. A window chat's pick made under Personal
+  carries no revision.
+- The window's task rows have no selector; the web's do, and so does `herdr-task select`. The web
+  has no Assistant pick: a web New space or first message starts on the Assistant's deployment.
+- Source-inspected only, with no test of their own: the window's Provider rows
+  (`provider-section.js`), the chat's Azure pick and its `--deployment`/`--revision` words, the web's
+  `select.tsx` and `DeploymentValue`, and the route refusal in `service/watch.ts` and the chat's lost
+  session. Their owners' rules are tested through `herdr-task` and the service.
 - Inventory and an effort list don't prove account, inference, tool or effort support.
 
 ## Regressions
@@ -119,10 +135,12 @@ no dependencies installed). CI runs them.
   deployments, resume keeping the recorded deployment (Claude, and Codex's effort and Fast),
   changed routing refused before effects with `--fresh` after, Personal never moved, manual
   restart Personal only, automation and tick starts, `select` revision/save-only/lock/routing
-  binding, `provider show`, a backup on Azure, and the shell check run by a real `/bin/sh`.
+  binding, a deployment refused on Personal, `provider show`, a backup on Azure, revival held under
+  an Azure route or label, and the shell check run by a real `/bin/sh`.
 - `test/test_launch_admission.py`: Personal new starts unchanged; an Azure new start's one-off
-  template, label, record and removal; a chat's pick refused under changed routing; a template
-  command that isn't plain; restart of an Azure-started Assistant refused.
+  template, label, record and removal for each Claude sign-in and for Codex; a remote one refused
+  before any template is read; a chat's pick refused under changed routing; a template command
+  that isn't plain; restart of an Azure-started Assistant refused.
 - `service/settings.test.ts`: the shared field table, Provider rows at both levels, inheritance,
   empty values and Reset, and Refresh with a stand-in `az`: nothing asked until Refresh, nothing
   selected, a stale pick refused, typed entry, and Everywhere's one-machine rule.

@@ -628,8 +628,10 @@ Detail, decisions and authored regressions: [Azure selectors and bound starts](.
   an owner-written one-off template and records its binding in the journal.
 - Held for L2: `restart.sh`, the window's and the web's Restart and Switch agent (`lib/agent.js`,
   `service/agents.ts`, `herdr-task switch --restart`), fork, a lost session's new start
-  (`service/watch.ts`, the chat) and `revive.py` admit Personal only and refuse an Azure-started agent
-  (`core/agents.js providerRefusal`, `--replaced-route`).
+  (`service/watch.ts`, the chat) and `revive.py` admit Personal only: they refuse an Azure-started agent
+  (`core/agents.js providerRefusal`, `--replaced-route`) and a route at the agent's space that isn't
+  Personal (`routeRefusal`, from `herdr-task provider show`; `revive.py` reads it through launch
+  admission's strict read).
 - Not qualified: every native route, the credential check's timing (after the terminal exists),
   Codex's root overrides before `resume`, managed or required-provider layers, and content revisions
   that can't see settings changed away and back.

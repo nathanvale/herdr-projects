@@ -193,11 +193,19 @@ export class Settings {
   }
 
   /** What one CLI's deployment picker shows at a level now: Refresh's last inventory under today's configuration (none
-   *  under another), and its revision (when it was read), which a pick from it carries back. */
-  discovery(scope: string | null, kind: AzureKind) {
-    const v = this.deployments.view(scope ?? "all", kind, this.discoveryConfig(scope, kind));
+   *  under another), and its revision (when it was read), which a pick from it carries back. from: whose Refresh to
+   *  show (default the level's own), always judged by this level's configuration. */
+  discovery(scope: string | null, kind: AzureKind, from: string = scope ?? "all") {
+    const v = this.deployments.view(from, kind, this.discoveryConfig(scope, kind));
     return { kind, busy: v.busy, options: v.options.map((o) => ({ value: o.value, label: o.label, model: o.model })), hint: v.hint,
       ...(v.warn ? { warn: v.warn } : {}), revision: v.checkedAt === undefined ? "" : String(v.checkedAt) };
+  }
+
+  /** A selector's list at a space (null: Everywhere): the space's own Refresh, else Everywhere's only when it was read
+   *  under the space's own resource or endpoint and subscription (a space set to another resource gets none). */
+  discoveryFor(scope: string | null, kind: AzureKind) {
+    const own = this.discovery(scope, kind);
+    return own.options.length || !scope ? own : this.discovery(scope, kind, "all");
   }
 
   /** Refresh, asked for by the person: one CLI's deployments at a level (a space: its machine; Everywhere: every

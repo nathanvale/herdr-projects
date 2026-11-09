@@ -643,6 +643,17 @@ class TaskSelection(unittest.TestCase):
         self.assertEqual(agent[agent.index("--model") + 1], "claude-deployment")
         f.settle(tid=tid)
 
+    def test_a_deployment_isnt_chosen_on_personal(self):
+        f = Fixture(self)
+        tid = f.add("--here")
+        shown = f.ok("select", str(tid), "--folder", f.repo)
+        self.assertIn("on Azure Foundry only", f.refused("select", str(tid), "--folder", f.repo, "--agent", "claude", "--deployment", "x",
+                                                         "--revision", shown["revision"]))
+        self.assertNotIn("deployment", f.task(tid))
+        # The CLI and effort are still a choice on Personal.
+        f.ok("select", str(tid), "--folder", f.repo, "--agent", "codex", "--effort", "high", "--revision", shown["revision"])
+        self.assertEqual((f.task(tid)["agent"], f.task(tid)["effort"]), ("codex", "high"))
+
     def test_a_deployment_that_cant_be_one_is_refused_and_never_repeated(self):
         f = Fixture(self)
         tid = f.add("--here")
@@ -1015,6 +1026,25 @@ class Binding(unittest.TestCase):
         self.assertEqual(("backup" in task, started, ran), (False, [], []))
         self.assertTrue(row["reason"].startswith("Out of allowance, backup held: Codex"), row["reason"])
         self.assertLessEqual(len(row["reason"]), 40)
+
+    def test_revival_holds_an_agent_whose_route_or_start_isnt_personal(self):
+        """revive.plan (L2's site): a lost Assistant is typed back on Personal only. Under an Azure route at its space,
+        or with an Azure-started label, it is held, never started on the CLI's own sign-in."""
+        import herdr_task.revive as revive
+        k = {"address": "t1", "pid": 7, "argv": ["/bin/zsh"], "labels": {"herdr.role": "coordinator", "herdr.coordinator.space": "sp1"}}
+        rec = {"kind": "claude", "session": "s1", "log": "/nonexistent/s1.jsonl", "argv": ["claude"], "pid": 1}
+        for provider, label, held in (({"route": "personal"}, None, False), ({"route": "azure-foundry", **CLAUDE}, None, True),
+                                      ({"route": "personal"}, "azure-foundry", True)):
+            with self.subTest(route=provider["route"], label=label):
+                with open(self.file, "w") as f:
+                    json.dump({"everywhere": {"provider": provider}}, f)
+                labels = {**k["labels"], **({"herdr.provider": label} if label else {})}
+                step = revive.plan({**k, "labels": labels}, dict(rec), set())
+                self.assertEqual(step is not None and step[0] == "held", held, step)
+        # Settings that can't be read can't say Personal: held too.
+        with open(self.file, "w") as f:
+            f.write("{")
+        self.assertEqual(revive.plan(k, dict(rec), set())[0], "held")
 
     def test_the_credential_check_runs_the_agent_only_when_its_variable_is_set(self):
         """The guard in_shell() puts in the agent's own shell, run by a real POSIX shell: missing or empty, it names

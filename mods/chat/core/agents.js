@@ -408,6 +408,25 @@ export function providerRefusal(t) {
   return route && route !== "personal" ? PROVIDER_HELD : null;
 }
 
+// The same sites under a route that isn't Personal: they can't carry a plan (L2), so a new start there would run on the
+// CLI's own sign-in, the silent Personal fallback the contract forbids. `shown` is herdr-task's `provider show --json`
+// for the agent's role and space (its provider owner's answer); none (it couldn't say) refuses too.
+export const ROUTE_HELD = "Provider is Azure Foundry here, and starting it again here can't carry a launch plan yet, so it would start on the CLI's own sign-in. Nothing was started. Resume or switch a task's agent with herdr-task, or start a new Assistant chat.";
+export const ROUTE_UNKNOWN = "Which provider this space's settings set can't be read now, so it wasn't started again here. Nothing was started.";
+export function routeRefusal(shown) {
+  if (!shown || typeof shown.route !== "string") return ROUTE_UNKNOWN;
+  return shown.route === "personal" ? null : ROUTE_HELD;
+}
+// The words that ask herdr-task for that answer (`provider show`): an agent's role and space, from its labels, and the
+// folder it works in; on another machine (machine), that machine's herdr-task.
+export function routeArgs(t, machine = null) {
+  const l = t?.labels ?? {};
+  const space = l["herdr.task.space"] ?? l["herdr.space"] ?? l["herdr.coordinator.space"] ?? null;
+  const folder = t?.foreground?.cwd ?? t?.cwd ?? null;
+  return [...(machine ? ["--on", machine] : []), "provider", "show", "--role", l["herdr.task"] ? "worker" : "coordinator",
+    ...(space ? ["--space", String(space).split("/").pop()] : []), ...(folder ? ["--folder", folder] : []), "--json"];
+}
+
 // The conversation's id, from its log's file name; none for one nothing may continue (inOtherFolder).
 export function sessionOf(kind, path) {
   if (inOtherFolder(kind, path)) return null;

@@ -537,7 +537,7 @@ def admit_assistant_start(role, space, hc_args, slot=None, config_dir=None, argv
             now = selection_revision(binding_for(s, space, d), agent_key(argv))
             if now != revision:
                 raise Fail(STALE_SELECTION.format(revision))
-        plan = admit_assistant(s, space, d, machine, argv, deployment, replaces)
+        plan = admit_assistant(s, space, d, machine, argv, deployment, replaces, tab=role == "agent" and not replaces and not argv)
         held["plan"] = plan
         return digest({"role": role, "route": plan["route"], "fingerprint": plan["fingerprint"], "space": space,
                        "machine": machine, "hc": list(hc_args), "argv": list(argv) if argv else None, "config_dir": config_dir})
@@ -785,7 +785,7 @@ def launch_run(args, say):
         raise Fail("Give the hc run words after \"--\".")
     # An Azure new start without its own argv runs its source template's command, planned; a Personal one keeps
     # its words as they are, so its template isn't read.
-    if new and argv is None and space_binding(space)["route"] == AZURE:
+    if new and argv is None and on_machine(words) is None and space_binding(space)["route"] == AZURE:
         argv = template_argv(source, read_template(source)[0])
     adm = admit_assistant_start(args.role, space, words, args.slot if args.role == "agent" else None, folder,
                                 (argv or ["claude"]) if new else None, getattr(args, "deployment", None),

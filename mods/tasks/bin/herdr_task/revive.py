@@ -218,6 +218,18 @@ def template_of(name="assistant"):
     return cmd, text
 
 
+def personal_here(labels):
+    """Whether the route at a terminal's space (its labels) is Personal, as launch admission reads it (strictly)."""
+    from .base import Fail
+    from .launch_admission import space_binding
+    from .providers import PERSONAL
+    space = labels.get("herdr.task.space") or labels.get("herdr.space") or labels.get("herdr.coordinator.space")
+    try:
+        return space_binding(str(space).split("/")[-1] if space else "")["route"] == PERSONAL
+    except Fail:
+        return False
+
+
 def restarted(k):
     """A terminal the core gave a new process (a plain shell) since its agent ran there, and where
     no agent runs now."""
@@ -260,6 +272,10 @@ def plan(k, rec, running):
         rec = task_record(k, task) if task else None
     if rec and rec.get("session") and rec["session"] in running:
         return ("running", None, False)
+    # A route at its space that isn't Personal: revival can't carry a plan (L2), so typing the agent back would start
+    # it on the CLI's own sign-in. Held, as for an Azure-started agent; settings that can't be read hold it too.
+    if not personal_here(labels):
+        return ("held", None, False)
     if rec and rec.get("session") and rec.get("log") and os.path.isfile(rec["log"]):
         return ("resume", resume_argv(rec["kind"], rec["argv"], rec["session"], CUT if rec.get("working") else None), not rec.get("shell"))
     # Its session is gone: a new one, with the handover (and an Assistant's role, its template's words).
@@ -296,8 +312,9 @@ def revive_pass(report):
         rec = dict(rec or {}, pid=k.get("pid"), how=how, sent=now())
         if how == "held":
             write_record(k, rec)
-            report.setdefault("revive_held", []).append({"terminal": k["address"], "why": "started on Azure Foundry: revival "
-                                                         "can't carry its binding yet (L2); resume its task with herdr-task"})
+            report.setdefault("revive_held", []).append({"terminal": k["address"], "why": "its provider isn't Personal (it started "
+                                                         "on Azure Foundry, or its space routes there): revival can't carry "
+                                                         "that yet (L2); resume its task with herdr-task"})
             continue
         if argv:
             shell = (k.get("argv") or [""])[0]

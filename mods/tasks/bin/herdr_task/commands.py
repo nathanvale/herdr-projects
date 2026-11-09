@@ -943,6 +943,10 @@ def cmd_select(args):
                 t["agent"] = agent
                 if args.deployment is not None:
                     dep = clean(f"{agent}_deployment", args.deployment)
+                    if dep and cur["route"] != "azure-foundry":
+                        # A deployment means nothing on Personal: kept, it would be ignored now and refused later.
+                        raise Fail("A deployment is chosen on Azure Foundry only, and Provider is Personal here. Nothing was "
+                                   "changed; choose the CLI and effort, or set Provider to Azure Foundry first.")
                     if dep:
                         t["deployment"] = dep
                     else:

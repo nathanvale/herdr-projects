@@ -28,14 +28,10 @@ async function ask(args: string[]) {
   return out;
 }
 
-/** Each CLI's list at a space (null: Everywhere): what Refresh found at the space itself, else Everywhere's under the
- *  same configuration (Settings.discovery shows nothing read under another), with the saved deployments kept in it. */
+/** Each CLI's list at a space (null: Everywhere): what Refresh found at the space itself, else Everywhere's only when it
+ *  was read under the space's own configuration (Settings.discoveryFor), with the saved deployments kept in it. */
 export function menusFor(settings: Settings, space: string | null, keep: Record<Kind, (string | null | undefined)[]>, dflts: any) {
-  return Object.fromEntries(KINDS.map((k) => {
-    const own = settings.discovery(space, k);
-    const found = own.options.length || !space ? own : settings.discovery(null, k);
-    return [k, azureMenu(k, found.options, (keep[k] ?? []).filter(Boolean), dflts?.[k])];
-  }));
+  return Object.fromEntries(KINDS.map((k) => [k, azureMenu(k, settings.discoveryFor(space, k).options, (keep[k] ?? []).filter(Boolean), dflts?.[k])]));
 }
 
 export type TaskRef = { ref: string; folder: string; machine: string | null; space?: string | null };

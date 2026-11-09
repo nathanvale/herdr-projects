@@ -368,6 +368,14 @@ test("Refresh's list is read only when asked, and a pick from a list read under 
   // Typed by hand, a deployment needs no list.
   s.set("provider.claude_deployment", "typed-deployment");
   expect(fileNow().everywhere.provider.claude_deployment).toBe("typed-deployment");
+  // A space with no list of its own sees Everywhere's only under its own configuration: set to another resource, none.
+  const sp = { id: "sp8", name: "other", machine: null, folder: "/other8" };
+  s.set("provider.claude_resource", "example");
+  await s.refreshDeployments("claude", "all", null);
+  expect(s.discoveryFor("sp8", "claude").options.map((o: any) => o.value)).toEqual(["opus-deployment"]);
+  s.set("provider.claude_resource", "elsewhere", "sp8", sp);
+  expect(s.discoveryFor("sp8", "claude").options).toEqual([]);
+  expect(s.discoveryFor(null, "claude").options.map((o: any) => o.value)).toEqual(["opus-deployment"]);
   // Everywhere with another machine connected has no single machine to read on: refused before asking Azure.
   s.sections(null, [], ["vm1"]);
   await expect(s.refreshDeployments("claude", "all", null)).rejects.toThrow("one machine");

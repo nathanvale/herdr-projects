@@ -119,6 +119,9 @@ CHANGED_ROUTING = ("{who}'s conversation started on {was}, and this folder's set
                    "settings back, or start a new conversation with a handoff (resume or switch with --fresh).")
 UNKNOWN_RECORD = ("{who}'s recorded provider binding can't be read as one this version planned, so it can't be resumed on "
                   "it. Nothing was started; start a new conversation with a handoff (resume or switch with --fresh).")
+TAB_PERSONAL = ("Provider is Azure Foundry here, and a tab agent starts Personal only: its start can't carry a launch plan "
+                "(only a task's agent and an Assistant's new start can). Nothing was started. Start it as a task, or set "
+                "Provider to Personal for this space.")
 STALE_SELECTION = ("The provider settings or the choice changed since this start was chosen (revision {}), so it isn't what "
                    "was picked. Nothing was started; choose again.")
 
@@ -512,12 +515,13 @@ def admit_launch(s, argv, space=None, d=None, role=None, deployment=None, bound=
     return plan
 
 
-def admit_assistant(s, space=None, d=None, machine=None, argv=None, deployment=None, replaces=None):
+def admit_assistant(s, space=None, d=None, machine=None, argv=None, deployment=None, replaces=None, tab=False):
     """An Assistant's (or a tab agent's) start, before any effect: its plan. Only a new start from its three
     new-start sites carries one (argv: the agent's own argv, `launch run --new-start`); there an Azure binding is
     planned for the Assistant's role (its deployment, or the chat's chosen one). Every other start (a restart, a lost
     session started anew: L2) admits Personal only, and refuses to replace an agent whose start recorded Azure
-    (replaces: that agent's recorded route). machine: where it would run when that isn't here (`hc run --on`)."""
+    (replaces: that agent's recorded route); tab: a tab agent's start, Personal only too, with its own reason.
+    machine: where it would run when that isn't here (`hc run --on`)."""
     binding = binding_for(s, space, d)
     if replaces not in (None, PERSONAL):
         raise Fail(RESTART_HELD.format("the agent it replaces started on Azure Foundry: restarting it Personal would move its "
@@ -527,7 +531,7 @@ def admit_assistant(s, space=None, d=None, machine=None, argv=None, deployment=N
     if machine:
         raise Fail(NOT_EXECUTION_HOST.format(machine))
     if argv is None:
-        raise Fail(RESTART_HELD.format("Provider is Azure Foundry here"))
+        raise Fail(TAB_PERSONAL if tab else RESTART_HELD.format("Provider is Azure Foundry here"))
     plan = launch_plan(agent_key(argv), binding, "coordinator", deployment)
     compose(plan, argv)
     return plan
