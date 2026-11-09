@@ -18,6 +18,7 @@ import sys
 import tempfile
 import time
 import unittest
+import uuid
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(ROOT, "mods", "tasks", "bin")
@@ -112,11 +113,11 @@ AZURE = {"route": "azure-foundry", "claude_resource": "example", "claude_deploym
 class Fixture:
     """A throwaway git repo, task store, settings file and templates folder, and a stateful hc."""
 
-    def __init__(self, test, settings=PERSONAL):
+    def __init__(self, test, settings=PERSONAL, name="repo"):
         self.test = test
         self.tmp = os.path.realpath(tempfile.mkdtemp())
         test.addCleanup(shutil.rmtree, self.tmp, True)
-        self.repo = os.path.join(self.tmp, "repo")
+        self.repo = os.path.join(self.tmp, name)
         os.makedirs(self.repo)
         for args in (["init", "-q", "-b", "main"], ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "--allow-empty", "-m", "init"]):
             subprocess.run(["git", "-C", self.repo, *args], check=True, capture_output=True)
@@ -577,6 +578,48 @@ class TaskStarts(unittest.TestCase):
         # Back on Personal the next tick starts it once.
         f.write_settings(PERSONAL)
         self.assertEqual([x["id"] for x in f.ok("tick", "--folder", f.repo)["started"]], [second])
+        self.assertEqual(len(f.runs()), 1)
+
+
+@ON_CI
+class WorktreeReconcile(unittest.TestCase):
+    """G1: a worktree task's start whose reply is lost, so its herdr-task saves nothing, then
+    launch reconcile. The task must record the worktree, branch, base and start commit its agent
+    runs in, not only the agent.
+
+    HOME can't be a throwaway here: herdr-task refuses every hc call when HOME isn't the account's
+    own (base.not_real), so the start would stop there. The worktree goes under
+    ~/.herdr/worktrees/<this repo's own unique name>, removed afterwards."""
+
+    def git(self, *args):
+        return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout.strip()
+
+    def test_a_reconciled_worktree_start_records_its_worktree_branch_base_and_start(self):
+        name = "lwt" + uuid.uuid4().hex[:10]
+        f = Fixture(self, name=name)
+        self.addCleanup(shutil.rmtree, os.path.join(os.path.expanduser("~"), ".herdr", "worktrees", name), True)
+        tid = f.ok("add", "Fix login", "--folder", f.repo, "--space", "sp1")["id"]
+        f.set_mode("hidden")
+        p = f.run("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now", "--worktree", "--json")
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        [rec] = f.starts()
+        self.assertEqual(rec["state"], "submission-uncertain")
+        # What the start made is on disk, and its task list (never saved) doesn't name it.
+        blocks = [dict(line.split(" ", 1) for line in b.splitlines() if " " in line)
+                  for b in self.git("-C", f.repo, "worktree", "list", "--porcelain").split("\n\n")]
+        [made] = [b for b in blocks if os.path.realpath(b["worktree"]) != os.path.realpath(f.repo)]
+        worktree, branch = os.path.realpath(made["worktree"]), made["branch"].removeprefix("refs/heads/")
+        start = self.git("-C", worktree, "rev-parse", "HEAD")
+        self.assertIsNone(f.task(tid).get("worktree"))
+        # Its terminal shows up carrying the launch id; reconcile puts the start on its task.
+        f.set_mode("ok")
+        f.seed(address="t70", state="live", labels={"herdr.launch": rec["launch"]})
+        out = f.ok("launch", "reconcile", rec["identity"], rec["launch"])
+        self.assertEqual(out["state"], "confirmed")
+        t = f.task(tid)
+        self.assertEqual([a["address"] for a in t["agents"]], ["t70"])
+        self.assertEqual((os.path.realpath(t.get("worktree") or ""), t.get("branch"), t.get("base"), t.get("start")),
+                         (worktree, branch, "main", start))
         self.assertEqual(len(f.runs()), 1)
 
 
