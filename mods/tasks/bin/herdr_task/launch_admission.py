@@ -794,14 +794,14 @@ def launch_run(args, say):
     adm = admit_assistant_start(args.role, space, words, args.slot if args.role == "agent" else None, folder,
                                 (argv or ["claude"]) if new else None, getattr(args, "deployment", None),
                                 getattr(args, "revision", None), replaces)
-    if args.check:
-        # Preflight only, before the start site changes anything: its route and an earlier start still open.
-        return say(args, {"admitted": True, "identity": adm.identity, "route": adm.plan["route"]}, f"{adm.identity}: admitted.")
     azure = adm.plan["route"] == AZURE
     if azure and argv is None:
         # The route read Personal when the template was skipped and Azure at admission: settings changed between the
-        # two reads. Refused before anything is claimed or sent, never planned on a stand-in argv.
+        # two reads. Refused before anything is claimed or sent, never planned on a stand-in argv (--check too).
         raise Fail(CHANGED.format("planned"))
+    if args.check:
+        # Preflight only, before the start site changes anything: its route and an earlier start still open.
+        return say(args, {"admitted": True, "identity": adm.identity, "route": adm.plan["route"]}, f"{adm.identity}: admitted.")
     if azure and words.count(new) != 1:
         raise Fail("--new-start names the template word its hc run words give once. Nothing was started.")
     made = None

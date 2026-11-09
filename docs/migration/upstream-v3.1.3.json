@@ -104,7 +104,7 @@
       "phase": "A2",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "ff2a7063124b5fc64ed6a202a5a0de07708ca8e56e31fd6e6a3cd299d6c2762e"
+      "sha256": "ce901348fe5aaafe68b5267718916900c3389d8d1853eabc401274677192bccf"
     },
     {
       "phase": "A2",
@@ -344,7 +344,7 @@
       "phase": "A2",
       "path": "mods/tasks/bin/herdr_task/launch_admission.py",
       "upstream_blob": null,
-      "sha256": "f71883ac2884837fd0267051fd3f54572ddab8b49cb70571b88dfe7dd9cc67bf"
+      "sha256": "ff540f68b6c185553a9879a249eeca50c87b081ca659d4bfe49366567f410747"
     },
     {
       "phase": "A2",

@@ -1145,6 +1145,7 @@ class Binding(unittest.TestCase):
     def test_revival_reads_the_settings_once(self):
         """personal_here reads the file once and judges both answers from that read: a second read landing mid-write
         would otherwise hold a Personal agent for good as a lasting fault."""
+        import herdr_task.launch_admission as LA
         import herdr_task.providers as providers
         import herdr_task.revive as revive
         with open(self.file, "w") as f:
@@ -1156,9 +1157,12 @@ class Binding(unittest.TestCase):
             if len(reads) > 1:
                 raise self.p.Fail("mid-write")
             return real(path)
-        p = self.mock.patch.object(providers, "read_strict", once)
-        p.start()
-        self.addCleanup(p.stop)
+        # Both names a read could go through: providers' own, and the copy launch admission imported (space_binding's,
+        # which the two-read version used for its second read): with only the first patched it would pass without the fix.
+        for module in (providers, LA):
+            p = self.mock.patch.object(module, "read_strict", once)
+            p.start()
+            self.addCleanup(p.stop)
         self.assertIs(revive.personal_here({"herdr.coordinator.space": "sp1"}), True)
         self.assertEqual(len(reads), 1)
 
@@ -1184,6 +1188,12 @@ class Binding(unittest.TestCase):
         self.assertEqual(ran, [])
         with LA.journal() as d:
             self.assertEqual(d["claims"], {})
+        # --check refuses the same, as the run would: never "admitted" on a plan built for a stand-in argv.
+        checked = []
+        with self.assertRaises(self.p.Fail) as e:
+            LA.launch_run(T.SimpleNamespace(**{**vars(args), "check": True}), lambda *a: checked.append(a))
+        self.assertIn("changed before it was planned", str(e.exception))
+        self.assertEqual((checked, ran), ([], []))
 
     def test_the_credential_check_runs_the_agent_only_when_its_variable_is_set(self):
         """The guard in_shell() puts in the agent's own shell, run by a real POSIX shell: missing or empty, it names
