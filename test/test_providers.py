@@ -583,6 +583,27 @@ class AzureStartsBound(unittest.TestCase):
                       g.refused("switch", str(tid), "--folder", g.repo, "--space", "sp1", "--restart"))
         g.nothing_started(before)
 
+    def test_a_codex_restart_carries_its_own_provider_table_once(self):
+        """The window's and the web's restart build Codex's argv from the running agent's own (core/agents.js kept()),
+        which carries the provider table its start put there: the owner takes exactly that table off and puts it back
+        once, keeping effort and Fast, instead of refusing it as the argv's own provider (L2)."""
+        f = Fixture(self)
+        tid = self.start(f, {"route": "azure-foundry", **CODEX})
+        f.settle(tid=tid)
+        f.give_session(tid, "77777777-8888-4999-8aaa-bbbbbbbbbbbb")
+        table = f.plan("--agent", "codex")["args"]
+        argv = ["codex", *table, "--no-daemon", "-m", "code-deployment", "-c", 'model_reasoning_effort="high"', "-c", 'service_tier="fast"']
+        out = f.ok("switch", str(tid), "--folder", f.repo, "--space", "sp1", "--restart", "--argv", json.dumps(argv))
+        self.assertTrue(out["resumed"])
+        _, agent = f.agent_words(f.launches()[-1])
+        ident = "shepherdr_azure_" + FP["codex"]
+        self.assertEqual(agent.count(f'model_provider="{ident}"'), 1)
+        self.assertEqual(agent[1:3], ["-c", f'model_provider="{ident}"'])
+        self.assertEqual((agent.count("-m"), agent[agent.index("-m") + 1]), (1, "code-deployment"))
+        self.assertEqual(agent[-5:], ["-c", 'model_reasoning_effort="high"', "-c", 'service_tier="fast"', "77777777-8888-4999-8aaa-bbbbbbbbbbbb"])
+        f.settle(2, tid=tid)
+        f.no_secret()
+
     def test_an_automation_starts_its_task_on_the_plan(self):
         f = Fixture(self)
         f.provider({"route": "azure-foundry", **CLAUDE}, also=ROOM)

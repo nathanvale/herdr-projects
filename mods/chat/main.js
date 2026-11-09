@@ -2291,19 +2291,24 @@ export default class Chat extends View {
   fork(cx) {
     const session = agent.sessionOf(this.kind, this.path);
     if (!session) { toast({ title: "Can't fork", body: agent.inOtherFolder(this.kind, this.path) ? agent.OTHER_FOLDER : "This conversation has no saved session.", level: "info" }); return; }
-    // A fork copies its flags but no Azure Foundry binding or plan (L2): an Azure-started agent, or a route at its space
-    // that isn't Personal (herdr-task's provider owner says), is refused rather than run on the CLI's own sign-in.
-    const held = agent.providerRefusal(this.t);
-    if (held) { toast({ title: "Can't fork", body: held, level: "info" }); return; }
     const tab = panes().find((p) => p.pane === this.myPane())?.tab;
     const space = spaces().find((s) => s.tabs.some((x) => x.id === tab));
     const folder = this.t?.foreground?.cwd ?? this.t?.cwd ?? undefined;
-    const argv = agent.forkArgv(this.kind, this.argv, session), t = this.t;
+    const argv = agent.forkArgv(this.kind, this.argv, session), addr = this.addr;
     cx.spawn(async () => {
-      const shown = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, agent.routeArgs(t, this.machine))
-        .then((r) => (r.code === 0 ? JSON.parse(r.stdout || "null") : null), () => null).catch(() => null);
-      const off = agent.routeRefusal(shown);
-      if (off) { toast({ title: "Can't fork", body: off, level: "info" }); return; }
+      // herdr-task's launch owner admits it first (L2): a fork is a tab agent continuing this conversation, so it plans
+      // from the binding the agent recorded, and refuses in its own words what it can't carry (a conversation on Azure
+      // Foundry, as tab agents start Personal only) or a route changed since. The window then makes the tab.
+      const [m, term] = addr.includes("/") ? addr.split("/") : [null, addr];
+      const r = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, [...(m ? ["--on", m] : []), "launch", "run", "--role", "agent",
+        "--space", String(space?.id ?? "unplaced").split("/").pop(), "--slot", "fork", "--replaces", term, "--argv", JSON.stringify(argv),
+        "--check", "--json"]).catch(() => null);
+      if (!r || r.code !== 0) {
+        let why = null;
+        try { why = JSON.parse(r?.stdout || "null")?.error; } catch {}
+        toast({ title: "Can't fork", body: why || "herdr-task couldn't admit the fork now, so nothing was started.", level: "info" });
+        return;
+      }
       run("tab.new", { space: space?.id, folder, argv });
     });
   }

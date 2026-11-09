@@ -548,14 +548,19 @@ test("the web's fork says why: another folder, or no session; a default session 
   expect((await webFork(bin, null)).error).toBe("This conversation has no saved session to fork.");
   expect(called()).toEqual([]);
   expect((await webFork(bin, join(fallback, "projects", "-work", `${SESSION}.jsonl`))).result).toEqual({ ok: true });
-  // herdr-task's provider owner is asked the route first (A2), then the window makes the tab
-  expect(called()).toEqual(["herdr-task provider", "herdr-app do"]);
+  // herdr-task's launch owner admits it first (L2), then the window makes the tab
+  expect(called()).toEqual(["herdr-task launch", "herdr-app do"]);
 }, 30000);
 
-test("the web's fork refuses under a route that isn't Personal: no tab is made (A2, L2 carries no plan)", async () => {
-  const { bin, called } = standIns(null, "azure-foundry");
-  expect((await webFork(bin, join(fallback, "projects", "-work", `${SESSION}.jsonl`))).error).toContain("Provider is Azure Foundry here");
-  expect(called()).toEqual(["herdr-task provider"]);
+test("the web's fork asks the launch owner with its own argv, and its refusal makes no tab (L2)", async () => {
+  const { bin, called } = standIns();
+  owner(bin, JSON.stringify({ admitted: true, route: "personal" }));
+  expect((await webFork(bin, join(fallback, "projects", "-work", `${SESSION}.jsonl`))).result).toEqual({ ok: true });
+  expect(called()[0]).toBe(`herdr-task launch run --role agent --space unplaced --slot fork --replaces ${ADDR} --argv ["claude","--resume","${SESSION}","--fork-session"] --check --json`);
+  const refused = standIns();
+  owner(refused.bin, JSON.stringify({ error: "Its conversation is recorded on Azure Foundry." }), 1);
+  expect((await webFork(refused.bin, join(fallback, "projects", "-work", `${SESSION}.jsonl`))).error).toBe("Its conversation is recorded on Azure Foundry.");
+  expect(refused.called()).toEqual([`herdr-task launch run --role agent --space unplaced --slot fork --replaces ${ADDR} --argv ["claude","--resume","${SESSION}","--fork-session"] --check --json`]);
 }, 30000);
 
 // main.js runs only inside the window, so these read its order, as the picker's check above does. The rule they call is

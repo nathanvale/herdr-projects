@@ -409,19 +409,18 @@ export async function lostRefusal(kind, t, read, path = null) {
 }
 
 // An agent whose start recorded Azure Foundry (its terminal's herdr.provider label, set by herdr-task's launch owner):
-// a fork opens in a window tab, which isn't a launch admission site, so it can't carry its provider binding and refuses
-// it rather than run the copy on the CLI's own sign-in. Personal (no label) refuses nothing. (Since L2 a restart, a lost
-// session's new start and revival carry the binding through herdr-task's launch owner instead.)
-export const PROVIDER_HELD = "It started on Azure Foundry, and a fork opens in a window tab, which can't carry its provider binding, so the copy would run on another provider. Nothing was started.";
+// a restart, a fork, a lost session's new start and revival can't carry its provider binding yet (the migration's L2),
+// so each refuses it rather than move its conversation to the CLI's own sign-in. Personal (no label) refuses nothing.
+export const PROVIDER_HELD = "It started on Azure Foundry, and restarting it here can't carry that yet, so its conversation would move to another provider. Nothing was restarted. Resume or switch a task's agent with herdr-task.";
 export function providerRefusal(t) {
   const route = t?.labels?.["herdr.provider"];
   return route && route !== "personal" ? PROVIDER_HELD : null;
 }
 
-// The same for a fork under a route that isn't Personal: it can't carry a plan, so the copy would run on the CLI's own
-// sign-in, the silent Personal fallback the contract forbids. `shown` is herdr-task's `provider show --json` for the
-// agent's role and space (its provider owner's answer); none (it couldn't say) refuses too.
-export const ROUTE_HELD = "Provider is Azure Foundry here, and a fork opens in a window tab, which can't carry a launch plan, so it would start on the CLI's own sign-in. Nothing was started.";
+// The same sites under a route that isn't Personal: they can't carry a plan (L2), so a new start there would run on the
+// CLI's own sign-in, the silent Personal fallback the contract forbids. `shown` is herdr-task's `provider show --json`
+// for the agent's role and space (its provider owner's answer); none (it couldn't say) refuses too.
+export const ROUTE_HELD = "Provider is Azure Foundry here, and starting it again here can't carry a launch plan yet, so it would start on the CLI's own sign-in. Nothing was started. Resume or switch a task's agent with herdr-task, or start a new Assistant chat.";
 export const ROUTE_UNKNOWN = "Which provider this space's settings set can't be read now, so it wasn't started again here. Nothing was started.";
 export function routeRefusal(shown) {
   if (!shown || typeof shown.route !== "string") return ROUTE_UNKNOWN;

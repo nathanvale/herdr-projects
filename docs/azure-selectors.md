@@ -91,7 +91,7 @@ drops it once used.
 | Resume or switch with `--fresh`, or to another CLI | A new conversation with a handoff, on today's settings. |
 | An Assistant's new start (window chat, New space, first message) | Today's settings for the Assistant's role, or the chat's pick. |
 | Restart, Switch agent, a lost session's new start, revival (L2) | Since L2: its recorded binding when it continues the conversation, today's settings for a new one but never onto another route ([native restart](native-restart.md)). |
-| Fork | Personal only: an agent that started on Azure, or a route at its space that isn't Personal (asked of `herdr-task provider show`; unreadable refuses), refuses with its reason. |
+| Fork | Since L2 admitted by the launch owner as a tab agent continuing the conversation: Personal only, so one recorded on Azure is refused with its reason ([native restart](native-restart.md)). |
 
 - Each Azure start records `{route, agent, target, deployment, auth, fingerprint}` on its agent
   (a task's) or its journal record (an Assistant's), and labels its terminal
@@ -121,8 +121,9 @@ drops it once used.
 - Mixed versions: A1's and L1's herdr-task refuse a `provider` field they don't know, on every route.
   Once a role deployment is saved (and pushed to another machine), a machine still on an older
   herdr-task refuses its starts, Personal included, until it is updated or the field is removed. On
-  Personal too, fork for an agent on a machine whose herdr-task has no `provider show` refuses
-  ("can't be read now") until that machine is updated (before L2, lost-session recovery did too).
+  Personal too, before L2 a fork or a lost-session recovery for an agent on a machine whose herdr-task had no
+  `provider show` refused ("can't be read now"); since L2 they need that machine's herdr-task to have
+  `launch run --replaces` and `launch revive`, and refuse in its words until it is updated.
 - Revival with a settings file that can't be read at that moment types nothing and tries again on
   the next tick. A provider section that will stay wrong (a field this version doesn't know, say)
   holds the agent and reports why, once.
@@ -136,15 +137,15 @@ drops it once used.
 
 - Native behaviour of every route is unproven: the settings `env` blanking, Codex's root `-c`
   and `-m` before `resume`, and managed settings or a required provider outranking the plan.
-- Fork refuses Azure-bound agents rather than carry the binding. Restart, a lost session's new start
-  and revival carry it since L2 ([native restart](native-restart.md)).
+- Fork refuses Azure-bound agents rather than carry the binding (a tab agent starts Personal only), in the launch
+  owner's words since L2. Restart, a lost session's new start and revival carry it since L2
+  ([native restart](native-restart.md)).
 - The credential check runs after the terminal exists. There is no presence check before effects,
   because herdr-task's environment is not the terminal's.
 - Selection and settings revisions are content digests plus a task's save counter. Settings
   changed away and back read as unchanged, as in L1.
 - Source-inspected only, with no test of their own: the window's Provider rows
-  (`provider-section.js`), the window chat's Assistant pick and its fork's route
-  check, the window's task selector (`mods/tasks`, `mods/tasks-menu`), the web's `select.tsx`,
+  (`provider-section.js`), the window chat's Assistant pick, the window's task selector (`mods/tasks`, `mods/tasks-menu`), the web's `select.tsx`,
   `DeploymentValue` and new-start model menu (`restart.tsx`), and the service's `assistant-pick` and
   `model-menu` handlers in `service/main.ts`. Their owners' rules are tested through `herdr-task` and
   the service.
@@ -182,9 +183,9 @@ no dependencies installed). CI runs them.
   CLI's list and its effort levels.
 - `service/launch-sites.test.ts`: the service's two Assistant sites send `--new-start`; a first
   message carries the web's saved pick with its revision, then drops it.
-- `core/chat-find.test.js`: the service's fork asks `provider show` and refuses a route that isn't
-  Personal (or can't be read), with nothing made; since L2 its lost-session recovery goes through
-  herdr-task's launch owner instead ([native restart](native-restart.md)).
+- `core/chat-find.test.js`: the service's fork asked `provider show` and refused a route that isn't
+  Personal (or couldn't be read), with nothing made; since L2 its fork and lost-session recovery go
+  through herdr-task's launch owner instead ([native restart](native-restart.md)).
 - `core/agents.test.js`: the shared refusals, the words that ask the route, and the Azure list.
 
 ## CLI design notes

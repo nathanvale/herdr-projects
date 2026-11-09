@@ -1049,7 +1049,7 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     Switch agent (the window's or the web's); since L2 it goes the same way as resume and switch (its
     recorded binding when it continues the conversation, today's settings for a new one), and only a
     model it names that the recorded deployment would replace refuses (RESTART_MODEL)."""
-    from .providers import AZURE, PERSONAL_RECORD, restart_route, RESTART_MODEL
+    from .providers import AZURE, PERSONAL_RECORD, restart_route, RESTART_MODEL, same_model
     prev = last_agent(t)
     # The last agent's argv again, unless the task's agent, model or effort changed since (edit).
     keep = prev and prev.get("argv") and (t.get("pick_at") or 0) <= (prev.get("at") or 0)
@@ -1066,9 +1066,7 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     if restart and not resuming:
         # A new conversation takes today's settings, never onto another route than the agent it replaces (L2).
         was = (prev or {}).get("provider") or PERSONAL_RECORD
-        restart_route(was["route"], was, {"route": adm.plan["route"], f"{agent_key(argv)}_resource": adm.plan.get("target"),
-                                          f"{agent_key(argv)}_endpoint": adm.plan.get("target"),
-                                          f"{agent_key(argv)}_auth": adm.plan.get("auth")}, agent_key(argv), s.ref(t))
+        restart_route(was["route"], was, adm.binding, agent_key(argv), s.ref(t))
     if restart and resuming and adm.plan["route"] == AZURE and not same_model(argv, prev.get("argv"), adm.plan["deployment"]):
         # A recorded conversation keeps its deployment (A2): a model picked in the menu would be replaced silently.
         raise Fail(RESTART_MODEL.format(who=s.ref(t), deployment=adm.plan["deployment"]))
@@ -1081,14 +1079,6 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
         text = handoff(s, t, prev, parent, argv) + (("\n\n" + message) if message else "")
         t["review_gate"] = True
         return launch(s, t, argv, space, text, parent=parent, admission=adm), False
-
-
-def same_model(argv, old, deployment):
-    """Whether argv's model selection (Claude Code's --model, Codex's -m) is none, the recorded deployment, or the one
-    the replaced agent's own argv already named: anything else is a new choice a recorded binding would override."""
-    from .providers import model_of
-    want = model_of(argv)
-    return want in (None, deployment, model_of(old or []))
 
 
 def cmd_resume(args):

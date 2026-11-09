@@ -291,6 +291,19 @@ class Revival(unittest.TestCase):
         f.revive()
         self.assertEqual(len(f.sends()), 1)
 
+    def test_a_second_sender_into_the_same_process_types_nothing(self):
+        """Two senders that both planned before either wrote its record (the tick and a lost-session recovery): the
+        first types and lets its claim go, and the journal itself fences the second, under its lock, before hc send."""
+        f = Fixture(self)
+        f.worker()
+        first = f.revive()["revived"][0]["launch"]
+        # The second planned from the record as it was before the first wrote its own.
+        f.update("t5", labels={**f.terminal("t5")["labels"], "herdr.resume": json.dumps(f.record())})
+        [held] = f.revive()["revive_held"]
+        self.assertIn(f"brought back into t5 already (launch {first}, confirmed)", held["why"])
+        self.assertEqual(len(f.sends()), 1)
+        self.assertEqual([r["state"] for r in f.revivals()], ["confirmed", "cancelled"])
+
     def test_a_finished_tasks_agent_stays_a_shell(self):
         f = Fixture(self)
         f.worker(state="done")
@@ -452,7 +465,8 @@ class RestartOnAzure(unittest.TestCase):
         p = self.restart(f, old, ["claude", "--resume", SESSION, "--effort", "high"], resume=True)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         new = p.stdout.strip()
-        [one] = [c for c in f.calls() if c[0] == "template" and "-az-" in c[1]]
+        # The owner's one-off for this restart (the Assistant's own new start logged the first).
+        one = [c for c in f.calls() if c[0] == "template" and "-az-" in c[1]][-1]
         command = re.search(r"^command: (.+)$", one[2], re.M).group(1)
         self.assertIn("exec claude --settings ", command)
         self.assertIn("--model assistant-deployment", command)
@@ -464,6 +478,34 @@ class RestartOnAzure(unittest.TestCase):
         self.assertIn(["kill", old], f.calls())
         # No one-off template is left behind.
         self.assertEqual([n for n in os.listdir(os.path.join(f.tmp, "templates")) if n.startswith("herdr-")], [])
+
+    def test_a_lost_session_behind_its_chat_keeps_its_binding_and_its_message_whole(self):
+        """The window's and the service's ended-terminal recovery (restart.sh, no handoff): a new conversation for a lost
+        one, on the binding the old agent recorded (not today's default), its multi-line first message one argv word,
+        and its record saying missing history."""
+        f = Fixture(self)
+        old = self.assistant(f)
+        f.provider({"route": "azure-foundry", **CLAUDE, "coordinator_claude_deployment": "newer"})
+        p = self.restart(f, old, ["claude", "--effort", "high", "<restart>gone.\n\nYou are the Assistant."], resume=True)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        one = [c for c in f.calls() if c[0] == "template" and "-az-" in c[1]][-1]
+        command = re.search(r"^command: (.+)$", one[2], re.M).group(1)
+        self.assertIn("--model assistant-deployment", command)
+        word = '"$(printf \'<restart>gone.\\n\\nYou are the Assistant.\')"'
+        self.assertIn(word, command)
+        echoed = subprocess.run(["sh", "-c", f"printf %s {word}"], capture_output=True, text=True).stdout
+        self.assertEqual(echoed, "<restart>gone.\n\nYou are the Assistant.")
+        rec = next(r for r in f.starts("coordinator:") if r.get("address") == p.stdout.strip())
+        self.assertEqual((rec["missing_history"], rec["provider"]["deployment"]), (True, "assistant-deployment"))
+
+    def test_a_model_its_recorded_deployment_would_replace_is_refused(self):
+        f = Fixture(self)
+        old = self.assistant(f)
+        calls = len(f.calls())
+        p = self.restart(f, old, ["claude", "--resume", SESSION, "--model", "other-model"], resume=True)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("recorded on Azure Foundry deployment assistant-deployment", p.stderr)
+        self.assertEqual({c[0] for c in f.calls()[calls:]}, {"get"})
 
     def test_a_new_conversation_is_never_moved_to_another_route(self):
         f = Fixture(self)
@@ -481,6 +523,41 @@ class RestartOnAzure(unittest.TestCase):
         [one] = [c for c in f.calls() if c[0] == "template" and "-az-" in c[1]][-1:]
         self.assertIn("--model newer", re.search(r"^command: (.+)$", one[2], re.M).group(1))
         self.assertIn("You are taking over this tab", one[2])
+
+
+
+@la.ON_CI
+class Fork(unittest.TestCase):
+    """The window's and the web's fork ask the launch owner first (`launch run --role agent --slot fork --replaces
+    TERMINAL --argv FORK --check`): a fork is a tab agent continuing the conversation, so the owner plans it from the
+    forked agent's recorded binding and refuses what a tab agent can't carry. The window then makes the tab."""
+
+    FORK = ["claude", "--resume", SESSION, "--fork-session"]
+
+    def check(self, f, address):
+        return f.run("launch", "run", "--role", "agent", "--space", "sp1", "--slot", "fork", "--replaces", address,
+                     "--argv", json.dumps(self.FORK), "--check", "--json")
+
+    def test_a_personal_fork_is_admitted_and_one_on_azure_is_refused_by_the_owner(self):
+        f = Fixture(self)
+        f.seed(address="t60", state="live", pid=60, cwd=f.repo, argv=["claude"], labels={"herdr.space": "sp1"})
+        p = self.check(f, "t60")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(json.loads(p.stdout), {"admitted": True, "identity": "agent:local/sp1/fork", "route": "personal"})
+        # An Assistant that started on Azure Foundry: a tab agent would move its conversation to Personal.
+        f.provider({"route": "azure-foundry", **CLAUDE, "coordinator_claude_deployment": "assistant-deployment"})
+        azure = f.new_assistant("--label", "herdr.space=sp1")
+        p = self.check(f, azure)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("conversation is recorded on Azure Foundry", json.loads(p.stdout)["error"])
+        self.assertIn("tab agent", json.loads(p.stdout)["error"])
+        # A Personal conversation under an Azure route now: forking it there would move it too.
+        p = self.check(f, "t60")
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("would move it to another provider", json.loads(p.stdout)["error"])
+        # A check runs nothing.
+        self.assertEqual([c for c in f.calls() if c[:1] == ["run"] and "herdr.launch=" not in " ".join(c)], [])
+        self.assertEqual(len([c for c in f.calls() if c[:1] == ["run"]]), 1)  # the Assistant's own new start only
 
 
 if __name__ == "__main__":

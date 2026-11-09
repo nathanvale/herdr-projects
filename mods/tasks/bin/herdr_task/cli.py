@@ -481,6 +481,9 @@ def main():
     c.add_argument("--replaces", metavar="TERMINAL", help="a restart: the terminal of the agent it replaces. Continuing "
                                                           "that agent's conversation keeps the provider binding it recorded; "
                                                           "a new conversation plans from today's settings (L2)")
+    c.add_argument("--continues", action="store_true", help="--replaces: it continues the replaced agent (its "
+                                                            "conversation, or a lost session's new one), so it keeps "
+                                                            "the binding that agent recorded")
     c.add_argument("--json", action="store_true")
     c.add_argument("hc_args", nargs=argparse.REMAINDER, help="-- then its hc run words")
     c.set_defaults(fn=cmd_launch)

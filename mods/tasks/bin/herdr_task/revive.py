@@ -284,13 +284,6 @@ def binding_here(k, rec, task, kind):
     return plan_of_record(bound, binding_for(space_scope(space, d), space, d), kind, who_of(k))
 
 
-def uncomposed(plan, argv):
-    """argv without what an earlier start on plan added in front of its own words (Codex's provider table), so the
-    plan composes onto it once again; Claude Code's --settings and model are merged and replaced by compose()."""
-    extra = plan.get("args") or []
-    return argv[:1] + argv[1 + len(extra):] if extra and argv[1:1 + len(extra)] == extra else list(argv)
-
-
 def restarted(k):
     """A terminal the core gave a new process (a plain shell) since its agent ran there, and where
     no agent runs now."""
@@ -350,7 +343,6 @@ def plan(k, rec, running):
     if (p["route"] != "personal" or folder) and shell not in LINE_SHELLS:
         return ("held", f"Its shell ({shell or 'unknown'}) can't be given the provider binding or Claude Code folder this "
                         f"agent started with, so it isn't typed back. Nothing was started.", False, None)
-    base = uncomposed(p, base)
     if rec and rec.get("session") and rec.get("log") and os.path.isfile(rec["log"]):
         how, argv = "resume", resume_argv(kind, base, rec["session"], CUT if rec.get("working") else None)
     else:
@@ -389,7 +381,7 @@ def bring_back(k, rec, step, report):
     """Types step's line into k through launch admission (Admission.type_into), under the agent's own identity: an open
     start of that agent holds it, and a send hc doesn't confirm is kept uncertain. Records it on the terminal as
     handled (pid, how, sent, launch) once it was or may have been typed."""
-    from .launch_admission import Admission, agent_identity, digest
+    from .launch_admission import Admission, agent_identity, CONFIRMED, digest, UNCERTAIN
     from .providers import recorded
     how, argv, direct, carry = step
     rec = dict(rec or {}, pid=k.get("pid"), how=how, sent=now())
@@ -417,11 +409,20 @@ def bring_back(k, rec, step, report):
         return digest({**fixed, "route": q["route"], "fingerprint": q["fingerprint"]})
     facts = {"revival": {"how": how, "missing_history": how == "fresh", "session": rec.get("session") if how == "resume" else None,
                          "previous_session": carry.get("previous")},
-             "provider": recorded(p)}
+             "provider": recorded(p), "terminal_pid": k.get("pid")}
+
+    def fence(d):
+        # Another sender (the tick, or a lost-session recovery) already typed this into the same terminal process: its
+        # claim may be released already, before its record on the terminal was written, so the journal itself says.
+        for r in d["launches"].values():
+            if (r.get("launch") != adm.launch and r.get("terminal") == k["address"] and r.get("terminal_pid") == k.get("pid")
+                    and (r.get("revival") or {}).get("how") == how and r.get("state") in (UNCERTAIN, CONFIRMED)):
+                raise Fail(f"{who_of(k)} was brought back into {k['address']} already (launch {r['launch']}, {r['state']}). "
+                           f"Nothing was typed again.")
     try:
         adm = Admission(identity, "revive", space_of(labels) or None, None, revise, who=who_of(k))
         # claimed(): an open start of the same agent refuses here (its task as read now releases a start it records).
-        adm.task, adm.config_dir = task, carry.get("config_dir")
+        adm.task, adm.config_dir, adm.fence = task, carry.get("config_dir"), fence
         with adm.claimed():
             out = adm.type_into(k["address"], line, facts, run)
     except Fail as e:
@@ -489,7 +490,10 @@ def cmd_revive(args, say):
     report = {}
     if not args.identity:
         revive_pass(report)
-        return say(args, report, json.dumps(report) if report else "Nothing to bring back here.")
+        lines = [f"{r['terminal']}: {r['how']}" + (" (missing history: a new conversation)" if r.get("missing_history") else "")
+                 for r in report.get("revived", [])]
+        lines += [f"{r['terminal']}: held. {r['why']}" for r in report.get("revive_held", []) + report.get("revive_uncertain", [])]
+        return say(args, report, "\n".join(lines) or "Nothing to bring back here.")
     if "/" in args.identity:
         raise Fail("launch revive acts on this machine's terminals: run it there (herdr-task --on MACHINE).")
     k = hc_json("get", args.identity)
@@ -500,7 +504,8 @@ def cmd_revive(args, say):
                    f"ended. Nothing was typed.")
     rec = read_record(k)
     if args.lost:
-        if not (rec and rec.get("pid") == k.get("pid") and rec.get("how") in ("fresh", "held")):
+        # Brought back here already: nothing again. Held before: planned again, so the caller hears why.
+        if not (rec and rec.get("pid") == k.get("pid") and rec.get("how") == "fresh"):
             rec = dict(rec or lost_record(k) or {}, pid=k.get("pid"), how="resume", sent=now())
     step = plan(k, rec, set())
     if not step:
@@ -514,6 +519,6 @@ def cmd_revive(args, say):
                 e.launch = {x: report[key][0][x] for x in ("launch", "identity", "state")}
             raise e
     row = report["revived"][0]
-    said = ("a new conversation started there (its earlier session is gone)" if row["how"] == "fresh" else
-            f"its session {row['session']} resumed" if row["how"] == "resume" else "its session runs elsewhere")
+    said = ("a new conversation was typed there (its earlier session is gone)" if row["how"] == "fresh" else
+            f"its session {row['session']} was typed back to resume" if row["how"] == "resume" else "its session runs elsewhere")
     say(args, row, f"{args.identity}: {said}.")

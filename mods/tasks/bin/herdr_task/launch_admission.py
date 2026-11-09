@@ -258,7 +258,9 @@ class Admission:
         self._old = {}
         # task: the task as its start reads it (refuse_busy's record check); config_dir: a Claude
         # Code start's folder, carried explicitly (None: the terminal's own environment decides).
-        self.task, self.config_dir = None, None
+        # fence(d): a start's own last check, under the journal's lock just before it is recorded as
+        # sent (revival's: the same terminal process wasn't brought back by another sender).
+        self.task, self.config_dir, self.fence = None, None, None
 
     def label(self):
         return ["--label", f"{LABEL}={self.launch}"]
@@ -368,6 +370,8 @@ class Admission:
             rec = d["launches"].get(self.launch)
             if not rec or rec["state"] != NEVER or d["claims"].get(self.identity) != self.launch:
                 raise Fail(REVOKED.format(self.launch))
+            if self.fence:
+                self.fence(d)
             if self.revise() != self.revision:
                 rec.update(state=CANCELLED, reason="settings changed before it was sent", updated=now())
                 d["claims"].pop(self.identity, None)
@@ -524,12 +528,14 @@ def admit_task(s, task, argv, space, parent=None, role=None, select=None, resolv
             if task.get("selection_routing") != selection_revision(binding_for(s, space, d), agent_key(argv)):
                 raise Fail(STALE_TASK_CHOICE.format(who=s.ref(task)))
         plan = admit_launch(s, argv, space, d, "worker", chosen, bound, s.ref(task))
-        held["plan"] = plan
+        from .providers import binding_for
+        held["plan"], held["binding"] = plan, binding_for(s, space, d)
         return digest({"role": role or "task", "route": plan["route"], "fingerprint": plan["fingerprint"], "argv": list(argv),
                        "selected": select() if select else None, "space": bare(space) if space else None,
                        "config_dir": folder, "bound": (bound or {}).get("fingerprint") if bound is not None else None})
     adm = Admission(identity, role or "task", bare(space) if space else None, None, revise, who=s.ref(task))
-    adm.task, adm.config_dir, adm.plan = task, folder, held["plan"]
+    # binding: the settings' routing it was planned under (a restart's new conversation is checked against it).
+    adm.task, adm.config_dir, adm.plan, adm.binding = task, folder, held["plan"], held["binding"]
     # The argv chosen from settings a moment ago must still be what they choose: the revision binds both.
     if select and select() != list(argv):
         raise Fail(CHANGED.format("admitted"))
@@ -616,9 +622,9 @@ def admit_assistant_start(role, space, hc_args, slot=None, config_dir=None, argv
     """Preflight for an Assistant's (role coordinator) or a tab agent's (role agent) start through hc_args, its `hc run`
     words. A new start (argv: the agent's own argv, `--new-start`) is planned: Personal as it always was, Azure
     Foundry for the Assistant's role here (providers.admit_assistant), and a chat's save-only choice (deployment)
-    must still be on the routing it was chosen under (revision). A restart (replaces: {"bound": the replaced agent's
-    recorded binding or None, "who": its words}, L2) continuing the same conversation plans from that binding, and one
-    starting a new conversation plans from today's settings as a new start does (providers.admit_assistant). An
+    must still be on the routing it was chosen under (revision). A restart or a fork (replaces: the replaced or forked
+    agent's recorded binding, route, argv and words, L2) continuing the same conversation plans from that binding, and
+    one starting a new conversation plans from today's settings as a new start does (providers.admit_assistant). An
     earlier start of the same space (and slot) still open refuses."""
     machine = on_machine(hc_args)
     if machine is not None and not WORD.fullmatch(machine):
@@ -819,6 +825,16 @@ def template_argv(name, command):
     return words
 
 
+def one_line_word(a):
+    """One argv word as POSIX shell words on a single line (a template's command is one line): quoted as it is, or one
+    holding a newline (a lost session's first message) rebuilt by printf in place, the same word, never split."""
+    import shlex
+    if "\n" not in a:
+        return shlex.quote(a)
+    fmt = a.replace("\\", "\\\\").replace("%", "%%").replace("'", "'\\''").replace("\n", "\\n")
+    return f'"$(printf \'{fmt}\')"'
+
+
 def write_one_off(source, body, argv, env, need, lid, config_dir=None):
     """An owner-written one-off template for an Azure Assistant start: the source template's words, and a command
     that clears a parent Claude Code session's markers (launch.CLEAN_ENV), exports the plan's nonsecret variables (and
@@ -830,7 +846,7 @@ def write_one_off(source, body, argv, env, need, lid, config_dir=None):
     before, after = provider_words(env, need)
     if config_dir:
         before = f"export CLAUDE_CONFIG_DIR={shlex.quote(config_dir)}; {before}"
-    words = " ".join(shlex.quote(a) for a in argv)
+    words = " ".join(one_line_word(a) for a in argv)
     command = f"{CLEAN_ENV} {before}exec {words}; {after}exit 1" if after else f"{CLEAN_ENV} {before}exec {words}"
     name = f"herdr-{source}-az-{lid[:8]}"
     text = (f"---\nname: {name}\ndescription: A one-off Azure Foundry {source} start (herdr-task launch run), removed "
@@ -851,7 +867,7 @@ def launch_run(args, say):
     route and records its binding. --replaces: the terminal of the agent a restart replaces (L2):
     continuing its conversation plans from its recorded binding (recorded_binding), a new one from
     today's settings; on Azure the restart's own one-off is WORD (--new-start) and --argv its argv."""
-    from .providers import compose, recorded
+    from .providers import compose, recorded, resumes
     words = list(args.hc_args or [])
     if words[:1] == ["--"]:
         words = words[1:]
@@ -901,7 +917,9 @@ def launch_run(args, say):
             raise Fail(f"The agent this restart replaces ({old}) can't be read, so the binding it started on can't be "
                        f"known. Nothing was started or changed.")
         replaces = {"bound": recorded_binding(k, None, read_resume(k)), "who": f"The agent in {old}",
-                    "route": (k.get("labels") or {}).get("herdr.provider") or PERSONAL}
+                    "continues": bool(getattr(args, "continues", False)),
+                    "route": (k.get("labels") or {}).get("herdr.provider") or PERSONAL,
+                    "argv": (k.get("foreground") or {}).get("argv") or k.get("argv") or []}
     if not args.check and not words:
         raise Fail("Give the hc run words after \"--\".")
     # An Azure new start without its own argv runs its source template's command, planned; a Personal one keeps
@@ -936,7 +954,11 @@ def launch_run(args, say):
                                      folder)
                 sent[sent.index(new)] = made[0]
                 extra += ["--label", f"herdr.provider={adm.plan['route']}"]
-            out = adm.submit(["run", *extra, *sent], record={"provider": recorded(adm.plan)} if azure else None)
+            facts = {"provider": recorded(adm.plan)} if azure else {}
+            if replaces and replaces["continues"] and not resumes(argv or []):
+                # A lost session started anew behind its chat: missing history, said so, never a resume (L2).
+                facts["missing_history"] = True
+            out = adm.submit(["run", *extra, *sent], record=facts or None)
     finally:
         if made:
             try:

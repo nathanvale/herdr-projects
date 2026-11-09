@@ -645,29 +645,32 @@ Detail, decisions and authored regressions: [Azure selectors and bound starts](.
 
 Detail, the binding rule, gaps and open choices: [Native restart and revival](../native-restart.md).
 L2 is its own row in `PHASES` after A2. Its owners are `T/cli.py`, `T/commands.py`, `T/launch_admission.py`,
-`T/providers.py`, `T/revive.py`, `lib/agent.js` and its three copies, `core/agents.js` and its five copies (the fork's
-refusal words), `mods/chat/main.js`,
+`T/providers.py`, `T/revive.py`, `lib/agent.js` and its three copies, `mods/chat/main.js`, `service/actions.ts`,
 `mods/coordinator/restart.sh`, `service/agents.ts`, `service/watch.ts`, `core/chat-find.test.js`,
 `test/test_herdr_task.py`, `test/test_launch_admission.py`, `test/test_providers.py`,
 `test/test_session_discovery.py` and `test/test_native_restart.py`; those earlier phases admitted are L2's from here,
 and their pins are L2's. `docs/native-restart.md` is named under L2.
 
 - One owner: revival (`T/revive.py`), a lost session at its shell (`service/watch.ts` and the window's chat, through
-  `herdr-task launch revive TERMINAL --lost`) and every restart (`restart.sh` with `launch run --replaces`, and
-  `herdr-task switch --restart`) go through `T/launch_admission.py`. The service and the window type nothing
-  themselves, so the tick's revival and a lost-session recovery can't both bring an agent back.
+  `herdr-task launch revive TERMINAL --lost`), every restart (`restart.sh` with `launch run --replaces`, and
+  `herdr-task switch --restart`) and the fork's admission (`launch run --role agent --slot fork --replaces --check`, from
+  the window and `service/actions.ts`) go through `T/launch_admission.py`. The service and the window type nothing
+  themselves, and the journal fences a second revival into the same terminal process, so the tick's revival and a
+  lost-session recovery can't both bring an agent back.
 - Bindings: continuing a conversation plans from its recorded binding; a new conversation from today's settings but
-  never onto another route; revival's missing-history start stays on its recorded binding; an Azure-started agent with
-  no record found is refused or held, never read as Personal. A restart naming a model its recorded deployment would
-  replace refuses.
+  never onto another route; a missing-history start (revival, or behind its chat with `--continues`) stays on its
+  recorded binding; an Azure-started agent with no record found is refused or held, never read as Personal; a fork
+  recorded on Azure is refused (tab agents start Personal only). A restart naming a model its recorded deployment would
+  replace refuses; Codex's own provider table in a restart's argv is put back once.
 - Uncertainty: a revival is claimed under the agent's own identity before anything is typed, recorded submission
   uncertain before `hc send`, and confirmed by hc's success; otherwise it stays uncertain, holds that agent's later
   revivals and starts, and `launch reconcile` confirms it only on an agent running in its terminal.
 - Missing history is reported apart (`how: fresh`, `missing_history`, `previous_session`), never as a resume.
-- Kept: task state, holds, queue, dependencies, approval head and cleanup (revival writes no task list); fork's
-  Personal-only refusal; tab agents Personal only; no convenience retired.
-- Held, not invented: core receipts and revocation for `hc send` and `hc run`, other machines' senders, automatic
-  reconcile or release (`manual-recovery`), the missing-history fallback-versus-hold decision, and every native route.
+- Kept: task state, holds, queue, dependencies, approval head and cleanup (revival writes no task list); tab agents
+  (and so forks) Personal only; no convenience retired.
+- Held, not invented: core receipts and revocation for `hc send` and `hc run`, other machines' senders, a fork's own
+  start (the window's `tab.new`, not journalled), automatic reconcile or release (`manual-recovery`), the
+  missing-history fallback-versus-hold decision, and every native route.
 - Regression: `test/test_native_restart.py` (processes, reopened journal, task list and labels) and the updated cases
   in the files above. CI pending; native qualification pending. The window's paths are source-inspected only.
 - Not a required port's completion: `ordinary-resume`, `screen-reconnect` stay reuse-unqualified, `missing-history`

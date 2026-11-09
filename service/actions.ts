@@ -11,7 +11,7 @@ import { WORDS } from "../core/chat-view.js";
 import { withoutUsedPick } from "./selections.ts";
 import * as AGa from "../core/agents.js";
 import { answerCodex } from "./codex-ask.ts";
-const { sessionOf, forkArgv, inOtherFolder, OTHER_FOLDER, providerRefusal, routeRefusal, routeArgs, argvFor } = AGa as any;
+const { sessionOf, forkArgv, inOtherFolder, OTHER_FOLDER, argvFor } = AGa as any;
 import * as SP from "../core/spaces.js";
 const { READ, withMove, withSection, withoutSection, withSectionName, withIcon, withMachineLook, DELETED, deletedSection, withRestoredSection } = SP as any;
 import type { Compat } from "./compat.ts";
@@ -520,16 +520,21 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     const a = chat(b.chat), t: any = hub.terminals.get(a), r = compat.reader?.(a);
     const kind = kindOf(t) ?? "claude", session = sessionOf(kind, r?.path ?? null);
     if (!session) throw new Error(inOtherFolder(kind, r?.path ?? null) ? OTHER_FOLDER : "This conversation has no saved session to fork.");
-    // a fork copies its flags but no Azure Foundry binding or plan (L2): an Azure-started agent, or a route at its space
-    // that isn't Personal (herdr-task's provider owner says), is refused rather than run on the CLI's own sign-in
-    const held = providerRefusal(t);
-    if (held) throw new Error(held);
-    const shown = await run([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", ...routeArgs(t, a.includes("/") ? a.split("/")[0] : null)])
-      .then((x) => (x.code === 0 ? JSON.parse(x.stdout || "null") : null)).catch(() => null);
-    const off = routeRefusal(shown);
-    if (off) throw new Error(off);
     const space = ["herdr.space", "herdr.task.space", "herdr.coordinator.space"].map((k) => t?.labels?.[k]).find(Boolean);
-    const res = await run(["herdr-app", "do", "tab.new", ...(space ? ["--space", space] : []), "--folder", t?.foreground?.cwd ?? t?.cwd ?? "", "--argv", JSON.stringify(forkArgv(kind, t?.foreground?.argv ?? t?.argv ?? [], session))]);
+    const argv = forkArgv(kind, t?.foreground?.argv ?? t?.argv ?? [], session);
+    // herdr-task's launch owner admits it first (L2): a fork is a tab agent continuing this conversation, so it plans from
+    // the binding the agent recorded, and refuses in its own words what it can't carry (a conversation on Azure Foundry,
+    // as tab agents start Personal only) or a route changed since. The window then makes the tab and starts it there.
+    const [machine, term] = a.includes("/") ? a.split("/") : [null, a];
+    const admitted = await run([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", ...(machine ? ["--on", machine] : []), "launch", "run",
+      "--role", "agent", "--space", String(space ?? "unplaced").split("/").pop()!, "--slot", "fork", "--replaces", term,
+      "--argv", JSON.stringify(argv), "--check", "--json"]).catch(() => null);
+    if (!admitted || admitted.code !== 0) {
+      let why = null;
+      try { why = JSON.parse(admitted?.stdout || "null")?.error; } catch {}
+      throw new Error(why || "herdr-task couldn't admit the fork now, so nothing was started.");
+    }
+    const res = await run(["herdr-app", "do", "tab.new", ...(space ? ["--space", space] : []), "--folder", t?.foreground?.cwd ?? t?.cwd ?? "", "--argv", JSON.stringify(argv)]);
     if (res.code !== 0) throw new Error("A fork opens as a tab in the Herdr window: it needs the window open.");
     return { ok: true };
   }

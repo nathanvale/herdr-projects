@@ -90,8 +90,7 @@ web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx web/src/re
     # Native restart and revival: revival, a lost session at its shell and every restart go through launch admission on
     # the recorded binding (continued conversations) or today's settings (new ones, never onto another route), claimed
     # in the journal before anything is typed or started. Earlier owners it changes are L2's from here.
-    'L2': frozenset('''core/agents.js core/chat-find.test.js lib/agent.js mods/chat-models/core/agents.js mods/chat/core/agents.js
-mods/coordinator/core/agents.js mods/newspace/core/agents.js mods/shepherdr-settings/core/agents.js mods/chat/agent.js mods/chat/main.js mods/coordinator/restart.sh
+    'L2': frozenset('''core/chat-find.test.js lib/agent.js service/actions.ts mods/chat/agent.js mods/chat/main.js mods/coordinator/restart.sh
 mods/newspace/agent.js mods/shepherdr-settings/agent.js mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py
 mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/revive.py
 service/agents.ts service/watch.ts test/test_herdr_task.py test/test_launch_admission.py test/test_native_restart.py

@@ -42,6 +42,8 @@ else
   admit=(--role agent --space "$aspace" --slot "$aslot")
 fi
 admit+=(--replaces "$old")
+# The same conversation, or a lost session's new one behind its chat (no handoff): it keeps the old agent's binding.
+[ -n "${HERDR_RESTART_RESUME:-}" ] && admit+=(--continues)
 # What it will run, for the owner to plan: the argv given, else (an Assistant) its template's command.
 if [ -n "$argv" ]; then
   plan=(--argv "$argv")
@@ -149,11 +151,13 @@ if [ "$route" = azure-foundry ]; then
     mapfile -t cmd < <(jq -r '.[]' <<<"$argv")
     [ ${#cmd[@]} -gt 0 ] || exit 1
     key=$(basename "${cmd[0]}")
+    cmdjson=$(jq -c . <<<"$argv")
     if [ -z "${HERDR_RESTART_RESUME:-}" ]; then
-      [ "$key" = codex ] && [[ " ${cmd[*]} " != *" --no-daemon "* ]] && cmd+=(--no-daemon)
+      # Codex runs its commands outside hc without --no-daemon, as below.
+      [ "$key" = codex ] && [[ " ${cmd[*]} " != *" --no-daemon "* ]] && cmdjson=$(jq -c '. + ["--no-daemon"]' <<<"$argv")
       msg=$handoff
     fi
-    words=(--argv "$(printf '%s\0' "${cmd[@]}" | jq -Rsc 'split("\u0000") | .[:-1]')")
+    words=(--argv "$cmdjson")
     command=${cmd[0]}
   else
     own=$(awk '/^---[[:space:]]*$/ {f++; next} f == 1 && sub(/^command:[ \t]*/, "") {print; exit}' "$tpl" 2>/dev/null)
