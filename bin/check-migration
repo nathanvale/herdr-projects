@@ -267,34 +267,55 @@ STEP_DISPOSITIONS = frozenset({'ported', 'suite', 'held'})
 WORKFLOWS = ('check.yml', 'core-rewrite.yml', 'foundry.yml')
 
 
+def steps_of(text):
+    """A workflow's steps as [job, its name or else its run line, its lines], read by indentation (jobs at two
+    spaces, steps at six), which every workflow here keeps."""
+    steps, job, current, in_jobs = [], None, None, False
+    for line in text.splitlines():
+        if line.startswith('jobs:'):
+            in_jobs = True
+            continue
+        named = re.match(r'^  ([A-Za-z0-9_-]+):\s*$', line)
+        if in_jobs and named:
+            job, current = named.group(1), None
+            continue
+        step = re.match(r'^      - (?:name: (.*)|run: (.*)|uses: .*)$', line)
+        if job and step:
+            current = [job, (step.group(1) or step.group(2) or '').strip(), line]
+            steps.append(current)
+        elif current:
+            current[2] += '\n' + line
+    return steps
+
+
 def workflow_steps():
     """Every step of the fork's workflows at F that runs Bun's tests, as (workflow, job, its name or else its run line)."""
     found = set()
     for workflow in WORKFLOWS:
-        steps, job, current, in_jobs = [], None, None, False
-        for line in git('show', INPUTS['F'] + ':.github/workflows/' + workflow).decode().splitlines():
-            if line.startswith('jobs:'):
-                in_jobs = True
-                continue
-            named = re.match(r'^  ([A-Za-z0-9_-]+):\s*$', line)
-            if in_jobs and named:
-                job, current = named.group(1), None
-                continue
-            step = re.match(r'^      - (?:name: (.*)|run: (.*)|uses: .*)$', line)
-            if job and step:
-                current = [job, (step.group(1) or step.group(2) or '').strip(), line]
-                steps.append(current)
-            elif current:
-                current[2] += '\n' + line
+        steps = steps_of(git('show', INPUTS['F'] + ':.github/workflows/' + workflow).decode())
         found |= {(workflow, j, s) for j, s, body in steps if re.search(r'\bbun (run )?test\b', body)}
     return found
 
 
-def declares(text, path, name):
-    """Whether a test file declares a test by exactly this name: a Python `def name(`, else a quoted Bun title."""
+def runs_sensitivity():
+    """Whether Check's check job has a step that runs bin/check-sensitivity as its command, with no condition and
+    no continue-on-error, so its failure fails the check (a commented line or a skipped step is not running it)."""
+    for job, _, body in steps_of((ROOT / '.github/workflows/check.yml').read_text()):
+        lines = body.splitlines()
+        if job == 'check' and any(re.match(r'^(?:      - |        )run: python3 bin/check-sensitivity\s*$', line) for line in lines) \
+                and not any(re.match(r'^(?:      - |        )(?:if|continue-on-error):', line) for line in lines):
+            return True
+    return False
+
+
+def declares(text, path, name, prefix=False):
+    """Whether a test file declares a test by exactly this name: a Python `def name(` at a line's start, else a Bun
+    `test(` or `it(` whose quoted title is the name (prefix: begins with it, as Bun's -t selects). A quoted string
+    elsewhere is not a declaration."""
     if path.endswith('.py'):
-        return 'def ' + name + '(' in text
-    return any(quote + name + quote in text for quote in ('"', "'", '`'))
+        return re.search(r'^[ \t]*def ' + re.escape(name) + r'\(', text, re.M) is not None
+    title = re.escape(name) + ('' if prefix else r'\1')
+    return re.search(r'(?<![\w.$])(?:test|it)\s*\(\s*(["\'`])' + title, text) is not None
 
 
 def grounded(refs, what):
@@ -326,9 +347,12 @@ def validate_mutation(row):
     if not before or not isinstance(after, str) or after == before or target.read_text().count(before) != 1:
         raise ValueError(what + ' does not remove exactly one guard in ' + spec['file'])
     # Bun's -t takes a title's prefix; a unittest name is a whole test.
-    text = tests.read_text()
-    if not test or (spec['runner'] == 'unittest' and not declares(text, spec['test_file'], test)) or test not in text:
+    bun = spec['runner'] == 'bun'
+    if not test or not declares(tests.read_text(), spec['test_file'], test, prefix=bun):
         raise ValueError(what + ' names a regression ' + spec['test_file'] + ' does not hold')
+    own = [name for ref in row.get('native') or [] if ref.get('path') == spec['test_file'] for name in ref.get('tests') or []]
+    if not any(name.startswith(test) if bun else name == test for name in own):
+        raise ValueError(what + ' removes a guard for a regression that is not one of its own native regressions')
 
 
 def validate_reconciliation(contract, inventory, ledger):
@@ -414,8 +438,8 @@ def validate_reconciliation(contract, inventory, ledger):
         if row['disposition'] == 'ported':
             validate_mutation(row)
             # A ported check counts only while Check runs it: dropping the step would discharge it silently.
-            if 'run: python3 bin/check-sensitivity' not in (ROOT / '.github/workflows/check.yml').read_text():
-                raise ValueError('Check no longer runs bin/check-sensitivity, so ' + what + ' would not be proved')
+            if not runs_sensitivity():
+                raise ValueError('Check no longer runs bin/check-sensitivity unconditionally, so ' + what + ' would not be proved')
         elif 'mutation' in row:
             raise ValueError(what + ' carries a mutation it does not run')
         grounded(row.get('native') or [], what)

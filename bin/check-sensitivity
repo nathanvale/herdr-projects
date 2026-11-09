@@ -57,9 +57,16 @@ def passed(spec, code, out):
     return code == 0 and ('(pass) ' + spec['test']) in out
 
 
+def errored(spec, out):
+    """A unittest ERROR (an exception, an import or syntax error) is not the regression noticing the guard is gone."""
+    return spec['runner'] == 'unittest' and re.search(r'^ERROR: ', out, re.M) is not None
+
+
 def failed(spec, code, out):
+    """The named regression failed an assertion. Bun prints `(fail)` for a failed expectation and for an error thrown
+    in the test alike; a module that doesn't load fails no test by its title."""
     if spec['runner'] == 'unittest':
-        return code != 0 and re.search(r'^(FAIL|ERROR): ' + re.escape(spec['test']) + r' ', out, re.M) is not None
+        return code != 0 and re.search(r'^FAIL: ' + re.escape(spec['test']) + r' ', out, re.M) is not None
     return code != 0 and ('(fail) ' + spec['test']) in out
 
 
@@ -81,6 +88,8 @@ def prove(row):
         code, out = run(spec)
     finally:
         target.write_bytes(original)
+    if errored(spec, out):
+        return 'the regression errored instead of failing an assertion with the guard removed:\n' + out[-4000:]
     if not failed(spec, code, out):
         return 'the regression did not fail with the guard removed:\n' + out[-4000:]
     return 'proved'

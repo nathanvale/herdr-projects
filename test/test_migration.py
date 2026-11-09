@@ -234,6 +234,18 @@ class Reconciliation(unittest.TestCase):
                                             if row['step'] != 'Prove recovery rejects a different execution host']
         self.refused(drop, 'lacks or repeats a fork workflow test step')
 
+    def test_a_named_test_is_a_declaration_not_any_quoted_text(self):
+        def quoted(data):
+            # "code-deployment" is quoted in the file (a fixture's deployment name), never a test's title
+            self.row(data, 'requirements', 'id', 'azure-discovery')['native'][0]['tests'].append('code-deployment')
+        self.refused(quoted, 'names a test service/azure-deployments.test.ts does not hold: code-deployment')
+
+    def test_a_ported_step_proves_one_of_its_own_regressions(self):
+        step = 'Prove the default-preservation regression detects a provider override'
+        self.refused(lambda data: self.row(data, 'workflow_obligations', 'step', step)['mutation'].update(
+            test='test_codex_on_azure_by_api_key'),
+            'Sensitivity ' + step + ' removes a guard for a regression that is not one of its own native regressions')
+
     def test_a_ported_step_removes_exactly_one_guard_its_regression_names(self):
         step = 'Prove discovery rejects incompatible inventory'
         self.refused(lambda data: self.row(data, 'workflow_obligations', 'step', step)['mutation'].update(before='no such guard'),
@@ -395,11 +407,17 @@ class NativeFoundation(unittest.TestCase):
         self.assertEqual((code, observed['source_validation'], observed['phase']), (0, 'passed', 'R'), observed)
 
     def test_check_must_run_the_ported_sensitivity_checks(self):
-        """Dropping the Check step would discharge the four ported obligations silently: refused."""
-        code, observed = self.changed('.github/workflows/check.yml', lambda target: target.write_text(
-            target.read_text().replace('run: python3 bin/check-sensitivity', 'run: true')))
-        self.assertEqual((code, observed['candidate_readiness']), (1, 'blocked'))
-        self.assertIn('Check no longer runs bin/check-sensitivity', observed['error'])
+        """Dropping the Check step, commenting it out, or letting it fail or skip would discharge the four ported
+        obligations silently: each refused."""
+        line = '        run: python3 bin/check-sensitivity'
+        for name, instead in (('dropped', '        run: true'), ('commented', '        # run: python3 bin/check-sensitivity'),
+                              ('allowed to fail', '        continue-on-error: true\n' + line),
+                              ('skipped', '        if: false\n' + line)):
+            with self.subTest(name=name):
+                code, observed = self.changed('.github/workflows/check.yml', lambda target: target.write_text(
+                    target.read_text().replace(line, instead)))
+                self.assertEqual((code, observed['candidate_readiness']), (1, 'blocked'))
+                self.assertIn('Check no longer runs bin/check-sensitivity unconditionally', observed['error'])
 
     def test_after_q_takes_one_string_of_paths_per_unit(self):
         checker = self.copy / 'bin/check-migration'
@@ -468,6 +486,12 @@ class Sensitivity(unittest.TestCase):
         code, observed, said = self.prove('test_probe_skipped')
         self.assertEqual((code, observed['proved']), (1, 0))
         self.assertIn('the regression was skipped, so it proves nothing here', said)
+
+    def test_a_regression_that_errors_without_its_guard_proves_nothing(self):
+        """A change that breaks the code (here a name that doesn't exist) errors the test: not proof of the guard."""
+        code, observed, said = self.prove('test_probe_refuses_a_negative', after='if n < undefined_name:')
+        self.assertEqual((code, observed['proved']), (1, 0))
+        self.assertIn('the regression errored instead of failing an assertion with the guard removed', said)
 
     def test_a_guard_that_isnt_there_exactly_once_is_never_changed(self):
         code, observed, said = self.prove('test_probe_refuses_a_negative', before='return')

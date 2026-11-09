@@ -711,7 +711,7 @@ It is source and CI qualification only (Stage Q-A): no provider, Azure or agent 
   named test its file doesn't hold, a mutation that doesn't remove exactly one guard, a manifest phase
   before Q, and any tracked path changed since the candidate outside Q's own paths, `docs/` and the root
   prose files (markdown a command reads, such as `templates/*.md`, is source). A named test must be
-  declared by exactly that name. `--require-ready` still exits 3.
+  declared by exactly that name: a Python `def`, or a Bun `test(` or `it(` title. `--require-ready` still exits 3.
 - After Q merges (an open decision for Nathan at Accept, as it adds a step to later units): a later unit
   that changes such a path names it in `AFTER_Q` in `bin/check-migration`
   under the unit's name, in its own reviewed change. Its own Check is its evidence; Q's ledger keeps
@@ -719,8 +719,10 @@ It is source and CI qualification only (Stage Q-A): no provider, Azure or agent 
   (R) keeps the ledger valid; a manifest before Q refuses.
 - `bin/check-sensitivity` (a Check step) runs each ported guard's regression with the guard, removes the
   guard, requires that regression to fail, and puts the file back byte for byte (on SIGTERM too), with a
-  fresh bytecode cache. A skipped regression proves nothing and refuses. While a row is `ported`,
-  `check-migration` refuses a Check workflow that no longer runs it.
+  fresh bytecode cache. A skipped regression, or a Python one that errors rather than fails an assertion,
+  proves nothing and refuses. While a row is `ported`, its mutation must name one of that row's own native
+  regressions, and `check-migration` refuses a Check job that no longer runs it unconditionally (dropped,
+  commented out, `if:` or `continue-on-error`).
 - Native deliberately differs from fork cases (recorded in the holds, not changed here): GitHub merge
   passes `--delete-branch` where the fork kept the source branch; a 401 or 403 on a Bitbucket create
   is a refusal and a later Ready may post again, where the fork kept it uncertain; a GitLab folder
