@@ -255,20 +255,27 @@ def space_of(labels):
 
 def who_of(k):
     ref = task_ref(k)
+    labels = k.get("labels") or {}
     if ref:
         return f"{ref}'s agent ({k['address']})"
-    return f"The task agent in {k['address']}" if (k.get("labels") or {}).get("herdr.task") else f"The Assistant in {k['address']}"
+    if labels.get("herdr.task"):
+        return f"The task agent in {k['address']}"
+    if labels.get("herdr.role") == "coordinator" or k.get("template") in ASSISTANT_TEMPLATES:
+        return f"The Assistant in {k['address']}"
+    return f"The agent in {k['address']}"
 
 
-UNREAD = object()
+UNREAD, FIND = object(), object()
 
 
-def binding_here(k, rec, task, kind):
+def binding_here(k, rec, task, kind, bound=FIND):
     """The plan the agent in k comes back on (L2): the binding its start recorded (launch_admission.recorded_binding:
     its task's row, the copy on its terminal, its start's journal record), rebuilt by the provider owner against the
     settings at its space now (providers.plan_of_record: the same route, resource or endpoint and sign-in; the recorded
     deployment kept). UNREAD when the settings file can't be read now (it may be mid-write: the next tick looks
-    again); a Fail with the reason when it can't come back on that binding (held, never started on another)."""
+    again); a Fail with the reason when it can't come back on that binding (held, never started on another). bound: the
+    recorded binding found already (planning finds it once, as it may read the launch journal: the recheck under the
+    journal's lock must not open it again)."""
     from .launch_admission import NO_BINDING, recorded_binding, space_scope
     from .providers import binding_for, plan_of_record, read_strict
     labels = k.get("labels") or {}
@@ -278,7 +285,8 @@ def binding_here(k, rec, task, kind):
         d = read_strict()
     except Fail:
         return UNREAD
-    bound = recorded_binding(k, task, rec)
+    if bound is FIND:
+        bound = recorded_binding(k, task, rec)
     if bound is None:
         raise Fail(NO_BINDING.format(who=who_of(k)))
     return plan_of_record(bound, binding_for(space_scope(space, d), space, d), kind, who_of(k))
@@ -300,7 +308,7 @@ def plan(k, rec, running):
     """What to type into `k` now: (how, argv, direct, carry) or None (direct: shell_line's). how is resume (its own
     session), fresh (its session is gone: a new conversation, missing history), running (that session runs elsewhere:
     nothing typed) or held (argv is then the reason). carry: what the line sets besides argv, {env, need, plan,
-    config_dir, previous, kind}. `running`: the sessions agents run here now."""
+    config_dir, previous, kind, bound}. `running`: the sessions agents run here now."""
     from .providers import compose
     labels = k.get("labels") or {}
     assistant = labels.get("herdr.role") == "coordinator" or k.get("template") in ASSISTANT_TEMPLATES
@@ -332,8 +340,11 @@ def plan(k, rec, running):
     if not base or not kind:
         return None
     # The binding it comes back on: its recorded one, under today's routing (L2). Anything else holds it, said once.
+    # Found here, outside any lock (it may read the launch journal), and carried to the recheck before it is sent.
+    from .launch_admission import recorded_binding
     try:
-        p = binding_here(k, rec, task, kind)
+        bound = recorded_binding(k, task, rec)
+        p = binding_here(k, rec, task, kind, bound)
     except Fail as e:
         return ("held", str(e), False, None)
     if p is UNREAD:
@@ -359,7 +370,8 @@ def plan(k, rec, running):
         env = dict(env, CLAUDE_CONFIG_DIR=folder)
     # Without a record, an Assistant starts as its template does: without the person's shell.
     return (how, argv, not (rec or {}).get("shell"),
-            {"env": env, "need": p.get("credential"), "plan": p, "config_dir": folder, "previous": previous, "kind": kind})
+            {"env": env, "need": p.get("credential"), "plan": p, "config_dir": folder, "previous": previous, "kind": kind,
+             "bound": bound})
 
 
 def keep_binding(k, new, old):
@@ -413,7 +425,7 @@ def bring_back(k, rec, step, report):
                 or (now_k.get("labels") or {}).get(LABEL) != seen):
             raise Fail(f"{who_of(k)} in {k['address']} changed since this revival was planned (another sender brought it "
                        f"back, or an agent runs there). Nothing was typed.")
-        q = binding_here(k, rec, task, carry["kind"])
+        q = binding_here(k, rec, task, carry["kind"], carry["bound"])
         if q is UNREAD:
             raise Fail("Shepherdr settings can't be read now, so this revival waits. Nothing was typed.")
         return digest({**fixed, "route": q["route"], "fingerprint": q["fingerprint"]})
@@ -502,8 +514,11 @@ def cmd_revive(args, say):
     if "/" in args.identity:
         raise Fail("launch revive acts on this machine's terminals: run it there (herdr-task --on MACHINE).")
     k = hc_json("get", args.identity)
-    if not k or not watched(k):
-        raise Fail(f"{args.identity} isn't an Assistant's or a task agent's terminal here. Nothing was typed.")
+    # Any agent's terminal a chat follows, as the window and the service brought back before L2 (a tab agent too, under
+    # its own identity); the tick's pass keeps to Assistants and task agents.
+    if not k or not (watched(k) or base_argv(k.get("argv"))[0]):
+        raise Fail(f"{args.identity} isn't an agent's terminal here (no claude or codex in how it started, and not an "
+                   f"Assistant's or a task's). Nothing was typed.")
     if not restarted(k):
         return say(args, {"terminal": args.identity, "how": "none"}, f"{args.identity}: an agent runs there, or it has "
                    f"ended. Nothing was typed.")

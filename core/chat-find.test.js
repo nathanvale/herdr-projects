@@ -486,8 +486,12 @@ test("lost-session recovery refuses a custom folder: nothing typed, nothing star
 // --lost`, the tick's revival's own owner, so it comes back once), and an ended one goes to restart.sh, whose start the
 // same owner plans; neither asks the route first, as the owner plans the binding and refuses what it can't carry.
 function owner(bin, out, code = 0) {
-  const called = join(bin, "called");
-  writeFileSync(join(bin, "herdr-task"), `#!/bin/sh\necho "herdr-task $*" >> "${called}"\necho '${out}'\nexit ${code}\n`);
+  // Its reply comes from a file, so no quote in it (an owner's "can't") is ever read as shell; read and printf are the
+  // shell's own, as a child's PATH is this folder alone.
+  const called = join(bin, "called"), reply = join(bin, "owner-reply.json");
+  writeFileSync(reply, out);
+  writeFileSync(join(bin, "herdr-task"), `#!/bin/sh\necho "herdr-task $*" >> "${called}"\n` +
+    `while IFS= read -r line || [ -n "$line" ]; do printf '%s\\n' "$line"; done < "${reply}"\nexit ${code}\n`);
   chmodSync(join(bin, "herdr-task"), 0o755);
 }
 

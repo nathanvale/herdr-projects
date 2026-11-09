@@ -1990,6 +1990,17 @@ class Revive(unittest.TestCase):
         self.tick()
         self.assertEqual(len(self.sent), 1)
 
+    def test_the_journal_refuses_being_opened_again_inside_its_own_lock(self):
+        """A check run inside the journal's locked step (a revival's recheck) that read the journal again would wait on
+        its own flock for ever; it refuses instead, and the journal opens as usual afterwards."""
+        with self.LA.journal():
+            with self.assertRaises(self.LA.Fail) as e:
+                with self.LA.journal():
+                    pass
+        self.assertIn("opened again inside its own locked step", str(e.exception))
+        with self.LA.journal() as d:
+            self.assertEqual(d["claims"], {})
+
     def test_a_send_hc_doesnt_confirm_is_held_and_never_typed_again(self):
         """L2: a failed hc send may still have pasted the line, so the revival stays submission uncertain under its
         launch id, holding the Assistant's identity, and no later tick types it again."""

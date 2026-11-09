@@ -118,7 +118,7 @@ herdr-task launch reconcile IDENTITY LAUNCH [--json]
 herdr-task launch recover IDENTITY LAUNCH [--json]
 herdr-task launch folder PID [--json]
 herdr-task launch run --role coordinator|agent --space SPACE [--slot TAB] [--config-dir DIR] [--new-start WORD [--source TEMPLATE]
-  [--argv JSON] [--deployment NAME --revision REV]] [--replaces TERMINAL [--argv JSON]] [--check] [--json] -- <hc run words>
+  [--argv JSON] [--deployment NAME --revision REV]] [--replaces TERMINAL [--continues] [--argv JSON]] [--check] [--json] -- <hc run words>
 herdr-task launch revive [TERMINAL] [--lost] [--json]
 ```
 

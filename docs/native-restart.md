@@ -13,7 +13,7 @@ for starts. Nothing types or starts an agent beside it.
 | Where an agent comes back | Before L2 | Since L2 |
 | --- | --- | --- |
 | Revival after a crash, power loss or reboot (the tick, `T/revive.py`) | `hc send` with no claim; Personal only | Claimed in the journal, then `hc send`; on its recorded binding |
-| A lost session at its shell, from the service (`service/watch.ts`) or the window's chat (`mods/chat/main.js`) | Each typed the new agent itself (a second loop beside revival); Personal only | `herdr-task launch revive TERMINAL --lost`: the same owner as revival |
+| A lost session at its shell, from the service (`service/watch.ts`) or the window's chat (`mods/chat/main.js`) | Each typed the new agent itself (a second loop beside revival); Personal only | `herdr-task launch revive TERMINAL --lost`: the same owner as revival, for any chat's agent (a tab agent under its own identity) |
 | A lost session whose terminal ended (the same two) | `restart.sh`; Personal only | `restart.sh`, which the owner plans |
 | Restart or Switch agent of an Assistant (window, web, `restart.sh`) | Personal only (`--replaced-route`) | `launch run --replaces TERMINAL`: the owner plans it |
 | Restart or Switch agent of a task's agent (`herdr-task switch --restart`) | Personal only | Planned as resume and switch are |
@@ -60,15 +60,18 @@ once by `compose` (`without_table`); any other provider in the argv still refuse
 ## Revival through the journal
 
 - **Identity.** A revival is claimed under the agent's own launch identity (`agent_identity`): `task:<list>#<n>` (a
-  reviewer's adds `/reviewer`) or `coordinator:local/<space>`. So a revival and any start of the same agent (a task's
-  resume or switch, `restart.sh`) fence each other.
+  reviewer's adds `/reviewer`), `coordinator:local/<space>`, or for any other chat's agent brought back with `--lost`,
+  `agent:local/<space>/<chat pane, else tab, else terminal>`, as `restart.sh` names them. So a revival and any start of
+  the same agent (a task's resume or switch, `restart.sh`) fence each other.
 - **Order.** Preflight (the binding planned, the line composed), claim (`never-submitted`), then under the journal's
   lock the claim checked as its own and its revision unchanged, `submission-uncertain`, then `hc send` next. hc's
   success confirms it and lets the claim go. Its record carries `revival`: how (`resume` or `fresh`),
   `missing_history`, the session it resumed or the one that was lost, and its `provider`.
 - **One sender at a time.** A revival marks its terminal handled (`herdr.resume`, with its launch id) while it still
   holds its claim, and its revision includes the terminal as it planned from it: the same process, still at its shell,
-  its record unchanged. So of two senders that planned at once (the tick and a lost-session recovery), the second
+  its record unchanged. The binding is found once while planning, outside any lock, and the recheck reads only the
+  terminal and the settings (the journal refuses being opened again inside its own lock rather than wait on itself).
+  So of two senders that planned at once (the tick and a lost-session recovery), the second
   either finds the first's claim open or, under the journal's lock just before it would be sent, the terminal changed,
   and types nothing. A later genuine loss in the same shell plans from the record the tick wrote while that agent
   ran, so it comes back again.
@@ -100,7 +103,7 @@ first message says the earlier session is gone (as before).
 
 ```sh
 herdr-task launch revive [TERMINAL] [--lost] [--json]
-herdr-task launch run ... [--replaces TERMINAL] [--argv JSON] ...
+herdr-task launch run ... [--replaces TERMINAL [--continues]] [--argv JSON] ...
 ```
 
 - `launch revive` has two shapes: no terminal is the tick's pass (outside the tick's lock it is fenced as above), and
@@ -132,6 +135,11 @@ herdr-task launch run ... [--replaces TERMINAL] [--argv JSON] ...
 - **Tab agents** start Personal only (A2's decision); their restart keeps that.
 - **Remote Azure** stays refused (`NOT_EXECUTION_HOST`); a remote Assistant's binding is read from labels only.
 - **Settings changed away and back** read as unchanged (content revisions, as in L1 and A2).
+- **A Personal restart's multi-line word.** `restart.sh`'s Personal branches still split an argv word on its
+  newlines (as before L2), so a Personal Assistant's lost session behind its chat gets its first message as several
+  words. Only the Azure branch keeps it whole.
+- **A2's refusal helpers** (`providerRefusal`, `routeRefusal`, `routeArgs` in `core/agents.js` and its copies) have no
+  caller since L2 and say things L2 made untrue; removing them is a follow-up.
 - **Real behaviour** of every route is unproven: a real CLI resuming a session on a rebuilt Foundry environment or
   Codex provider table, a real crash or reboot, the credential check (it runs after the terminal exists), and a
   revival's line in a person's own shell configuration.
@@ -171,7 +179,7 @@ Authored, not run locally (repository policy allows only `bun run typecheck`). C
   `restart.sh` continuing an Azure Assistant on its recorded deployment, a lost session behind its chat on its
   recorded binding with a multi-line message kept one word, a model the recorded deployment would replace refused, and
   a new conversation refused on another route; a fork admitted on Personal and refused by the owner on Azure; the
-  misused flags refused.
+  misused flags refused; a chat agent with no labels brought back by the real owner under its own identity.
 - `test/test_herdr_task.py` (`Revive`, in-process): the journal record, missing history, an unconfirmed send held.
 - `test/test_providers.py`: `revive.plan` on its recorded binding or held; the settings read once; a model menu's
   restart on its recorded binding, a picked model it would replace refused, a new conversation never moved; a Codex

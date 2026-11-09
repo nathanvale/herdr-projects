@@ -466,13 +466,30 @@ class LostSession(unittest.TestCase):
         f.revive()
         self.assertEqual(len(f.sends()), 1)
 
+    def test_any_chats_agent_comes_back_under_its_own_identity(self):
+        """A chat's agent that is neither an Assistant nor a task's (a tab agent, one restarted behind its chat, a fork),
+        with no labels at all: brought back by the real owner as the window and the service did before L2, claimed as
+        a tab agent of its own (never as the space's Assistant)."""
+        f = Fixture(self)
+        f.seed(address="t8", state="live", pid=800, cwd=f.repo, argv=["claude", "--resume", SESSION], screen=LOST,
+               foreground={"pid": 800, "name": "zsh", "argv": ["zsh"], "cwd": f.repo}, labels={})
+        out = f.revive("t8", "--lost")
+        self.assertEqual((out["how"], out["missing_history"]), ("fresh", True))
+        [send] = f.sends()
+        self.assertTrue(send[2].startswith("claude '<restart>Your earlier session is gone"), send[2])
+        self.assertNotIn("--resume", send[2])
+        [rec] = f.revivals()
+        self.assertEqual((rec["identity"], rec["state"]), ("agent:local/unplaced/t8", "confirmed"))
+        self.assertEqual(f.revive("t8", "--lost")["how"], "none")
+        self.assertEqual(len(f.sends()), 1)
+
     def test_its_refusal_is_the_owners_words_and_nothing_is_typed(self):
         f = Fixture(self)
         f.lost("t7", {"herdr.role": "coordinator", "herdr.space": "sp1", "herdr.provider": "azure-foundry"}, f.record(pid=200),
                screen=LOST)
         self.assertIn("its recorded provider binding can't be found", f.refused("launch", "revive", "t7", "--lost")["error"])
         self.assertEqual(f.sends(), [])
-        self.assertIn("isn't an Assistant's or a task agent's terminal", f.refused("launch", "revive", "t99", "--lost")["error"])
+        self.assertIn("isn't an agent's terminal here", f.refused("launch", "revive", "t99", "--lost")["error"])
         # Two shapes only: the tick's pass, or one terminal with --lost; a misused flag refuses with one error, nothing typed.
         for words in (["t7"], ["--lost"]):
             self.assertIn("launch revive is the tick's pass", f.refused("launch", "revive", *words)["error"])

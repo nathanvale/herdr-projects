@@ -92,7 +92,7 @@
       "phase": "L2",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "82cfa36fd73760a95a88b6d07a09e9cc03dfa167",
-      "sha256": "081fd3f32f1254845e1ba3075182ba7dafe8ae2b81b7ca0f5902ad65d4d0b624"
+      "sha256": "b4b75ae2a65efdda7bde5d2a6b04827d68f9882bde4c4e8eae448fd1fe3fe24c"
     },
     {
       "phase": "B2",
@@ -116,7 +116,7 @@
       "phase": "L2",
       "path": "core/chat-find.test.js",
       "upstream_blob": null,
-      "sha256": "f085d652797606b22ec2f897981418fbb438d3ce6635be6137018e313c871397"
+      "sha256": "9b3b8ae4a7b274e411df98160ad53f57cb387a19a497b700cee822f815f243f9"
     },
     {
       "phase": "C1",
@@ -344,7 +344,7 @@
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/launch_admission.py",
       "upstream_blob": null,
-      "sha256": "cd78adb5c7ea403d980a0eb9133fcda9ca6f0487bd3def53cb7264175f4b73ea"
+      "sha256": "9c7e90bede3dc9a6cc8d641b08e52fa9c777d232c3cdd8e3cf925d9c52cb1acd"
     },
     {
       "phase": "A2",
@@ -446,7 +446,7 @@
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/revive.py",
       "upstream_blob": "1ed629e083e5ede0f620e0be32c2ccc08bffb0c3",
-      "sha256": "900050b5fb7a9b22a2fbb6eb5af27a5642622ea8889c609e9fbd4fc7f1df37a5"
+      "sha256": "dc27f55fc34ffd09dd07d1a29d2c114f9c63a1aa78bd79ccf97423f08d48a06b"
     },
     {
       "phase": "A2",
@@ -572,7 +572,7 @@
       "phase": "L2",
       "path": "test/test_native_restart.py",
       "upstream_blob": null,
-      "sha256": "7546b649daf731358f5c9864154f63fb589bb5e89c87c25ba00fc586ae2af92a"
+      "sha256": "c68ab19ea47192512a5173a0db15900aa1a6e7cbbc22fcc1ec39005b324f27a6"
     }
   ],
   "requirements": [

@@ -119,20 +119,31 @@ def _save(d):
         os.close(fd)
 
 
+# Whether this process holds the journal's lock now: a second open in the same process would wait on its own flock for
+# ever (two open files' locks conflict), so it refuses instead (a check inside a locked step must not read the journal).
+_HELD = []
+
+
 @contextlib.contextmanager
 def journal():
     """The journal under its own lock (machine-wide, apart from any task list's): changes made
     inside are saved when the block ends without an error, and dropped when it raises."""
+    if _HELD:
+        raise Fail("The launch journal was opened again inside its own locked step, which would wait for ever. Nothing "
+                   "was started.")
     os.makedirs(STORE, exist_ok=True)
     lock = open(os.path.join(STORE, ".launches.lock"), "a")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX)
+        _HELD.append(True)
         d = _load()
         before = json.dumps(d, sort_keys=True)
         yield d
         if json.dumps(d, sort_keys=True) != before:
             _save(d)
     finally:
+        if _HELD:
+            _HELD.pop()
         fcntl.flock(lock, fcntl.LOCK_UN)
         lock.close()
 
@@ -569,14 +580,19 @@ def space_binding(space):
 
 def agent_identity(k):
     """The launch identity of the agent in terminal k (hc get's record): the one its own starts are claimed under, a
-    task's agent (herdr.task; a reviewer's adds /reviewer) or an Assistant (coordinator:local/<its space>, as
-    restart.sh names it). Revival is claimed under it too, so a revival and any start of the same agent fence each
-    other in the journal: one owner, never two agents."""
+    task's agent (herdr.task; a reviewer's adds /reviewer), an Assistant (coordinator:local/<its space>), or any other
+    chat's agent, a tab agent (agent:local/<its space>/<its chat pane, else its tab, else its terminal>), each as
+    restart.sh names it. Revival is claimed under it too, so a revival and any start of the same agent fence each other
+    in the journal: one owner, never two agents."""
+    from .settings import ASSISTANT_TEMPLATES
     labels = k.get("labels") or {}
     if labels.get("herdr.task"):
         return f"task:{labels['herdr.task']}" + ("/reviewer" if labels.get("herdr.role") == "reviewer" else "")
     space = bare(str(labels.get("herdr.space") or labels.get("herdr.coordinator.space") or "")) or "unplaced"
-    return assistant_identity("coordinator", None, space)
+    if labels.get("herdr.role") == "coordinator" or k.get("template") in ASSISTANT_TEMPLATES:
+        return assistant_identity("coordinator", None, space)
+    slot = str(labels.get("herdr.chat") or labels.get("herdr.tab") or k.get("address") or "")
+    return assistant_identity("agent", None, space, slot if SLOT.fullmatch(slot) else "unnamed")
 
 
 def read_resume(k):
@@ -944,6 +960,9 @@ def launch_run(args, say):
         # Azure now means the settings changed between the two. Refused before anything is claimed or sent.
         raise Fail(CHANGED.format("planned"))
     if azure and words.count(new) != 1:
+        if old is not None:
+            # A restart whose check said Personal runs its own template word, not --new-start's: the settings changed.
+            raise Fail(CHANGED.format("planned"))
         raise Fail("--new-start names the template word its hc run words give once. Nothing was started.")
     made = None
     try:
