@@ -920,8 +920,9 @@ def cmd_select(args):
     change = args.default or any(v is not None for v in (args.agent, args.deployment, args.model, args.effort))
     with open_store(args) as s:
         t = s.find(args.id)
-        # Its space's settings when it has one, else the folder's own layers: an inspect and a save need no terminal.
-        space = bare(args.space) if args.space else (t.get("space") or None)
+        # Its space's settings when it has one (a queued or scheduled task keeps it in its plan, where its start reads
+        # it), else the folder's own layers: an inspect and a save need no terminal.
+        space = bare(args.space) if args.space else (t.get("space") or (t.get("queue") or {}).get("space") or None)
         cur = selection_of(s, t, space)
         if not change:
             v = cur

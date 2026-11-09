@@ -38,7 +38,7 @@
       "phase": "A2",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "d2463e1a37c0aeefaee51eec7480d3de3df1f40d",
-      "sha256": "6f592e09d5e3004e902aecd2d9483d5c462f8363067a29588a1ea20a11ecb5b4"
+      "sha256": "2c7d5802be4953861ca3d794069207b01934bf11da90e0d08df13a578d63391f"
     },
     {
       "phase": "B1",
@@ -92,7 +92,7 @@
       "phase": "A2",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "82cfa36fd73760a95a88b6d07a09e9cc03dfa167",
-      "sha256": "0153a9b101e02277ea7c5c730673bc8c60308b0f5a89a0c91bcb34ce79a0714f"
+      "sha256": "f6a8cdcd83a4a730565df54e436a6499cd765f090ae078d50195dd49075585d1"
     },
     {
       "phase": "B2",
