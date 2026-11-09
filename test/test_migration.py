@@ -210,6 +210,7 @@ class NativeFoundation(unittest.TestCase):
     def added(self, path, words='Not in the shared table.\n'):
         """The checker's answer with one new file in the copy; it goes after."""
         target = self.copy / path
+        assert not target.exists(), f'added() needs a path absent from the copy, not one it would overwrite and delete: {path}'
         made = [d for d in reversed(target.parents) if not d.exists()]
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(words)
@@ -223,7 +224,7 @@ class NativeFoundation(unittest.TestCase):
     def test_an_added_path_outside_the_table_refuses(self):
         """PR 19 decision D5's deferred enumeration, by name in the A1/S1 shared table (issue #7): a path
         no phase admits, no accepted change names and U doesn't have refuses, a document as much as source."""
-        for path in ('docs/added-outside-the-table.md', 'mods/tasks/bin/herdr_task/publications.py'):
+        for path in ('docs/added-outside-the-table.md', 'mods/tasks/bin/herdr_task/added_outside_the_table.py'):
             with self.subTest(path=path):
                 code, observed = self.added(path)
                 self.assertEqual((code, observed['candidate_readiness']), (1, 'blocked'))
