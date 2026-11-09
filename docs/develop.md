@@ -29,6 +29,8 @@ RECIPE.md, preview.png   the herdr.dev listing (repo topic herdr-layout)
 - Nothing personal: no absolute home paths (use `home()`, `appHome()`, `$HOME`), no machine or account names, no
   live terminal or artifact ids in the layout. `test/test_repo.py` checks.
 - Version: `VERSION` in `bin/shepherdr`, the top of `CHANGELOG.md`, `RECIPE.md` and the README say the same.
+- Maintainability: CI adds a report-only [Fallow](fallow.md) report to every check. A change to `lib/COPIES` must also
+  change the three copy lists in `.fallowrc.json` (`test/test_fallow_config.py` checks).
 
 ## Fork verification and migration
 
