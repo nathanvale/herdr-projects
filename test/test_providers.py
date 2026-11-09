@@ -1142,6 +1142,49 @@ class Binding(unittest.TestCase):
         self.assertEqual(step[0], "held")
         self.assertIn("settings' provider section", step[1])
 
+    def test_revival_reads_the_settings_once(self):
+        """personal_here reads the file once and judges both answers from that read: a second read landing mid-write
+        would otherwise hold a Personal agent for good as a lasting fault."""
+        import herdr_task.providers as providers
+        import herdr_task.revive as revive
+        with open(self.file, "w") as f:
+            json.dump({"everywhere": {"provider": {"route": "personal"}}}, f)
+        real, reads = providers.read_strict, []
+
+        def once(path=None):
+            reads.append(path)
+            if len(reads) > 1:
+                raise self.p.Fail("mid-write")
+            return real(path)
+        p = self.mock.patch.object(providers, "read_strict", once)
+        p.start()
+        self.addCleanup(p.stop)
+        self.assertIs(revive.personal_here({"herdr.coordinator.space": "sp1"}), True)
+        self.assertEqual(len(reads), 1)
+
+    def test_an_assistants_route_that_turns_azure_between_reads_is_refused_not_a_traceback(self):
+        """launch run reads the route once to decide whether to read the template's command, and admission reads it
+        again: Personal then Azure (settings changed between) refuses before anything is claimed or sent."""
+        import types as T
+        import herdr_task.launch_admission as LA
+        with open(self.file, "w") as f:
+            json.dump({"everywhere": {"provider": {"route": "azure-foundry", **CLAUDE}}}, f)
+        ran = []
+        for name, value in (("space_binding", lambda space: {"route": "personal"}), ("run", lambda args, **k: ran.append(args)),
+                            ("STORE", tempfile.mkdtemp())):
+            p = self.mock.patch.object(LA, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+        args = T.SimpleNamespace(role="coordinator", space="sp1", slot=None, config_dir=None, check=False, json=True,
+                                 hc_args=["--", "--bg", "assistant", "hello"], new_start="assistant", source="assistant",
+                                 argv=None, deployment=None, revision=None, replaced_route=None)
+        with self.assertRaises(self.p.Fail) as e:
+            LA.launch_run(args, lambda *a: None)
+        self.assertIn("changed before it was planned", str(e.exception))
+        self.assertEqual(ran, [])
+        with LA.journal() as d:
+            self.assertEqual(d["claims"], {})
+
     def test_the_credential_check_runs_the_agent_only_when_its_variable_is_set(self):
         """The guard in_shell() puts in the agent's own shell, run by a real POSIX shell: missing or empty, it names
         the variable and runs nothing; set, the agent runs. Only presence is looked at, never the value."""

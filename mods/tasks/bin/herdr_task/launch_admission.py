@@ -762,7 +762,7 @@ def launch_run(args, say):
         raise Fail("--config-dir is the absolute Claude Code folder its start carries.")
     # The same refusals for --check as for the run: words that carry its own launch label, or name a machine
     # (--on) that can't be an identity, refuse either way; only the run needs words at all.
-    if any(a.startswith(f"{LABEL}=") or a.startswith(f"--label={LABEL}=") or a.startswith("herdr.provider=")
+    if any(a.startswith((f"{LABEL}=", f"--label={LABEL}=", "herdr.provider=", "--label=herdr.provider="))
            for a in options_of(words)):
         raise Fail("A start's launch and provider labels are the launch owner's own: leave them out.")
     new = getattr(args, "new_start", None)
@@ -798,6 +798,10 @@ def launch_run(args, say):
         # Preflight only, before the start site changes anything: its route and an earlier start still open.
         return say(args, {"admitted": True, "identity": adm.identity, "route": adm.plan["route"]}, f"{adm.identity}: admitted.")
     azure = adm.plan["route"] == AZURE
+    if azure and argv is None:
+        # The route read Personal when the template was skipped and Azure at admission: settings changed between the
+        # two reads. Refused before anything is claimed or sent, never planned on a stand-in argv.
+        raise Fail(CHANGED.format("planned"))
     if azure and words.count(new) != 1:
         raise Fail("--new-start names the template word its hc run words give once. Nothing was started.")
     made = None

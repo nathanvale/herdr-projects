@@ -986,6 +986,11 @@ class AssistantStarts(unittest.TestCase):
         for label in ("herdr.launch=00000000-0000-4000-8000-000000000000", "herdr.provider=azure-foundry"):
             p = self.run_start(f, words=["--label", label, *self.WORDS])
             self.assertEqual(p.returncode, 1)
+        # The attached form too: a site's own herdr.provider would sit beside the owner's and could show it as Personal.
+        for word in ("--label=herdr.provider=personal", "--label=herdr.launch=00000000-0000-4000-8000-000000000000"):
+            p = self.run_start(f, words=[word, *self.WORDS])
+            self.assertEqual(p.returncode, 1)
+            self.assertIn("launch and provider labels are the launch owner's own", json.loads(p.stdout)["error"])
         self.assertEqual(f.calls(), [])
 
     def template(self, f, command="claude --dangerously-skip-permissions"):

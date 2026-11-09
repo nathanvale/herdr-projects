@@ -223,15 +223,17 @@ def personal_here(labels):
     False; None when the settings file can't be read now (it may be mid-write: the next tick looks again); or, when its
     provider section can be read but is wrong (a field this version doesn't know, say), the reason why."""
     from .base import Fail
-    from .launch_admission import space_binding
-    from .providers import PERSONAL, read_strict
+    from .launch_admission import space_scope
+    from .providers import binding_for, PERSONAL, read_strict
     space = labels.get("herdr.task.space") or labels.get("herdr.space") or labels.get("herdr.coordinator.space")
+    space = str(space).split("/")[-1] if space else ""
+    # One read, used for both answers: a second read landing mid-write could never be told from a lasting fault.
     try:
-        read_strict()
+        d = read_strict()
     except Fail:
         return None
     try:
-        return space_binding(str(space).split("/")[-1] if space else "")["route"] == PERSONAL
+        return binding_for(space_scope(space, d), space, d)["route"] == PERSONAL
     except Fail as e:
         return str(e) or "its provider settings can't be read as one"
 
