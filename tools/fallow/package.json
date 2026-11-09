@@ -1,0 +1,13 @@
+{
+  "name": "shepherdr-fallow",
+  "private": true,
+  "description": "Pinned Fallow for report-only maintainability checks. See docs/fallow.md.",
+  "scripts": {
+    "report": "fallow --root ../..",
+    "audit": "fallow audit --root ../.. --base ${FALLOW_AUDIT_BASE:-origin/integrate/upstream-v3.1.3}",
+    "baselines": "cd ../.. && sh -c 'for c in dead-code health dupes; do fallow $c --save-baseline fallow-baselines/$c.json --quiet > /dev/null; s=$?; [ $s -lt 2 ] || exit $s; echo \"saved fallow-baselines/$c.json\"; done'"
+  },
+  "devDependencies": {
+    "fallow": "3.41.0"
+  }
+}

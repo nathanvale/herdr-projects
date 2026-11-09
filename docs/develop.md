@@ -18,6 +18,7 @@ guard/herdr-app          the window guard (--guard)
 keys.json                Shepherdr's keys, merged into the person's
 test/                    python tests: repo rules, the installer in throwaway roots, herdr-task
 scripts/parity.py        a scratch install against this machine's live Herdr home, file by file
+tools/fallow/            the pinned Fallow tool package; .fallowrc.json and fallow-baselines/ (docs/fallow.md)
 RECIPE.md, preview.png   the herdr.dev listing (repo topic herdr-layout)
 ```
 
@@ -29,6 +30,8 @@ RECIPE.md, preview.png   the herdr.dev listing (repo topic herdr-layout)
 - Nothing personal: no absolute home paths (use `home()`, `appHome()`, `$HOME`), no machine or account names, no
   live terminal or artifact ids in the layout. `test/test_repo.py` checks.
 - Version: `VERSION` in `bin/shepherdr`, the top of `CHANGELOG.md`, `RECIPE.md` and the README say the same.
+- Maintainability: CI adds a report-only [Fallow](fallow.md) report to every check. A change to `lib/COPIES` must also
+  change the three copy lists in `.fallowrc.json` (`test/test_fallow_config.py` checks).
 
 ## Fork verification and migration
 

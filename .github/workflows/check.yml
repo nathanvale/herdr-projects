@@ -6,7 +6,8 @@
 #
 # One lean job (GitHub bills by the minute): the shared lib copies, every mod's JavaScript parsed, the TypeScript
 # helpers built, the service and web app typechecked, tested and built, the Python compiled, the repo's own rules (test_repo), the installer against throwaway roots
-# (test_install: install, again, update, clash, adopt, uninstall, dry run) and herdr-task's commands.
+# (test_install: install, again, update, clash, adopt, uninstall, dry run), herdr-task's commands and a report-only Fallow
+# maintainability report (docs/fallow.md).
 # herdr-app check needs Herdr's window runtime, which a runner doesn't have: mods are checked on a person's machine.
 name: Check
 
@@ -83,6 +84,23 @@ jobs:
           ./install.sh --root "$root" --yes
           python3 bin/shepherdr doctor --root "$root"
           python3 bin/shepherdr uninstall --root "$root"
+      - name: Fallow maintainability report (report-only)
+        # docs/fallow.md. Last, so it never stops the checks above; it reuses their node_modules and web/generated.
+        # Fallow exits 1 on findings: reported, never enforced here. 2 or above is a broken config or tool, which fails.
+        env:
+          BASE: origin/${{ github.base_ref }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          bun install --cwd tools/fallow --frozen-lockfile
+          fallow() {
+            code=0; tools/fallow/node_modules/.bin/fallow --root . "$@" || code=$?
+            if [ "$code" -ge 2 ]; then echo "::error::Fallow could not run ($*): exit $code" >&2; exit "$code"; fi
+          }
+          fallow --format github-summary --quiet >> "$GITHUB_STEP_SUMMARY"
+          if [ "$EVENT" = pull_request ]; then
+            fallow audit --base "$BASE" --format github-summary --quiet >> "$GITHUB_STEP_SUMMARY"
+            fallow audit --base "$BASE" --format github-annotations --quiet
+          fi
 
   candidate-readiness:
     name: candidate-readiness

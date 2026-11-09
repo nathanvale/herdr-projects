@@ -1,0 +1,2189 @@
+{
+  "kind": "health",
+  "finding_counts": {
+    "core/accept.js": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/agents.js": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "core/asks.js": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "core/autopilot.js": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "core/bg-jobs.js": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/chat-log.js": {
+      "complexity_critical": {
+        "count": 9
+      },
+      "complexity_high": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 9
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "core/chat-reader.js": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/chat-view.js": {
+      "complexity_high": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "core/host.js": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/machine-add.js": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "core/mentions.js": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/needs.js": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/recipe.js": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/screen.js": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "core/screens.js": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/send.js": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "core/send.test.js": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/settings.js": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "core/spaces.js": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/task-artifacts.js": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "core/tasks.js": {
+      "complexity_high": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "core/voice.js": {
+      "complexity_high": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "core/worktree.js": {
+      "complexity_high": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "lib/addons.js": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/agent.js": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "lib/artifact-sidebar.js": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/artview.js": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/bridge.js": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/coordinator.js": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 7
+      },
+      "crap_high": {
+        "count": 6
+      },
+      "crap_moderate": {
+        "count": 13
+      }
+    },
+    "lib/dot.js": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "lib/inbox.js": {
+      "complexity_critical": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 8
+      },
+      "crap_high": {
+        "count": 4
+      },
+      "crap_moderate": {
+        "count": 8
+      }
+    },
+    "lib/machines.js": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "lib/parked.js": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/secrets.js": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "lib/service.js": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/settings.js": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "lib/spacelog.js": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/taskwhere.js": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "lib/ui.js": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "lib/unread.js": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "mods/accept-card/main.js": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 5
+      }
+    },
+    "mods/artifacts/main.js": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_high": {
+        "count": 4
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "mods/artifacts/markup.js": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "mods/artifacts/recipe-view.js": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/artifacts/sidebar.js": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/chat-image/artifact-bar.js": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/chat-image/main.js": {
+      "crap_critical": {
+        "count": 6
+      },
+      "crap_moderate": {
+        "count": 6
+      }
+    },
+    "mods/chat-models/main.js": {
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 5
+      }
+    },
+    "mods/chat-react/main.js": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "mods/chat/attach.js": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "mods/chat/audio.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "mods/chat/call-screen.js": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "mods/chat/cards.js": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "mods/chat/dictate.js": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/chat/main.js": {
+      "complexity_critical": {
+        "count": 28
+      },
+      "crap_critical": {
+        "count": 55
+      },
+      "crap_high": {
+        "count": 37
+      },
+      "crap_moderate": {
+        "count": 46
+      }
+    },
+    "mods/chat/panel.js": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "crap_critical": {
+        "count": 9
+      },
+      "crap_high": {
+        "count": 4
+      },
+      "crap_moderate": {
+        "count": 5
+      }
+    },
+    "mods/chat/screens.js": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/chat/secret-card.js": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "mods/chat/slash.js": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/chat/strips.js": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "mods/chat/voice.ts": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "crap_critical": {
+        "count": 7
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "mods/confirm-chat/main.js": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/coordinator/main.js": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 5
+      }
+    },
+    "mods/jump/main.js": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 4
+      },
+      "crap_moderate": {
+        "count": 8
+      }
+    },
+    "mods/machine-add-chat/main.js": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "mods/menu-tasks/main.js": {
+      "complexity_critical": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 4
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "mods/new-menu-tasks/main.js": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "mods/newspace/main.js": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 6
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/pane-chat/autopilot.js": {
+      "crap_critical": {
+        "count": 4
+      },
+      "crap_high": {
+        "count": 4
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "mods/pane-chat/main.js": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/prompt-chat/main.js": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/shepherdr-settings/autopilot-section.js": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "mods/shepherdr-settings/base-branch.js": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/shepherdr-settings/branch-names.js": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "mods/shepherdr-settings/feedback-repo.js": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/shepherdr-settings/machines-section.js": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "mods/shepherdr-settings/main.js": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 10
+      },
+      "crap_moderate": {
+        "count": 7
+      }
+    },
+    "mods/shepherdr-settings/secrets-section.js": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "mods/shepherdr-settings/web-section.js": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/spaces-chat/icon.js": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/spaces-chat/machine-popup.js": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/spaces-chat/main.js": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "crap_critical": {
+        "count": 8
+      },
+      "crap_high": {
+        "count": 7
+      },
+      "crap_moderate": {
+        "count": 10
+      }
+    },
+    "mods/spaces-chat/popups.js": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "mods/spaces-chat/rename.js": {
+      "complexity_critical": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "mods/spaces-chat/sections.js": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "mods/tabs-tasks/main.js": {
+      "complexity_critical": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "mods/tabs-tasks/tick.js": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/task-artifacts/main.js": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/task-browser/main.js": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/task-changes/main.js": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "mods/task-files/main.js": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 6
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/task-pr/main.js": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "mods/tasks-menu/main.js": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "mods/tasks/main.js": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 13
+      },
+      "crap_high": {
+        "count": 9
+      },
+      "crap_moderate": {
+        "count": 15
+      }
+    },
+    "mods/toasts/main.js": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "mods/workspace-chrome-shepherdr/main.js": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "mods/workspace-status-chat/main.js": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "service/actions.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "service/agents.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 4
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "service/artifacts.ts": {
+      "crap_critical": {
+        "count": 4
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "service/asks.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "service/auth.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "service/autopilot.ts": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "service/azure-deployments.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "service/browser.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 3
+      }
+    },
+    "service/chats.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "service/codex-ask.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "service/compat.ts": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "service/hc/client.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "service/host.test.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "service/host.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "service/hub.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "service/jobs.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "service/live.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "service/machines.ts": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "service/main.ts": {
+      "complexity_critical": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 8
+      },
+      "crap_high": {
+        "count": 5
+      },
+      "crap_moderate": {
+        "count": 7
+      }
+    },
+    "service/model.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "service/peer.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "service/private-domain.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 3
+      }
+    },
+    "service/push.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "service/saved-spaces.ts": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "service/secrets-home.test.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "service/secrets-move.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "service/secrets.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "service/settings.ts": {
+      "complexity_critical": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "service/spaces.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "service/store.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "service/sync.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "service/tailscale.ts": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "service/task-logs.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "service/terminal.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "service/vendor/qrcode.cjs": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "complexity_high": {
+        "count": 3
+      },
+      "complexity_moderate": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 5
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "service/voice-tools.ts": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "complexity_high": {
+        "count": 4
+      },
+      "complexity_moderate": {
+        "count": 5
+      },
+      "crap_critical": {
+        "count": 4
+      },
+      "crap_high": {
+        "count": 4
+      },
+      "crap_moderate": {
+        "count": 6
+      }
+    },
+    "service/voice.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "service/watch.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "service/window.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "service/worktree.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "service/worktrees.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/plugins/alerts/client.tsx": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/plugins/alerts/device.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "web/plugins/alerts/toasts.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/plugins/artifacts/client.tsx": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 10
+      }
+    },
+    "web/plugins/browser/client.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "web/plugins/browser/input.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "web/plugins/chat/activity.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/plugins/chat/client.tsx": {
+      "complexity_critical": {
+        "count": 8
+      },
+      "complexity_high": {
+        "count": 4
+      },
+      "complexity_moderate": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 8
+      },
+      "crap_high": {
+        "count": 7
+      },
+      "crap_moderate": {
+        "count": 9
+      }
+    },
+    "web/plugins/chat/days.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/plugins/chat/find.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/plugins/chat/markdown.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/plugins/chat/mentions.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/plugins/chat/rows.tsx": {
+      "complexity_moderate": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/plugins/coordinators/client.tsx": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "crap_critical": {
+        "count": 8
+      },
+      "crap_high": {
+        "count": 6
+      },
+      "crap_moderate": {
+        "count": 12
+      }
+    },
+    "web/plugins/health/client.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "web/plugins/keyboard/client.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "web/plugins/keyboard/search.tsx": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "web/plugins/needs/client.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/plugins/places/add.tsx": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "web/plugins/places/client.tsx": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 9
+      }
+    },
+    "web/plugins/places/drag.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 4
+      }
+    },
+    "web/plugins/places/section.tsx": {
+      "complexity_critical": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/plugins/reactions/client.tsx": {
+      "complexity_high": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/plugins/reactions/emoji.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/plugins/tasks/client.tsx": {
+      "complexity_critical": {
+        "count": 5
+      },
+      "crap_critical": {
+        "count": 7
+      },
+      "crap_high": {
+        "count": 4
+      },
+      "crap_moderate": {
+        "count": 6
+      }
+    },
+    "web/plugins/terminal/client.tsx": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 4
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 6
+      }
+    },
+    "web/plugins/terminal/screen.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/plugins/terminal/stream.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/plugins/voice/call.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "web/plugins/voice/client.tsx": {
+      "complexity_critical": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "web/plugins/voice/screen.ts": {
+      "complexity_critical": {
+        "count": 7
+      },
+      "crap_critical": {
+        "count": 10
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 6
+      }
+    },
+    "web/plugins/worktree/client.tsx": {
+      "complexity_critical": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_high": {
+        "count": 5
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "web/public/sw.js": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/shared/alerts.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/shared/archive.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/shared/brief.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/shared/browser.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/shared/models.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "web/shared/order.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/App.tsx": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "crap_critical": {
+        "count": 7
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 6
+      }
+    },
+    "web/src/Frame.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/Panel.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 6
+      }
+    },
+    "web/src/Settings.tsx": {
+      "complexity_critical": {
+        "count": 5
+      },
+      "complexity_high": {
+        "count": 2
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_high": {
+        "count": 4
+      },
+      "crap_moderate": {
+        "count": 5
+      }
+    },
+    "web/src/Stack.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/float.ts": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "web/src/gestures.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/guard.tsx": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "web/src/highlight.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/kernel.ts": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "web/src/main.tsx": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "web/src/motion.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "web/src/outbox.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/restart.tsx": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "crap_critical": {
+        "count": 4
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/rowmenu.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/screens/Accept.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/screens/AddMachine.tsx": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/screens/Recipe.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/screens/Role.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/screens/Worktree.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/status.tsx": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "web/src/theme.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/ui.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "web/src/viewport.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    }
+  },
+  "runtime_coverage_findings": [],
+  "target_keys": [
+    "service/compat.ts:high impact",
+    "service/autopilot.ts:untested risk",
+    "web/shared/alerts.ts:high impact",
+    "service/actions.ts:high impact",
+    "service/model.ts:high impact",
+    "core/needs.js:dead code",
+    "core/chat-reader.js:high impact",
+    "service/main.ts:complexity",
+    "core/task-artifacts.js:high impact",
+    "web/plugins/chat/markdown.tsx:high impact",
+    "web/plugins/chat/rows.tsx:high impact",
+    "lib/taskwhere.js:untested risk",
+    "service/settings.ts:high impact",
+    "core/chat-view.js:high impact",
+    "web/src/Settings.tsx:circular dependency",
+    "web/src/restart.tsx:high impact",
+    "service/spaces.ts:high impact",
+    "service/voice-tools.ts:high impact",
+    "mods/artifacts/sidebar.js:dead code",
+    "web/shared/brief.ts:dead code",
+    "web/src/kernel.ts:high impact",
+    "mods/chat/panel.js:complexity",
+    "mods/chat/main.js:complexity",
+    "service/peer.ts:complexity",
+    "mods/chat/key.ts:high impact",
+    "core/tasks.js:high impact",
+    "mods/artifacts/markup.js:untested risk",
+    "core/chat-log.js:high impact",
+    "core/asks.js:high impact",
+    "mods/shepherdr-settings/machines-section.js:untested risk",
+    "mods/artifacts/recipe-view.js:untested risk",
+    "service/auth.ts:complexity",
+    "mods/chat/call-screen.js:untested risk",
+    "core/host.js:high impact",
+    "service/voice.ts:high impact",
+    "web/plugins/places/section.tsx:complexity",
+    "web/plugins/browser/input.ts:dead code",
+    "service/host.ts:high impact",
+    "service/tailscale.ts:high impact",
+    "mods/tasks/main.js:complexity",
+    "service/push.ts:high impact",
+    "web/plugins/places/add.tsx:complexity",
+    "web/src/Panel.tsx:untested risk",
+    "web/shared/order.ts:dead code",
+    "service/hub.ts:high impact",
+    "core/agents.js:high impact",
+    "core/spaces.js:high impact",
+    "mods/tabs-tasks/main.js:complexity",
+    "service/watch.ts:complexity",
+    "mods/jump/main.js:complexity",
+    "web/src/theme.ts:dead code",
+    "web/src/App.tsx:complexity",
+    "mods/workspace-status-chat/main.js:untested risk",
+    "service/hc/client.ts:high impact",
+    "web/plugins/chat/client.tsx:high impact",
+    "service/secrets.ts:high impact",
+    "lib/local.js:high impact",
+    "web/src/focus.ts:high impact",
+    "mods/newspace/main.js:untested risk",
+    "web/shared/models.ts:dead code",
+    "web/src/uploads.ts:high impact",
+    "web/plugins/voice/screen.ts:dead code",
+    "core/settings.js:high impact",
+    "mods/spaces-chat/main.js:complexity",
+    "core/recipe.js:high impact",
+    "core/send.js:high impact",
+    "web/plugins/alerts/toasts.tsx:high impact",
+    "web/src/main.tsx:untested risk",
+    "mods/tabs-tasks/tick.js:untested risk",
+    "service/store.ts:high impact",
+    "lib/inbox.js:complexity",
+    "mods/spaces-chat/sections.js:high impact",
+    "lib/ui.js:high impact",
+    "core/toasts.js:high impact",
+    "mods/shepherdr-settings/secrets-section.js:complexity",
+    "core/machines.js:high impact",
+    "mods/spaces-chat/rename.js:high impact",
+    "web/src/viewport.ts:untested risk",
+    "core/menus.js:high impact",
+    "core/secrets.js:high impact",
+    "service/agents.ts:untested risk",
+    "web/plugins/chat/reply.ts:high impact",
+    "web/shared/activity.ts:dead code",
+    "web/plugins/terminal/stream.ts:untested risk",
+    "service/chats.ts:high impact",
+    "service/artifacts.ts:untested risk",
+    "web/src/screens/Accept.tsx:high impact",
+    "mods/pane-chat/autopilot.js:untested risk",
+    "core/machine-add.js:high impact",
+    "mods/chat/audio.ts:high impact",
+    "lib/coordinator.js:complexity",
+    "web/plugins/alerts/device.tsx:complexity",
+    "core/notify.js:high impact",
+    "service/worktree.ts:complexity",
+    "web/src/Frame.tsx:high impact",
+    "web/plugins/coordinators/client.tsx:untested risk",
+    "mods/new-menu-tasks/main.js:untested risk",
+    "core/screen.js:high impact",
+    "web/src/Stack.tsx:high impact",
+    "web/src/gestures.ts:high impact",
+    "mods/shepherdr-settings/main.js:untested risk",
+    "web/src/screens/Role.tsx:high impact",
+    "service/asks.ts:complexity",
+    "mods/task-pr/main.js:untested risk",
+    "service/saved-spaces.ts:untested risk",
+    "web/plugins/voice/client.tsx:complexity",
+    "web/src/outbox.ts:high impact",
+    "core/mentions.js:high impact",
+    "service/sync.ts:complexity",
+    "web/plugins/terminal/client.tsx:untested risk",
+    "web/src/guard.tsx:high impact",
+    "web/src/motion.ts:high impact",
+    "mods/artifacts/main.js:untested risk",
+    "mods/chat/strips.js:untested risk",
+    "mods/pane-chat/main.js:untested risk",
+    "web/plugins/artifacts/client.tsx:untested risk",
+    "web/plugins/worktree/client.tsx:untested risk",
+    "lib/secrets.js:untested risk",
+    "mods/menu-tasks/main.js:complexity",
+    "service/send-once.ts:high impact",
+    "core/autopilot.js:high impact",
+    "service/private-domain.ts:high impact",
+    "web/plugins/chat/activity.tsx:untested risk",
+    "web/plugins/places/client.tsx:complexity",
+    "mods/task-changes/main.js:untested risk",
+    "mods/shepherdr-settings/web-section.js:untested risk",
+    "service/live.ts:high impact",
+    "web/src/screens/Worktree.tsx:high impact",
+    "service/terminal.ts:untested risk",
+    "mods/accept-card/main.js:untested risk",
+    "web/plugins/tasks/client.tsx:complexity",
+    "service/secrets-move.ts:untested risk",
+    "service/worktrees.ts:complexity",
+    "service/jobs.ts:untested risk",
+    "web/plugins/keyboard/search.tsx:complexity",
+    "web/plugins/keyboard/client.tsx:complexity",
+    "mods/chat/cards.js:high impact",
+    "web/src/screens/Recipe.tsx:untested risk",
+    "lib/settings.js:untested risk",
+    "mods/tasks-menu/main.js:untested risk",
+    "core/voice.js:high impact",
+    "mods/chat/attach.js:untested risk",
+    "lib/dot.js:untested risk",
+    "web/src/screens/AddMachine.tsx:untested risk",
+    "mods/chat-image/artifact-bar.js:untested risk",
+    "mods/shepherdr-settings/autopilot-section.js:untested risk",
+    "core/newspace.js:high impact",
+    "service/machines.ts:untested risk",
+    "mods/shepherdr-settings/base-branch.js:untested risk",
+    "mods/task-files/main.js:complexity",
+    "lib/artifact-sidebar.js:untested risk",
+    "mods/coordinator/main.js:untested risk",
+    "mods/prompt-chat/main.js:untested risk",
+    "web/plugins/browser/client.tsx:complexity",
+    "web/plugins/reactions/client.tsx:high impact",
+    "core/screens.js:high impact",
+    "mods/chat/voice.ts:complexity",
+    "service/azure-deployments.ts:complexity",
+    "mods/workspace-chrome-shepherdr/main.js:untested risk",
+    "web/plugins/voice/call.ts:untested risk",
+    "core/worktree.js:high impact",
+    "mods/chat/secret-card.js:untested risk",
+    "service/browser.ts:untested risk",
+    "mods/task-artifacts/main.js:untested risk",
+    "lib/parked.js:untested risk",
+    "web/plugins/chat/fold.tsx:circular dependency",
+    "lib/artview.js:untested risk",
+    "web/plugins/alerts/client.tsx:untested risk",
+    "web/plugins/needs/client.tsx:untested risk",
+    "mods/chat-models/main.js:untested risk",
+    "web/plugins/places/drag.ts:untested risk",
+    "web/src/float.ts:complexity",
+    "mods/chat-image/main.js:untested risk",
+    "mods/spaces-chat/icon.js:untested risk",
+    "mods/chat/dictate.js:untested risk",
+    "mods/chat-react/main.js:untested risk",
+    "web/public/sw.js:untested risk",
+    "mods/task-browser/main.js:untested risk",
+    "lib/machines.js:untested risk",
+    "service/vendor/qrcode.cjs:complexity"
+  ]
+}
