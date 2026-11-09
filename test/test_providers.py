@@ -55,7 +55,8 @@ FP = {"entra-id": "b4ff5e524c831cf3eb23385562a1e07606b2f98a18ab17b71030acd4286ad
       "bearer-token": "ac9a02f2e525b63cb6119359c4c065981f15a9b17383a990cfecfb3d5c80493e",
       "codex": "44e019ec9ff5b99ccb91a33d83e95ec6c5d75bfd66c5d3b91e6bd7bb6fe9169b",
       "space": "05c67c012ea6fc16ea0739ba8dbffac40c853fd73df3a2ac9acfc646e756536c"}
-PENDING = ["launch admission", "bound resume", "settings and selectors", "native qualification"]
+# Launch admission (L1) exists and holds every Azure start; what dispatch still waits for:
+PENDING = ["bound resume", "settings and selectors", "native qualification"]
 # Settings' start limits off: the runner's own load, memory or disk never decides what a tick starts.
 ROOM = {"machine": {"start_load": None, "start_memory": None, "start_disk": None}}
 INLINE = "marker-inline-credential-3b9d"
@@ -450,6 +451,15 @@ class LaunchPlans(unittest.TestCase):
         out = f.plan(*args)
         self.assertEqual(f.calls(), [])  # a plan runs no hc at all
         f.no_secret()
+        # An Azure plan names what can outrank it on the execution host, each with its evidence and
+        # what is seen of it here (L1): it never says the plan is what will run.
+        layers = out.pop("outranked_by", None)
+        if out.get("route") == "azure-foundry":
+            want = {"claude": ["Claude apps gateway sign-in", "Claude managed settings"], "codex": ["Codex required_model_provider()"]}
+            self.assertEqual([r["layer"] for r in layers], want[out["agent"]])
+            self.assertTrue(all(r["effect"] and r["evidence"] and r["observed"] for r in layers))
+        else:
+            self.assertIsNone(layers)
         return out
 
     def test_claude_on_foundry_by_each_sign_in(self):
@@ -602,6 +612,9 @@ class LaunchPlans(unittest.TestCase):
                             (["claude", "--settings"], needs),
                             (["claude", "--effort", "high", "--settings"], needs),
                             (["claude", "--settings", "--", "x"], needs),
+                            # Followed by another option: its missing value, not a file path (A1's PR 17 carried to L1).
+                            (["claude", "--settings", "--effort", "high"], needs),
+                            (["claude", "--settings", "-p"], needs),
                             (["claude", "--settings=/somewhere/settings.json"], "as a separate JSON word")):
             with self.subTest(argv=argv):
                 self.assertIn(words, f.no_plan("--argv", json.dumps(argv)))
@@ -700,19 +713,26 @@ class Binding(unittest.TestCase):
                         self.p.clean(c["field"], c["value"])
                     self.assertNotIn(c["value"].strip(), str(e.exception))
 
-    def backup(self, provider):
+    def backup(self, provider, launch=None):
         with open(self.file, "w") as f:
             json.dump({"everywhere": {"provider": provider}}, f)
         ran, started = [], []
-        store = type("S", (), {"loc": {"folder": "/f"}, "dirty": False})()
+        store = type("S", (), {"loc": {"folder": "/f"}, "dirty": False, "key": lambda self, t: "f#1", "ref": lambda self, t: "F-1"})()
         task = {"id": 1, "space": "sp1", "agents": [{"address": "t1", "agent": "claude"}]}
         k = {"address": "t1", "labels": {"herdr.agent": "claude", "herdr.task.space": "sp1"}}
         patches = {"backup_for": lambda s, t, running: ("codex", None), "backup_argv": lambda s, t, kind: ["codex", "--no-daemon"],
-                   "parent_for": lambda parent, space: None, "handover": lambda *a: "handover", "brief": lambda *a: "brief",
-                   "launch": lambda s, t, argv, space, text, parent=None: started.append(argv) or {"address": "t2"},
+                   "handover": lambda *a: "handover", "brief": lambda *a: "brief",
+                   "launch": launch or (lambda s, t, argv, space, text, parent=None, admission=None: started.append(argv) or {"address": "t2"}),
                    "run": lambda args, **kw: ran.append(args)}
         for name, value in patches.items():
             p = self.mock.patch.object(self.takeover, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+        # Launch admission (L1) runs for real: its journal in a throwaway folder, and no Assistant to find.
+        import herdr_task.launch as launch
+        import herdr_task.launch_admission as admission
+        for module, name, value in ((admission, "STORE", tempfile.mkdtemp()), (launch, "parent_for", lambda parent, space: None)):
+            p = self.mock.patch.object(module, name, value)
             p.start()
             self.addCleanup(p.stop)
         row = self.takeover.takeover(store, task, k, {"reason": "Out of allowance until 5pm"}, None, {})
@@ -721,6 +741,23 @@ class Binding(unittest.TestCase):
     def test_a_backup_starts_on_personal(self):
         row, task, started, ran = self.backup({"route": "personal"})
         self.assertEqual((row, task["backup"]["state"], started, ran), (None, "started", [["codex", "--no-daemon"]], [["hc", "kill", "t1"]]))
+
+    def test_a_backup_that_may_have_started_is_uncertain_not_failed(self):
+        """A backup whose start was sent but never confirmed keeps its launch id as uncertain (L1), and the stuck agent
+        isn't ended; a known failure stays failed."""
+        def uncertain(*a, **k):
+            e = self.p.Fail("hc didn't confirm this start")
+            e.launch = {"launch": "6f1c2d3e-4a5b-4c6d-8e7f-001122334455", "identity": "task:f#1", "state": "submission-uncertain"}
+            raise e
+        row, task, started, ran = self.backup({"route": "personal"}, launch=uncertain)
+        self.assertEqual((task["backup"]["state"], task["backup"]["launch"], ran), ("uncertain", "6f1c2d3e-4a5b-4c6d-8e7f-001122334455", []))
+        self.assertEqual(row["reason"], "Out of allowance, backup uncertain")
+        self.assertLessEqual(len(row["reason"]), 40)
+
+        def broken(*a, **k):
+            raise self.p.Fail("git worktree add failed")
+        row, task, started, ran = self.backup({"route": "personal"}, launch=broken)
+        self.assertEqual((task["backup"]["state"], "launch" in task["backup"], ran), ("failed", False, []))
 
     def test_a_backup_the_provider_holds_isnt_spent(self):
         row, task, started, ran = self.backup({"route": "azure-foundry", **CODEX})

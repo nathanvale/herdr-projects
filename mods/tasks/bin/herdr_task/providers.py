@@ -9,17 +9,21 @@ method: it does not attest an account, and rotating a credential doesn't change 
 
 The supported combinations are the four in docs/azure-launch-plans.md, each from the official
 contract for the inspected CLI version; anything else is refused. In this source checkpoint a
-valid Azure plan is still not dispatched: launch admission and bound resume are later migration
-phases (docs/migration/upstream-v3.1.3.md, A2 and L1), so admit_launch() refuses it before any
-effect, and `herdr-task provider plan` only shows it."""
+valid Azure plan is still not dispatched: launch admission (launch_admission.py, L1) consults this
+module before every start, but bound resume is a later migration phase
+(docs/migration/upstream-v3.1.3.md, A2 and L2), so admit_launch() refuses it before any effect,
+and `herdr-task provider plan` only shows it. An Assistant's start can't carry a plan yet, so
+admit_assistant() refuses any route but Personal for it."""
 
 import hashlib
 import json
+import os
 import re
 import types
 
-from .base import Fail
-from .settings import agent_argv, agent_key, bare, read_settings, settings_layers
+from .base import Fail, HOME
+from . import settings as settings_file
+from .settings import agent_argv, agent_key, bare, settings_layers
 
 
 PERSONAL, AZURE = "personal", "azure-foundry"
@@ -70,6 +74,15 @@ NO_CLAUDE_AUTH = "Claude Code on Azure Foundry signs in with Entra ID, an API ke
 NO_CODEX_AUTH = ("Codex on Azure signs in with an API key only (\"api-key\", from AZURE_OPENAI_API_KEY on the execution host): "
                  "Microsoft's Codex guide says Entra ID isn't available for Codex.")
 NO_KIND = "Azure Foundry is set up for Claude Code and Codex only, not {}. Set Provider to Personal to start it."
+# A Serve-from client (service/sync.ts) keeps its settings file in step with the machine serving the
+# web app and writes it as its own, without pushed_from. Its herdr-core node record (core/host.js
+# NODE_DOC, written by this machine's service) says it doesn't serve, so the file is that machine's.
+NOT_SERVED_HERE = ("Azure Foundry starts agents only on the machine whose settings set it, and this machine's settings are "
+                   "kept in step with the machine that serves the web app (Serve from): they are its. Nothing was started. "
+                   "Set Provider to Personal for this machine or space.")
+NOT_KNOWN_HERE = ("Azure Foundry starts agents only on the machine whose settings set it, and whether this machine's settings "
+                  "are its own or a Serve-from copy can't be read now (herdr-core's documents). Nothing was started.")
+NODE_DOC = "shepherdr.node"
 NOT_LOCAL = ("Azure Foundry starts agents only on the machine whose window holds these settings: this machine's are a copy. "
              "Set Provider to Personal for this machine or space.")
 # Never names the field it found: a key pasted in as a field's name would be repeated, and this
@@ -81,8 +94,17 @@ NO_INLINE_CREDENTIAL = ("On Azure Foundry, {} comes from the execution host's en
 NO_OPTION_AFTER_DASHES = ("On Azure Foundry, Claude Code's argv can't carry --settings or --model after a bare \"--\": there it "
                           "can't be told from an option. Remove it, or give it before the \"--\". Nothing was started.")
 NO_SETTINGS_VALUE = "On Azure Foundry, Claude Code's --settings needs its inline JSON value right after it. Nothing was started."
+# A settings file that is there but can't be read is never taken for "no settings" (Personal): its
+# provider section could say otherwise (P17-7). Never repeats the file's words.
+UNREADABLE = ("Shepherdr settings ({}) are there but can't be read as a settings file, so this start can't tell which "
+              "provider they set. Nothing was started; fix or move the file.")
+NOT_ASSISTANT = ("Provider is Azure Foundry here, but an Assistant's start can't carry a launch plan yet (pending: settings "
+                 "and selectors): it would start on the CLI's own sign-in. Nothing was started. Set Provider to Personal "
+                 "for this machine or space to start it.")
+NOT_EXECUTION_HOST = ("Provider is Azure Foundry here, and Azure Foundry starts agents only on the machine whose settings set "
+                      "it; this start would run on {}. Nothing was started. Set Provider to Personal to start it.")
 HELD = ("Azure Foundry is set for {}, and its launch plan is valid, but this version only plans it: starting or resuming an "
-        "agent on Azure waits for launch admission and bound resume (still pending). Nothing was started or changed. "
+        "agent on Azure waits for bound resume and its settings and selectors (still pending). Nothing was started or changed. "
         "`herdr-task provider plan --agent {}` shows the plan; set Provider to Personal to start on the CLI's own sign-in.")
 
 
@@ -120,15 +142,38 @@ def clean(field, value):
     return v
 
 
-def binding_for(s, space=None):
+def read_strict(path=None):
+    """The settings file, read once for a launch: {} when there is none (Personal stays the
+    default), refused when it is there but unreadable, not JSON or not an object (P17-7)."""
+    path = path or settings_file.SETTINGS
+    try:
+        with open(path) as f:
+            text = f.read()
+    except FileNotFoundError:
+        return {}
+    except (OSError, UnicodeDecodeError):
+        raise Fail(UNREADABLE.format(path))
+    try:
+        d = json.loads(text)
+    except ValueError:
+        raise Fail(UNREADABLE.format(path))
+    if not isinstance(d, dict):
+        raise Fail(UNREADABLE.format(path))
+    return d
+
+
+def binding_for(s, space=None, d=None):
     """The nonsecret provider binding for this folder's launches: Everywhere's, then this
     machine's, then the space's own "provider" fields; a field a layer leaves out (or null) follows
     the layer above, and "" there is its own empty value. With no route anywhere: Personal.
     "local" is False for a copy the settings window or the service pushed to this machine
-    ("pushed_from"). It is not a full local-only guard: a Serve-from host's file is its own, so launch admission (L1) must
-    bind the execution machine before any Azure dispatch."""
+    ("pushed_from"); "source" says whose the file is for a route other than Personal (settings_source(): a
+    Serve-from client's copy is the serving machine's). Launch admission (L1) also refuses Azure for a start on
+    another machine. d: the settings as read_strict() read
+    them (read here when not given): a file that is there but unreadable refuses, never reads as Personal."""
+    d = read_strict() if d is None else d
     out = {f: "" for f in FIELDS}
-    for layer in settings_layers(s, space):
+    for layer in settings_layers(s, space, d):
         section = layer.get("provider") if isinstance(layer, dict) else None
         if section is None:
             continue
@@ -146,8 +191,43 @@ def binding_for(s, space=None):
     # them, so a half-filled Azure setup never gets in Personal's way (the section's shape, above,
     # is checked on every route).
     out["route"] = clean("route", out["route"]) or PERSONAL
-    out["local"] = not read_settings().get("pushed_from")
+    out["local"] = not d.get("pushed_from")
+    # Whose file it is decides Azure only; Personal never reads herdr-core's documents.
+    out["source"] = ("pushed" if not out["local"] else settings_source()) if out["route"] != PERSONAL else None
     return out
+
+
+def core_docs():
+    """herdr-core's documents file on this machine (as backups.py reads it), for the default session."""
+    state = os.environ.get("XDG_STATE_HOME") or os.path.join(HOME, ".local", "state")
+    return os.path.join(state, "herdr-core", "default", "docs.json")
+
+
+def settings_source():
+    """Whose this machine's settings file is, for a route that must run where it was set: "own" (no
+    Shepherdr service here, so nothing syncs it, or this machine serves the web app), "serve-from" (its
+    node record says another machine serves, so service/sync.ts keeps the file in step with that one),
+    or "unknown" (the documents are there but can't be read, or the node record says neither)."""
+    path = core_docs()
+    try:
+        with open(path) as f:
+            docs = json.load(f)
+    except FileNotFoundError:
+        return "own"
+    except (OSError, ValueError, UnicodeDecodeError):
+        return "unknown"
+    if not isinstance(docs, dict):
+        return "unknown"
+    # No node record: no Shepherdr service here, so nothing syncs the file. One that is there but
+    # malformed (not a document, no value, no serving flag) can't say whose the file is.
+    if NODE_DOC not in docs:
+        return "own"
+    entry = docs[NODE_DOC]
+    node = entry.get("value") if isinstance(entry, dict) else None
+    if not isinstance(node, dict) or not isinstance(node.get("serving"), bool):
+        return "unknown"
+    # This machine's own service decides serving (a host record it rejected doesn't count), so its flag is the answer.
+    return "own" if node["serving"] else "serve-from"
 
 
 def fingerprint(kind, target, deployment, auth):
@@ -165,6 +245,10 @@ def launch_plan(kind, binding):
                 "settings_env": {}, "args": [], "env": {}}
     if kind not in KINDS:
         raise Fail(NO_KIND.format(kind))
+    if binding.get("source") == "serve-from":
+        raise Fail(NOT_SERVED_HERE)
+    if binding.get("source") == "unknown":
+        raise Fail(NOT_KNOWN_HERE)
     if not binding.get("local", True):
         raise Fail(NOT_LOCAL)
     name = "Claude Code" if kind == "claude" else "Codex"
@@ -279,8 +363,9 @@ def compose(plan, argv):
             raise Fail("On Azure Foundry, give Claude Code one --settings word. Nothing was started.")
         if "--settings" in out[1:end]:
             i = out.index("--settings", 1)
-            # The last option, with nothing after it before the "--" or the end: no value to read.
-            if i + 1 >= end:
+            # The last option, with nothing after it before the "--" or the end, or followed by another
+            # option (`--settings --effort high`): no value to read.
+            if i + 1 >= end or out[i + 1].startswith("-"):
                 raise Fail(NO_SETTINGS_VALUE)
             try:
                 cur = json.loads(out[i + 1])
@@ -303,16 +388,63 @@ def compose(plan, argv):
     return out[:1] + plan["args"] + out[1:], dict(plan["env"])
 
 
-def admit_launch(s, argv, space=None):
+def admit_launch(s, argv, space=None, d=None):
     """Before any launch effect (a worktree, a task's state, a terminal): Personal passes, as it
-    always did. An Azure binding is checked whole, so an unsupported one says what is wrong, and
-    a valid one is held: this version plans Azure launches and doesn't dispatch them."""
-    binding = binding_for(s, space)
-    if binding["route"] == PERSONAL:
-        return
+    always did, and gives its plan. An Azure binding is checked whole, so an unsupported one says
+    what is wrong, and a valid one is held: this version plans Azure launches and doesn't
+    dispatch them. d: the settings as launch admission read them (read_strict)."""
+    binding = binding_for(s, space, d)
     kind = agent_key(argv)
+    if binding["route"] == PERSONAL:
+        return launch_plan(kind, binding)
     compose(launch_plan(kind, binding), argv)
     raise Fail(HELD.format("Claude Code" if kind == "claude" else "Codex", kind))
+
+
+def admit_assistant(s, space=None, d=None, machine=None):
+    """An Assistant's (or a tab agent's) start, before any effect. Its start sites can't apply a
+    plan, so only Personal passes; machine: where it would run when that isn't here (`hc run
+    --on`), named in the refusal. Gives the route."""
+    binding = binding_for(s, space, d)
+    if binding["route"] != PERSONAL:
+        raise Fail(NOT_EXECUTION_HOST.format(machine) if machine else NOT_ASSISTANT)
+    return binding["route"]
+
+
+# What can outrank a plan on the execution host, so a plan shown here is never said to be what
+# will run. Each layer's evidence stays apart: official documentation, installed or pinned version
+# evidence, parser or source inference, and what is unknown. None is read here: only whether
+# Claude's managed settings file is at a documented path.
+MANAGED_SETTINGS = ("/Library/Application Support/ClaudeCode/managed-settings.json", "/etc/claude-code/managed-settings.json")
+PRECEDENCE = {
+    "claude": [
+        {"layer": "Claude apps gateway sign-in",
+         "effect": "a signed-in gateway session authenticates with the gateway's token even when CLAUDE_CODE_USE_FOUNDRY is set",
+         "evidence": "official docs as reviewed for A1 (PR 17), Claude Code 2.1.318 installed then; not re-read here",
+         "observed": "unknown: whether the execution host has such a session is not checked"},
+        {"layer": "Claude managed settings",
+         "effect": "outrank --settings, its env included; allowedProviders can refuse a provider, and --model picks only from allowed models",
+         "evidence": "official docs as reviewed for A1 (PR 17), Claude Code 2.1.318 installed then; not re-read here",
+         "observed": None},
+    ],
+    "codex": [
+        {"layer": "Codex required_model_provider()",
+         "effect": "resolves ahead of the other provider sources, the plan's -c model_provider included",
+         "evidence": "source inference: the Codex 0.166.0 tag read through summarised fetches; Microsoft's guide validated only 0.152.1, 0.153.0 and 0.155.1",
+         "observed": "unknown: not checked"},
+    ],
+}
+
+
+def precedence(kind):
+    """The layers that can outrank kind's plan, each with its evidence and what is seen of it here."""
+    rows = [dict(r) for r in PRECEDENCE.get(kind, [])]
+    for r in rows:
+        if r["observed"] is None:
+            there = [p for p in MANAGED_SETTINGS if os.path.exists(p)]
+            r["observed"] = (f"a managed settings file is there ({there[0]}): it may change or refuse this plan" if there
+                             else "no file at the documented paths; MDM and other managed sources are not checked")
+    return rows
 
 
 def cmd_provider(args):
@@ -334,7 +466,8 @@ def cmd_provider(args):
     argv, env = compose(plan, base)
     azure = plan["route"] == AZURE
     out = {**plan, "argv": argv, "env": env, "dispatch": "held" if azure else "pass-through",
-           "pending": ["launch admission", "bound resume", "settings and selectors", "native qualification"] if azure else []}
+           "pending": ["bound resume", "settings and selectors", "native qualification"] if azure else [],
+           **({"outranked_by": precedence(kind)} if azure else {})}
     if getattr(args, "json", False):
         print(json.dumps(out))
         return
@@ -347,5 +480,6 @@ def cmd_provider(args):
         f"{kind}: Azure Foundry, deployment {plan['deployment']}, {AUTH_WORDS[plan['auth']]}.",
         f"Signs in with {how}.",
         f"Binding {plan['fingerprint'][:12]} (CLI, endpoint or resource, deployment and method; not an account).",
-        "Dispatch is held in this version: launch admission, bound resume, settings and selectors, and native qualification are pending.",
+        "Dispatch is held in this version: launch admission checks every start, and bound resume, settings and selectors, and native qualification are pending.",
+        *[f"Can be outranked by {r['layer']}: {r['effect']} ({r['observed']})." for r in precedence(kind)],
         "This is a plan, not a check: no sign-in, credential or model request was tried. --json shows its argv and env."]))

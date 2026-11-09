@@ -1565,8 +1565,13 @@ export default class Chat extends View {
       this.startAgent({ ...first, text: [first, ...rest].map((m) => m.text).join("\n\n"), files: [first, ...rest].flatMap((m) => m.files) }, cx);
       return;
     }
-    const a = this.slotAgent();
+    // After this chat's own start was left uncertain, only its own terminal (by launch id), never another in the slot.
+    const lid = this.uncertainLaunch;
+    const a = lid
+      ? terminals().find((k) => k.state === "live" && k.labels?.["herdr.chat.slot"] === this.slot && k.labels?.["herdr.launch"] === lid)?.address ?? null
+      : this.slotAgent();
     if (!a) return;
+    this.uncertainLaunch = null;
     this.addr = a;
     this.machine = a.includes("/") ? a.split("/")[0] : null;
     this.path = null;
@@ -1656,24 +1661,51 @@ export default class Chat extends View {
         ...(space ? ["--label", `herdr.coordinator.space=${String(space.id).split("/").pop()}`] : []),
         ...(rec?.tab ? ["--label", `herdr.coordinator.tab=${String(rec.tab).split("/").pop()}`] : []),
         launch, ...(task ? [task] : [])];
-      const r = await hc(args).catch((e) => ({ code: 1, stderr: String(e?.message ?? e), stdout: "" }));
+      // Every start goes through launch admission (herdr-task launch run, launch_admission.py): Personal only,
+      // claimed, rechecked and recorded as sent, then this hc run; its reply is hc's own, or {error} when refused.
+      // A tab agent is named by its chat pane, as restart.sh names it (HERDR_RESTART_CHAT), so the two are one identity.
+      const role = this.role === "coordinator" ? ["--role", "coordinator"] : ["--role", "agent", "--slot", String(pane)];
+      const where = ["--space", space ? String(space.id).split("/").pop() : "unplaced"];
+      const r = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, ["launch", "run", ...role, ...where, "--json", "--", ...args.slice(1)])
+        .catch((e) => ({ code: 1, stderr: String(e?.message ?? e), stdout: "" }));
       if (oneOff) exec("sh", ["-c", TEMPLATE + 'rm -f "$dir/$1.md"', "x", oneOff], on);
       let out = {};
       try { out = JSON.parse(r.stdout || "{}"); } catch {}
+      // Refused before anything was sent (a provider route, an earlier start still open): no agent to look for.
+      const refused = !!out.error && out.launch?.state !== "submission-uncertain";
       // hc waits to hand the agent its first message and gives up while the CLI shows a screen of
       // its own (trust this folder, in a new folder on another machine): hc took too long, but the
       // agent runs. Then this chat sends the template's words and the task itself once the agent is
       // idle past that screen (follow()), so the Assistant never starts without its instructions.
-      const late = (r.code !== 0 || !out.address) && this.slotAgent();
+      // Only a terminal carrying this start's own launch id (herdr.launch) is taken: a slot label alone
+      // could be another start's agent.
+      const lid = out.launch?.launch;
+      const late = !refused && lid && (r.code !== 0 || !out.address)
+        ? terminals().find((k) => k.state === "live" && k.labels?.["herdr.chat.slot"] === this.slot && k.labels?.["herdr.launch"] === lid)?.address ?? null
+        : null;
       if (late) out = { address: late, first_message: { sent: false } };
       if (out.address && out.first_message?.sent === false && words) this.firstSend = [words, task].filter(Boolean).join("\n\n");
       if (r.code !== 0 && !late || !out.address) {
-        p.failed = (r.stderr || r.stdout || "It didn't start.").trim();
-        if (!msg) toast({ title: `The ${this.role === "coordinator" ? "Assistant" : this.role} didn't start`, body: p.failed, level: "error" });
+        p.failed = (out.error || r.stderr || r.stdout || "It didn't start.").trim();
+        // A start that may run (submission uncertain) says so, with its next step in a toast's 140 characters (as
+        // service/spaces.ts uncertainWords); a refused one didn't start.
+        const maybe = out.launch?.state === "submission-uncertain";
+        const who = this.role === "coordinator" ? "Assistant" : this.role;
+        const next = maybe ? (() => {
+          const full = `May have started: herdr-task launch reconcile ${out.launch.identity} ${out.launch.launch}`;
+          const status = `May have started: herdr-task launch status ${out.launch.identity}`;
+          return full.length <= 140 ? full : status.length <= 140 ? status : "May have started: herdr-task launch status lists it.";
+        })() : p.failed;
+        if (!msg) toast({ title: maybe ? `The ${who} may have started` : `The ${who} didn't start`, body: next, level: "error" });
+        // adoptSlot follows only the terminal carrying an uncertain start's launch id. A later refusal (its claim still
+        // open) keeps that id; only a new uncertain start names another.
+        if (maybe) this.uncertainLaunch = out.launch.launch;
         this.phase = "fresh";
         cx.notify();
         return;
       }
+      // It runs: no earlier uncertain start to wait for any more.
+      this.uncertainLaunch = null;
       // Remember what the person asked: the agent's first message is the template's words with it.
       if (msg) {
         this.firstTask = msg.text;

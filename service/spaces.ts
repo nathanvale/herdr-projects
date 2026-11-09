@@ -79,6 +79,15 @@ export async function execTemplate(hub: Hub, name: string, machine: string | nul
   return { name: one, words: src.slice(head[0].length).trim(), done: () => void exec(hub, ["sh", "-c", DIR + 'rm -f "$dir/$1.md"', "x", one], machine).catch(() => null) };
 }
 
+/** A start that may have been sent (submission uncertain), in at most 140 characters (a toast's body, core/toasts.js
+ *  BODY_MAX): its exact next step first, `launch reconcile` with its identity and launch id, else `launch status`. */
+export function uncertainWords(l: { identity?: string; launch?: string }) {
+  const full = `May have started: herdr-task launch reconcile ${l.identity} ${l.launch}`;
+  if (full.length <= 140) return full;
+  const status = `May have started: herdr-task launch status ${l.identity}`;
+  return status.length <= 140 ? status : "May have started: herdr-task launch status lists it.";
+}
+
 /** The web's id for the space the window made: Herdr already answers another machine's as "<machine>/<id>" (its
  *  ids are qualified, as its tabs'); kept as it is, never "<machine>/<machine>/<id>" (SHEP-56: the page then waited
  *  for a space that never came). */
@@ -88,7 +97,7 @@ export const placeId = (space: string, machine: string | null) => (!machine || s
  *  createSpace): a missing folder is made, makeRepo makes a folder outside git a repo (main, an empty first commit), it
  *  is named as Herdr names it ("Home" at home, else its repo's or folder's name; unnamed: left to follow its folder, as
  *  a worktree's), and `icon` is kept as the sidebar's Rename keeps it. */
-export async function newSpace(hub: Hub, opts: { machine: string | null; path: string; name?: string; unnamed?: boolean; makeRepo?: boolean; icon?: string | null; store: { value(k: string): any; set(k: string, v: unknown): Promise<unknown> } }) {
+export async function newSpace(hub: Hub, opts: { machine: string | null; path: string; name?: string; unnamed?: boolean; makeRepo?: boolean; icon?: string | null; store: { value(k: string): any; set(k: string, v: unknown): Promise<unknown> }; refused?: (why: string) => void }) {
   const { machine } = opts;
   if (!opts.path || opts.path.includes("\0")) throw new Error("Pick a folder.");
   const home = (await homeOf(hub, machine)) ?? "";
@@ -127,8 +136,19 @@ export async function newSpace(hub: Hub, opts: { machine: string | null; path: s
   // Settings › Window › Assistant in new spaces off: it opens without one
   if (opts.store.value("coordinator.auto") === false) return machine ? `${machine}/${id}` : id;
   const t = await execTemplate(hub, "assistant", machine);
-  await run(["hc", "run", "--bg", "--keep", "--no-parent", ...(machine ? ["--on", machine] : []), "--cwd", abs,
+  // through launch admission (herdr-task launch run): Personal only, claimed, rechecked and recorded as sent, then hc
+  // run. A refused or failed start keeps the space, without its Assistant, and says why (opts.refused, and the log).
+  // SHEPHERDR_HERDR_TASK: a test's stand-in (as SHEPHERDR_HC for hc); unset, herdr-task on PATH as before.
+  const r = await run([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", "launch", "run", "--role", "coordinator", "--space", id, "--json", "--",
+    "--bg", "--keep", "--no-parent", ...(machine ? ["--on", machine] : []), "--cwd", abs,
     "--label", "herdr.role=coordinator", "--label", `herdr.coordinator.space=${id}`, "--label", `herdr.space=${id}`, t.name]);
   t.done();
+  let out: any = {};
+  try { out = JSON.parse(r.out || "{}"); } catch {}
+  if (r.code !== 0 || !out.address) {
+    const why = String(out.error || r.err.trim().split("\n").pop() || "The Assistant didn't start.");
+    console.error(`new space ${id}: its Assistant didn't start: ${why}`);
+    opts.refused?.(out.launch?.state === "submission-uncertain" ? uncertainWords(out.launch) : why);
+  }
   return machine ? `${machine}/${id}` : id;
 }

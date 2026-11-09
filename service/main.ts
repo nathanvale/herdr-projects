@@ -669,10 +669,12 @@ const handlers = {
       try {
         const machine = !b?.machine || b.machine === me?.host ? null : String(b.machine);
         const icon = typeof b?.icon === "string" && b.icon ? b.icon.slice(0, 16) : null;
-        const place = await newSpace(hub, { machine, path: String(b?.path ?? ""), makeRepo: !!b?.makeRepo, icon, store: compat.shared! });
+        // a web-only space whose Assistant start was refused (launch admission) is still made: the answer says why
+        const assistant: { error?: string } = {};
+        const place = await newSpace(hub, { machine, path: String(b?.path ?? ""), makeRepo: !!b?.makeRepo, icon, store: compat.shared!, refused: (why) => { assistant.error = why; } });
         // the page opens it once the sidebar has it: in the snapshot before the answer, not at the next 10 s read
         await model.waitSpace(place);
-        return json({ place });
+        return json({ place, ...(assistant.error ? { assistantError: assistant.error } : {}) });
       } catch (err) { return json({ error: (err as Error).message }, 400); }
     }
     if (path === "/api/push/key") return json({ key: await push.key() });

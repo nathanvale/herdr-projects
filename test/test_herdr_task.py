@@ -1629,7 +1629,7 @@ class Scheduled(unittest.TestCase):
                         "--allow-empty", "-m", "base"], check=True)
         self.started, self.clock = [], None
 
-        def begin(s, t, argv, space, parent=None):
+        def begin(s, t, argv, space, parent=None, admission=None, select=None, folder=None):
             t["state"], t["started"] = "running", 1
             for k in ("queue", "queued_at", "held", "scheduled_for"):
                 t.pop(k, None)
@@ -1637,11 +1637,16 @@ class Scheduled(unittest.TestCase):
             self.started.append((s.ref(t), argv, space, parent))
             return {"address": "t9", "agent": "claude"}
 
+        # Launch admission's preflight (L1) is test_launch_admission's: here it admits, starting nothing.
+        def admit(s, t, argv, space, parent=None, **kw):
+            return __import__("types").SimpleNamespace(parent=parent, config_dir=None)
+
         later = lambda: self.clock if self.clock is not None else int(__import__("time").time() * 1000)
         patches = [mock.patch.object(store, "STORE", os.path.join(self.tmp, "tasks")),
                    mock.patch.object(settings, "SETTINGS", os.path.join(self.tmp, "settings.json")),
                    mock.patch.dict(os.environ, {"HC_TERMINAL_ID": ""}),
                    mock.patch.object(commands, "begin", begin), mock.patch.object(tick, "begin", begin),
+                   mock.patch.object(commands, "admit_task", admit),
                    mock.patch.object(commands, "ensure_scheduler", lambda quiet=False: {}),
                    mock.patch.object(commands, "default_space", lambda: "sp1"),
                    mock.patch.object(commands, "caller_space", lambda: None),
@@ -1838,6 +1843,7 @@ class CleanEnv(unittest.TestCase):
         from unittest import mock
         sys.path.insert(0, BIN)
         import herdr_task.launch as L
+        import herdr_task.launch_admission as LA
         import herdr_task.settings as settings
         ran, admitted = [], []
 
@@ -1845,25 +1851,28 @@ class CleanEnv(unittest.TestCase):
             ran.append(argv)
             return subprocess.CompletedProcess(argv, 0, json.dumps({"address": "t9"}), "")
 
-        real_admit = L.admit_launch
+        real_admit = LA.admit_launch
 
-        def admit(s, argv, space=None):
-            # The fork's provider gate (A1) runs first, for real: with no settings, Personal passes.
+        def admit(s, argv, space=None, d=None):
+            # The fork's provider gate (A1) runs first, for real, from launch admission (L1): with no settings, Personal passes.
             admitted.append((argv, space))
-            return real_admit(s, argv, space)
+            return real_admit(s, argv, space, d)
         none = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, none, True)
         # loc: the folder A1's gate reads its settings for (a store always has one).
-        s = SimpleNamespace(key=lambda t: "dev#6", dirty=False, loc={"folder": "/tmp", "kind": "repo"})
+        s = SimpleNamespace(key=lambda t: "dev#6", ref=lambda t: "DEV-6", dirty=False, loc={"folder": "/tmp", "kind": "repo"})
         task = {"id": 6, "title": "fake", "agents": []}
-        with mock.patch.object(L, "run", run), mock.patch.object(L, "folder_for", lambda s, t: "/tmp"), \
+        # Launch admission sends through its own run(), with its journal in the throwaway folder.
+        with mock.patch.object(L, "run", run), mock.patch.object(LA, "run", run), mock.patch.object(LA, "guard", lambda a: None), \
+                mock.patch.object(LA, "STORE", none), mock.patch.object(L, "folder_for", lambda s, t: "/tmp"), \
                 mock.patch.object(L, "agent_name", lambda *a: "dev-6-fake"), mock.patch.object(L, "track", lambda *a: None), \
                 mock.patch.object(L, "coordinator_tab", lambda a: None), mock.patch.object(L, "own_argv", lambda a: a), \
-                mock.patch.object(L, "in_shell", lambda a: a), mock.patch.object(L, "low_priority", lambda a, n: a), \
-                mock.patch.object(L, "admit_launch", admit), \
+                mock.patch.object(L, "in_shell", lambda a, config_dir=None: a), mock.patch.object(L, "low_priority", lambda a, n: a), \
+                mock.patch.object(LA, "admit_launch", admit), \
                 mock.patch.object(settings, "SETTINGS", os.path.join(none, "shepherdr.json")):
             L.launch(s, task, ["env"], "sp1")
-        self.assertEqual(admitted, [(["env"], "sp1")])
+        # Admitted on this argv and space at preflight, at its claim and again as it is sent (L1).
+        self.assertEqual(admitted, [(["env"], "sp1")] * 3)
         hc = ran[0]
         self.assertEqual(hc[:2], ["hc", "run"])
         env = self.agent_env(hc[hc.index("--") + 1:])
@@ -2114,7 +2123,7 @@ class AutomationFromAnotherMachine(unittest.TestCase):
                 return real_run([sys.executable, os.path.join(BIN, "herdr-task"), *rest], env=self.b_env, **kw)
             return real_run(argv, **kw)
 
-        def begin(s, t, argv, space, parent=None):
+        def begin(s, t, argv, space, parent=None, admission=None, select=None, folder=None):
             t["state"], t["started"] = "running", 1
             self.started.append({"ref": s.ref(t), "prompt": t["prompt"]})
 
@@ -2123,6 +2132,9 @@ class AutomationFromAnotherMachine(unittest.TestCase):
                    mock.patch.object(settings, "SETTINGS", os.path.join(self.tmp, "a-settings.json")),
                    mock.patch.object(au.subprocess, "run", run), mock.patch.object(au, "guard", lambda a: None),
                    mock.patch.object(au, "begin", begin), mock.patch.object(au, "queue_reason", lambda s, t: None),
+                   # Launch admission's preflight (L1) is test_launch_admission's: here it admits, starting nothing.
+                   mock.patch.object(au, "admit_task", lambda s, t, argv, space, parent=None, **kw:
+                                     __import__("types").SimpleNamespace(parent=parent, config_dir=None)),
                    mock.patch.object(au, "worker_argv", lambda s, t, space: ["claude"]),
                    mock.patch.object(au, "ensure_scheduler", lambda quiet=False: {}),
                    mock.patch.object(au, "default_space", lambda: "sp1"),

@@ -23,6 +23,55 @@ cwd=$(get .cwd) app=$(get .status.app) pid=$(get .foreground.pid) created=$(get 
 [ -n "$tab" ] || tab=$(get '.labels["herdr.coordinator.tab"]')
 [ -n "$space" ] && [ -n "$tab" ] || [ -n "${HERDR_RESTART_CHAT:-}" ] || [ -n "$(get '.labels["herdr.chat"]')" ] || exit 1
 
+# Every start goes through launch admission (mods/tasks/bin/herdr_task/launch_admission.py): Personal only, an
+# earlier start of the same Assistant or tab still open refuses, and it is claimed, rechecked and recorded as sent
+# before hc runs. Checked here first, before this script changes anything (the old agent's workers, its handoff).
+owner="$(cd "$(dirname "$0")/../tasks/bin" && pwd)/herdr-task"
+aspace=${space:-$(get '.labels["herdr.coordinator.space"]')}
+aspace=${aspace:-unplaced}
+if [ "$role" = coordinator ]; then
+  admit=(--role coordinator --space "$aspace")
+else
+  # A parked agent is named by its chat pane, as the chat names its start (mods/chat); else by its tab.
+  aslot=${HERDR_RESTART_CHAT:-$(get '.labels["herdr.chat"]')}
+  aslot=${aslot:-$tab}
+  admit=(--role agent --space "$aspace" --slot "$aslot")
+fi
+# A Claude Code agent's own folder (its CLAUDE_CONFIG_DIR, read from its process as C1's rule reads it): where its
+# session log is, and carried into the agent this starts so a restart keeps its profile. Unreadable refuses here,
+# before any change. A start of another CLI (an argv naming it) carries none.
+cdir=$HOME/.claude carry=""
+if [ "$app" = claude-code ] && [ -n "$pid" ]; then
+  first=$(jq -r '.[0] // empty' <<<"${argv:-[]}")
+  if found=$("$owner" launch folder "$pid" 2>&1); then
+    cdir=$found
+  elif [ -n "$argv" ] && [ "${first##*/}" != claude ]; then
+    : # switching to another CLI carries nothing: its log is looked for under ~/.claude, as before
+  else
+    printf '%s\n' "${found#herdr-task: }" >&2
+    exit 1
+  fi
+  if [ "$cdir" != "$HOME/.claude" ] && { [ -z "$argv" ] || [ "${first##*/}" = claude ]; }; then
+    carry=$cdir
+    admit+=(--config-dir "$carry")
+  fi
+fi
+# An Assistant restarted from a template with no command line has nowhere to carry another folder: refused now.
+if [ -n "$carry" ] && [ -z "$argv" ] && [ "$role" = coordinator ] && \
+    [ -z "$(awk '/^---[[:space:]]*$/ {f++; next} f == 1 && sub(/^command:[ \t]*/, "") {print; exit}' "$HOME/.config/herdr-core/templates/assistant.md" 2>/dev/null)" ]; then
+  echo "This Assistant uses $carry, and its template has no command to start it there again. Nothing was started." >&2
+  exit 1
+fi
+# start <hc run words>: hc's reply (--json) on stdout; a refusal's words on stderr, and nothing started.
+start() {
+  local out code
+  out=$("$owner" launch run "${admit[@]}" --json -- "$@"); code=$?
+  [ "$code" -eq 0 ] || jq -r '.error // empty' <<<"$out" >&2
+  printf '%s\n' "$out"
+  return "$code"
+}
+pre=$("$owner" launch run "${admit[@]}" --check --json) || { jq -r '.error // empty' <<<"$pre" >&2; exit 1; }
+
 # What the previous agent did: its screen, and its session log when we can find it.
 dir=${HERDR_APP_HOME:-$HOME/.config/herdr-app}/data/coordinator/handoff
 mkdir -p "$dir"
@@ -30,11 +79,11 @@ screen="$dir/$old-$(date +%s).txt"
 hc read "$old" --lines 400 >"$screen" 2>/dev/null
 log=""
 if [ "$app" = claude-code ] && [ -n "$pid" ]; then
-  sid=$(jq -r '.sessionId // empty' "$HOME/.claude/sessions/$pid.json" 2>/dev/null)
-  [ -n "$sid" ] && log=$(find "$HOME/.claude/projects" -name "$sid.jsonl" 2>/dev/null | head -1)
+  sid=$(jq -r '.sessionId // empty' "$cdir/sessions/$pid.json" 2>/dev/null)
+  [ -n "$sid" ] && log=$(find "$cdir/projects" -name "$sid.jsonl" 2>/dev/null | head -1)
 fi
 if [ -z "$log" ] && [ -n "$created" ]; then
-  log=$(find "$HOME/.claude/projects" "$HOME/.codex/sessions" "$HOME/.pi/agent/sessions" "$HOME/.local/share/opencode" \
+  log=$(find "$cdir/projects" "$HOME/.codex/sessions" "$HOME/.pi/agent/sessions" "$HOME/.local/share/opencode" \
       -type f \( -name '*.jsonl' -o -name '*.json' \) -newermt "@$((created / 1000))" 2>/dev/null \
     | xargs -r grep -l -F "\"$cwd\"" 2>/dev/null | xargs -r ls -t 2>/dev/null | head -1)
 fi
@@ -79,9 +128,11 @@ own=""
 if [ -n "${HERDR_RESTART_RESUME:-}" ] && [ -n "$argv" ]; then
   mapfile -t cmd < <(jq -r '.[]' <<<"$argv")
   [ ${#cmd[@]} -gt 0 ] || exit 1
-  new=$(hc run --bg --json --no-parent --cwd "$cwd" "${labels[@]}" --label "herdr.agent=$(basename "${cmd[0]}")" -- sh -c "$clean"' exec "$@"' herdr-clean "${cmd[@]}" | jq -r '.address // empty')
+  agent=$(basename "${cmd[0]}")
+  [ -n "$carry" ] && cmd=(env "CLAUDE_CONFIG_DIR=$carry" "${cmd[@]}")
+  new=$(start --bg --json --no-parent --cwd "$cwd" "${labels[@]}" --label "herdr.agent=$agent" -- sh -c "$clean"' exec "$@"' herdr-clean "${cmd[@]}" | jq -r '.address // empty')
 elif [ -z "$argv" ] && [ "$role" = coordinator ] && [ -z "$own" ]; then
-  new=$(hc run --bg --json --no-parent --cwd "$cwd" "${labels[@]}" assistant "$handoff" | jq -r .address)
+  new=$(start --bg --json --no-parent --cwd "$cwd" "${labels[@]}" assistant "$handoff" | jq -r '.address // empty')
 else
   if [ -n "$own" ]; then
     own=${own#exec }
@@ -94,6 +145,7 @@ else
     [ "$key" = codex ] && [[ " ${cmd[*]} " != *" --no-daemon "* ]] && cmd+=(--no-daemon)
     line=$(printf '%q ' "${cmd[@]}")
   fi
+  [ -n "$carry" ] && line="env CLAUDE_CONFIG_DIR=$(printf '%q' "$carry") $line"
   msg=$handoff
   if [ "$role" = coordinator ]; then
     body=$(awk 'f>=2 {print} /^---[[:space:]]*$/ {f++}' "$tpl")
@@ -105,7 +157,7 @@ else
   file=$HOME/.config/herdr-core/templates/$one.md
   { printf -- '---\nname: %s\ndescription: A one-off Herdr handoff, removed after use.\ncommand: %s\n---\n' "$one" "$clean exec $line"
     printf '%s\n' "$msg"; } >"$file"
-  out=$(hc run --bg --json --no-parent --cwd "$cwd" "${labels[@]}" --label "herdr.agent=$key" "$one")
+  out=$(start --bg --json --no-parent --cwd "$cwd" "${labels[@]}" --label "herdr.agent=$key" "$one")
   rm -f "$file"
   new=$(jq -r '.address // empty' <<<"$out")
   # Some agents (Codex's animated start) never settle for hc: send once it reports a status.

@@ -63,6 +63,14 @@ mods/task-pr/main.js service/worktree.ts test/test_bitbucket.py'''.split()),
 mods/tasks/bin/herdr_task/bitbucket_http.py mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py
 mods/tasks/bin/herdr_task/forge.py mods/tasks/bin/herdr_task/publications.py test/test_bitbucket.py
 test/test_bitbucket_publication.py test/test_native_publication.py'''.split()),
+    # Launch admission: every task and Assistant start goes through one owner with a durable launch journal,
+    # and the five Assistant start sites run `herdr-task launch run`. Earlier owners it changes are L1's from here.
+    'L1': frozenset('''mods/chat/main.js mods/coordinator/restart.sh mods/tasks/bin/herdr_task/automations.py
+mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py
+mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/settings.py
+mods/tasks/bin/herdr_task/takeover.py mods/tasks/bin/herdr_task/tick.py service/actions.ts service/launch-sites.test.ts
+service/main.ts service/spaces.ts test/test_herdr_task.py test/test_launch_admission.py test/test_providers.py
+web/plugins/places/add.tsx'''.split()),
 }
 # The shared table's second half (PR 19 decision D5, issue #7): what accepted changes add beyond exact
 # U and outside every phase's owners, admitted by name and left to review for content. With U's paths
@@ -75,6 +83,7 @@ docs/core/launch-recovery.md docs/forge-adapter-reference.md docs/forge-adapters
 docs/forge-review-map.md docs/migration/upstream-v3.1.3-files.json docs/migration/upstream-v3.1.3.json
 docs/migration/upstream-v3.1.3.md test/test_migration.py''',
     'A1': 'docs/azure-launch-plans.md',
+    'L1': 'docs/launch-admission.md',
     'PR 20': '.claude/.gitignore .claude/checkout-access.json bin/checkout-access test/test_checkout_access.py',
 }
 

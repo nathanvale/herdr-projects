@@ -6,9 +6,10 @@ fail-closed publication, C1 finds a Claude Code session under its own agent's
 folder, W1 keeps a web page's chat flag apart from background work, H1 adds an
 opt-in private custom-domain listener, S1 routes pull requests through the forge
 seam with GitHub as its first adapter, B1 reads a saved Bitbucket pull request and
-its head's complete checks through a second, and B2 publishes a Bitbucket folder's task on
-Ready (a push on a frozen route, a draft, then ready for review) under durable claims.
-Required Azure and lifecycle ports are pending, and no Bitbucket port is qualified. This checkpoint is not deployable or ready for application use. Check's
+its head's complete checks through a second, B2 publishes a Bitbucket folder's task on
+Ready (a push on a frozen route, a draft, then ready for review) under durable claims, and L1
+admits every task and Assistant start through one owner with a durable launch journal.
+Required Azure and lifecycle ports are pending, and no Bitbucket or lifecycle port is qualified. This checkpoint is not deployable or ready for application use. Check's
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
 
@@ -112,7 +113,8 @@ stays blocked.
   `mods/coordinator/restart.sh`) do not read the binding. No control, command or
   selector may set an Azure route until each refuses or plans through the provider owner.
 - Carried to L1: binding the execution machine. A pushed settings copy refuses Azure,
-  but a Serve-from host's file is its own.
+  but a Serve-from host's file is its own. Done in L1: a Serve-from client's copy refuses
+  Azure too (see the L1 checkpoint).
 - Carried to Q: empty settings `env` values are documented as unset for provider
   selection only; the same treatment of endpoint, credential and model variables is unproved.
   The backup's gate has in-module proof only; its public-process proof is Q's.
@@ -189,13 +191,15 @@ for each candidate process and never for the caller:
 - Behaviour change: on macOS FIND now needs python3 on its PATH. Without it every Claude
   agent there loses Chat, including default ones that work today. `session_of()` runs in
   python already and doesn't.
-- A session under another folder is for reading only. Revive, resume, a restart and a fork
-  carry no `CLAUDE_CONFIG_DIR`, so continuing it would start on another profile, perhaps
-  another account. `session_of()` returns such a session only to `any_folder=True`, which
+- A session under another folder is for reading only. Revive and a fork carry no
+  `CLAUDE_CONFIG_DIR` (since L1 a task's resume and `restart.sh` do), so continuing it there
+  would start on another profile, perhaps another account. `session_of()` returns such a session only to `any_folder=True`, which
   `T/news.py` alone asks for, so for a non-default folder nothing records it and no path
   that starts an agent gains anything. A default agent whose environment can't be read
   does change: it gets no record, so a resume starts fresh. `sessionOf()` in `core/agents.js`
-  gives a session under another folder no id. Carrying the folder belongs to L1 and L2.
+  gives a session under another folder no id. Carrying the folder belongs to L1 and L2. L1
+  carries it into task starts and `restart.sh` (see the L1 checkpoint); revive, `service/watch.ts`
+  and sessions recorded under another folder stay L2's.
 - What would start an agent again asks its process, not a found log: FIND prints nothing for
   a custom-folder agent with no log, and a reader can be gone or have no path yet. `FOLDER`
   in `core/chat-log.js` runs on the agent's machine and prints `default`, `other` or nothing.
@@ -210,7 +214,8 @@ for each candidate process and never for the caller:
 - A lost session: `lostRefusal()`, called by the window's `lostSession()` and
   `service/watch.ts`. The agent has gone, so it has no process to ask. Refused: a
   `CLAUDE_CONFIG_DIR=` word before the agent's in the launch's argv, which `freshArgv()` drops
-  (any value, even `~/.claude` written out); a live shell that reads another folder; in the
+  (any value, even `~/.claude` written out; since L1 a task start exports its folder inside its
+  shell instead, so no such word is there and the shell keeps that folder); a live shell that reads another folder; in the
   window, a log it had found under another folder. Not refused, as the two rules conflict
   here and each departs from "unreadable refuses": a shell that can't be read, since macOS
   shows no environment for a system binary such as `/bin/zsh`, and what's typed inherits that
@@ -553,6 +558,55 @@ those earlier phases admitted are B2's from here, and their pins are B2's.
 - Not a required port's completion: every `bitbucket-*` requirement, `public-cli-outcomes` and the
   B2 part of `request-replay` stay pending until Root CI and native qualification.
 
+### L1 launch admission checkpoint
+
+`T/launch_admission.py` is the one owner every agent start on a machine goes through: a task's
+agent from each `herdr-task` start path, and an Assistant's or a tab agent's from its five start
+sites (`service/spaces.ts`, `service/actions.ts`, `mods/chat/main.js`, `mods/coordinator/restart.sh`,
+and `service/agents.ts` through `restart.sh` or `herdr-task switch`), which now run
+`herdr-task launch run`. Detail: [launch admission](../launch-admission.md).
+
+- Owner moved to L1 in the repair pass: `service/main.ts` (H1's until then). `/api/spaces` must
+  answer a web-only New space's refused Assistant start (`assistantError`), as the approved repair
+  item asked; no other line of it changed, and its H1 listener wiring is untouched.
+- Admitted under L1 for the same item: `web/plugins/places/add.tsx`. The New space page keeps the
+  made space and shows that `assistantError` to the person as an error toast; nothing else on the
+  page changed.
+
+- Preflight before any effect: the settings file read strictly (there but unreadable refuses,
+  missing keeps Personal), the provider route (a task's Azure plan stays held; an Assistant admits
+  Personal only, here or on another machine), the task's Assistant, and an open start of the same
+  identity.
+- A durable journal (`~/.herdr/tasks/.launches.json`): `never-submitted` before the first effect,
+  `submission-uncertain` in one locked step that rechecks the claim and the revision, then `hc run`
+  next, then `confirmed` from the reply or from exactly one terminal labelled with its launch id.
+  Revisions are content digests, independent of the launch id.
+- Fencing: `launch recover` revokes only a never-submitted claim, and a delayed sender then sends
+  nothing. A submission-uncertain start is never released or retried; `launch reconcile` confirms
+  it on positive evidence only and puts a task's agent on its task. Releasing one without that
+  evidence is the held `manual-recovery` decision: no command does it, and only a later, separately
+  approved change can.
+- Carried from A1 and done here in source: Claude Code `--settings` followed by another flag
+  refuses with the missing-value message; `provider plan` names the layers that can outrank a plan,
+  with each one's evidence; a corrupt or unreadable settings file refuses a start and a plan (P17-7).
+- Carried to L1 and done here in source: a Serve-from client's settings copy refuses Azure (its
+  herdr-core node record says another machine serves; unreadable refuses), and a task's Claude Code
+  start carries its `CLAUDE_CONFIG_DIR` folder explicitly (the previous agent's for switch, resume
+  and backup) and records it; `restart.sh` reads the old agent's folder, finds its log there and
+  carries it, closing C1's open fixed `~/.claude` lookup. L2 keeps native revive and resume
+  reconstructing the folder, and sessions recorded under it.
+- A confirmed task start holds its claim until its task list records the agent, so a herdr-task
+  that ends before saving never leaves a task to start twice.
+- Held, not invented: herdr-core gives no receipt or revocation for a sent `hc run`; the journal
+  fences only this application's senders on one machine; no automatic recovery is chosen; revival
+  that types into a kept or live terminal (`T/revive.py`, `service/watch.ts`'s live case) does not
+  go through the owner yet (L2), while watch.ts's restart behind a chat does, through `restart.sh`; planning an Assistant's Azure start and
+  credential-presence preflight move with the first Azure dispatch (A2, L2); the settings file
+  keeps no counter, so a change away and back reads as unchanged.
+- Authored regressions: `test/test_launch_admission.py` (processes, a stateful `hc` stand-in,
+  reopened journal and task list) and `service/launch-sites.test.ts`. CI pending; native
+  qualification pending. The chat mod's start is source-inspected only.
+
 ### Bitbucket contract
 
 Port P's behavior into native owners, not its old server paths. GitHub retains
@@ -657,7 +711,8 @@ the C1 discovery tests (`core/chat-find.test.js`, `test/test_session_discovery.p
 the W1 flag tests (`service/jobs-flags.test.ts`), the H1 listener tests
 (`service/private-domain.test.ts`), the S1 forge tests (`test/test_forge.py`), the B1
 Bitbucket read tests (`test/test_bitbucket.py`), the B2 publication tests
-(`test/test_bitbucket_publication.py`) and every native Check command. CI owns
+(`test/test_bitbucket_publication.py`), the L1 launch admission tests
+(`test/test_launch_admission.py`, `service/launch-sites.test.ts`) and every native Check command. CI owns
 frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.

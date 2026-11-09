@@ -474,7 +474,8 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     const script = join(APP, "mods", "coordinator", "restart.sh");
     if (!existsSync(script)) throw new Error("Switching agents needs Shepherdr's window layout installed.");
     const r = await run(["bash", script, a, ...(argv ? [JSON.stringify(argv)] : [])]);
-    if (r.code !== 0) throw new Error("It didn't restart: the Herdr window needs to be open.");
+    // a start launch admission refused says why on stderr (restart.sh); otherwise the window wasn't there
+    if (r.code !== 0) throw new Error(r.stderr.trim().split("\n").pop() || "It didn't restart: the Herdr window needs to be open.");
     return { ok: true };
   }
   if (b?.type === "space-remove" && typeof b.place === "string" && compat.shared) {
@@ -552,11 +553,13 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
         "--label", `herdr.coordinator.space=${bare}`, ...(rec.tab ? ["--label", `herdr.coordinator.tab=${String(rec.tab).split("/").pop()}`] : [])]
       : ["--label", "herdr.role=coordinator", "--label", `herdr.coordinator.space=${bare}`, "--label", `herdr.space=${bare}`];
     const tpl = await execTemplate(hub, "assistant", sp.machine ?? null);
-    const r = await hc(["run", "--bg", "--json", "--no-parent", "--keep", ...(sp.machine ? ["--on", sp.machine] : []), ...(sp.folder ? ["--cwd", sp.folder] : []), ...labels, tpl.name, task]);
+    // through launch admission (herdr-task launch run): Personal only, claimed, rechecked and recorded as sent, then hc run
+    const r = await run([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", "launch", "run", "--role", "coordinator", "--space", bare, "--json", "--",
+      "--bg", "--json", "--no-parent", "--keep", ...(sp.machine ? ["--on", sp.machine] : []), ...(sp.folder ? ["--cwd", sp.folder] : []), ...labels, tpl.name, task]);
     tpl.done();
     let out: any = {};
     try { out = JSON.parse(r.stdout || "{}"); } catch {}
-    if (r.code !== 0 || !out.address) throw new Error((r.stderr || r.stdout).trim().split("\n").pop() || "The Assistant didn't start.");
+    if (r.code !== 0 || !out.address) throw new Error(out.error || (r.stderr || r.stdout).trim().split("\n").pop() || "The Assistant didn't start.");
     // what the person asked, for its chat to show apart from the template (the window's data/chat-first)
     const first = join(process.env.HERDR_APP_HOME || join(homedir(), ".config", "herdr-app"), "data", "chat-first");
     const addr = sp.machine && !String(out.address).includes("/") ? `${sp.machine}/${out.address}` : String(out.address);
