@@ -33,7 +33,9 @@ AUTH = "To get started with GitHub CLI, please run:  gh auth login"
 NOT_GITHUB = ("none of the git remotes configured for this repository point to a known GitHub host. "
               "To tell gh about a new GitHub host, please use `gh auth login`")
 SIGNED_IN_ELSEWHERE = "HTTP 401: Requires authentication (https://api.github.com/graphql)"
-ELSEWHERE = "https://bitbucket.org/o/r.git"
+# Another forge's remote, which stays local: GitLab's. A Bitbucket remote publishes since B2
+# (test_bitbucket_publication.py), and never merges here.
+ELSEWHERE = "https://gitlab.com/o/r.git"
 ALIAS = "git@work-alias:o/r.git"
 ENTERPRISE = "https://git.example.com/o/r.git"
 LOOKALIKE = "https://bitbucket.org.example.com/o/r.git"
@@ -926,7 +928,7 @@ class OnlyGhsOwnNoIsANo(unittest.TestCase):
         self.assertEqual(f.saved(), before)
 
     def test_another_forge_stays_local_with_gh_signed_out_and_never_asks_it(self):
-        for url in (ELSEWHERE, "git@bitbucket.org:o/r.git", "ssh://git@bitbucket.org/o/r.git", "https://gitlab.com/o/r.git",
+        for url in (ELSEWHERE, "git@gitlab.com:o/r.git", "ssh://git@gitlab.com/o/r.git",
                     "https://o@dev.azure.com/o/p/_git/r", "git@ssh.dev.azure.com:v3/o/p/r"):
             with self.subTest(url=url):
                 f = self.elsewhere(url, fail=AUTH)

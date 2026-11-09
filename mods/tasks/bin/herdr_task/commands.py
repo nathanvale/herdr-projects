@@ -27,8 +27,9 @@ from .github import (
 )
 from .forge import (
     admit, adopt_existing, already_merged, integrate, merge_reach, name_of, no_local_merge, no_merge, pr_adopt,
-    pr_open, pr_pending, pr_problem, pr_read, pr_view, provider_of, publication, repair_of, repository,
+    pr_open, pr_pending, pr_problem, pr_read, pr_view, provider_of, publishing_repository, repair_of, repository,
 )
+from .publications import facts as publication_facts
 from .launch import (
     base_ref, brief, caller_labels, caller_space, current_base, default_space, folder_for, handoff, launch, name_tabs,
     own_path, parent_for, resume_argv, retag_tabs, set_branch, tab_title, task_tabs,
@@ -246,6 +247,11 @@ def cmd_show(args):
         if getattr(args, "evidence", False):
             # What the Accept card shows: commits, files, checks and the proof (proof.py).
             v["evidence"] = evidence(s, t)
+        # A Bitbucket publication's claim on this machine: what was pushed, opened and prepared, and
+        # any step whose answer didn't come back (uncertain), by its operation id.
+        pub = publication_facts(s, t)
+        if pub:
+            v["publication"] = pub
     text = [line(v), f"folder: {v['folder']}"]
     if v.get("worktree"):
         text.append(f"worktree: {v['worktree']} (branch {v['branch']}, base {v.get('base')})")
@@ -265,6 +271,13 @@ def cmd_show(args):
         text.append(f"for AGENTS.md: {v['agents_md']}")
     if v.get("pr"):
         text.append(f"pull request: #{v['pr']['number']} {v['pr']['url']}")
+    if (v.get("publication") or {}).get("unreadable"):
+        text.append(f"publication: {v['publication']['unreadable']}")
+    elif v.get("publication"):
+        p = v["publication"]
+        steps = [f"{name} {p[name]['state']} ({p[name]['operation']})" for name in ("push", "draft", "ready") if p.get(name)]
+        pushed = f"pushed {p['pushed']['head'][:7]}" if p.get("pushed") else "not pushed"
+        text.append(f"publication: {', '.join([pushed, *steps])}")
     if v.get("why") and v["status"] == "needs":
         text.append(f"needs the person: {v['why']}")
     if v.get("kept"):
@@ -374,9 +387,9 @@ def cmd_ready(args):
         if t["state"] == "done":
             raise Fail(f"{s.ref(t)} is already done.")
         worktree_here(s, t)
-        # A saved pull request its forge can't publish from here (Bitbucket's, until B2) refuses first,
-        # before any read, fetch or finish: nothing is asked of any host and the task stays as it was.
-        publication(t)
+        # A saved pull request no forge adapter here reaches refuses first, before any read, fetch or
+        # finish: nothing is asked of any host and the task stays as it was.
+        admit(t)
         wt = t.get("worktree") if t.get("mode") == "worktree" else None
         if wt and os.path.isdir(wt):
             if git(wt, "status", "--porcelain", "--untracked-files=no")[1]:
@@ -663,16 +676,15 @@ def finalize(s, t):
     always asks: ready never merges it. Publishing comes first, and gh or git failing there refuses
     (Fail): on GitHub, Ready means published. Returns what to say."""
     worktree_here(s, t)
-    # A saved pull request no forge adapter here reaches refuses before any host is asked anything, and
-    # so does one its forge can't publish from here (Bitbucket's, until B2): Ready means published.
+    # A saved pull request no forge adapter here reaches refuses before any host is asked anything:
+    # Ready means published (on Bitbucket too: pushed, its draft opened and prepared for review).
     admit(t)
-    publication(t)
     worktree = t.get("mode") == "worktree" and t.get("worktree")
-    where = repository(s) if worktree else None
+    where = publishing_repository(s) if worktree else None
     if worktree and not where and getattr(s, "github_saved", False):
         # A saved "not on GitHub" is asked again (as no_local_merge() does): Ready decides publication,
         # and a refusal saves nothing, so a stale no would keep it from publishing for up to an hour.
-        where = repository(s, fresh=True)
+        where = publishing_repository(s, fresh=True)
     pr = pr_open(s, t, where, t.get("summary")) if where else None
     t["state"], t["ready_at"] = "ready", now()
     for k in ("attention", "merge_requested", "review"):
@@ -687,6 +699,12 @@ def finalize(s, t):
         pr["checked"] = 0
         msg = f"{s.ref(t)} is ready: pull request #{pr['number']}, {pr['url']}."
     policy = "ask" if (t.get("pr") or {}).get("adopted") else merge_policy(s, t)
+    refusal = no_merge(t) if t.get("pr") else None
+    if refusal:
+        # A pull request herdr-task never merges (Bitbucket's): whatever Settings say, nothing waits to merge
+        # by itself; the person merges it on its forge, and the tick finishes the task then.
+        t.pop("auto_merge", None)
+        return f"{msg} {refusal}"
     if policy in ("auto", "checks"):
         t["auto_merge"] = policy
         if t.get("pr"):

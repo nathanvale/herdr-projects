@@ -489,8 +489,10 @@ def main():
         args.fn(args)
     except Fail as e:
         if getattr(args, "json", False):
-            cause = getattr(e, "cause", None)
-            print(json.dumps({"error": str(e), **({"cause": cause} if cause else {})}))
+            cause, publication = getattr(e, "cause", None), getattr(e, "publication", None)
+            # publication: what a refused Bitbucket publication did and didn't do (publications.Outcome).
+            print(json.dumps({"error": str(e), **({"cause": cause} if cause else {}),
+                              **({"publication": publication} if publication else {})}))
         else:
             print(f"herdr-task: {e}", file=sys.stderr)
         return 1

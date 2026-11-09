@@ -5,9 +5,10 @@ owners on it, with Azure dispatch held, N1 adds native pull request adoption and
 fail-closed publication, C1 finds a Claude Code session under its own agent's
 folder, W1 keeps a web page's chat flag apart from background work, H1 adds an
 opt-in private custom-domain listener, S1 routes pull requests through the forge
-seam with GitHub as its first adapter, and B1 reads a saved Bitbucket pull request and
-its head's complete checks through a second. Required Bitbucket publication, Azure and
-lifecycle ports are pending. This checkpoint is not deployable or ready for application use. Check's
+seam with GitHub as its first adapter, B1 reads a saved Bitbucket pull request and
+its head's complete checks through a second, and B2 publishes a Bitbucket folder's task on
+Ready (a push on a frozen route, a draft, then ready for review) under durable claims.
+Required Azure and lifecycle ports are pending, and no Bitbucket port is qualified. This checkpoint is not deployable or ready for application use. Check's
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
 
@@ -435,6 +436,123 @@ are B1's from here, and their pins are B1's.
 - This is not a required port's completion: `bitbucket-credentials`, `bitbucket-reads` and
   `forge-identity` stay pending until Root CI and native qualification.
 
+### B2 Bitbucket publication checkpoint
+
+B2 is its own row in `PHASES` after B1. Its owners are `T/__init__.py`, `T/bitbucket.py`,
+`T/bitbucket_http.py`, `T/cli.py`, `T/commands.py`, `T/forge.py`, `T/publications.py`,
+`test/test_bitbucket.py`, `test/test_bitbucket_publication.py` and `test/test_native_publication.py`;
+those earlier phases admitted are B2's from here, and their pins are B2's.
+
+- Which folders publish: Ready asks `forge.publishing_repository()`, GitHub's first, unchanged, else
+  the Bitbucket repository the folder's remote (origin, else its first) binds when that remote is
+  written on bitbucket.org. One written there whose views don't bind one repository refuses with
+  nothing pushed or sent. Reads (`forge.repository()`), the tick, Accept's adoption and GitHub's
+  folders are unchanged. Behaviour change: such a folder no longer merges here. Accept and merge
+  refuse a local or agent merge there (`bitbucket.no_local_merge()`), and
+  N1's "another forge stays local" tests now use GitLab remotes.
+- Ready on Bitbucket (`T/publications.py`, `publish()`), each step only after the one before it:
+  1. Zero-effect preflight: branch names Bitbucket's query and git take, the branch here at the commit
+     ready was run at, every remote view binding the folder's repository, and one frozen push route:
+     the single push URL git derives, which no `insteadOf`/`pushInsteadOf` rule rewrites again when
+     pushed to as written. Then this host's claim (below), then one credential ask and reads: the
+     repository, the base branch on Bitbucket, the task branch there and every open pull request from
+     it, each read in full.
+  2. An uncertain step from before is reconciled now, before anything else is sent (below).
+  3. Refused with nothing sent: two pull requests open from the branch, one into another base (no
+     second pull request), one whose description carries another operation's id, or this task's own
+     not open from the branch into its base now.
+  4. Branch ownership, read-only, from the branch as git reads it on the frozen route (`ls-remote`, the
+     view the push's expectation is checked against): a branch that exists where this host never pushed
+     it (no recorded push of its own) refuses, never pushed over and with no pull request opened; one
+     moved since this host's own last push, or removed since, refuses too.
+     The push, unless Bitbucket's branch holds the commit already: one atomic ref update on the
+     server, `git push --porcelain --force-with-lease=refs/heads/<branch>:<expect>` to the frozen URL,
+     prompts off. The first push is create-if-absent (`<expect>` empty: the ref must not exist), so
+     exactly one push ever creates the branch; later ones expect this host's own last push (as P leases
+     on its own pushed head). Its operation id, commit and expectation are saved in the claim before
+     git runs. git's own line for the ref decides: moved (done); `[rejected]`, `[remote rejected]` with
+     the branch now holding something else, or already there when it had to be absent (lost: another
+     push got there first, refused); `[remote rejected]` with the branch as expected (declined: a branch
+     permission or hook, refused as that); a remote failure or no line (`uncertain`, kept). An uncertain
+     push is settled from git's view of the branch next time: as its expectation, it didn't land and may
+     go again; at its commit as an update of this host's branch, it landed; at its commit as the first
+     push, held, as another host's push of the same commit looks the same. A confirmed push is saved in the
+     claim at once.
+  5. The draft: the task's saved record (only reached once this host's own push owns the branch, so a
+     task whose claims file is lost, or whose folder moved to another host, can't publish its pull
+     request again), or one opened by hand at exactly that head carrying no
+     operation id (adopted, as GitHub's SHEP-13), or a new one: `POST` with `draft: true`,
+     `close_source_branch: false`, the source branch at exactly that commit, the title
+     `<ref> <title>` and the brief as description, ending with `Herdr-Operation: <uuid>`.
+  6. Ready for review: the pull request read again with its head's complete checks (B1's read; any
+     result, empty included, as P), at exactly the pushed commit; then read once more and `PUT` with
+     `draft: false`, the summary (and details) as description with its own operation line, and the
+     title, reviewers, destination and `close_source_branch` exactly as that read gave them. The answer
+     must give the same back.
+- Revalidation: the remote's views are read again as the last check before the push and before each
+  write (`Reader.still()`), and the branch here and Bitbucket's head are checked before each.
+- Claims: `STORE/.publications.json`, under its own `flock`, written to a temporary file, synced and
+  renamed (and its folder synced) before what it covers is sent. One claim per repository branch, with
+  its owner (task key, folder, checkout, machine name), its route and three stages: `pushed`, `draft`
+  and `ready`, each with an operation UUID and `uncertain` or `confirmed`. A claim another task, folder
+  or machine holds refuses before anything is sent; a done or removed task's claim in the same folder
+  passes on only when nothing in it is uncertain. A claim taken for a command that then changed nothing
+  is let go. The task's own record is saved only when Ready completes; the claim keeps what happened
+  whatever fails later, and a later Ready takes its record from there.
+- Writes and uncertainty (`bitbucket_http.send()`): sent once. 401 or 403 is `write-refused`: nothing
+  happened, and the stage is cleared. A budget too short for the request is `not-sent`, before any
+  byte. Anything else short of the exact, complete answer (a timeout, a dropped connection, another
+  status, an answer that doesn't read or doesn't match) is `uncertain-write`. Then one look follows, for
+  positive evidence only. Without it the stage stays uncertain: Ready then sends nothing that changes
+  anything (no push, no second pull request, no preparation) until Bitbucket shows exactly one open
+  pull request from the branch into its base, at the head that step was sent for, whose description
+  carries that same id (for ready, also no longer a draft); another open beside it is refused right
+  after, with that one confirmed. That confirms it under the same id. An
+  empty or failed lookup or a changed remote keeps it uncertain. Nothing releases it automatically; the
+  refusal names the id and the line, so the person can open or mark it on Bitbucket by hand.
+- Output: a Ready refused in publication's own steps gives `--json` `publication` (a remote on
+  bitbucket.org that doesn't bind refuses before them, with `error` alone): `result` is `refused` (nothing changed on
+  Bitbucket in that command), `changed` (with `changed`: `pushed`, `draft`, each confirmed),
+  `uncertain` (a write it sent may have happened) or `held` (an earlier one still is uncertain),
+  with the claim's facts; the text names what was done before it stopped. `show` (and
+  `show --evidence`) carries the same facts as `publication` (or `unreadable` with why), and one text
+  line. Ready on a pull request herdr-task never merges says so, whatever the merge setting, and sets
+  no auto merge.
+- Concurrency, as it actually is: exclusion holds per Bitbucket repository and task branch, through
+  the server's ref transaction. herdr-task keeps no shared store between machines (each host has its
+  own claims file), so two execution hosts publishing the same task both may read the branch as
+  absent, but only one create-if-absent push can create it. Only the branch's owner opens, adopts or
+  prepares its pull request, so exactly one opens; the other refuses saying another push created the
+  branch first, holding no claim. Within one host the claims file's lock also refuses a second task,
+  folder or command before anything is sent. A third party pushing the branch first (someone's own
+  push, before Ready) blocks publication until the person removes or renames it. This relies on git's
+  receive-pack checking each update's old id, not on Bitbucket refusing a second pull request, and no
+  shared store, service or core document is used. A fork's branch of the same name is another branch
+  and is left out of the open pull requests read.
+- Merge: B1's refusal is unchanged for every published record. Nothing sends a Bitbucket merge or
+  merges another way.
+- Regression: `test/test_bitbucket_publication.py` runs `ready`, `show`, `accept` and `merge` as
+  processes. Bitbucket is B1's test-owned API, answered by a model of one repository whose branches
+  are a bare repository's, reached by git through the remote's rewrite to an SSH alias and a test SSH
+  transport. It covers the happy path with fields people set kept, lost replies found at once and on
+  reopening (no second `POST`, same id), an empty lookup that never releases, an uncertain preparation,
+  a refused write that keeps its push, zero-effect refusals, a branch this host never pushed never
+  pushed over, its own last push the only one rewritten, a push git doesn't answer for, two simulated
+  hosts publishing the same task (one branch creation, one pull request, the other refused: after the
+  first, and racing with the same or another commit, where the second's push waits in the server's
+  `pre-receive` hook while the first's whole ready runs, so the server's own ref update refuses it), a
+  push the server declines, merge settings that promise nothing, a fork's branch
+  left out, a remote changed before the push and before the write, a push URL git would rewrite,
+  claims of another task or machine, and an unreadable claims file.
+- Not covered: Bitbucket's real answers (the list query's `q`, a `/` in `refs/branches/<name>`
+  sent as `%2F`, draft and reviewer fields, the 255-character title bound and the 32000-character
+  description bound are as P and its documentation give them), Bitbucket's own git server applying
+  `--force-with-lease` as git's receive-pack does, a real helper, account and push, two real hosts,
+  and a delayed write landing after its reconciliation. All are native qualification.
+  Python checks and the regression are authored here and run only in Root's CI.
+- Not a required port's completion: every `bitbucket-*` requirement, `public-cli-outcomes` and the
+  B2 part of `request-replay` stay pending until Root CI and native qualification.
+
 ### Bitbucket contract
 
 Port P's behavior into native owners, not its old server paths. GitHub retains
@@ -538,7 +656,8 @@ Root runs `python3 bin/check-migration`, its public-CLI checkpoint tests
 the C1 discovery tests (`core/chat-find.test.js`, `test/test_session_discovery.py`),
 the W1 flag tests (`service/jobs-flags.test.ts`), the H1 listener tests
 (`service/private-domain.test.ts`), the S1 forge tests (`test/test_forge.py`), the B1
-Bitbucket read tests (`test/test_bitbucket.py`) and every native Check command. CI owns
+Bitbucket read tests (`test/test_bitbucket.py`), the B2 publication tests
+(`test/test_bitbucket_publication.py`) and every native Check command. CI owns
 frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.

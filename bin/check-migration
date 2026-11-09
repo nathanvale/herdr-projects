@@ -57,6 +57,12 @@ mods/tasks/bin/herdr_task/tick.py test/test_forge.py test/test_herdr_task.py tes
 mods/tasks/bin/herdr_task/bitbucket_http.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/forge.py
 mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/proof.py mods/tasks/bin/herdr_task/tick.py
 mods/task-pr/main.js service/worktree.ts test/test_bitbucket.py'''.split()),
+    # Bitbucket publication: Ready pushes on a frozen route, opens the draft and prepares it under this host's
+    # durable claims, reconciled by operation id. B1's owners it changes are B2's from here.
+    'B2': frozenset('''mods/tasks/bin/herdr_task/__init__.py mods/tasks/bin/herdr_task/bitbucket.py
+mods/tasks/bin/herdr_task/bitbucket_http.py mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py
+mods/tasks/bin/herdr_task/forge.py mods/tasks/bin/herdr_task/publications.py test/test_bitbucket.py
+test/test_bitbucket_publication.py test/test_native_publication.py'''.split()),
 }
 # The shared table's second half (PR 19 decision D5, issue #7): what accepted changes add beyond exact
 # U and outside every phase's owners, admitted by name and left to review for content. With U's paths
