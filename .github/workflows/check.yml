@@ -30,7 +30,7 @@ jobs:
   check:
     name: check
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20  # PR 56 took 13 min; the restored sensitivity checks add about a minute
     steps:
       - uses: actions/checkout@v4
         with:
@@ -77,6 +77,10 @@ jobs:
           done
       - name: tests (repo rules, installer, herdr-task)
         run: python3 -m unittest discover -s test -v
+      - name: restored fork sensitivity checks (each guard removed, its regression must fail)
+        # Q: the fork proved its regressions by removing the guard (foundry.yml); the ported ones are the `ported`
+        # rows of docs/migration/q-reconciliation.json. Each source file is put back byte for byte after its run.
+        run: python3 bin/check-sensitivity
       - name: installer into a brand-new throwaway home (dry run, install, doctor, uninstall)
         run: |
           root=$(mktemp -d)

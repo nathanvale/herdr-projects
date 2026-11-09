@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""Restored fork sensitivity obligations (Q): each ported guard is removed in place, and its native regression
+must fail; with the guard back it must pass. The old fork proved its regressions this way in foundry.yml.
+
+Specs are the `ported` rows of docs/migration/q-reconciliation.json's `workflow_obligations` (bin/check-migration
+checks them statically). Check runs this after the suites. It changes a source file only for one test run and
+always puts its exact bytes back. Nothing here starts an agent, signs in or reaches a provider: the regressions
+use their own stand-ins."""
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+ROOT = Path(__file__).resolve().parent.parent
+LEDGER = ROOT / 'docs/migration/q-reconciliation.json'
+TIMEOUT = 600
+# What a person's shell may carry is never what a regression runs on.
+SCRUB = ('SHEPHERDR_', 'ANTHROPIC_', 'CLAUDE_', 'AZURE_', 'OPENAI_', 'HERDR_')
+
+
+def command(spec):
+    if spec['runner'] == 'unittest':
+        return [sys.executable, '-m', 'unittest', 'discover', '-s', 'test', '-p', Path(spec['test_file']).name,
+                '-k', spec['test']]
+    return ['bun', 'test', './' + spec['test_file'], '-t', spec['test']]
+
+
+def run(spec):
+    env = {key: value for key, value in os.environ.items() if not key.startswith(SCRUB)}
+    # A fresh bytecode cache each run: a cached module from before the change can't stand in for the changed source.
+    cache = tempfile.mkdtemp(prefix='sensitivity-pycache-')
+    env['PYTHONPYCACHEPREFIX'] = cache
+    try:
+        result = subprocess.run(command(spec), cwd=ROOT, env=env, capture_output=True, text=True, timeout=TIMEOUT)
+    finally:
+        shutil.rmtree(cache, ignore_errors=True)
+    return result.returncode, result.stdout + result.stderr
+
+
+def passed(spec, code, out):
+    if spec['runner'] == 'unittest':
+        ran = re.search(r'^Ran (\d+) tests?', out, re.M)
+        return code == 0 and bool(ran) and int(ran.group(1)) >= 1
+    return code == 0 and ('(pass) ' + spec['test']) in out
+
+
+def failed(spec, code, out):
+    if spec['runner'] == 'unittest':
+        return code != 0 and re.search(r'^(FAIL|ERROR): ' + re.escape(spec['test']) + r' ', out, re.M) is not None
+    return code != 0 and ('(fail) ' + spec['test']) in out
+
+
+def prove(row):
+    """'proved', or why not. The baseline must pass first, so a failure under the mutation is the guard's."""
+    spec = row['mutation']
+    target = ROOT / spec['file']
+    original = target.read_bytes()
+    text = original.decode()
+    if text.count(spec['before']) != 1:
+        return 'the guard is not exactly once in ' + spec['file']
+    code, out = run(spec)
+    if not passed(spec, code, out):
+        return 'the regression does not pass with the guard in place:\n' + out[-4000:]
+    try:
+        target.write_text(text.replace(spec['before'], spec['after']))
+        code, out = run(spec)
+    finally:
+        target.write_bytes(original)
+    if not failed(spec, code, out):
+        return 'the regression did not fail with the guard removed:\n' + out[-4000:]
+    return 'proved'
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--ledger', type=Path, default=LEDGER)
+    args = parser.parse_args()
+    rows = [row for row in json.loads(args.ledger.read_text())['workflow_obligations'] if row['disposition'] == 'ported']
+    results = []
+    for row in rows:
+        try:
+            outcome = prove(row)
+        except subprocess.TimeoutExpired:
+            outcome = f'the regression did not finish in {TIMEOUT} s'
+        results.append({'step': row['step'], 'test': row['mutation']['test'], 'outcome': outcome})
+        print(('ok   ' if outcome == 'proved' else 'FAIL ') + row['step'] + ' (' + row['mutation']['test'] + ')', flush=True)
+        if outcome != 'proved':
+            print(outcome, file=sys.stderr, flush=True)
+    proved = sum(r['outcome'] == 'proved' for r in results)
+    print(json.dumps({'sensitivity': 'passed' if proved == len(results) else 'failed', 'ported': len(results), 'proved': proved}))
+    return 0 if results and proved == len(results) else 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())
