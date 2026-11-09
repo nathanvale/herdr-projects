@@ -6,9 +6,10 @@ fail-closed publication, C1 finds a Claude Code session under its own agent's
 folder, W1 keeps a web page's chat flag apart from background work, H1 adds an
 opt-in private custom-domain listener, S1 routes pull requests through the forge
 seam with GitHub as its first adapter, B1 reads a saved Bitbucket pull request and
-its head's complete checks through a second, and B2 publishes a Bitbucket folder's task on
-Ready (a push on a frozen route, a draft, then ready for review) under durable claims.
-Required Azure and lifecycle ports are pending, and no Bitbucket port is qualified. This checkpoint is not deployable or ready for application use. Check's
+its head's complete checks through a second, B2 publishes a Bitbucket folder's task on
+Ready (a push on a frozen route, a draft, then ready for review) under durable claims, and L1
+admits every task and Assistant start through one owner with a durable launch journal.
+Required Azure and lifecycle ports are pending, and no Bitbucket or lifecycle port is qualified. This checkpoint is not deployable or ready for application use. Check's
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
 
@@ -553,6 +554,37 @@ those earlier phases admitted are B2's from here, and their pins are B2's.
 - Not a required port's completion: every `bitbucket-*` requirement, `public-cli-outcomes` and the
   B2 part of `request-replay` stay pending until Root CI and native qualification.
 
+### L1 launch admission checkpoint
+
+`T/launch_admission.py` is the one owner every agent start on a machine goes through: a task's
+agent from each `herdr-task` start path, and an Assistant's or a tab agent's from its five start
+sites (`service/spaces.ts`, `service/actions.ts`, `mods/chat/main.js`, `mods/coordinator/restart.sh`,
+and `service/agents.ts` through `restart.sh` or `herdr-task switch`), which now run
+`herdr-task launch run`. Detail: [launch admission](../launch-admission.md).
+
+- Preflight before any effect: the settings file read strictly (there but unreadable refuses,
+  missing keeps Personal), the provider route (a task's Azure plan stays held; an Assistant admits
+  Personal only, here or on another machine), the task's Assistant, and an open start of the same
+  identity.
+- A durable journal (`~/.herdr/tasks/.launches.json`): `never-submitted` before the first effect,
+  `submission-uncertain` in one locked step that rechecks the claim and the revision, then `hc run`
+  next, then `confirmed` from the reply or from exactly one terminal labelled with its launch id.
+  Revisions are content digests, independent of the launch id.
+- Fencing: `launch recover` revokes only a never-submitted claim, and a delayed sender then sends
+  nothing. A submission-uncertain start is never released or retried; `launch reconcile` confirms
+  it on positive evidence only.
+- Carried from A1 and done here in source: Claude Code `--settings` followed by another flag
+  refuses with the missing-value message; `provider plan` names the layers that can outrank a plan,
+  with each one's evidence; a corrupt or unreadable settings file refuses a start and a plan (P17-7).
+- Held, not invented: herdr-core gives no receipt or revocation for a sent `hc run`; the journal
+  fences only this application's senders on one machine; no automatic recovery is chosen; revival
+  (`T/revive.py`) does not go through the owner yet (L2); planning an Assistant's Azure start and
+  credential-presence preflight move with the first Azure dispatch (A2, L2); the settings file
+  keeps no counter, so a change away and back reads as unchanged.
+- Authored regressions: `test/test_launch_admission.py` (processes, a stateful `hc` stand-in,
+  reopened journal and task list) and `service/launch-sites.test.ts`. CI pending; native
+  qualification pending. The chat mod's start is source-inspected only.
+
 ### Bitbucket contract
 
 Port P's behavior into native owners, not its old server paths. GitHub retains
@@ -657,7 +689,8 @@ the C1 discovery tests (`core/chat-find.test.js`, `test/test_session_discovery.p
 the W1 flag tests (`service/jobs-flags.test.ts`), the H1 listener tests
 (`service/private-domain.test.ts`), the S1 forge tests (`test/test_forge.py`), the B1
 Bitbucket read tests (`test/test_bitbucket.py`), the B2 publication tests
-(`test/test_bitbucket_publication.py`) and every native Check command. CI owns
+(`test/test_bitbucket_publication.py`), the L1 launch admission tests
+(`test/test_launch_admission.py`, `service/launch-sites.test.ts`) and every native Check command. CI owns
 frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.

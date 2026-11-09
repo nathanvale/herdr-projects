@@ -23,6 +23,28 @@ cwd=$(get .cwd) app=$(get .status.app) pid=$(get .foreground.pid) created=$(get 
 [ -n "$tab" ] || tab=$(get '.labels["herdr.coordinator.tab"]')
 [ -n "$space" ] && [ -n "$tab" ] || [ -n "${HERDR_RESTART_CHAT:-}" ] || [ -n "$(get '.labels["herdr.chat"]')" ] || exit 1
 
+# Every start goes through launch admission (mods/tasks/bin/herdr_task/launch_admission.py): Personal only, an
+# earlier start of the same Assistant or tab still open refuses, and it is claimed, rechecked and recorded as sent
+# before hc runs. Checked here first, before this script changes anything (the old agent's workers, its handoff).
+owner="$(cd "$(dirname "$0")/../tasks/bin" && pwd)/herdr-task"
+aspace=${space:-$(get '.labels["herdr.coordinator.space"]')}
+aspace=${aspace:-unplaced}
+if [ "$role" = coordinator ]; then
+  admit=(--role coordinator --space "$aspace")
+else
+  aslot=${tab:-${HERDR_RESTART_CHAT:-$(get '.labels["herdr.chat"]')}}
+  admit=(--role agent --space "$aspace" --slot "$aslot")
+fi
+# start <hc run words>: hc's reply (--json) on stdout; a refusal's words on stderr, and nothing started.
+start() {
+  local out code
+  out=$("$owner" launch run "${admit[@]}" --json -- "$@"); code=$?
+  [ "$code" -eq 0 ] || jq -r '.error // empty' <<<"$out" >&2
+  printf '%s\n' "$out"
+  return "$code"
+}
+pre=$("$owner" launch run "${admit[@]}" --check --json) || { jq -r '.error // empty' <<<"$pre" >&2; exit 1; }
+
 # What the previous agent did: its screen, and its session log when we can find it.
 dir=${HERDR_APP_HOME:-$HOME/.config/herdr-app}/data/coordinator/handoff
 mkdir -p "$dir"
@@ -79,9 +101,9 @@ own=""
 if [ -n "${HERDR_RESTART_RESUME:-}" ] && [ -n "$argv" ]; then
   mapfile -t cmd < <(jq -r '.[]' <<<"$argv")
   [ ${#cmd[@]} -gt 0 ] || exit 1
-  new=$(hc run --bg --json --no-parent --cwd "$cwd" "${labels[@]}" --label "herdr.agent=$(basename "${cmd[0]}")" -- sh -c "$clean"' exec "$@"' herdr-clean "${cmd[@]}" | jq -r '.address // empty')
+  new=$(start --bg --json --no-parent --cwd "$cwd" "${labels[@]}" --label "herdr.agent=$(basename "${cmd[0]}")" -- sh -c "$clean"' exec "$@"' herdr-clean "${cmd[@]}" | jq -r '.address // empty')
 elif [ -z "$argv" ] && [ "$role" = coordinator ] && [ -z "$own" ]; then
-  new=$(hc run --bg --json --no-parent --cwd "$cwd" "${labels[@]}" assistant "$handoff" | jq -r .address)
+  new=$(start --bg --json --no-parent --cwd "$cwd" "${labels[@]}" assistant "$handoff" | jq -r '.address // empty')
 else
   if [ -n "$own" ]; then
     own=${own#exec }
@@ -105,7 +127,7 @@ else
   file=$HOME/.config/herdr-core/templates/$one.md
   { printf -- '---\nname: %s\ndescription: A one-off Herdr handoff, removed after use.\ncommand: %s\n---\n' "$one" "$clean exec $line"
     printf '%s\n' "$msg"; } >"$file"
-  out=$(hc run --bg --json --no-parent --cwd "$cwd" "${labels[@]}" --label "herdr.agent=$key" "$one")
+  out=$(start --bg --json --no-parent --cwd "$cwd" "${labels[@]}" --label "herdr.agent=$key" "$one")
   rm -f "$file"
   new=$(jq -r '.address // empty' <<<"$out")
   # Some agents (Codex's animated start) never settle for hc: send once it reports a status.

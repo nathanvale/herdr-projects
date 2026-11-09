@@ -17,7 +17,6 @@ import time
 
 from .base import ENTRY, Fail, git, hc_json, now, run, WORKTREES
 from .settings import agent_key, ASSISTANT_TEMPLATES, bare, BRANCH_PATTERN, branch_pattern_problem, notes, notes_part, review_limits, settings_block, settings_for
-from .providers import admit_launch
 from .templates import instructions
 from .agents import detail, LINE_MAX, live_agents, SUMMARY_MAX
 from .github import finish, remote_of
@@ -576,15 +575,20 @@ def folder_for(s, task):
     return path
 
 
-def launch(s, task, argv, space, message=None, parent=None, resume=None, role=None):
+def launch(s, task, argv, space, message=None, parent=None, resume=None, role=None, admission=None):
     """Starts one agent for the task with no tab or pane of its own (a space can hold thousands
     of tasks): an hc child of `parent`, which parent_for() makes the space's coordinator, reached
     through the Tasks panel. Labels: herdr.task (its task), herdr.task.space (its space; never
     herdr.space, which Herdr gives a pane), herdr.agent, herdr.coordinator (its coordinator's tab,
-    which keeps it under a restarted coordinator) and herdr.role=reviewer for a reviewer, kept
-    apart from the task's agents. Returns its record."""
-    # The last gate before a terminal is asked for (providers.py): Personal passes untouched.
-    admit_launch(s, argv, space)
+    which keeps it under a restarted coordinator), herdr.role=reviewer for a reviewer, kept
+    apart from the task's agents, and herdr.launch (its launch id). admission: its claimed start
+    (launch_admission.py), whose `parent` this is; without one it is admitted and claimed here.
+    Every hc run for it goes through that owner's submit(). Returns its record."""
+    if admission is None:
+        from .launch_admission import admit_task
+        adm = admit_task(s, task, argv, space, parent, role=role, resolve_parent=False)
+        with adm.claimed():
+            return launch(s, task, argv, space, message, parent, resume, role, adm)
     key = s.key(task)
     cmd = list(resume or argv)
     if not role:
@@ -598,18 +602,16 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
         labels += ["--label", f"herdr.coordinator={ctab}"]
     if role:
         labels += ["--label", f"herdr.role={role}"]
+    labels += admission.label()
     rel = ["--parent", parent, "--outlive-parent"] if parent else ["--no-parent"]
     name = agent_name(s, task, "review" if role else None)
+    folder = folder_for(s, task)
     # HERDR_BROWSER_TASK: which task's browser herdr-browser drives (HERD-57), for it and its children.
-    r = run(["hc", "run", "--bg", "--json", "--keep", "--cwd", folder_for(s, task), "--name", name,
-             *labels, *rel, "--", *low_priority(clean_env(["env", f"HERDR_BROWSER_TASK={key}", *in_shell(cmd)]), name)])
-    try:
-        out = json.loads(r.stdout)
-    except ValueError:
-        out = {}
-    if r.returncode != 0 or not out.get("address"):
-        raise Fail((r.stderr or r.stdout).strip() or "hc run failed")
-    a = {"address": out["address"], "agent": agent_key(argv), "argv": argv, "at": now()}
+    # submit(): its Assistant still live, its claim and settings rechecked, recorded as sent, then hc run.
+    out = admission.submit(["run", "--bg", "--json", "--keep", "--cwd", folder, "--name", name, *labels, *rel, "--",
+                            *low_priority(clean_env(["env", f"HERDR_BROWSER_TASK={key}", *in_shell(cmd)]), name)],
+                           parent_live=live_parent)
+    a = {"address": out["address"], "agent": agent_key(argv), "argv": argv, "at": now(), "launch": out["launch"]}
     if parent:
         a["parent"] = parent
     s.dirty = True

@@ -8,8 +8,8 @@ from .base import APP_HOME, Fail, git, hc_json, now, run, STORE
 from .settings import AGENTS, argv_for, settings_for
 from .agents import fit, from_person, log_tail, said
 from .provider import provider_cut, provider_error
-from .providers import admit_launch
-from .launch import brief, launch, parent_for
+from .launch_admission import admit_task
+from .launch import brief, launch
 
 
 # ---- which CLIs a machine can run -----------------------------------------------------------
@@ -219,19 +219,20 @@ def takeover(s, t, k, row, log, report):
     space = labels.get("herdr.task.space") or labels.get("herdr.space") or t.get("space")
     argv = backup_argv(s, t, kind)
     try:
-        # Before the task's one backup is spent: Settings' Provider may not start it (providers.py).
-        admit_launch(s, argv, space)
+        # Before the task's one backup is spent: launch admission may not start it (Settings'
+        # Provider, or an earlier start of the task still unresolved).
+        adm = admit_task(s, t, argv, space, (t["agents"][-1] if t.get("agents") else {}).get("parent"))
     except Fail as e:
-        # The refusal's own words follow, as far as the line holds them: they name a setting or a
-        # variable, never a value (providers.py).
+        # The refusal's own words follow, as far as the line holds them: they name a setting, a
+        # variable or a launch id, never a value (providers.py, launch_admission.py).
         row["reason"] = fit(f"{head(row['reason'])}, backup held: {e}")
         return row
     t["backup"] = {"from": running, "to": kind, "why": row["reason"], "at": now(), "from_address": k["address"], "state": "starting"}
     s.dirty = True
     try:
-        parent = parent_for((t["agents"][-1] if t.get("agents") else {}).get("parent"), space)
-        text = handover(s, t, running, kind, row["reason"], log) + "\n\n" + brief(s, t, parent, space, argv)
-        a = launch(s, t, argv, space, text, parent=parent)
+        with adm.claimed():
+            text = handover(s, t, running, kind, row["reason"], log) + "\n\n" + brief(s, t, adm.parent, space, argv)
+            a = launch(s, t, argv, space, text, parent=adm.parent, admission=adm)
     except Exception as e:  # never a second try: the person decides
         t["backup"].update(state="failed", error=str(e)[:300])
         row["reason"] = fit(f"{head(row['reason'])}, backup didn't start")

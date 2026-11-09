@@ -24,6 +24,7 @@ from .autopilot import cmd_autopilot, cmd_complete, cmd_progress
 from .star import cmd_star
 from .home import cmd_home
 from .providers import cmd_provider
+from .launch_admission import cmd_launch
 from .assistant_settings import cmd_session_note
 from .feedback import cmd_feedback
 
@@ -448,6 +449,36 @@ def main():
     c.add_argument("--folder", help="the task folder (default: here)")
     c.add_argument("--json", action="store_true")
     c.set_defaults(fn=cmd_provider)
+    la = sub.add_parser("launch", help="the launch journal: every agent start here, claimed before it is sent "
+                                       "(never submitted, submission uncertain, confirmed, cancelled)").add_subparsers(dest="launch")
+    run_help = ("start an Assistant (--role coordinator) or a tab agent (--role agent) through launch admission: Personal "
+                "only, claimed, rechecked, recorded as sent, then the hc run words after \"--\" (given its herdr.launch "
+                "label and --json); prints hc's reply")
+    c = la.add_parser("run", help=run_help, description=run_help)
+    c.add_argument("--role", required=True, help="coordinator or agent")
+    c.add_argument("--space", required=True, help="the space it starts in (its id)")
+    c.add_argument("--slot", help="a tab agent's tab (--role agent)")
+    c.add_argument("--check", action="store_true", help="only its preflight, before the start site changes anything: nothing is claimed or run")
+    c.add_argument("--json", action="store_true")
+    c.add_argument("hc_args", nargs=argparse.REMAINDER, help="-- then its hc run words")
+    c.set_defaults(fn=cmd_launch)
+    c = la.add_parser("status", help="the journal's starts, unresolved first, or one identity's")
+    c.add_argument("identity", nargs="?", help="task:<list>#<n>, coordinator:<machine>/<space> or agent:<machine>/<space>/<tab>")
+    c.add_argument("--json", action="store_true")
+    c.set_defaults(fn=cmd_launch)
+    c = la.add_parser("reconcile", help="a submission-uncertain start: confirmed only when exactly one terminal carries "
+                                        "its launch id; otherwise it stays uncertain and nothing is retried")
+    c.add_argument("identity")
+    c.add_argument("id", help="its launch id")
+    c.add_argument("--json", action="store_true")
+    c.set_defaults(fn=cmd_launch)
+    c = la.add_parser("recover", help="release a start that was claimed and never sent (its herdr-task ended): its claim "
+                                      "is revoked, so its sender can no longer send it. A start that may have been sent "
+                                      "is refused")
+    c.add_argument("identity")
+    c.add_argument("id", help="its launch id")
+    c.add_argument("--json", action="store_true")
+    c.set_defaults(fn=cmd_launch)
     c = cmd("fix", cmd_fix, "ask the task's agent to fix what keeps its pull request from merging")
     agent_opts(c)
     c.add_argument("--space")
@@ -490,9 +521,12 @@ def main():
     except Fail as e:
         if getattr(args, "json", False):
             cause, publication = getattr(e, "cause", None), getattr(e, "publication", None)
-            # publication: what a refused Bitbucket publication did and didn't do (publications.Outcome).
+            launch = getattr(e, "launch", None)
+            # publication: what a refused Bitbucket publication did and didn't do (publications.Outcome);
+            # launch: a start kept as submission uncertain, by its launch id (launch_admission.py).
             print(json.dumps({"error": str(e), **({"cause": cause} if cause else {}),
-                              **({"publication": publication} if publication else {})}))
+                              **({"publication": publication} if publication else {}),
+                              **({"launch": launch} if launch else {})}))
         else:
             print(f"herdr-task: {e}", file=sys.stderr)
         return 1

@@ -101,13 +101,17 @@ def reactions_on(space=None, d=None):
     return DEFAULTS["agents"]["reactions"]
 
 
-def settings_layers(s, space=None):
+def settings_layers(s, space=None, d=None):
     """(Everywhere's, this machine's, this folder's) raw settings, least specific first: the
-    folder's are those of the space working in it (--space's when several do)."""
-    try:
-        with open(SETTINGS) as f:
-            d = json.load(f)
-    except (OSError, ValueError):
+    folder's are those of the space working in it (--space's when several do). d: the settings
+    file as already read (launch admission reads it once, strictly: providers.read_strict)."""
+    if d is None:
+        try:
+            with open(SETTINGS) as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            d = {}
+    if not isinstance(d, dict):  # not a settings file (a JSON list, say): no settings here
         d = {}
     spaces = d.get("spaces") or {}
     mine = [v for k, v in spaces.items() if (v or {}).get("folder") == s.loc["folder"]]

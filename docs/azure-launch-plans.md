@@ -19,9 +19,9 @@ historical document.
 | Start, queue, resume, switch or backup under an Azure binding | Refused before any worktree, task state or terminal effect. |
 | The scheduler's tick, for a task queued earlier | Not started. The task stays queued and says "Couldn't start" with the reason. |
 | An automation's run | Its task is added, as for any automation start that fails, and says "Couldn't start". It is not queued or started. |
-| A valid Azure plan | Held: `dispatch: "held"`. Launch admission (L1) and bound resume (A2, L2) are pending. |
+| A valid Azure plan | Held: `dispatch: "held"`. Launch admission (L1) checks it before every start; bound resume (A2, L2) is pending. |
 | Discovery | A module with regressions. No Settings control calls it yet (A2). |
-| Assistants (coordinators) | Not gated in A1. See the A2 prerequisite below. |
+| Assistants (coordinators) | Since L1, refused before any effect unless Personal ([launch admission](launch-admission.md)). |
 
 Azure dispatch stays off on purpose. A launch record does not yet carry its binding, so a resume
 would follow today's settings and could reroute an existing conversation.
@@ -37,6 +37,12 @@ Personal fallback.
 A1 gives no supported way to set the route, so this is recorded and not widened here. It is a hard
 prerequisite for A2: no Settings control, command or selector may set an Azure route until every
 one of those launch sites refuses or plans through the provider owner, with public proof.
+
+L1 makes the refusing half true in source: all five sites now start through `herdr-task launch
+run`, which admits only Personal for an Assistant or a tab agent (here or on another machine), and
+refuses a settings file it can't read. Planning an Assistant's Azure start through the provider
+owner stays A2's. The process proof is in `test/test_launch_admission.py` and
+`service/launch-sites.test.ts`; the chat mod's own start is source-inspected only.
 
 ## The binding
 
@@ -69,7 +75,9 @@ A copy that the settings window or the service pushed to another machine (marked
 refuses an Azure route.
 That is not a full local-only guard. Serve-from sync writes the host machine's file as its own,
 without that mark, so the same route would read as local there. Nothing dispatches in A1, so
-there is no effect yet; binding the execution machine is carried to launch admission (L1).
+there is no effect yet. Since L1 every start records its execution machine, and an Assistant's
+start on another machine (`hc run --on`) refuses any route but Personal. Telling a Serve-from host's
+own file apart from a local one is still undone; it matters once Azure dispatches (A2, L2).
 
 ## Supported combinations
 
@@ -135,6 +143,22 @@ uses the same expression as the 2.x planner, so equal configuration gives an equ
 and Codex provider name. It does not identify an account, and rotating a credential does not
 change it.
 
+## What can outrank a plan
+
+A plan is what Shepherdr would add to a launch, never a claim of what will run. Three layers on the
+execution host can outrank it, so `provider plan` lists them (`outranked_by` in `--json`), each with
+its evidence and what is seen of it here. Since nothing dispatches on Azure, no start reports a plan
+as running.
+
+| Layer | Effect on a plan | Evidence | Seen here |
+| --- | --- | --- | --- |
+| A signed-in Claude apps gateway session | Authenticates with the gateway's token even when `CLAUDE_CODE_USE_FOUNDRY` is set | Official docs as reviewed for A1 (PR 17), Claude Code 2.1.318 installed then; not re-read in L1 | Unknown: not checked |
+| Claude managed settings | Outrank `--settings`, its `env` included; `allowedProviders` can refuse a provider, and `--model` picks only from allowed models | Official docs as reviewed for A1 (PR 17), Claude Code 2.1.318 installed then; not re-read in L1 | Whether a file is at `/Library/Application Support/ClaudeCode/managed-settings.json` or `/etc/claude-code/managed-settings.json`; MDM and other managed sources are not checked, and the file is never read |
+| Codex `required_model_provider()` | Resolves ahead of the other provider sources, the plan's `-c model_provider` included | Source inference: the Codex 0.166.0 tag read through summarised fetches. Microsoft's Codex guide validated only 0.152.1, 0.153.0 and 0.155.1 | Unknown: not checked |
+
+Bare `--` parsing is not established by official docs for either CLI (see above). Native proof of
+every layer stays with Q.
+
 ## Credential custody
 
 `providers.py` never reads an environment value. A plan carries a variable's name only, so the
@@ -142,8 +166,9 @@ planner adds no value to argv, settings, labels, task records or output. An argv
 plan's credential variable itself is refused (above); an inactive credential variable written
 there is blanked. The planner does not scan a person's own argv for other secrets.
 
-The environment-presence preflight from 2.x is not ported: it belongs with launch admission (L1).
-Presence would not prove sign-in anyway.
+The environment-presence preflight from 2.x is not ported. L1's admission holds every Azure start
+before it could matter, so it moves with the first Azure dispatch (A2, L2). Presence would not prove
+sign-in anyway.
 
 ## Discovery
 
@@ -171,8 +196,9 @@ An inventory does not prove account identity, inference access, tool support or 
 - A2: coordinator launch sites gated first (the prerequisite above), then Settings controls,
   per-role deployments, new-start selectors, and wiring discovery to Refresh and to
   configuration changes.
-- L1: one dispatch authority, the execution-machine binding, credential-presence preflight and
-  durable uncertainty.
+- L1 (source, CI pending): one dispatch authority, the execution machine recorded, and durable
+  uncertainty ([launch admission](launch-admission.md)). Credential-presence preflight moves with
+  the first Azure dispatch.
 - A2 and L2: recording a launch's binding and enforcing it on resume and revive.
 - Q: CI on the exact candidate, native qualification of each sign-in route, and public-process
   proof of the backup's gate (in-module only today).
@@ -183,8 +209,8 @@ Known limits of this slice:
 - Revive retypes a recorded argv without consulting the binding. No Azure agent can exist yet.
 - Discovery assumes the service's computer is the local execution host. The `az` it runs is the
   one on the service's `PATH`; there is no setting or variable that chooses another.
-- One start checks admission up to three times (the command, `begin` and `launch`), each before a
-  different effect. L1's single dispatch authority replaces them.
+- Since L1, one start is preflighted once and rechecked when it is claimed and when it is sent
+  (launch_admission.py), not checked three separate ways.
 - Model selection reads every argv word up to a bare `--`, without either CLI's option table.
   - A word that is really another option's value (`--append-system-prompt --model`, say) is read
     as a selection.

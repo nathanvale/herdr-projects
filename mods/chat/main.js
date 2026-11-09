@@ -1656,19 +1656,26 @@ export default class Chat extends View {
         ...(space ? ["--label", `herdr.coordinator.space=${String(space.id).split("/").pop()}`] : []),
         ...(rec?.tab ? ["--label", `herdr.coordinator.tab=${String(rec.tab).split("/").pop()}`] : []),
         launch, ...(task ? [task] : [])];
-      const r = await hc(args).catch((e) => ({ code: 1, stderr: String(e?.message ?? e), stdout: "" }));
+      // Every start goes through launch admission (herdr-task launch run, launch_admission.py): Personal only,
+      // claimed, rechecked and recorded as sent, then this hc run; its reply is hc's own, or {error} when refused.
+      const role = this.role === "coordinator" ? ["--role", "coordinator"] : ["--role", "agent", "--slot", String(this.slot)];
+      const where = ["--space", space ? String(space.id).split("/").pop() : "unplaced"];
+      const r = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, ["launch", "run", ...role, ...where, "--json", "--", ...args.slice(1)])
+        .catch((e) => ({ code: 1, stderr: String(e?.message ?? e), stdout: "" }));
       if (oneOff) exec("sh", ["-c", TEMPLATE + 'rm -f "$dir/$1.md"', "x", oneOff], on);
       let out = {};
       try { out = JSON.parse(r.stdout || "{}"); } catch {}
+      // Refused before anything was sent (a provider route, an earlier start still open): no agent to look for.
+      const refused = !!out.error && out.launch?.state !== "submission-uncertain";
       // hc waits to hand the agent its first message and gives up while the CLI shows a screen of
       // its own (trust this folder, in a new folder on another machine): hc took too long, but the
       // agent runs. Then this chat sends the template's words and the task itself once the agent is
       // idle past that screen (follow()), so the Assistant never starts without its instructions.
-      const late = (r.code !== 0 || !out.address) && this.slotAgent();
+      const late = !refused && (r.code !== 0 || !out.address) && this.slotAgent();
       if (late) out = { address: late, first_message: { sent: false } };
       if (out.address && out.first_message?.sent === false && words) this.firstSend = [words, task].filter(Boolean).join("\n\n");
       if (r.code !== 0 && !late || !out.address) {
-        p.failed = (r.stderr || r.stdout || "It didn't start.").trim();
+        p.failed = (out.error || r.stderr || r.stdout || "It didn't start.").trim();
         if (!msg) toast({ title: `The ${this.role === "coordinator" ? "Assistant" : this.role} didn't start`, body: p.failed, level: "error" });
         this.phase = "fresh";
         cx.notify();

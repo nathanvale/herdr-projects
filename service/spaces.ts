@@ -127,7 +127,10 @@ export async function newSpace(hub: Hub, opts: { machine: string | null; path: s
   // Settings › Window › Assistant in new spaces off: it opens without one
   if (opts.store.value("coordinator.auto") === false) return machine ? `${machine}/${id}` : id;
   const t = await execTemplate(hub, "assistant", machine);
-  await run(["hc", "run", "--bg", "--keep", "--no-parent", ...(machine ? ["--on", machine] : []), "--cwd", abs,
+  // through launch admission (herdr-task launch run): Personal only, claimed, rechecked and recorded as sent, then hc
+  // run. A refused start leaves the space without its Assistant, as a failed one always has.
+  await run(["herdr-task", "launch", "run", "--role", "coordinator", "--space", id, "--json", "--",
+    "--bg", "--keep", "--no-parent", ...(machine ? ["--on", machine] : []), "--cwd", abs,
     "--label", "herdr.role=coordinator", "--label", `herdr.coordinator.space=${id}`, "--label", `herdr.space=${id}`, t.name]);
   t.done();
   return machine ? `${machine}/${id}` : id;

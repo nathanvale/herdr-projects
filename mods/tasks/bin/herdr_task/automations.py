@@ -17,7 +17,7 @@ from .settings import bare, settings_for, worker_argv, worktrees_on
 from .agents import agent_running, live_agents, starting, status_of, task_status
 from .sessions import session_of
 from .launch import default_space
-from .providers import admit_launch
+from .launch_admission import admit_task
 from .store import locate, open_store, read_list, Store, store_files
 from .queues import queue_reason
 from .archive import archive_pass
@@ -367,16 +367,16 @@ def fire(s, a, why, brief=None):
         if not space:
             raise Fail("It has no space to start in.")
         argv = worker_argv(s, t, space)
-        # Before it is queued too: a provider that can't start it is this run's error, now.
-        admit_launch(s, argv, space)
         parent = a.get("parent")
+        # Before it is queued too: a start launch admission refuses is this run's error, now.
+        adm = admit_task(s, t, argv, space, parent, select=lambda: worker_argv(s, t, space))
         reason = queue_reason(s, t)
         if reason:
             t["state"], t["queued_at"] = "queued", now()
             t["queue"] = {"argv": argv, "space": space, "parent": parent}
             run_rec["queued"] = reason
         else:
-            begin(s, t, argv, space, parent)
+            begin(s, t, argv, space, parent, admission=adm)
         a.pop("last_error", None)
     except Fail as e:
         run_rec["error"] = str(e)

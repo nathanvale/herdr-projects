@@ -1,6 +1,7 @@
 """The task commands: add, start, status, ready, accept, merge and the rest."""
 
 import argparse
+import copy
 import functools
 import json
 import os
@@ -20,7 +21,7 @@ from .agents import (
     agent_running, busy_again, detail, fit, LINE_MAX, live_agents, ready_turns, STATUSES, SUMMARY_MAX, WORKING_AGAIN,
 )
 from .sessions import refresh_sessions
-from .providers import admit_launch
+from .launch_admission import admit_task
 from .github import (
     base_commit, finish, GH_ACCESS, GhFailed, local_base, merge_into_branch, merged_here, NO_ASK, own_work, plain, STAYS,
     update_main, watch_main,
@@ -32,7 +33,7 @@ from .forge import (
 from .publications import facts as publication_facts
 from .launch import (
     base_ref, brief, caller_labels, caller_space, current_base, default_space, folder_for, handoff, launch, name_tabs,
-    own_path, parent_for, resume_argv, retag_tabs, set_branch, tab_title, task_tabs,
+    own_path, resume_argv, retag_tabs, set_branch, tab_title, task_tabs,
 )
 from .store import is_task_list, locate, open_store, prefixes_in_use, read_list, Store, store_files
 from .queues import after_refs, parse_after, queue_reason, set_after
@@ -294,20 +295,37 @@ def cmd_show(args):
     say(args, v, "\n".join(text))
 
 
-def begin(s, t, argv, space, parent=None):
-    """Starts the task's first agent. Returns its record."""
-    # Before its state or worktree changes: a provider that can't start it refuses here.
-    admit_launch(s, argv, space)
-    t["state"], t["started"] = "running", now()
-    # Its brief teaches `reviewed`: ready waits for a review of its final commit (review_refusal).
-    t["review_gate"] = True
-    for k in ("queue", "queued_at", "attention", "held", "scheduled_for"):
-        t.pop(k, None)
-    if t.get("mode") == "worktree" and not t.get("worktree") and not worktrees_on(s, space):
-        t["mode"] = "here"
-    folder_for(s, t)
-    parent = parent_for(parent, space)
-    return launch(s, t, argv, space, brief(s, t, parent, space, argv), parent=parent)
+# A task's worktree, once made, stays its own even when the start that made it didn't send.
+MADE = ("worktree", "branch", "base", "start")
+
+
+def begin(s, t, argv, space, parent=None, admission=None, select=None):
+    """Starts the task's first agent. Returns its record. admission: its preflight (admit_task),
+    else made here; select: how its argv is chosen from settings again (None: as given)."""
+    # Before its state or worktree changes: launch admission (its provider route, an open earlier
+    # start, its Assistant) refuses here.
+    adm = admission or admit_task(s, t, argv, space, parent, select=select)
+    before = copy.deepcopy(t)
+    try:
+        # Claimed (never-submitted) before the first effect; a failure before it is sent cancels it.
+        with adm.claimed():
+            t["state"], t["started"] = "running", now()
+            # Its brief teaches `reviewed`: ready waits for a review of its final commit (review_refusal).
+            t["review_gate"] = True
+            for k in ("queue", "queued_at", "attention", "held", "scheduled_for"):
+                t.pop(k, None)
+            if t.get("mode") == "worktree" and not t.get("worktree") and not worktrees_on(s, space):
+                t["mode"] = "here"
+            folder_for(s, t)
+            return launch(s, t, argv, space, brief(s, t, adm.parent, space, argv), parent=adm.parent, admission=adm)
+    except BaseException:
+        # Not started (or not known to be): the task keeps its queue, hold and state, as before the
+        # start, so a tick that saves it after a refusal never drops what was queued.
+        made = {k: t[k] for k in MADE if k in t}
+        t.clear()
+        t.update(before)
+        t.update(made)
+        raise
 
 
 def cmd_start(args):
@@ -327,8 +345,10 @@ def cmd_start(args):
         space = bare(args.space) if args.space else (q.get("space") or default_space())
         argv = agent_argv(None, args.argv) if args.argv else worker_argv(s, t, space, args.agent) if args.agent else \
             (q.get("argv") or worker_argv(s, t, space))
-        admit_launch(s, argv, space)  # before it is queued too
+        fixed = bool(args.argv) or (not args.agent and bool(q.get("argv")))
         parent = args.parent or q.get("parent")
+        # Before it is queued too: launch admission refuses here, before anything changes.
+        adm = admit_task(s, t, argv, space, parent, select=None if fixed else (lambda: worker_argv(s, t, space, args.agent)))
         plan = {"argv": argv, "space": space, "parent": parent, **({"custom": True} if args.argv else {})}
         at = scheduled_at(args)
         if at:
@@ -345,7 +365,7 @@ def cmd_start(args):
             s.dirty = True
             v = view(s, t)
         else:
-            a = begin(s, t, argv, space, parent)
+            a = begin(s, t, argv, space, parent, admission=adm)
             v = view(s, t)
     # The scheduler starts queued tasks and tells the Assistant its tasks' news.
     try:
@@ -896,17 +916,21 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     keep = prev and prev.get("argv") and (t.get("pick_at") or 0) <= (prev.get("at") or 0)
     argv = agent_argv(None, argv_json) if argv_json else worker_argv(s, t, space, key) if key else \
         (prev["argv"] if keep else worker_argv(s, t, space))
-    # Before anything changes: a provider that can't start it refuses here.
-    admit_launch(s, argv, space)
+    fixed = bool(argv_json) or (not key and bool(keep))
+    # Before anything changes: launch admission (its provider route, an open earlier start, its
+    # Assistant) refuses here.
+    adm = admit_task(s, t, argv, space, parent or (prev or {}).get("parent"),
+                     select=None if fixed else (lambda: worker_argv(s, t, space, key)))
     unarchive(s, t)
-    parent = parent_for(parent or (prev or {}).get("parent"), space)
+    parent = adm.parent
     same = prev and agent_key(argv) == prev.get("agent")
     res = resume_argv(argv, prev["session"]) if same and prev.get("session") else None
-    if res:
-        return launch(s, t, argv, space, message, parent=parent, resume=res), True
-    text = handoff(s, t, prev, parent, argv) + (("\n\n" + message) if message else "")
-    t["review_gate"] = True
-    return launch(s, t, argv, space, text, parent=parent), False
+    with adm.claimed():
+        if res:
+            return launch(s, t, argv, space, message, parent=parent, resume=res, admission=adm), True
+        text = handoff(s, t, prev, parent, argv) + (("\n\n" + message) if message else "")
+        t["review_gate"] = True
+        return launch(s, t, argv, space, text, parent=parent, admission=adm), False
 
 
 def cmd_resume(args):

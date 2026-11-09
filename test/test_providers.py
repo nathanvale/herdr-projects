@@ -450,6 +450,15 @@ class LaunchPlans(unittest.TestCase):
         out = f.plan(*args)
         self.assertEqual(f.calls(), [])  # a plan runs no hc at all
         f.no_secret()
+        # An Azure plan names what can outrank it on the execution host, each with its evidence and
+        # what is seen of it here (L1): it never says the plan is what will run.
+        layers = out.pop("outranked_by", None)
+        if out.get("route") == "azure-foundry":
+            want = {"claude": ["Claude apps gateway sign-in", "Claude managed settings"], "codex": ["Codex required_model_provider()"]}
+            self.assertEqual([r["layer"] for r in layers], want[out["agent"]])
+            self.assertTrue(all(r["effect"] and r["evidence"] and r["observed"] for r in layers))
+        else:
+            self.assertIsNone(layers)
         return out
 
     def test_claude_on_foundry_by_each_sign_in(self):
@@ -602,6 +611,9 @@ class LaunchPlans(unittest.TestCase):
                             (["claude", "--settings"], needs),
                             (["claude", "--effort", "high", "--settings"], needs),
                             (["claude", "--settings", "--", "x"], needs),
+                            # Followed by another option: its missing value, not a file path (A1's PR 17 carried to L1).
+                            (["claude", "--settings", "--effort", "high"], needs),
+                            (["claude", "--settings", "-p"], needs),
                             (["claude", "--settings=/somewhere/settings.json"], "as a separate JSON word")):
             with self.subTest(argv=argv):
                 self.assertIn(words, f.no_plan("--argv", json.dumps(argv)))
@@ -704,15 +716,22 @@ class Binding(unittest.TestCase):
         with open(self.file, "w") as f:
             json.dump({"everywhere": {"provider": provider}}, f)
         ran, started = [], []
-        store = type("S", (), {"loc": {"folder": "/f"}, "dirty": False})()
+        store = type("S", (), {"loc": {"folder": "/f"}, "dirty": False, "key": lambda self, t: "f#1", "ref": lambda self, t: "F-1"})()
         task = {"id": 1, "space": "sp1", "agents": [{"address": "t1", "agent": "claude"}]}
         k = {"address": "t1", "labels": {"herdr.agent": "claude", "herdr.task.space": "sp1"}}
         patches = {"backup_for": lambda s, t, running: ("codex", None), "backup_argv": lambda s, t, kind: ["codex", "--no-daemon"],
-                   "parent_for": lambda parent, space: None, "handover": lambda *a: "handover", "brief": lambda *a: "brief",
-                   "launch": lambda s, t, argv, space, text, parent=None: started.append(argv) or {"address": "t2"},
+                   "handover": lambda *a: "handover", "brief": lambda *a: "brief",
+                   "launch": lambda s, t, argv, space, text, parent=None, admission=None: started.append(argv) or {"address": "t2"},
                    "run": lambda args, **kw: ran.append(args)}
         for name, value in patches.items():
             p = self.mock.patch.object(self.takeover, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+        # Launch admission (L1) runs for real: its journal in a throwaway folder, and no Assistant to find.
+        import herdr_task.launch as launch
+        import herdr_task.launch_admission as admission
+        for module, name, value in ((admission, "STORE", tempfile.mkdtemp()), (launch, "parent_for", lambda parent, space: None)):
+            p = self.mock.patch.object(module, name, value)
             p.start()
             self.addCleanup(p.stop)
         row = self.takeover.takeover(store, task, k, {"reason": "Out of allowance until 5pm"}, None, {})
