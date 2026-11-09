@@ -712,13 +712,15 @@ It is source and CI qualification only (Stage Q-A): no provider, Azure or agent 
   before Q, and any tracked path changed since the candidate outside Q's own paths, `docs/` and the root
   prose files (markdown a command reads, such as `templates/*.md`, is source). A named test must be
   declared by exactly that name. `--require-ready` still exits 3.
-- After Q merges: a later unit that changes such a path names it in `AFTER_Q` in `bin/check-migration`
+- After Q merges (an open decision for Nathan at Accept, as it adds a step to later units): a later unit
+  that changes such a path names it in `AFTER_Q` in `bin/check-migration`
   under the unit's name, in its own reviewed change. Its own Check is its evidence; Q's ledger keeps
   describing its candidate only and is never re-pointed to claim the later source. A later phase row
   (R) keeps the ledger valid; a manifest before Q refuses.
 - `bin/check-sensitivity` (a Check step) runs each ported guard's regression with the guard, removes the
   guard, requires that regression to fail, and puts the file back byte for byte (on SIGTERM too), with a
-  fresh bytecode cache. A skipped regression proves nothing and refuses.
+  fresh bytecode cache. A skipped regression proves nothing and refuses. While a row is `ported`,
+  `check-migration` refuses a Check workflow that no longer runs it.
 - Native deliberately differs from fork cases (recorded in the holds, not changed here): GitHub merge
   passes `--delete-branch` where the fork kept the source branch; a 401 or 403 on a Bitbucket create
   is a refusal and a later Ready may post again, where the fork kept it uncertain; a GitLab folder

@@ -380,6 +380,38 @@ class NativeFoundation(unittest.TestCase):
             checker.write_text(text)
         self.assertEqual((code, observed['source_validation']), (0, 'passed'), observed)
 
+    def test_a_later_phase_keeps_the_reconciliation(self):
+        """A phase row after Q (R) with the manifest naming it passes: Q's ledger stays valid for it."""
+        checker, manifest = self.copy / 'bin/check-migration', self.copy / 'docs/migration/upstream-v3.1.3.json'
+        text, data = checker.read_text(), manifest.read_text()
+        self.assertEqual(text.count("    'Q': frozenset(),\n}"), 1)
+        try:
+            checker.write_text(text.replace("    'Q': frozenset(),\n}", "    'Q': frozenset(),\n    'R': frozenset(),\n}"))
+            manifest.write_text(data.replace('"phase": "Q",', '"phase": "R",', 1))
+            code, observed = self.check()
+        finally:
+            checker.write_text(text)
+            manifest.write_text(data)
+        self.assertEqual((code, observed['source_validation'], observed['phase']), (0, 'passed', 'R'), observed)
+
+    def test_check_must_run_the_ported_sensitivity_checks(self):
+        """Dropping the Check step would discharge the four ported obligations silently: refused."""
+        code, observed = self.changed('.github/workflows/check.yml', lambda target: target.write_text(
+            target.read_text().replace('run: python3 bin/check-sensitivity', 'run: true')))
+        self.assertEqual((code, observed['candidate_readiness']), (1, 'blocked'))
+        self.assertIn('Check no longer runs bin/check-sensitivity', observed['error'])
+
+    def test_after_q_takes_one_string_of_paths_per_unit(self):
+        checker = self.copy / 'bin/check-migration'
+        text = checker.read_text()
+        try:
+            checker.write_text(text.replace('AFTER_Q = {}', "AFTER_Q = {'MIG-X': ['bin/checkout-access']}"))
+            code, observed = self.check()
+        finally:
+            checker.write_text(text)
+        self.assertEqual(code, 1)
+        self.assertIn("AFTER_Q names each later unit's paths as one space-separated string", observed['error'])
+
     def test_a_document_change_keeps_the_reconciliation(self):
         code, observed = self.changed('docs/native-restart.md', lambda target: target.write_bytes(target.read_bytes() + b'\n'))
         self.assertEqual((code, observed['source_validation']), (0, 'passed'), observed)
