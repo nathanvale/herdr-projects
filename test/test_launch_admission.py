@@ -202,7 +202,12 @@ class Fixture:
             return []
 
     def runs(self):
-        return [c for c in self.calls() if c[:1] == ["run"]]
+        """The agents hc was asked to start, each carrying its launch label (the scheduler's own terminal,
+        which a start ensures afterwards, isn't one)."""
+        return [c for c in self.calls() if c[:1] == ["run"] and any(a.startswith("herdr.launch=") for a in c)]
+
+    def carrying(self, lid):
+        return [t["address"] for t in self.terminals() if t["labels"].get("herdr.launch") == lid]
 
     def terminals(self):
         with open(self.state) as f:
@@ -352,7 +357,11 @@ class TaskStarts(unittest.TestCase):
         self.assertEqual(refused["launch"]["state"], "submission-uncertain")
         self.assertEqual(len(f.runs()), 1)
         out = f.ok("launch", "reconcile", rec["identity"], rec["launch"])
-        self.assertEqual((out["state"], out["address"], out["launch"]), ("confirmed", f.terminals()[0]["address"], rec["launch"]))
+        self.assertEqual((out["state"], [out["address"]], out["launch"], out["attached"]), ("confirmed", f.carrying(rec["launch"]), rec["launch"], True))
+        # Its agent is on its task now, as its own start would have put it, and nothing starts it again.
+        t = f.task()
+        self.assertEqual((t["state"], [a["launch"] for a in t["agents"]]), ("running", [rec["launch"]]))
+        self.assertEqual(len(f.runs()), 1)
 
     def test_a_lost_reply_is_confirmed_by_its_own_launch_label(self):
         f = Fixture(self)
@@ -383,6 +392,40 @@ class TaskStarts(unittest.TestCase):
         out = f.ok("launch", "reconcile", rec["identity"], rec["launch"])
         self.assertEqual((out["launch"], out["state"], out["address"]), (rec["launch"], "confirmed", "t50"))
         self.assertEqual(len(f.runs()), 1)
+
+    def test_a_tick_start_whose_reply_was_lost_is_never_started_again(self):
+        """Round 1's blocker: an unconfirmed tick start keeps the task started (not queued), and once
+        reconciled its agent is on the task, so later ticks send nothing."""
+        f = Fixture(self)
+        first, second = f.add(), f.add("--after", "1")
+        f.ok("start", str(second), "--folder", f.repo, "--space", "sp1")
+        f.ok("rm", str(first), "--folder", f.repo)
+        f.set_mode("hidden")
+        self.assertEqual(f.ok("tick", "--folder", f.repo)["started"], [])
+        f.set_mode("ok")
+        [rec] = f.starts()
+        t = f.task(second)
+        self.assertEqual((rec["state"], t["state"], "queue" in t), ("submission-uncertain", "running", False))
+        self.assertIn(rec["launch"], t["attention"])
+        self.assertEqual(f.ok("tick", "--folder", f.repo)["started"], [])
+        f.seed(address="t60", state="live", labels={"herdr.launch": rec["launch"]})
+        f.ok("launch", "reconcile", rec["identity"], rec["launch"])
+        self.assertEqual(f.ok("tick", "--folder", f.repo)["started"], [])
+        self.assertEqual([a["address"] for a in f.task(second)["agents"]], ["t60"])
+        self.assertEqual(len(f.runs()), 1)
+
+    def test_an_unconfirmed_resume_keeps_its_launch_id(self):
+        f = Fixture(self)
+        f.add()
+        self.assertEqual(f.start().returncode, 0)
+        f.set_mode("hidden")
+        refused = f.refused("resume", "1", "--folder", f.repo, "--space", "sp1")
+        first, second = f.starts()
+        self.assertEqual((refused["launch"]["launch"], second["state"]), (second["launch"], "submission-uncertain"))
+        f.set_mode("ok")
+        self.assertIn("may have started an agent", f.refused("switch", "1", "--folder", f.repo, "--space", "sp1")["error"])
+        self.assertIn("held decision", f.refused("launch", "recover", second["identity"], second["launch"])["error"])
+        self.assertEqual(len(f.runs()), 2)
 
     def test_its_assistant_changing_while_it_prepares_refuses_before_dispatch(self):
         f = Fixture(self)

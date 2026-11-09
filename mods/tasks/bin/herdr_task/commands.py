@@ -319,8 +319,12 @@ def begin(s, t, argv, space, parent=None, admission=None, select=None):
             folder_for(s, t)
             return launch(s, t, argv, space, brief(s, t, adm.parent, space, argv), parent=adm.parent, admission=adm)
     except BaseException:
-        # Not started (or not known to be): the task keeps its queue, hold and state, as before the
-        # start, so a tick that saves it after a refusal never drops what was queued.
+        # Sent (submission uncertain, or confirmed and then failing): it may run, so the task keeps
+        # its started state and the tick never starts it again; a reconcile puts its agent on it.
+        if adm.sent:
+            raise
+        # Never sent: the task keeps its queue, hold and state, as before the start, so a tick that
+        # saves it after a refusal never drops what was queued.
         made = {k: t[k] for k in MADE if k in t}
         t.clear()
         t.update(before)

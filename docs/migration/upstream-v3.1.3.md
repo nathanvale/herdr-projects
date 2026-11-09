@@ -572,13 +572,18 @@ and `service/agents.ts` through `restart.sh` or `herdr-task switch`), which now 
   Revisions are content digests, independent of the launch id.
 - Fencing: `launch recover` revokes only a never-submitted claim, and a delayed sender then sends
   nothing. A submission-uncertain start is never released or retried; `launch reconcile` confirms
-  it on positive evidence only.
+  it on positive evidence only and puts a task's agent on its task. Releasing one without that
+  evidence is the held `manual-recovery` decision: no command does it, and only a later, separately
+  approved change can.
 - Carried from A1 and done here in source: Claude Code `--settings` followed by another flag
   refuses with the missing-value message; `provider plan` names the layers that can outrank a plan,
   with each one's evidence; a corrupt or unreadable settings file refuses a start and a plan (P17-7).
+- Not done in L1, for a decision on where they go: a Serve-from host's own settings file (carried
+  from A1) and carrying an agent's `CLAUDE_CONFIG_DIR` folder (carried from C1).
 - Held, not invented: herdr-core gives no receipt or revocation for a sent `hc run`; the journal
   fences only this application's senders on one machine; no automatic recovery is chosen; revival
-  (`T/revive.py`) does not go through the owner yet (L2); planning an Assistant's Azure start and
+  that types into a kept or live terminal (`T/revive.py`, `service/watch.ts`'s live case) does not
+  go through the owner yet (L2), while watch.ts's restart behind a chat does, through `restart.sh`; planning an Assistant's Azure start and
   credential-presence preflight move with the first Azure dispatch (A2, L2); the settings file
   keeps no counter, so a change away and back reads as unchanged.
 - Authored regressions: `test/test_launch_admission.py` (processes, a stateful `hc` stand-in,

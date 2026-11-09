@@ -32,7 +32,9 @@ aspace=${aspace:-unplaced}
 if [ "$role" = coordinator ]; then
   admit=(--role coordinator --space "$aspace")
 else
-  aslot=${tab:-${HERDR_RESTART_CHAT:-$(get '.labels["herdr.chat"]')}}
+  # A parked agent is named by its chat pane, as the chat names its start (mods/chat); else by its tab.
+  aslot=${HERDR_RESTART_CHAT:-$(get '.labels["herdr.chat"]')}
+  aslot=${aslot:-$tab}
   admit=(--role agent --space "$aspace" --slot "$aslot")
 fi
 # start <hc run words>: hc's reply (--json) on stdout; a refusal's words on stderr, and nothing started.

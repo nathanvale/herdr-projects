@@ -55,7 +55,8 @@ FP = {"entra-id": "b4ff5e524c831cf3eb23385562a1e07606b2f98a18ab17b71030acd4286ad
       "bearer-token": "ac9a02f2e525b63cb6119359c4c065981f15a9b17383a990cfecfb3d5c80493e",
       "codex": "44e019ec9ff5b99ccb91a33d83e95ec6c5d75bfd66c5d3b91e6bd7bb6fe9169b",
       "space": "05c67c012ea6fc16ea0739ba8dbffac40c853fd73df3a2ac9acfc646e756536c"}
-PENDING = ["launch admission", "bound resume", "settings and selectors", "native qualification"]
+# Launch admission (L1) exists and holds every Azure start; what dispatch still waits for:
+PENDING = ["bound resume", "settings and selectors", "native qualification"]
 # Settings' start limits off: the runner's own load, memory or disk never decides what a tick starts.
 ROOM = {"machine": {"start_load": None, "start_memory": None, "start_disk": None}}
 INLINE = "marker-inline-credential-3b9d"

@@ -68,6 +68,12 @@ PARENT_CHANGED = ("Its Assistant ({}) ended or was replaced while this start was
 BROKEN = ("The launch journal ({}) can't be read. It is never read as empty, since it may hold a start that was sent. "
           "Nothing was started; move it aside only once every start it names is known.")
 SHUTDOWN = "stopped before it was sent ({})"
+# A submission-uncertain start that no terminal ever confirms stays held: herdr-core gives no
+# receipt, so releasing it on any other evidence is a decision this version leaves held (the
+# migration inventory's manual-recovery), not a command here.
+HELD_UNCERTAIN = ("If no terminal ever carries its launch id, releasing it is a held decision (manual recovery in the "
+                  "migration inventory): this version has no command that releases it, and only a later, separately "
+                  "approved change can.")
 
 
 def _path():
@@ -141,7 +147,7 @@ def busy_words(identity, rec, lid, who=None):
         return (f"{who} is already starting (launch {lid}, claimed and not sent). Nothing was started. If that start's "
                 f"herdr-task has ended, release it with `herdr-task launch recover {identity} {lid}`.")
     return (f"{who}'s last start ({lid}) may have started an agent that no reply confirmed (submission uncertain). Nothing "
-            f"was started or retried. `herdr-task launch reconcile {identity} {lid}` looks for its terminal.")
+            f"was started or retried. `herdr-task launch reconcile {identity} {lid}` looks for its terminal. {HELD_UNCERTAIN}")
 
 
 def refuse_busy(d, identity, who=None):
@@ -185,6 +191,9 @@ class Admission:
         self.revise, self.parent, self.who = revise, parent, who or identity
         self.revision = revise()
         self.launch = None
+        # sent: recorded submission-uncertain (hc run follows), so nothing may treat it as unstarted.
+        self.sent = False
+        self._old = {}
 
     def label(self):
         return ["--label", f"{LABEL}={self.launch}"]
@@ -204,13 +213,12 @@ class Admission:
                                   "machine": self.machine or "local", "parent": self.parent, "pid": os.getpid()}
             d["claims"][self.identity] = lid
         self.launch = lid
-        old = {}
 
         def stop(sig, _frame):
             raise SystemExit(128 + sig)
         for sig in (signal.SIGTERM, signal.SIGHUP):
             try:
-                old[sig] = signal.signal(sig, stop)
+                self._old[sig] = signal.signal(sig, stop)
             except (ValueError, OSError):
                 pass
         try:
@@ -220,9 +228,15 @@ class Admission:
             self.cancel(why[:300])
             raise
         finally:
-            for sig, h in old.items():
-                if h is not None:  # a handler not set from Python can't be put back from here
-                    signal.signal(sig, h)
+            self._restore()
+
+    def _restore(self):
+        """The shutdown handlers claimed() set, put back: once a start is sent, a SIGTERM or SIGHUP
+        ends this process as it always did and leaves hc to finish (never kills it mid-start)."""
+        for sig, h in self._old.items():
+            if h is not None:  # a handler not set from Python can't be put back from here
+                signal.signal(sig, h)
+        self._old = {}
 
     def cancel(self, reason):
         """Its own claim, cancelled while it is still never-submitted and still its own; once sent
@@ -235,12 +249,13 @@ class Admission:
                 rec.update(state=CANCELLED, reason=reason, updated=now())
                 d["claims"].pop(self.identity, None)
 
-    def submit(self, hc_args, parent_live=None):
+    def submit(self, hc_args, parent_live=None, record=None):
         """Sends the start: `hc` with hc_args (they carry label()). Before it, its Assistant must
         still be live (parent_live), and under the journal's lock its claim must still be its own
-        and its revision unchanged; it is then recorded submission-uncertain and hc runs next.
-        Returns hc's reply as {address, ...} once confirmed; refuses, keeping it uncertain, when
-        no terminal is known to carry its launch id."""
+        and its revision unchanged; it is then recorded submission-uncertain (with record: what a
+        later reconcile needs, a task's agent record) and hc runs next. Returns hc's reply as
+        {address, ...} once confirmed; refuses, keeping it uncertain, when no terminal is known to
+        carry its launch id."""
         if self.parent and parent_live and not parent_live(self.parent):
             raise Fail(PARENT_CHANGED.format(self.parent))
         guard(["hc"])  # a refused environment sends nothing: refused while the claim is still unsent
@@ -254,9 +269,11 @@ class Admission:
                 d["claims"].pop(self.identity, None)
                 changed = True
             else:
-                rec.update(state=UNCERTAIN, sent_at=now(), updated=now())
+                rec.update(state=UNCERTAIN, sent_at=now(), updated=now(), **(record or {}))
         if changed:
             raise Fail(CHANGED.format("sent"))
+        self.sent = True
+        self._restore()
         try:
             r = run(["hc", *hc_args])
         except (FileNotFoundError, PermissionError):
@@ -284,7 +301,7 @@ class Admission:
         self._close(UNCERTAIN, UNCERTAIN, reply=said)
         e = Fail(f"hc didn't confirm this start ({said}), and it may have started anyway, so it is kept as launch "
                  f"{self.launch}, submission uncertain. Nothing will retry it. `herdr-task launch reconcile {self.identity} "
-                 f"{self.launch}` confirms it once its terminal shows up.")
+                 f"{self.launch}` confirms it once its terminal shows up. {HELD_UNCERTAIN}")
         e.launch = {"launch": self.launch, "identity": self.identity, "state": UNCERTAIN}
         raise e
 
@@ -310,6 +327,32 @@ def labelled(lid):
     return [k["address"] for k in rows if isinstance(k, dict) and k.get("address")]
 
 
+def attach(rec):
+    """A confirmed task start its own herdr-task never recorded (a lost reply reconciled later, or
+    a crash after dispatch): its agent goes on its task once, as the start would have put it, so
+    the task is never taken for unstarted and started again."""
+    job = rec.get("task")
+    if not isinstance(job, dict) or not rec.get("address"):
+        return False
+    from .store import Store, locate
+    with Store(locate(job["folder"])) as s:
+        t = s.find(str(job["id"]))
+        rows = t.setdefault("reviewers" if job.get("role") else "agents", [])
+        if any(x.get("address") == rec["address"] for x in rows):
+            return False
+        rows.append({**job["agent"], "address": rec["address"], "launch": rec["launch"]})
+        if not job.get("role"):
+            if t["state"] in ("todo", "scheduled", "queued"):
+                t["state"] = "running"
+                t.setdefault("started", now())
+            for k in ("queue", "queued_at", "held", "scheduled_for", "attention"):
+                t.pop(k, None)
+            if job.get("space"):
+                t["space"] = job["space"]
+        s.dirty = True
+    return True
+
+
 # ---- a task's agent ---------------------------------------------------------------------------
 
 def task_identity(s, task, role=None):
@@ -327,9 +370,12 @@ def admit_task(s, task, argv, space, parent=None, role=None, select=None, resolv
     def revise():
         d = read_strict()
         plan = admit_launch(s, argv, space, d)
-        return digest({"role": role or "task", "route": plan["route"], "fingerprint": plan["fingerprint"],
-                       "argv": select() if select else list(argv), "space": bare(space) if space else None})
+        return digest({"role": role or "task", "route": plan["route"], "fingerprint": plan["fingerprint"], "argv": list(argv),
+                       "selected": select() if select else None, "space": bare(space) if space else None})
     adm = Admission(identity, role or "task", bare(space) if space else None, None, revise, who=s.ref(task))
+    # The argv chosen from settings a moment ago must still be what they choose: the revision binds both.
+    if select and select() != list(argv):
+        raise Fail(CHANGED.format("admitted"))
     open_start(identity, s.ref(task))
     adm.parent = parent_for(parent, space) if resolve_parent else parent
     return adm
@@ -396,10 +442,13 @@ def cmd_launch(args):
                     d["claims"].pop(ident, None)
             out = dict(rec)
         if out["state"] == CONFIRMED:
+            # A task's agent goes on its task now (its own start never recorded it).
+            out["attached"] = attach(out)
+            out.pop("task", None)
             return say(args, out, f"{ident} {lid} confirmed: its terminal {found[0]} carries its launch id.")
         why = (f"{len(found)} terminals carry its launch id ({', '.join(found)})" if found else
                "no terminal carries its launch id, which doesn't prove it never started (herdr-core keeps no receipt)")
-        e = Fail(f"{ident} {lid} stays submission uncertain: {why}. Nothing was started or released.")
+        e = Fail(f"{ident} {lid} stays submission uncertain: {why}. Nothing was started or released. {HELD_UNCERTAIN}")
         e.launch = {"launch": lid, "identity": ident, "state": UNCERTAIN}
         raise e
     # recover: only a start that was never sent, which revokes its claim; its sender, if it still
@@ -411,8 +460,8 @@ def cmd_launch(args):
         if rec["state"] == UNCERTAIN:
             e = Fail(f"{ident} {lid} may have been sent (submission uncertain): herdr-core gives no receipt or revocation for "
                      f"an hc run, and an empty terminal list doesn't prove it never started, so it can't be released here. "
-                     f"`herdr-task launch reconcile {ident} {lid}` confirms it once its terminal shows up; releasing it "
-                     f"without that is a decision this version leaves to the person. Nothing was changed.")
+                     f"`herdr-task launch reconcile {ident} {lid}` confirms it once its terminal shows up. {HELD_UNCERTAIN} "
+                     f"Nothing was changed.")
             e.launch = {"launch": lid, "identity": ident, "state": UNCERTAIN}
             raise e
         if rec["state"] == NEVER and d["claims"].get(ident) == lid:

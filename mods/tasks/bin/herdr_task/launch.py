@@ -608,12 +608,15 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
     folder = folder_for(s, task)
     # HERDR_BROWSER_TASK: which task's browser herdr-browser drives (HERD-57), for it and its children.
     # submit(): its Assistant still live, its claim and settings rechecked, recorded as sent, then hc run.
-    out = admission.submit(["run", "--bg", "--json", "--keep", "--cwd", folder, "--name", name, *labels, *rel, "--",
-                            *low_priority(clean_env(["env", f"HERDR_BROWSER_TASK={key}", *in_shell(cmd)]), name)],
-                           parent_live=live_parent)
-    a = {"address": out["address"], "agent": agent_key(argv), "argv": argv, "at": now(), "launch": out["launch"]}
+    a = {"agent": agent_key(argv), "argv": argv, "at": now()}
     if parent:
         a["parent"] = parent
+    # The journal keeps this record too: a reconcile after a lost reply or a crash puts it on the task.
+    job = {"folder": s.loc["folder"], "id": task["id"], "space": bare(space), "role": role, "agent": dict(a)}
+    out = admission.submit(["run", "--bg", "--json", "--keep", "--cwd", folder, "--name", name, *labels, *rel, "--",
+                            *low_priority(clean_env(["env", f"HERDR_BROWSER_TASK={key}", *in_shell(cmd)]), name)],
+                           parent_live=live_parent, record={"task": job})
+    a = {"address": out["address"], **a, "launch": out["launch"]}
     s.dirty = True
     if role:
         task.setdefault("reviewers", []).append(a)
@@ -622,7 +625,10 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
     # A tab from before tasks had none stays with its old agent, not the task.
     task["space"] = bare(space)
     task.pop("tab", None)
-    track(s, task, out["address"])
+    try:
+        track(s, task, out["address"])
+    except OSError:
+        pass  # it started and is recorded: a watcher that couldn't start only means its session is found later
     return a
 
 

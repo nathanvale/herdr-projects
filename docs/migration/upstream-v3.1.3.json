@@ -38,7 +38,7 @@
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "d2463e1a37c0aeefaee51eec7480d3de3df1f40d",
-      "sha256": "6972780f378c4d384b58cac9771bedeacaf2b6b8231decfa8fb4b075d5ee1bca"
+      "sha256": "9984ee2d4f803108f514d82b2df3d8fb648e51a1d4fc0021456ca915560784b7"
     },
     {
       "phase": "B1",
@@ -50,13 +50,13 @@
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/launch.py",
       "upstream_blob": "a3b9182213360bd11294a57d57144747fce36fba",
-      "sha256": "781334f49f117b5a39c60624aa6b0df092005facc882663a0cb93727ec963df0"
+      "sha256": "6119f6801e89bdad040b0ef3a03af82b79ceb350d6962841cc40acb2d6fb0a0b"
     },
     {
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/providers.py",
       "upstream_blob": null,
-      "sha256": "9d57f4bffc4d9de44601285676f0dd21b8d36ec89735245078a2321fe61a9656"
+      "sha256": "7592463f5e114b80c42fabf49328a5ab810413f52b5e16e9505579c645f6aa96"
     },
     {
       "phase": "L1",
@@ -104,7 +104,7 @@
       "phase": "L1",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "21d7cd2876f9eecd0e5e79e0288d458682a50a58a93b651c7ff773db3574e34a"
+      "sha256": "9993241600eaa6b22c45dda4d0cf005767c15981effc41181a8e4b7a49c4b446"
     },
     {
       "phase": "C1",
@@ -140,7 +140,7 @@
       "phase": "L1",
       "path": "mods/chat/main.js",
       "upstream_blob": "4cdd115719ff5ea07827776304cd093aec0f11b3",
-      "sha256": "d59df9fb9297a7ffd52535a6fe7ac6249a998b20bfb3c122fdf16441ab9ee1e2"
+      "sha256": "c33aea7ecbfeb78dbf9cc1b5b57f719ee951657b7d23d510b9660b9889061541"
     },
     {
       "phase": "C1",
@@ -338,13 +338,13 @@
       "phase": "L1",
       "path": "mods/coordinator/restart.sh",
       "upstream_blob": "3e19fcf877ae17eac7ae88e86b29279aa70fd2de",
-      "sha256": "91de3fd0bf39ad0140d226d734dd21908428a1f3a44e0daa0c773b81259f121e"
+      "sha256": "467fb05ae3b04d0e3cbd821eb2627813787d7f6b4f0976f1b4bc17c20696855d"
     },
     {
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/launch_admission.py",
       "upstream_blob": null,
-      "sha256": "141b8785bdcd4e191219b8ec33501aaa207c0942658a2666eec517041dfeaf64"
+      "sha256": "dec834016171f8994c7a0d5f73ba7907a06f5c04e4900001efa1828ea06e5c7a"
     },
     {
       "phase": "L1",
@@ -368,7 +368,7 @@
       "phase": "L1",
       "path": "test/test_launch_admission.py",
       "upstream_blob": null,
-      "sha256": "378d440c130c2c315e82a628ae52915015560de1ac4352deac969bf76587dbdf"
+      "sha256": "b0adedc057a2be8008a6f07efebc95d6803ca5e1e95afe75e8a0e35dae919485"
     }
   ],
   "requirements": [
@@ -1104,7 +1104,7 @@
         "test/core-launch-admission.test.ts",
         "test/core-operator.test.ts"
       ],
-      "evidence": "source-inspected; L1 routes every task start (start, tick, automation, resume, switch, backup) and the five Assistant start sites through T/launch_admission.py; native revival (T/revive.py, service/watch.ts) does not go through it yet: L2; native qualification pending"
+      "evidence": "source-inspected; L1 routes every task start (start, tick, automation, resume, switch, backup) and the five Assistant start sites through T/launch_admission.py, and service/watch.ts's lost-session restart behind a chat reaches it through restart.sh; revival that types into a kept or live terminal (T/revive.py, watch.ts's live case) does not go through it yet: L2; native qualification pending"
     },
     {
       "id": "manual-recovery",
@@ -1124,7 +1124,7 @@
         "test/core-launch-admission.test.ts",
         "test/core-operator.test.ts"
       ],
-      "evidence": "source-inspected; L1 offers only `launch recover` for a never-submitted start and `launch reconcile` on positive evidence; a submission-uncertain start can't be released, and reboot evidence, exact revocation and automatic recovery remain held decisions; native qualification pending"
+      "evidence": "source-inspected; L1 offers only `launch recover` for a never-submitted start and `launch reconcile` on positive evidence; a submission-uncertain start that no terminal confirms stays blocked, and its refusals name this held decision (no release command, a person's word is not non-submission evidence); reboot evidence, exact revocation and automatic recovery remain held; native qualification pending"
     },
     {
       "id": "delivery-retries",

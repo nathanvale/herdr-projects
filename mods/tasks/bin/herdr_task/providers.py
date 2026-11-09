@@ -95,7 +95,7 @@ NOT_ASSISTANT = ("Provider is Azure Foundry here, but an Assistant's start can't
 NOT_EXECUTION_HOST = ("Provider is Azure Foundry here, and Azure Foundry starts agents only on the machine whose settings set "
                       "it; this start would run on {}. Nothing was started. Set Provider to Personal to start it.")
 HELD = ("Azure Foundry is set for {}, and its launch plan is valid, but this version only plans it: starting or resuming an "
-        "agent on Azure waits for launch admission and bound resume (still pending). Nothing was started or changed. "
+        "agent on Azure waits for bound resume and its settings and selectors (still pending). Nothing was started or changed. "
         "`herdr-task provider plan --agent {}` shows the plan; set Provider to Personal to start on the CLI's own sign-in.")
 
 
@@ -417,7 +417,7 @@ def cmd_provider(args):
     argv, env = compose(plan, base)
     azure = plan["route"] == AZURE
     out = {**plan, "argv": argv, "env": env, "dispatch": "held" if azure else "pass-through",
-           "pending": ["launch admission", "bound resume", "settings and selectors", "native qualification"] if azure else [],
+           "pending": ["bound resume", "settings and selectors", "native qualification"] if azure else [],
            **({"outranked_by": precedence(kind)} if azure else {})}
     if getattr(args, "json", False):
         print(json.dumps(out))
@@ -431,6 +431,6 @@ def cmd_provider(args):
         f"{kind}: Azure Foundry, deployment {plan['deployment']}, {AUTH_WORDS[plan['auth']]}.",
         f"Signs in with {how}.",
         f"Binding {plan['fingerprint'][:12]} (CLI, endpoint or resource, deployment and method; not an account).",
-        "Dispatch is held in this version: launch admission, bound resume, settings and selectors, and native qualification are pending.",
+        "Dispatch is held in this version: launch admission checks every start, and bound resume, settings and selectors, and native qualification are pending.",
         *[f"Can be outranked by {r['layer']}: {r['effect']} ({r['observed']})." for r in precedence(kind)],
         "This is a plan, not a check: no sign-in, credential or model request was tried. --json shows its argv and env."]))

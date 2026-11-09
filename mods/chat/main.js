@@ -1658,7 +1658,8 @@ export default class Chat extends View {
         launch, ...(task ? [task] : [])];
       // Every start goes through launch admission (herdr-task launch run, launch_admission.py): Personal only,
       // claimed, rechecked and recorded as sent, then this hc run; its reply is hc's own, or {error} when refused.
-      const role = this.role === "coordinator" ? ["--role", "coordinator"] : ["--role", "agent", "--slot", String(this.slot)];
+      // A tab agent is named by its chat pane, as restart.sh names it (HERDR_RESTART_CHAT), so the two are one identity.
+      const role = this.role === "coordinator" ? ["--role", "coordinator"] : ["--role", "agent", "--slot", String(pane)];
       const where = ["--space", space ? String(space.id).split("/").pop() : "unplaced"];
       const r = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, ["launch", "run", ...role, ...where, "--json", "--", ...args.slice(1)])
         .catch((e) => ({ code: 1, stderr: String(e?.message ?? e), stdout: "" }));

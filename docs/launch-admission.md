@@ -13,12 +13,13 @@ deployed or natively qualified, and Azure dispatch stays held ([Azure launch pla
 | A web-only New space's Assistant | `service/spaces.ts` runs `herdr-task launch run` |
 | A space's first message with no Assistant yet | `service/actions.ts` runs `herdr-task launch run` |
 | The window's Assistant chat (and a chat of another role) | `mods/chat/main.js` runs `herdr-task launch run` |
-| Restart or Switch agent of an Assistant or a tab agent | `mods/coordinator/restart.sh` (from the window, `service/actions.ts` and `service/agents.ts`) runs `herdr-task launch run` |
+| Restart or Switch agent of an Assistant or a tab agent, and a lost session started anew behind its chat | `mods/coordinator/restart.sh` (from the window, `service/actions.ts`, `service/agents.ts` and `service/watch.ts`) runs `herdr-task launch run` |
 
 `service/agents.ts` starts nothing itself: a task's agent goes through `herdr-task switch`, anything
 else through `restart.sh`. Not agent starts, so not here: the scheduler's own terminal, the task
 browser's view and Add machine's `hc machine add`. Revival (`revive.py`) types an agent back into
-its own kept terminal and is L2's: it does not go through this owner yet.
+its own kept terminal, and `service/watch.ts` types a fresh start into a live one: neither is an
+`hc run`, and both are L2's, outside this owner for now.
 
 ## The order of a start
 
@@ -43,7 +44,9 @@ its own kept terminal and is L2's: it does not go through this owner yet.
    the start refuses with its launch id (`--json` gives it as `launch`). Nothing retries it.
 
 A task refused after its claim keeps its queue, hold and state, so a tick that saves it never drops
-what was queued. A worktree the start made stays the task's.
+what was queued. Once a start is sent, the task keeps its started state whatever follows (it may
+be running), so a tick never starts it again; when a reconcile confirms it, its agent goes on its
+task. A worktree the start made stays the task's.
 
 ## Identities, revisions and the journal
 
@@ -69,7 +72,8 @@ herdr-task launch run --role coordinator|agent --space SPACE [--slot TAB] [--che
 ```
 
 - `reconcile` confirms a `submission-uncertain` start only when exactly one terminal carries its
-  launch id. An empty or failed lookup keeps it, since it doesn't prove the start never happened.
+  launch id, and puts a task's agent on its task. An empty or failed lookup keeps it, since it
+  doesn't prove the start never happened.
 - `recover` releases only a `never-submitted` start (its herdr-task ended before sending): its claim
   is revoked, so if its sender is still running it sends nothing when it reaches submit. A
   `submission-uncertain` start refuses.
@@ -78,23 +82,31 @@ herdr-task launch run --role coordinator|agent --space SPACE [--slot TAB] [--che
 ## Held, not invented
 
 - herdr-core gives no receipt, idempotency key or revocation for an `hc run` it may have been sent.
-  So nothing releases a `submission-uncertain` start without a terminal carrying its id. Releasing
-  one on other evidence, or automatically, is a human decision this version does not make.
+  So nothing releases a `submission-uncertain` start without a terminal carrying its id, and its
+  identity stays blocked: a definite hc failure (herdr-core down, an unreachable machine) never
+  clears. Releasing one on any other evidence, a person's word included, is the held decision
+  `manual-recovery` in the migration inventory: this version has no command for it, and only a
+  later, separately approved change can add one. Every refusal says so.
 - The journal fences this application's own senders, on this machine. It cannot stop an unknown
   process that already runs, and it does not reach another machine's journal.
 - Content revisions don't detect settings changed away and back to the same words.
 - An Assistant started on another machine (`--on`) is checked against this machine's settings only;
   that machine's own settings are not read.
-- A reconciled start is confirmed in the journal; a task's record of its agent is written only by
-  the start that sent it.
+- Two items carried to L1 are not done here and need a decision on where they go: telling a
+  Serve-from host's own settings file apart from a local one (the A1 checkpoint), and carrying an
+  agent's `CLAUDE_CONFIG_DIR` folder into its starts (the C1 checkpoint). Neither changes a start
+  while Azure is held and every start keeps today's folder handling.
+- A space-less Assistant (a chat with no space) shares the identity `coordinator:local/unplaced`.
 
 ## Proof
 
 `test/test_launch_admission.py` drives `herdr-task` and `restart.sh` as processes against a
 stateful `hc` stand-in, reopening the journal and the task list as files: competing starts, a
-shutdown and a crash before dispatch, a crash after it, lost and unconfirmed replies, a delayed
-sender fenced after recovery, its Assistant changing, settings changed before recording and before
-submission, unrelated edits, a refused tick start, and corrupt, unreadable and missing settings.
+shutdown and a crash before dispatch, a crash after it, lost and unconfirmed replies (start, tick
+and resume), a delayed sender fenced after recovery, its Assistant changing, settings changed before
+recording and before submission, unrelated edits, a refused tick start, and corrupt, unreadable and
+missing settings. Switch, backup and automation starts share the same owner calls but have no
+journal case of their own.
 `service/launch-sites.test.ts` proves the service's two sites start through `herdr-task launch run`
 and show its refusal. A source gate in the Python file keeps the five sites from running `hc run`
 for an agent themselves. The chat mod's start and the window's paths are source-inspected only.
