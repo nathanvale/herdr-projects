@@ -751,7 +751,8 @@ class Binding(unittest.TestCase):
             raise e
         row, task, started, ran = self.backup({"route": "personal"}, launch=uncertain)
         self.assertEqual((task["backup"]["state"], task["backup"]["launch"], ran), ("uncertain", "6f1c2d3e-4a5b-4c6d-8e7f-001122334455", []))
-        self.assertIn("may have started", row["reason"])
+        self.assertEqual(row["reason"], "Out of allowance, backup uncertain")
+        self.assertLessEqual(len(row["reason"]), 40)
 
         def broken(*a, **k):
             raise self.p.Fail("git worktree add failed")

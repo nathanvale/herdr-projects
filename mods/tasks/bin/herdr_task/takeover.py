@@ -242,7 +242,7 @@ def takeover(s, t, k, row, log, report):
             # It may have started (submission uncertain): not a failure. Its launch id is kept, the stuck agent
             # is left as it is, and nothing retries it (launch reconcile confirms it).
             t["backup"].update(state="uncertain", launch=sent.get("launch"), error=str(e)[:300])
-            row["reason"] = fit(f"{head(row['reason'])}, backup may have started (uncertain)")
+            row["reason"] = fit(f"{head(row['reason'])}, backup uncertain")  # within the row's 40 characters
             return row
         t["backup"].update(state="failed", error=str(e)[:300])
         row["reason"] = fit(f"{head(row['reason'])}, backup didn't start")

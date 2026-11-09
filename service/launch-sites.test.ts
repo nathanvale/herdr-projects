@@ -84,6 +84,18 @@ test("a web-only new space whose Assistant start is refused is still made, and s
   expect(read(HC_CALLS)).toEqual([]);
 });
 
+test("a web-only new space whose Assistant start may have been sent says its next step in a toast's length", async () => {
+  const launch = "6f1c2d3e-4a5b-4c6d-8e7f-001122334455", identity = "coordinator:local/sp0123456789abcdef0123456789abcdef";
+  writeFileSync(REPLY, JSON.stringify({ error: "hc didn't confirm this start (hc exited 1), and it may have started anyway, so it is kept as launch "
+    + `${launch}, submission uncertain. Nothing will retry it.`, launch: { launch, identity, state: "submission-uncertain" } }));
+  writeFileSync(`${REPLY}.code`, "1");
+  const s = store(), said: string[] = [];
+  await SP.newSpace(hub, { machine: null, path: FOLDER, store: s, refused: (w) => said.push(w) });
+  expect(said).toHaveLength(1);
+  expect(said[0].length).toBeLessThanOrEqual(140);
+  expect(said[0]).toBe(`May have started: herdr-task launch reconcile ${identity} ${launch}`);
+});
+
 test("a space's first message starts its Assistant through launch admission", async () => {
   const r: any = await A.act(hub, { type: "send", chat: "p:sp1", text: "Plan the week" }, compat(FOLDER));
   expect(r).toMatchObject({ ok: true, started: true });

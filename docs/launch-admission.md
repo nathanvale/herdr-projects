@@ -162,7 +162,9 @@ journal case of their own.
 `service/launch-sites.test.ts` proves the service's two sites start through `herdr-task launch run`
 and say a refusal: the first message's start refuses with the owner's words, and a web-only New
 space keeps the space and reports the refusal to its caller (`/api/spaces` answers `assistantError`,
-which the New space page shows as an error toast; the page itself has no test, as no web plugin
+which the New space page shows as an error toast; a start that may have been sent is said as "May
+have started: herdr-task launch reconcile <identity> <launch>", within a toast's 140 characters, in the
+chat's toast too; the page itself has no test, as no web plugin
 test covers a page's fetch). A source gate in the Python file keeps the five sites from running `hc run`
 for an agent themselves. The chat mod's start and the window's paths are source-inspected only.
 None of this proves herdr-core's behaviour, a real host crash or reboot, or an agent's sign-in.

@@ -213,7 +213,7 @@ function NewSpaceDialog() {
       const b = (await r.json().catch(() => ({}))) as { place?: string; error?: string; assistantError?: string }
       if (!r.ok || !b.place) throw new Error(b.error ?? `${r.status}`)
       // made, but its Assistant was refused (launch admission): the space opens, and the toast says why
-      if (b.assistantError) toast({ title: "The space's Assistant didn't start", body: b.assistantError, level: 'error' })
+      if (b.assistantError) toast({ title: "The space's Assistant isn't confirmed", body: b.assistantError, level: 'error' })
       setOpening(b.place)
     } catch (e) {
       setError((e as Error).message)

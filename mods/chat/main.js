@@ -1625,7 +1625,6 @@ export default class Chat extends View {
       return;
     }
     this.phase = "starting";
-    this.uncertainLaunch = null;
     cx.notify();
     cx.spawn(async (cx) => {
       // Chosen settings (the New space dialog, props.settings): the template's words with that
@@ -1688,13 +1687,25 @@ export default class Chat extends View {
       if (out.address && out.first_message?.sent === false && words) this.firstSend = [words, task].filter(Boolean).join("\n\n");
       if (r.code !== 0 && !late || !out.address) {
         p.failed = (out.error || r.stderr || r.stdout || "It didn't start.").trim();
-        if (!msg) toast({ title: `The ${this.role === "coordinator" ? "Assistant" : this.role} didn't start`, body: p.failed, level: "error" });
-        // A start that may run (submission uncertain): adoptSlot follows only the terminal carrying its launch id.
-        this.uncertainLaunch = out.launch?.state === "submission-uncertain" ? out.launch.launch : null;
+        // A start that may run (submission uncertain) says so, with its next step in a toast's 140 characters (as
+        // service/spaces.ts uncertainWords); a refused one didn't start.
+        const maybe = out.launch?.state === "submission-uncertain";
+        const who = this.role === "coordinator" ? "Assistant" : this.role;
+        const next = maybe ? (() => {
+          const full = `May have started: herdr-task launch reconcile ${out.launch.identity} ${out.launch.launch}`;
+          const status = `May have started: herdr-task launch status ${out.launch.identity}`;
+          return full.length <= 140 ? full : status.length <= 140 ? status : "May have started: herdr-task launch status lists it.";
+        })() : p.failed;
+        if (!msg) toast({ title: maybe ? `The ${who} may have started` : `The ${who} didn't start`, body: next, level: "error" });
+        // adoptSlot follows only the terminal carrying an uncertain start's launch id. A later refusal (its claim still
+        // open) keeps that id; only a new uncertain start names another.
+        if (maybe) this.uncertainLaunch = out.launch.launch;
         this.phase = "fresh";
         cx.notify();
         return;
       }
+      // It runs: no earlier uncertain start to wait for any more.
+      this.uncertainLaunch = null;
       // Remember what the person asked: the agent's first message is the template's words with it.
       if (msg) {
         this.firstTask = msg.text;
