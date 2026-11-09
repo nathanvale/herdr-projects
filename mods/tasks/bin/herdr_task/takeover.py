@@ -221,7 +221,8 @@ def takeover(s, t, k, row, log, report):
     try:
         # Before the task's one backup is spent: launch admission may not start it (Settings'
         # Provider, or an earlier start of the task still unresolved).
-        adm = admit_task(s, t, argv, space, (t["agents"][-1] if t.get("agents") else {}).get("parent"))
+        stuck = next((a for a in t.get("agents") or [] if a.get("address") == k["address"]), None)
+        adm = admit_task(s, t, argv, space, (t["agents"][-1] if t.get("agents") else {}).get("parent"), prev=stuck)
     except Fail as e:
         # The refusal's own words follow, as far as the line holds them: they name a setting, a
         # variable or a launch id, never a value (providers.py, launch_admission.py).

@@ -924,7 +924,7 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     # Before anything changes: launch admission (its provider route, an open earlier start, its
     # Assistant) refuses here.
     adm = admit_task(s, t, argv, space, parent or (prev or {}).get("parent"),
-                     select=None if fixed else (lambda: worker_argv(s, t, space, key)))
+                     select=None if fixed else (lambda: worker_argv(s, t, space, key)), prev=prev)
     unarchive(s, t)
     parent = adm.parent
     same = prev and agent_key(argv) == prev.get("agent")

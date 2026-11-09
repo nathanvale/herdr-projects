@@ -459,6 +459,7 @@ def main():
     c.add_argument("--space", required=True, help="the space it starts in (its id)")
     c.add_argument("--slot", help="a tab agent's tab (--role agent)")
     c.add_argument("--check", action="store_true", help="only its preflight, before the start site changes anything: nothing is claimed or run")
+    c.add_argument("--config-dir", help="the Claude Code folder (an absolute path) its start carries, recorded with it")
     c.add_argument("--json", action="store_true")
     c.add_argument("hc_args", nargs=argparse.REMAINDER, help="-- then its hc run words")
     c.set_defaults(fn=cmd_launch)
@@ -467,9 +468,15 @@ def main():
     c.add_argument("--json", action="store_true")
     c.set_defaults(fn=cmd_launch)
     c = la.add_parser("reconcile", help="a submission-uncertain start: confirmed only when exactly one terminal carries "
-                                        "its launch id; otherwise it stays uncertain and nothing is retried")
+                                        "its launch id (otherwise it stays uncertain and nothing is retried); a confirmed "
+                                        "task start its task list never recorded: its agent put on its task")
     c.add_argument("identity")
     c.add_argument("id", help="its launch id")
+    c.add_argument("--json", action="store_true")
+    c.set_defaults(fn=cmd_launch)
+    c = la.add_parser("folder", help="the Claude Code folder a running agent's process uses, from its own environment "
+                                     "(restart.sh carries it into the agent it starts)")
+    c.add_argument("identity", metavar="PID", help="the agent's process id")
     c.add_argument("--json", action="store_true")
     c.set_defaults(fn=cmd_launch)
     c = la.add_parser("recover", help="release a start that was claimed and never sent (its herdr-task ended): its claim "

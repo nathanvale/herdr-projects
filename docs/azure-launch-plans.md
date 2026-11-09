@@ -76,8 +76,9 @@ refuses an Azure route.
 That is not a full local-only guard. Serve-from sync writes the host machine's file as its own,
 without that mark, so the same route would read as local there. Nothing dispatches in A1, so
 there is no effect yet. Since L1 every start records its execution machine, and an Assistant's
-start on another machine (`hc run --on`) refuses any route but Personal. Telling a Serve-from host's
-own file apart from a local one is still undone; it matters once Azure dispatches (A2, L2).
+start on another machine (`hc run --on`) refuses any route but Personal, and a Serve-from client's
+copy refuses Azure too: its herdr-core node record says another machine serves
+([launch admission](launch-admission.md)).
 
 ## Supported combinations
 

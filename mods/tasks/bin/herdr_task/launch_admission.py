@@ -44,9 +44,9 @@ import signal
 import types
 import uuid
 
-from .base import Fail, guard, now, run, STORE
+from .base import Fail, guard, HOME, now, run, STORE
 from .providers import admit_assistant, admit_launch, read_strict
-from .settings import bare
+from .settings import agent_key, bare
 
 LABEL = "herdr.launch"
 NEVER, UNCERTAIN, CONFIRMED, CANCELLED = "never-submitted", "submission-uncertain", "confirmed", "cancelled"
@@ -68,6 +68,8 @@ PARENT_CHANGED = ("Its Assistant ({}) ended or was replaced while this start was
 BROKEN = ("The launch journal ({}) can't be read. It is never read as empty, since it may hold a start that was sent. "
           "Nothing was started; move it aside only once every start it names is known.")
 SHUTDOWN = "stopped before it was sent ({})"
+NO_CONFIG_DIR = ("CLAUDE_CONFIG_DIR isn't one absolute path to a Claude Code folder, so this start can't say which "
+                 "profile its agent would use. Nothing was started; set it to an absolute path, or unset it.")
 # A submission-uncertain start that no terminal ever confirms stays held: herdr-core gives no
 # receipt, so releasing it on any other evidence is a decision this version leaves held (the
 # migration inventory's manual-recovery), not a command here.
@@ -150,20 +152,56 @@ def busy_words(identity, rec, lid, who=None):
             f"was started or retried. `herdr-task launch reconcile {identity} {lid}` looks for its terminal. {HELD_UNCERTAIN}")
 
 
-def refuse_busy(d, identity, who=None):
+def recorded_on(t, rec):
+    """Whether task t's list already holds the agent rec started (by launch id or address)."""
+    rows = t.get("reviewers" if (rec.get("task") or {}).get("role") else "agents") or []
+    return any(x.get("launch") == rec["launch"] or (rec.get("address") and x.get("address") == rec["address"]) for x in rows)
+
+
+def put_on(t, rec):
+    """The agent of confirmed start rec on task t, as its own start would have put it, once (in memory)."""
+    job = rec["task"]
+    if recorded_on(t, rec):
+        return False
+    t.setdefault("reviewers" if job.get("role") else "agents", []).append({**job["agent"], "address": rec["address"], "launch": rec["launch"]})
+    if not job.get("role"):
+        if t["state"] in ("todo", "scheduled", "queued", "done"):
+            t["state"] = "running"
+            t.setdefault("started", now())
+        for k in ("queue", "queued_at", "held", "scheduled_for", "attention"):
+            t.pop(k, None)
+        if job.get("space"):
+            t["space"] = job["space"]
+    return True
+
+
+def refuse_busy(d, identity, who=None, task=None):
+    """Refuses while `identity` has a start that isn't resolved: never submitted, submission
+    uncertain, or confirmed while its task list hasn't recorded its agent (its herdr-task ended
+    before saving). With task (the task as this start reads it): a recorded one releases its
+    claim; an unrecorded one is put on it, and this start still refuses, so it never runs twice."""
     lid = d["claims"].get(identity)
     if not lid:
         return
     rec = d["launches"].get(lid)
+    if rec and rec.get("state") == CONFIRMED and isinstance(rec.get("task"), dict):
+        if task is not None and recorded_on(task, rec):
+            rec.update(recorded=True, updated=now())
+            d["claims"].pop(identity, None)
+            return
+        on = task is not None and put_on(task, rec)
+        raise Fail(f"{who or identity}'s last start ({lid}) runs as {rec.get('address')}, but its task list never recorded it "
+                   f"(its herdr-task ended before saving). Nothing was started. "
+                   + ("It is on the task now." if on else f"`herdr-task launch reconcile {identity} {lid}` records it on its task."))
     if rec and rec.get("state") not in OPEN:
         return
     raise Fail(busy_words(identity, rec, lid, who))
 
 
-def open_start(identity, who=None):
+def open_start(identity, who=None, task=None):
     """Refuses while `identity` has an unresolved start (preflight's look, before any effect)."""
     with journal() as d:
-        refuse_busy(d, identity, who)
+        refuse_busy(d, identity, who, task)
 
 
 def options_of(words):
@@ -194,6 +232,9 @@ class Admission:
         # sent: recorded submission-uncertain (hc run follows), so nothing may treat it as unstarted.
         self.sent = False
         self._old = {}
+        # task: the task as its start reads it (refuse_busy's record check); config_dir: a Claude
+        # Code start's folder, carried explicitly (None: the terminal's own environment decides).
+        self.task, self.config_dir = None, None
 
     def label(self):
         return ["--label", f"{LABEL}={self.launch}"]
@@ -207,10 +248,11 @@ class Admission:
             raise Fail(CHANGED.format("recorded"))
         lid = str(uuid.uuid4())
         with journal() as d:
-            refuse_busy(d, self.identity, self.who)
+            refuse_busy(d, self.identity, self.who, self.task)
             d["launches"][lid] = {"launch": lid, "identity": self.identity, "role": self.role, "state": NEVER, "at": now(),
                                   "updated": now(), "revision": self.revision, "space": self.space,
-                                  "machine": self.machine or "local", "parent": self.parent, "pid": os.getpid()}
+                                  "machine": self.machine or "local", "parent": self.parent, "pid": os.getpid(),
+                                  "config_dir": self.config_dir}
             d["claims"][self.identity] = lid
         self.launch = lid
 
@@ -311,7 +353,12 @@ class Admission:
             if not rec or rec["state"] != was:
                 return
             rec.update(state=state, updated=now(), **facts)
-            if state != UNCERTAIN and d["claims"].get(self.identity) == self.launch:
+            # A confirmed task start keeps its claim until its task list records the agent (refuse_busy):
+            # if this herdr-task ends before it saves, the next start finds it instead of starting again.
+            held = state == CONFIRMED and isinstance(rec.get("task"), dict)
+            if held:
+                rec["recorded"] = False
+            if state != UNCERTAIN and not held and d["claims"].get(self.identity) == self.launch:
                 d["claims"].pop(self.identity, None)
 
 
@@ -329,28 +376,46 @@ def labelled(lid):
 
 def attach(rec):
     """A confirmed task start its own herdr-task never recorded (a lost reply reconciled later, or
-    a crash after dispatch): its agent goes on its task once, as the start would have put it, so
-    the task is never taken for unstarted and started again."""
+    a crash after dispatch): its agent goes on its task once, as the start would have put it, and
+    its watcher starts, so the task is never taken for unstarted and its session is recorded.
+    Not redone: what its command did after the start (switch ending the old agent, a backup's
+    state). True when it was put on now; refuses when the task or its folder has gone."""
     job = rec.get("task")
     if not isinstance(job, dict) or not rec.get("address"):
         return False
     from .store import Store, locate
+    from .launch import track
     with Store(locate(job["folder"])) as s:
         t = s.find(str(job["id"]))
-        rows = t.setdefault("reviewers" if job.get("role") else "agents", [])
-        if any(x.get("address") == rec["address"] for x in rows):
+        if not put_on(t, rec):
             return False
-        rows.append({**job["agent"], "address": rec["address"], "launch": rec["launch"]})
-        if not job.get("role"):
-            if t["state"] in ("todo", "scheduled", "queued"):
-                t["state"] = "running"
-                t.setdefault("started", now())
-            for k in ("queue", "queued_at", "held", "scheduled_for", "attention"):
-                t.pop(k, None)
-            if job.get("space"):
-                t["space"] = job["space"]
         s.dirty = True
+        if not job.get("role"):
+            try:
+                track(s, t, rec["address"])
+            except OSError:
+                pass
     return True
+
+
+def config_dir_for(argv, prev=None):
+    """The Claude Code folder a task's agent starts on, passed to it explicitly and recorded: the
+    previous agent's own when it has one (switch, resume, a backup keep its profile), else this
+    herdr-task's CLAUDE_CONFIG_DIR when set, else None: the terminal's own environment decides, as
+    before L1 (recorded as inherited). As C1's rule (sessions.claude_dir): one absolute path, and
+    no other folder called .claude. Codex and other CLIs: None."""
+    if agent_key(argv) != "claude":
+        return None
+    if prev and prev.get("agent") == "claude" and prev.get("config_dir"):
+        return prev["config_dir"]
+    v = os.environ.get("CLAUDE_CONFIG_DIR")
+    if not v:
+        return None
+    path = v[:-1] if v.endswith("/") and len(v) > 1 else v
+    if not path.startswith("/") or re.search(r"[\x00-\x1f\x7f]", path) or \
+            (os.path.basename(path) == ".claude" and path != os.path.join(HOME, ".claude")):
+        raise Fail(NO_CONFIG_DIR)
+    return path
 
 
 # ---- a task's agent ---------------------------------------------------------------------------
@@ -359,24 +424,28 @@ def task_identity(s, task, role=None):
     return f"task:{s.key(task)}" + (f"/{role}" if role else "")
 
 
-def admit_task(s, task, argv, space, parent=None, role=None, select=None, resolve_parent=True):
+def admit_task(s, task, argv, space, parent=None, role=None, select=None, resolve_parent=True, prev=None):
     """Preflight for a task's agent, before any effect: the settings read strictly, its route
-    (providers.py: Personal passes, Azure is held, anything unsupported refuses), an earlier start
-    still open, and its Assistant (parent_for: `parent` while live, else the space's). select:
-    how its argv is chosen again from settings (None: argv was given as it is)."""
+    (providers.py: Personal passes, Azure is held, anything unsupported refuses), its Claude Code
+    folder (config_dir_for, carried from prev: the agent it follows), an earlier start still open,
+    and its Assistant (parent_for: `parent` while live, else the space's). select: how its argv is
+    chosen again from settings (None: argv was given as it is)."""
     from .launch import parent_for
     identity = task_identity(s, task, role)
+    folder = config_dir_for(argv, prev)
 
     def revise():
         d = read_strict()
         plan = admit_launch(s, argv, space, d)
         return digest({"role": role or "task", "route": plan["route"], "fingerprint": plan["fingerprint"], "argv": list(argv),
-                       "selected": select() if select else None, "space": bare(space) if space else None})
+                       "selected": select() if select else None, "space": bare(space) if space else None,
+                       "config_dir": folder})
     adm = Admission(identity, role or "task", bare(space) if space else None, None, revise, who=s.ref(task))
+    adm.task, adm.config_dir = task, folder
     # The argv chosen from settings a moment ago must still be what they choose: the revision binds both.
     if select and select() != list(argv):
         raise Fail(CHANGED.format("admitted"))
-    open_start(identity, s.ref(task))
+    open_start(identity, s.ref(task), task)
     adm.parent = parent_for(parent, space) if resolve_parent else parent
     return adm
 
@@ -387,7 +456,7 @@ def assistant_identity(role, machine, space, slot=None):
     return f"{role}:{machine or 'local'}/{space}" + (f"/{slot}" if slot else "")
 
 
-def admit_assistant_start(role, space, hc_args, slot=None):
+def admit_assistant_start(role, space, hc_args, slot=None, config_dir=None):
     """Preflight for an Assistant's (role coordinator) or a tab agent's (role agent) start through
     hc_args, its `hc run` words: only Personal is admitted (its start sites can't apply a plan),
     here or on the machine its --on names; an earlier start of the same space (and slot) still
@@ -402,9 +471,11 @@ def admit_assistant_start(role, space, hc_args, slot=None):
         entry = spaces.get(space)
         folder = entry.get("folder") if isinstance(entry, dict) else f"\0{space}"
         route = admit_assistant(types.SimpleNamespace(loc={"folder": folder}), space, d, machine)
-        return digest({"role": role, "route": route, "space": space, "machine": machine, "hc": list(hc_args)})
+        return digest({"role": role, "route": route, "space": space, "machine": machine, "hc": list(hc_args),
+                       "config_dir": config_dir})
     identity = assistant_identity(role, machine, space, slot)
     adm = Admission(identity, role, space, machine, revise)
+    adm.config_dir = config_dir
     open_start(identity)
     return adm
 
@@ -413,6 +484,8 @@ def cmd_launch(args):
     from .output import say
     if args.launch == "run":
         return launch_run(args, say)
+    if args.launch == "folder":
+        return launch_folder(args, say)
     if args.launch == "status":
         if args.identity and not IDENTITY.fullmatch(args.identity):
             raise Fail("That isn't a launch identity: `herdr-task launch status` lists them.")
@@ -426,31 +499,7 @@ def cmd_launch(args):
     if not ident or not IDENTITY.fullmatch(ident) or not LAUNCH_ID.fullmatch(lid or ""):
         raise Fail("Give the start's exact identity and launch id, as `herdr-task launch status` shows them.")
     if args.launch == "reconcile":
-        with journal() as d:
-            rec = d["launches"].get(lid)
-            if not rec or rec.get("identity") != ident:
-                raise Fail(f"No start {lid} of {ident} in the launch journal.")
-            state = rec["state"]
-        if state != UNCERTAIN:
-            return say(args, {**rec}, f"{ident} {lid} is {state}: nothing to reconcile.")
-        found = labelled(lid)
-        with journal() as d:
-            rec = d["launches"][lid]
-            if rec["state"] == UNCERTAIN and len(found) == 1:
-                rec.update(state=CONFIRMED, address=found[0], reconciled=True, updated=now())
-                if d["claims"].get(ident) == lid:
-                    d["claims"].pop(ident, None)
-            out = dict(rec)
-        if out["state"] == CONFIRMED:
-            # A task's agent goes on its task now (its own start never recorded it).
-            out["attached"] = attach(out)
-            out.pop("task", None)
-            return say(args, out, f"{ident} {lid} confirmed: its terminal {found[0]} carries its launch id.")
-        why = (f"{len(found)} terminals carry its launch id ({', '.join(found)})" if found else
-               "no terminal carries its launch id, which doesn't prove it never started (herdr-core keeps no receipt)")
-        e = Fail(f"{ident} {lid} stays submission uncertain: {why}. Nothing was started or released. {HELD_UNCERTAIN}")
-        e.launch = {"launch": lid, "identity": ident, "state": UNCERTAIN}
-        raise e
+        return reconcile(args, say, ident, lid)
     # recover: only a start that was never sent, which revokes its claim; its sender, if it still
     # runs, is fenced when it tries to send. A start that may have been sent can't be released.
     with journal() as d:
@@ -471,6 +520,66 @@ def cmd_launch(args):
     say(args, out, f"{ident} {lid} is {out['state']}" + (": released, and its sender can no longer send it." if out.get("revoked") else "."))
 
 
+def reconcile(args, say, ident, lid):
+    """`launch reconcile`: a submission-uncertain start confirmed by exactly one terminal carrying
+    its launch id, and a confirmed task start whose task list never recorded its agent put on its
+    task (attach); its claim is released once the task holds it."""
+    with journal() as d:
+        rec = d["launches"].get(lid)
+        if not rec or rec.get("identity") != ident:
+            raise Fail(f"No start {lid} of {ident} in the launch journal.")
+        state, held = rec["state"], d["claims"].get(ident) == lid
+    if state == UNCERTAIN:
+        found = labelled(lid)
+        with journal() as d:
+            rec = d["launches"][lid]
+            if rec["state"] == UNCERTAIN and len(found) == 1:
+                rec.update(state=CONFIRMED, address=found[0], reconciled=True, updated=now())
+                if isinstance(rec.get("task"), dict):
+                    rec["recorded"] = False
+                elif d["claims"].get(ident) == lid:
+                    d["claims"].pop(ident, None)
+            state, held = rec["state"], d["claims"].get(ident) == lid
+        if state != CONFIRMED:
+            why = (f"{len(found)} terminals carry its launch id ({', '.join(found)})" if found else
+                   "no terminal carries its launch id, which doesn't prove it never started (herdr-core keeps no receipt)")
+            e = Fail(f"{ident} {lid} stays submission uncertain: {why}. Nothing was started or released. {HELD_UNCERTAIN}")
+            e.launch = {"launch": lid, "identity": ident, "state": UNCERTAIN}
+            raise e
+    elif not (state == CONFIRMED and held):
+        return say(args, {k: v for k, v in rec.items() if k != "task"}, f"{ident} {lid} is {state}: nothing to reconcile.")
+    # Confirmed, and its task may not hold its agent yet: put it there, then release the claim.
+    with journal() as d:
+        rec = dict(d["launches"][lid])
+    gone = False
+    try:
+        attached = attach(rec)
+    except Fail:
+        attached, gone = False, True  # its task or folder has gone: nothing can start it again
+    with journal() as d:
+        if d["claims"].get(ident) == lid:
+            d["claims"].pop(ident, None)
+        d["launches"][lid].update(recorded=not gone, updated=now())
+        out = {k: v for k, v in d["launches"][lid].items() if k != "task"}
+    out["attached"] = attached
+    said = (" Its task is gone, so it is on no task." if gone else " It is on its task now." if attached else "")
+    say(args, out, f"{ident} {lid} confirmed: {out.get('address')} carries its launch id.{said}")
+
+
+def launch_folder(args, say):
+    """`launch folder PID`: the Claude Code folder process PID uses, read from its own environment
+    (C1's rule, sessions.claude_dir), for restart.sh to carry into the agent it starts next."""
+    from .sessions import claude_dir
+    if not re.fullmatch(r"[1-9][0-9]{0,9}", args.identity or ""):
+        raise Fail("Give the agent's process id.")
+    folder = claude_dir(args.identity)
+    if not folder:
+        raise Fail("Can't read which Claude Code folder that agent uses (its environment isn't readable here, or "
+                   "its CLAUDE_CONFIG_DIR isn't one absolute path), so a restart could start it on another profile. "
+                   "Nothing was started.")
+    say(args, {"folder": folder, "default": folder == os.path.join(HOME, ".claude")}, folder)
+
+
 def launch_run(args, say):
     """`launch run`: an Assistant's or a tab agent's start, admitted, claimed, sent and confirmed
     here; the hc run words after "--" are its start site's own, given the launch's label and
@@ -485,15 +594,18 @@ def launch_run(args, say):
         raise Fail("--space names the space it starts in.")
     if args.role == "agent" and not (args.slot and SLOT.fullmatch(args.slot)):
         raise Fail("A tab agent's start names its tab: --slot.")
+    folder = args.config_dir or None
+    if folder and (not folder.startswith("/") or re.search(r"[\x00-\x1f\x7f]", folder)):
+        raise Fail("--config-dir is the absolute Claude Code folder its start carries.")
     if args.check:
         # Preflight only, before the start site changes anything: its route and an earlier start still open.
-        adm = admit_assistant_start(args.role, space, words, args.slot if args.role == "agent" else None)
+        adm = admit_assistant_start(args.role, space, words, args.slot if args.role == "agent" else None, folder)
         return say(args, {"admitted": True, "identity": adm.identity}, f"{adm.identity}: admitted.")
     if not words:
         raise Fail("Give the hc run words after \"--\".")
     if any(a.startswith(f"{LABEL}=") or a.startswith(f"--label={LABEL}=") for a in options_of(words)):
         raise Fail("A start's launch label is the launch owner's own: leave it out.")
-    adm = admit_assistant_start(args.role, space, words, args.slot if args.role == "agent" else None)
+    adm = admit_assistant_start(args.role, space, words, args.slot if args.role == "agent" else None, folder)
     with adm.claimed():
         extra = adm.label() + ([] if "--json" in options_of(words) else ["--json"])
         out = adm.submit(["run", *extra, *words])

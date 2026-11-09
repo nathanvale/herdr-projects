@@ -595,6 +595,10 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
         cmd = own_argv(cmd)
     if message:
         cmd = cmd + [message]
+    if admission.config_dir:
+        # Its Claude Code folder, carried (launch_admission.config_dir_for): set inside the person's shell,
+        # so their shell's own startup files can't change it.
+        cmd = ["env", f"CLAUDE_CONFIG_DIR={admission.config_dir}", *cmd]
     labels = ["--label", f"herdr.task={key}", "--label", f"herdr.task.space={bare(space)}",
               "--label", f"herdr.agent={agent_key(argv)}"]
     ctab = coordinator_tab(parent)
@@ -611,6 +615,8 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
     a = {"agent": agent_key(argv), "argv": argv, "at": now()}
     if parent:
         a["parent"] = parent
+    if admission.config_dir:
+        a["config_dir"] = admission.config_dir
     # The journal keeps this record too: a reconcile after a lost reply or a crash puts it on the task.
     job = {"folder": s.loc["folder"], "id": task["id"], "space": bare(space), "role": role, "agent": dict(a)}
     out = admission.submit(["run", "--bg", "--json", "--keep", "--cwd", folder, "--name", name, *labels, *rel, "--",

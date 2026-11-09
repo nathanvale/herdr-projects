@@ -32,13 +32,13 @@
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/cli.py",
       "upstream_blob": "af0c7d2ee16ea26fa1fa458020f6d9181d78774d",
-      "sha256": "b9edfb90df5e93468c9741ab40e8403f5327fc8642fa4cd6ea694ad1625a55d1"
+      "sha256": "85aa62c71e602dfc96f543a2e4fca1d81cd121a0469495b92d44aa8cdf7aa607"
     },
     {
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "d2463e1a37c0aeefaee51eec7480d3de3df1f40d",
-      "sha256": "9984ee2d4f803108f514d82b2df3d8fb648e51a1d4fc0021456ca915560784b7"
+      "sha256": "d63d33d6f920124109098d6e8f1dbc32d7393968345f3fce414f8d54972bff11"
     },
     {
       "phase": "B1",
@@ -50,19 +50,19 @@
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/launch.py",
       "upstream_blob": "a3b9182213360bd11294a57d57144747fce36fba",
-      "sha256": "6119f6801e89bdad040b0ef3a03af82b79ceb350d6962841cc40acb2d6fb0a0b"
+      "sha256": "f87d3ab2819375daf5251a22f6ae7ff03ee699dc179512fe3e727d4d82fe5328"
     },
     {
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/providers.py",
       "upstream_blob": null,
-      "sha256": "7592463f5e114b80c42fabf49328a5ab810413f52b5e16e9505579c645f6aa96"
+      "sha256": "c0db6b1b809f425a2936bdf9d927e6748a76e24c46337640cea76282fcbf02e4"
     },
     {
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/takeover.py",
       "upstream_blob": "5af6c073493766adc3b052cb3677b75e71beb14b",
-      "sha256": "7b4de4d6ecd658e9e132dcc1dd324c3697b0da66e266e99d0b254b830598a880"
+      "sha256": "7f4426ef023b6d8866d95bc572d9d5524bdc995be8ae5c936b25c8da05028e7d"
     },
     {
       "phase": "L1",
@@ -338,13 +338,13 @@
       "phase": "L1",
       "path": "mods/coordinator/restart.sh",
       "upstream_blob": "3e19fcf877ae17eac7ae88e86b29279aa70fd2de",
-      "sha256": "467fb05ae3b04d0e3cbd821eb2627813787d7f6b4f0976f1b4bc17c20696855d"
+      "sha256": "47a2455bf11645851a5ad073f1a9629e3c132aa83b2f2b2f151b27ec92aabbb9"
     },
     {
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/launch_admission.py",
       "upstream_blob": null,
-      "sha256": "dec834016171f8994c7a0d5f73ba7907a06f5c04e4900001efa1828ea06e5c7a"
+      "sha256": "149cb0bccb03fce4102e1088b61734b814f6715bbde5e2f18c99ffefe7e5a822"
     },
     {
       "phase": "L1",
@@ -368,7 +368,7 @@
       "phase": "L1",
       "path": "test/test_launch_admission.py",
       "upstream_blob": null,
-      "sha256": "b0adedc057a2be8008a6f07efebc95d6803ca5e1e95afe75e8a0e35dae919485"
+      "sha256": "ef5a5de56f998308cba7dd381a6b783a83312c4aae895cfc4e47e3e6d768ef6e"
     }
   ],
   "requirements": [
@@ -789,7 +789,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "A1 source and authored regressions: the planner names variables only and refuses an argv that carries the plan's credential variable; L1 records each start's execution machine and refuses an Assistant's start on another machine unless Personal; a Serve-from host's own file and credential-presence preflight move with the first Azure dispatch (A2, L2); CI and native qualification pending"
+      "evidence": "A1 source and authored regressions: the planner names variables only and refuses an argv that carries the plan's credential variable; L1 records each start's execution machine and refuses an Assistant's start on another machine unless Personal; a Serve-from client's copy refuses Azure (its herdr-core node record says another machine serves); credential-presence preflight moves with the first Azure dispatch (A2, L2); CI and native qualification pending"
     },
     {
       "id": "azure-discovery",
@@ -1052,7 +1052,7 @@
         "test/core-launch-admission.test.ts",
         "test/core-operator.test.ts"
       ],
-      "evidence": "source-inspected; L1's T/launch_admission.py journals every task and Assistant start (~/.herdr/tasks/.launches.json, synced and renamed): never-submitted before its first effect, submission-uncertain in one locked step that rechecks the claim and the content revision before hc run, confirmed only from hc's reply or exactly one terminal carrying its herdr.launch id; a lost or empty reply keeps it uncertain and refuses every later start of that identity (test/test_launch_admission.py authored: crashes before and after dispatch, shutdown, lost and unconfirmed replies, stale settings before recording and submission; CI pending); herdr-core keeps no receipt, so native qualification pending"
+      "evidence": "source-inspected; L1's T/launch_admission.py journals every task and Assistant start (~/.herdr/tasks/.launches.json, synced and renamed): never-submitted before its first effect, submission-uncertain in one locked step that rechecks the claim and the content revision before hc run, confirmed only from hc's reply or exactly one terminal carrying its herdr.launch id, and a task start's claim held until its task list records the agent; a lost or empty reply keeps it uncertain and refuses every later start of that identity (test/test_launch_admission.py authored: crashes before and after dispatch, shutdown, lost and unconfirmed replies, stale settings before recording and submission; CI pending); herdr-core keeps no receipt, so native qualification pending"
     },
     {
       "id": "late-sender-fence",

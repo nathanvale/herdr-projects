@@ -578,8 +578,14 @@ and `service/agents.ts` through `restart.sh` or `herdr-task switch`), which now 
 - Carried from A1 and done here in source: Claude Code `--settings` followed by another flag
   refuses with the missing-value message; `provider plan` names the layers that can outrank a plan,
   with each one's evidence; a corrupt or unreadable settings file refuses a start and a plan (P17-7).
-- Not done in L1, for a decision on where they go: a Serve-from host's own settings file (carried
-  from A1) and carrying an agent's `CLAUDE_CONFIG_DIR` folder (carried from C1).
+- Carried to L1 and done here in source: a Serve-from client's settings copy refuses Azure (its
+  herdr-core node record says another machine serves; unreadable refuses), and a task's Claude Code
+  start carries its `CLAUDE_CONFIG_DIR` folder explicitly (the previous agent's for switch, resume
+  and backup) and records it; `restart.sh` reads the old agent's folder, finds its log there and
+  carries it, closing C1's open fixed `~/.claude` lookup. L2 keeps native revive and resume
+  reconstructing the folder, and sessions recorded under it.
+- A confirmed task start holds its claim until its task list records the agent, so a herdr-task
+  that ends before saving never leaves a task to start twice.
 - Held, not invented: herdr-core gives no receipt or revocation for a sent `hc run`; the journal
   fences only this application's senders on one machine; no automatic recovery is chosen; revival
   that types into a kept or live terminal (`T/revive.py`, `service/watch.ts`'s live case) does not

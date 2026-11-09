@@ -274,7 +274,12 @@ class TaskStarts(unittest.TestCase):
         [run] = f.runs()
         self.assertEqual(f.label_of(run), rec["launch"])
         self.assertEqual(f.task()["agents"][0]["launch"], rec["launch"])
-        self.assertEqual(f.journal()["claims"], {})
+        # Its claim is held until a later start sees the task list holding its agent, then released.
+        self.assertEqual((f.journal()["claims"], rec["recorded"]), ({rec["identity"]: rec["launch"]}, False))
+        f.finish(rec["address"])
+        self.assertEqual(f.run("switch", "1", "--folder", f.repo, "--space", "sp1", "--json").returncode, 0)
+        old, new = f.starts()
+        self.assertEqual((old["recorded"], f.journal()["claims"]), (True, {new["identity"]: new["launch"]}))
 
     def test_competing_start_after_a_crash_before_dispatch_waits_for_recover(self):
         """The first start dies (SIGKILL) after its claim, before sending: the next start refuses
@@ -413,6 +418,29 @@ class TaskStarts(unittest.TestCase):
         self.assertEqual(f.ok("tick", "--folder", f.repo)["started"], [])
         self.assertEqual([a["address"] for a in f.task(second)["agents"]], ["t60"])
         self.assertEqual(len(f.runs()), 1)
+
+    def test_a_confirmed_start_lost_before_its_list_is_saved_is_never_started_again(self):
+        """Round 2's major: the tick confirms the first queued task, then is stopped (SIGTERM) inside the
+        second's start, so its task list is never saved. The next tick finds the first task's confirmed,
+        unrecorded start in the journal, puts its agent on the task, and starts nothing for it."""
+        f = Fixture(self)
+        blocker, first, second = f.add(), f.add("--after", "1"), f.add("--after", "1")
+        f.ok("start", str(first), "--folder", f.repo, "--space", "sp1")
+        f.ok("start", str(second), "--folder", f.repo, "--space", "sp1")
+        f.ok("rm", str(blocker), "--folder", f.repo)
+        f.hold(f"get repo-{second}-fix-login")
+        a = f.background("tick", "--folder", f.repo)
+        f.reached()
+        a.send_signal(signal.SIGTERM)
+        a.wait(timeout=60)
+        f.release()
+        self.assertEqual((f.task(first)["state"], len(f.runs())), ("queued", 1))
+        done = next(r for r in f.starts() if r["identity"].endswith(f"#{first}"))
+        self.assertEqual((done["state"], done["recorded"], f.journal()["claims"].get(done["identity"])), ("confirmed", False, done["launch"]))
+        f.ok("tick", "--folder", f.repo)
+        t = f.task(first)
+        self.assertEqual((t["state"], [x["launch"] for x in t["agents"]]), ("running", [done["launch"]]))
+        self.assertEqual(len([r for r in f.runs() if f"herdr.task=" in " ".join(r) and f"#{first}" in " ".join(r)]), 1)
 
     def test_an_unconfirmed_resume_keeps_its_launch_id(self):
         f = Fixture(self)
@@ -564,6 +592,84 @@ class SettingsFile(unittest.TestCase):
 
 
 @ON_CI
+class SettingsOwner(unittest.TestCase):
+    """Carried to L1 from A1: a Serve-from client's settings file is the serving machine's, written
+    without pushed_from (service/sync.ts). Its herdr-core node record says so, and Azure refuses."""
+
+    def docs(self, f, docs):
+        state = os.path.join(f.tmp, "state")
+        f.env["XDG_STATE_HOME"] = state
+        os.makedirs(os.path.join(state, "herdr-core", "default"), exist_ok=True)
+        with open(os.path.join(state, "herdr-core", "default", "docs.json"), "w") as fh:
+            fh.write(docs if isinstance(docs, str) else json.dumps(docs))
+
+    def test_a_serve_from_copy_refuses_azure_and_the_serving_machine_plans_it(self):
+        node = lambda serving: {"shepherdr.node": {"value": {"id": "n1", "serving": serving}, "version": 3},
+                                "shepherdr.host": {"value": {"id": "n1" if serving else "n2"}, "version": 1}}
+        for docs, words in ((node(False), "kept in step with the machine that serves the web app"),
+                            ("{ broken", "can't be read now"), (node(True), None)):
+            with self.subTest(docs=str(docs)[:30]):
+                f = Fixture(self)
+                d = json.loads(json.dumps(PERSONAL))
+                d["everywhere"]["provider"] = AZURE
+                f.write_settings(d)
+                self.docs(f, docs)
+                p = f.run("provider", "plan", "--folder", f.repo, "--agent", "claude", "--json")
+                if words:
+                    self.assertEqual(p.returncode, 1)
+                    self.assertIn(words, json.loads(p.stdout)["error"])
+                    f.add()
+                    self.assertIn(words, f.refused("start", "1", "--folder", f.repo, "--space", "sp1", "--now")["error"])
+                    self.assertEqual(f.runs(), [])
+                else:
+                    self.assertEqual((p.returncode, json.loads(p.stdout)["dispatch"]), (0, "held"))
+
+    def test_personal_never_reads_whose_file_it_is(self):
+        f = Fixture(self)
+        self.docs(f, "{ broken")
+        f.add()
+        self.assertEqual(f.start().returncode, 0)
+        self.assertEqual(len(f.runs()), 1)
+
+
+@ON_CI
+class ClaudeFolder(unittest.TestCase):
+    """Carried to L1 from C1: a task's Claude Code start passes its folder (CLAUDE_CONFIG_DIR)
+    explicitly and records it; a switch carries the previous agent's own folder."""
+
+    def folder_word(self, run):
+        i = next(i for i, a in enumerate(run) if a.startswith("CLAUDE_CONFIG_DIR="))
+        self.assertEqual((run[i - 1], run[i + 1]), ("env", "claude"))
+        return run[i].split("=", 1)[1]
+
+    def test_a_start_carries_and_records_its_folder_and_a_switch_keeps_it(self):
+        f = Fixture(self)
+        mine, other = os.path.join(f.tmp, "profile"), os.path.join(f.tmp, "other-profile")
+        f.env["CLAUDE_CONFIG_DIR"] = mine
+        f.add()
+        self.assertEqual(f.start().returncode, 0)
+        [rec] = f.starts()
+        self.assertEqual((rec["config_dir"], f.task()["agents"][0]["config_dir"], self.folder_word(f.runs()[0])), (mine, mine, mine))
+        f.finish(rec["address"])
+        f.env["CLAUDE_CONFIG_DIR"] = other
+        self.assertEqual(f.run("switch", "1", "--folder", f.repo, "--space", "sp1", "--json").returncode, 0)
+        self.assertEqual((f.starts()[1]["config_dir"], self.folder_word(f.runs()[1])), (mine, mine))
+
+    def test_no_folder_set_adds_nothing_and_a_bad_one_refuses(self):
+        f = Fixture(self)
+        f.add()
+        f.env["CLAUDE_CONFIG_DIR"] = "relative/profile"
+        self.assertIn("isn't one absolute path", f.refused("start", "1", "--folder", f.repo, "--space", "sp1", "--now")["error"])
+        self.assertEqual(f.runs(), [])
+        del f.env["CLAUDE_CONFIG_DIR"]
+        self.assertEqual(f.start().returncode, 0)
+        [rec] = f.starts()
+        self.assertIsNone(rec["config_dir"])
+        self.assertFalse(any(a.startswith("CLAUDE_CONFIG_DIR=") for a in f.runs()[0]))
+        self.assertNotIn("config_dir", f.task()["agents"][0])
+
+
+@ON_CI
 class AssistantStarts(unittest.TestCase):
     """`herdr-task launch run`, the one way an Assistant's (or a tab agent's) start reaches hc."""
 
@@ -671,6 +777,22 @@ class RestartScript(unittest.TestCase):
         self.assertEqual(run[1:3], ["--label", f"herdr.launch={rec['launch']}"])
         self.assertEqual(p.stdout.strip(), rec["address"])
         self.assertIn(["kill", "t900"], f.calls())
+
+    def test_a_restart_carries_the_old_agents_own_folder(self):
+        """restart.sh reads the old Claude Code agent's folder from its process (C1's rule) and starts
+        the new one there, recorded with its start."""
+        f = Fixture(self)
+        profile = os.path.join(f.tmp, "profile")
+        agent = subprocess.Popen(["sleep", "60"], env={"PATH": os.environ["PATH"], "CLAUDE_CONFIG_DIR": profile})
+        self.addCleanup(lambda: (agent.kill(), agent.wait()))
+        f.seed(address="t900", state="live", keep=True, template="assistant", cwd=f.repo, status={"app": "claude-code"},
+               foreground={"pid": agent.pid}, labels={"herdr.space": "sp1", "herdr.tab": "tb1", "herdr.role": "coordinator"})
+        p = self.restart(f)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        [rec] = f.starts("coordinator:")
+        [run] = f.runs()
+        i = run.index("CLAUDE_CONFIG_DIR=" + profile)
+        self.assertEqual((run[i - 1], run[i + 1], rec["config_dir"]), ("env", "claude", profile))
 
     def test_a_refused_restart_changes_nothing_and_says_why(self):
         f = Fixture(self)

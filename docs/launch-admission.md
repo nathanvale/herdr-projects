@@ -42,11 +42,39 @@ its own kept terminal, and `service/watch.ts` types a fresh start into a live on
 4. **Confirm.** A reply naming the terminal records `confirmed`. A lost or failed reply gets one
    look for a terminal carrying its launch id. Exactly one confirms it; none keeps it uncertain, and
    the start refuses with its launch id (`--json` gives it as `launch`). Nothing retries it.
+5. **Recorded.** A confirmed task start keeps its claim until its task list holds the agent. The
+   next start of that task reads the list: the agent there releases the claim; missing (its
+   herdr-task ended before saving) it is put on the task and that start refuses, so the agent
+   never runs twice. `launch reconcile` does the same for a person, and starts its watcher.
 
-A task refused after its claim keeps its queue, hold and state, so a tick that saves it never drops
-what was queued. Once a start is sent, the task keeps its started state whatever follows (it may
-be running), so a tick never starts it again; when a reconcile confirms it, its agent goes on its
-task. A worktree the start made stays the task's.
+A task refused before its start is sent keeps its queue, hold and state, so a tick that saves it
+never drops what was queued. Once sent, a tick keeps the task started whatever follows (it may be
+running), so it never starts it again. A start, resume or switch command that fails after sending
+saves nothing, and the journal's claim then keeps the task from starting until it is reconciled.
+A reconcile doesn't redo what the command did after the start: a switch's or a backup's old agent
+is not ended. A worktree the start made stays the task's.
+
+## Whose settings, and which Claude Code folder
+
+- **Settings owner (carried from A1).** Azure runs only where its settings were set. A pushed copy
+  (`pushed_from`) refuses, as in A1. A Serve-from client's file, which `service/sync.ts` keeps in
+  step with the serving machine and writes without that mark, refuses too: this machine's node
+  record in herdr-core's documents (`shepherdr.node`, read from
+  `${XDG_STATE_HOME:-~/.local/state}/herdr-core/default/docs.json`) says it doesn't serve. No
+  documents (no Shepherdr service here) reads as its own; documents that can't be read, or a
+  record that contradicts the host record, refuse. Personal never reads them.
+- **Claude Code folder (carried from C1).** A task's Claude Code start passes its folder
+  explicitly, as `env CLAUDE_CONFIG_DIR=<folder>` inside the person's shell, so their startup files
+  can't change it, and records it on the start and its agent. The folder is the previous agent's
+  own for a switch, resume or backup, else this herdr-task's `CLAUDE_CONFIG_DIR`. Unset, nothing
+  is added and the terminal's own environment decides, as before L1. A value that isn't one
+  absolute path (or is another folder called `.claude`) refuses. `restart.sh` reads the old
+  Claude Code agent's folder from its process (`herdr-task launch folder PID`, C1's rule), looks
+  for its log there instead of a fixed `~/.claude`, and carries it into the agent it starts.
+  Unreadable refuses before any change. The Assistant's other start sites start fresh and pass
+  none. L2 owns the rest: native revive and resume reconstructing the folder (`T/revive.py`,
+  `service/watch.ts`), and recording sessions found under it (`session_of()` still records only
+  `~/.claude` ones, so a resume there starts with a handoff).
 
 ## Identities, revisions and the journal
 
@@ -68,7 +96,8 @@ task. A worktree the start made stays the task's.
 herdr-task launch status [IDENTITY] [--json]
 herdr-task launch reconcile IDENTITY LAUNCH [--json]
 herdr-task launch recover IDENTITY LAUNCH [--json]
-herdr-task launch run --role coordinator|agent --space SPACE [--slot TAB] [--check] [--json] -- <hc run words>
+herdr-task launch folder PID [--json]
+herdr-task launch run --role coordinator|agent --space SPACE [--slot TAB] [--config-dir DIR] [--check] [--json] -- <hc run words>
 ```
 
 - `reconcile` confirms a `submission-uncertain` start only when exactly one terminal carries its
@@ -92,10 +121,6 @@ herdr-task launch run --role coordinator|agent --space SPACE [--slot TAB] [--che
 - Content revisions don't detect settings changed away and back to the same words.
 - An Assistant started on another machine (`--on`) is checked against this machine's settings only;
   that machine's own settings are not read.
-- Two items carried to L1 are not done here and need a decision on where they go: telling a
-  Serve-from host's own settings file apart from a local one (the A1 checkpoint), and carrying an
-  agent's `CLAUDE_CONFIG_DIR` folder into its starts (the C1 checkpoint). Neither changes a start
-  while Azure is held and every start keeps today's folder handling.
 - A space-less Assistant (a chat with no space) shares the identity `coordinator:local/unplaced`.
 
 ## Proof

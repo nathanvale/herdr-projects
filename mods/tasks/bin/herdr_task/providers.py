@@ -21,7 +21,7 @@ import os
 import re
 import types
 
-from .base import Fail
+from .base import Fail, HOME
 from . import settings as settings_file
 from .settings import agent_argv, agent_key, bare, settings_layers
 
@@ -74,6 +74,15 @@ NO_CLAUDE_AUTH = "Claude Code on Azure Foundry signs in with Entra ID, an API ke
 NO_CODEX_AUTH = ("Codex on Azure signs in with an API key only (\"api-key\", from AZURE_OPENAI_API_KEY on the execution host): "
                  "Microsoft's Codex guide says Entra ID isn't available for Codex.")
 NO_KIND = "Azure Foundry is set up for Claude Code and Codex only, not {}. Set Provider to Personal to start it."
+# A Serve-from client (service/sync.ts) keeps its settings file in step with the machine serving the
+# web app and writes it as its own, without pushed_from. Its herdr-core node record (core/host.js
+# NODE_DOC, written by this machine's service) says it doesn't serve, so the file is that machine's.
+NOT_SERVED_HERE = ("Azure Foundry starts agents only on the machine whose settings set it, and this machine's settings are "
+                   "kept in step with the machine that serves the web app (Serve from): they are its. Nothing was started. "
+                   "Set Provider to Personal for this machine or space.")
+NOT_KNOWN_HERE = ("Azure Foundry starts agents only on the machine whose settings set it, and whether this machine's settings "
+                  "are its own or a Serve-from copy can't be read now (herdr-core's documents). Nothing was started.")
+NODE_DOC, HOST_DOC = "shepherdr.node", "shepherdr.host"
 NOT_LOCAL = ("Azure Foundry starts agents only on the machine whose window holds these settings: this machine's are a copy. "
              "Set Provider to Personal for this machine or space.")
 # Never names the field it found: a key pasted in as a field's name would be repeated, and this
@@ -182,7 +191,42 @@ def binding_for(s, space=None, d=None):
     # is checked on every route).
     out["route"] = clean("route", out["route"]) or PERSONAL
     out["local"] = not d.get("pushed_from")
+    # Whose file it is decides Azure only; Personal never reads herdr-core's documents.
+    out["source"] = ("pushed" if not out["local"] else settings_source()) if out["route"] != PERSONAL else None
     return out
+
+
+def core_docs():
+    """herdr-core's documents file on this machine (as backups.py reads it), for the default session."""
+    state = os.environ.get("XDG_STATE_HOME") or os.path.join(HOME, ".local", "state")
+    return os.path.join(state, "herdr-core", "default", "docs.json")
+
+
+def settings_source():
+    """Whose this machine's settings file is, for a route that must run where it was set: "own" (no
+    Shepherdr service here, so nothing syncs it, or this machine serves the web app), "serve-from" (its
+    node record says another machine serves, so service/sync.ts keeps the file in step with that one),
+    or "unknown" (the documents are there but can't be read, or the record says neither)."""
+    path = core_docs()
+    try:
+        with open(path) as f:
+            docs = json.load(f)
+    except FileNotFoundError:
+        return "own"
+    except (OSError, ValueError, UnicodeDecodeError):
+        return "unknown"
+    if not isinstance(docs, dict):
+        return "unknown"
+    node = (docs.get(NODE_DOC) or {}).get("value") if isinstance(docs.get(NODE_DOC), dict) else None
+    if node is None:
+        return "own"
+    if not isinstance(node, dict) or not isinstance(node.get("serving"), bool):
+        return "unknown"
+    host = (docs.get(HOST_DOC) or {}).get("value") if isinstance(docs.get(HOST_DOC), dict) else None
+    # The host record names the serving machine; this one's node record says whether that is it.
+    if isinstance(host, dict) and host.get("id") and node.get("id") and (host["id"] == node["id"]) != node["serving"]:
+        return "unknown"
+    return "own" if node["serving"] else "serve-from"
 
 
 def fingerprint(kind, target, deployment, auth):
@@ -200,6 +244,10 @@ def launch_plan(kind, binding):
                 "settings_env": {}, "args": [], "env": {}}
     if kind not in KINDS:
         raise Fail(NO_KIND.format(kind))
+    if binding.get("source") == "serve-from":
+        raise Fail(NOT_SERVED_HERE)
+    if binding.get("source") == "unknown":
+        raise Fail(NOT_KNOWN_HERE)
     if not binding.get("local", True):
         raise Fail(NOT_LOCAL)
     name = "Claude Code" if kind == "claude" else "Codex"

@@ -37,6 +37,24 @@ else
   aslot=${aslot:-$tab}
   admit=(--role agent --space "$aspace" --slot "$aslot")
 fi
+# A Claude Code agent's own folder (its CLAUDE_CONFIG_DIR, read from its process as C1's rule reads it): where its
+# session log is, and carried into the agent this starts so a restart keeps its profile. Unreadable refuses here,
+# before any change. A start of another CLI (an argv naming it) carries none.
+cdir=$HOME/.claude carry=""
+if [ "$app" = claude-code ] && [ -n "$pid" ]; then
+  cdir=$("$owner" launch folder "$pid") || exit 1
+  first=$(jq -r '.[0] // empty' <<<"${argv:-[]}")
+  if [ "$cdir" != "$HOME/.claude" ] && { [ -z "$argv" ] || [ "${first##*/}" = claude ]; }; then
+    carry=$cdir
+    admit+=(--config-dir "$carry")
+  fi
+fi
+# An Assistant restarted from a template with no command line has nowhere to carry another folder: refused now.
+if [ -n "$carry" ] && [ -z "$argv" ] && [ "$role" = coordinator ] && \
+    [ -z "$(awk '/^---[[:space:]]*$/ {f++; next} f == 1 && sub(/^command:[ \t]*/, "") {print; exit}' "$HOME/.config/herdr-core/templates/assistant.md" 2>/dev/null)" ]; then
+  echo "This Assistant uses $carry, and its template has no command to start it there again. Nothing was started." >&2
+  exit 1
+fi
 # start <hc run words>: hc's reply (--json) on stdout; a refusal's words on stderr, and nothing started.
 start() {
   local out code
@@ -54,11 +72,11 @@ screen="$dir/$old-$(date +%s).txt"
 hc read "$old" --lines 400 >"$screen" 2>/dev/null
 log=""
 if [ "$app" = claude-code ] && [ -n "$pid" ]; then
-  sid=$(jq -r '.sessionId // empty' "$HOME/.claude/sessions/$pid.json" 2>/dev/null)
-  [ -n "$sid" ] && log=$(find "$HOME/.claude/projects" -name "$sid.jsonl" 2>/dev/null | head -1)
+  sid=$(jq -r '.sessionId // empty' "$cdir/sessions/$pid.json" 2>/dev/null)
+  [ -n "$sid" ] && log=$(find "$cdir/projects" -name "$sid.jsonl" 2>/dev/null | head -1)
 fi
 if [ -z "$log" ] && [ -n "$created" ]; then
-  log=$(find "$HOME/.claude/projects" "$HOME/.codex/sessions" "$HOME/.pi/agent/sessions" "$HOME/.local/share/opencode" \
+  log=$(find "$cdir/projects" "$HOME/.codex/sessions" "$HOME/.pi/agent/sessions" "$HOME/.local/share/opencode" \
       -type f \( -name '*.jsonl' -o -name '*.json' \) -newermt "@$((created / 1000))" 2>/dev/null \
     | xargs -r grep -l -F "\"$cwd\"" 2>/dev/null | xargs -r ls -t 2>/dev/null | head -1)
 fi
@@ -103,7 +121,9 @@ own=""
 if [ -n "${HERDR_RESTART_RESUME:-}" ] && [ -n "$argv" ]; then
   mapfile -t cmd < <(jq -r '.[]' <<<"$argv")
   [ ${#cmd[@]} -gt 0 ] || exit 1
-  new=$(start --bg --json --no-parent --cwd "$cwd" "${labels[@]}" --label "herdr.agent=$(basename "${cmd[0]}")" -- sh -c "$clean"' exec "$@"' herdr-clean "${cmd[@]}" | jq -r '.address // empty')
+  agent=$(basename "${cmd[0]}")
+  [ -n "$carry" ] && cmd=(env "CLAUDE_CONFIG_DIR=$carry" "${cmd[@]}")
+  new=$(start --bg --json --no-parent --cwd "$cwd" "${labels[@]}" --label "herdr.agent=$agent" -- sh -c "$clean"' exec "$@"' herdr-clean "${cmd[@]}" | jq -r '.address // empty')
 elif [ -z "$argv" ] && [ "$role" = coordinator ] && [ -z "$own" ]; then
   new=$(start --bg --json --no-parent --cwd "$cwd" "${labels[@]}" assistant "$handoff" | jq -r '.address // empty')
 else
@@ -118,6 +138,7 @@ else
     [ "$key" = codex ] && [[ " ${cmd[*]} " != *" --no-daemon "* ]] && cmd+=(--no-daemon)
     line=$(printf '%q ' "${cmd[@]}")
   fi
+  [ -n "$carry" ] && line="env CLAUDE_CONFIG_DIR=$(printf '%q' "$carry") $line"
   msg=$handoff
   if [ "$role" = coordinator ]; then
     body=$(awk 'f>=2 {print} /^---[[:space:]]*$/ {f++}' "$tpl")
