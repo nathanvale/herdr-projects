@@ -970,7 +970,8 @@ export default class Tasks extends View {
         const model = azure ? v.selection?.deployment ?? v.clis?.[agent]?.deployment ?? null : v.selection?.model ?? null;
         const shown = { agent, model, effort: v.selection?.effort ?? null };
         const key = `taskpick:${Date.now().toString(36)}`;
-        this.taskPick = { key, task, revision: v.revision, route: v.route, shown, saving: Promise.resolve(), at: shared("newspace.pick")?.at ?? null };
+        this.taskPick = { key, task, revision: v.revision, route: v.route, shown, inventory: v.inventory ?? null, listed: v.listed ?? null,
+          saving: Promise.resolve(), at: shared("newspace.pick")?.at ?? null };
         const W = 340, H = 2 + 10 + 34 + 36 + 8 * 31 + 9 + 26 + 34 + 31 + 31;
         openOverlay({ mod: "chat-models", kind: "popup", frame: "none", width: W, height: H, at: "pointer",
           props: { mode: "settings", key, width: W, height: H, remote: null, select: null,
@@ -990,6 +991,8 @@ export default class Tasks extends View {
     pick.saving = pick.saving.then(async () => {
       const was = pick.shown, change = selectChange(was, value, pick.route);
       if (!change) return;
+      // a deployment from Refresh's list carries that list's revision, so one read under another configuration is refused
+      if (change.deployment && pick.listed?.[value.agent]?.includes(change.deployment)) change.inventory = pick.inventory?.[value.agent] ?? "";
       try {
         const out = await this.askService({ type: "task-select", task: pick.task, change: { ...change, revision: pick.revision } });
         pick.revision = out.revision;

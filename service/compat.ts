@@ -230,7 +230,9 @@ export class Compat {
   }
 
   /** The person's shared choices (service/store.ts, its document) and their values now, set by main. */
-  shared: { value(key: string): any; set(key: string, value: unknown): Promise<unknown> } | null = null;
+  shared: { value(key: string): any; set(key: string, value: unknown): Promise<unknown>;
+    /** one key changed from the current document, inside the store's version-retried update */
+    update?(key: string, change: (value: any) => any): Promise<unknown> } | null = null;
   host = "";
 
   /** A machine's health and plan limits (service/machines.ts), set by main. */

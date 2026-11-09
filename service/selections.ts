@@ -35,13 +35,44 @@ export function menusFor(settings: Settings, space: string | null, keep: Record<
 }
 
 export type TaskRef = { ref: string; folder: string; machine: string | null; space?: string | null };
-export type TaskChange = { agent?: string; deployment?: string; model?: string; effort?: string; default?: boolean; revision?: string };
+/** inventory: the Refresh list's revision a deployment picked from it was shown with (none for one typed by hand) */
+export type TaskChange = { agent?: string; deployment?: string; model?: string; effort?: string; default?: boolean; revision?: string; inventory?: string };
+
+/** A pick from a list read under another resource, endpoint or subscription (Settings.discoveryFor's revision). */
+export const STALE_LIST = "Those deployments were found under another resource, endpoint or subscription. Nothing was saved; refresh and choose again.";
+/** A space's web Assistant pick changed (saved, cleared or used) since its menu showed it. */
+export const STALE_PICK = "This space's Assistant pick changed since this menu was opened. Nothing was saved; open it again.";
+
+/** A web Assistant pick's own revision: what a save or a reset must quote, so an older menu can't overwrite a newer pick. */
+export function pickRevision(pick: unknown) {
+  return new Bun.CryptoHasher("sha256").update(JSON.stringify(pick ?? null)).digest("hex").slice(0, 16);
+}
+
+/** assistant.picks with only this space's pick changed (null: cleared), refused when it isn't the one the menu showed
+ *  (expected: its pickRevision). Run inside the shared store's update, so each retry sees the current document. */
+export function withPick(picks: Record<string, unknown> | undefined, space: string, pick: unknown | null, expected: string) {
+  const cur = { ...(picks ?? {}) };
+  if (pickRevision(cur[space]) !== expected) throw new Error(STALE_PICK);
+  if (pick === null) delete cur[space]; else cur[space] = pick;
+  return cur;
+}
+
+/** assistant.picks without this space's pick once its start used it, only while it is still that same pick (a newer one
+ *  saved meanwhile stays), every other space's kept. */
+export function withoutUsedPick(picks: Record<string, unknown> | undefined, space: string, used: unknown) {
+  const cur = { ...(picks ?? {}) };
+  if (JSON.stringify(cur[space]) === JSON.stringify(used)) delete cur[space];
+  return cur;
+}
 
 /** A task's new-start selection: shown (change null), or saved (only with the revision it was shown at). On Azure, each
  *  CLI's deployment list as `menus`. */
 export async function taskSelection(settings: Settings, t: TaskRef, change: TaskChange | null, dflts: any) {
   // its space when known, so the choice is judged by the settings its start reads (else the folder's own layers)
   const args = [...(t.machine ? ["--on", t.machine] : []), "select", t.ref, "--folder", t.folder, ...(t.space ? ["--space", String(t.space).split("/").pop()!] : [])];
+  // A deployment picked from Refresh's list must come from the list in force now (typed by hand needs none).
+  if (change && !change.default && change.deployment && change.inventory !== undefined && (change.agent === "claude" || change.agent === "codex")
+      && change.inventory !== settings.discoveryFor(t.space ?? null, change.agent).revision) throw new Error(STALE_LIST);
   if (change) {
     if (change.default) args.push("--default");
     else {
@@ -56,7 +87,10 @@ export async function taskSelection(settings: Settings, t: TaskRef, change: Task
   // Another machine's task: Refresh reads this computer's Azure CLI only, so its lists keep the saved ones alone.
   const keep = Object.fromEntries(KINDS.map((k) => [k, [v.selection?.agent === k ? v.selection.deployment : null, v.clis?.[k]?.deployment]])) as Record<Kind, string[]>;
   const menus = v.route === "azure-foundry" ? (t.machine ? Object.fromEntries(KINDS.map((k) => [k, azureMenu(k, [], keep[k], dflts?.[k])])) : menusFor(settings, t.space ?? null, keep, dflts)) : null;
-  return { ok: true, ...v, menus };
+  // each CLI's list revision (and what it lists), which a pick from the list carries back
+  const inventory = menus && !t.machine ? Object.fromEntries(KINDS.map((k) => [k, settings.discoveryFor(t.space ?? null, k).revision])) : null;
+  const listed = menus && !t.machine ? Object.fromEntries(KINDS.map((k) => [k, settings.discoveryFor(t.space ?? null, k).options.map((o: any) => o.value)])) : null;
+  return { ok: true, ...v, menus, ...(inventory ? { inventory, listed } : {}) };
 }
 
 /** What an Assistant's new start in a space can pick from: herdr-task's route, each CLI's routing, the Assistant's

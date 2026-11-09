@@ -176,7 +176,7 @@
       "phase": "A2",
       "path": "service/actions.ts",
       "upstream_blob": "3151c718fa60aa19e317cf3a61b6b11541573ef2",
-      "sha256": "ba610634a6d159c4df27ed2f9df5491e237f15840ee7de85e80e5b4c979ea7db"
+      "sha256": "cf7b6b09b6bff556b463d407e8e0d35283f7efb5868ca97e84598bd2a9c96c61"
     },
     {
       "phase": "A2",
@@ -248,7 +248,7 @@
       "phase": "A2",
       "path": "service/main.ts",
       "upstream_blob": "22e86c459746c8a3941db0a3ea3db6c5ce59ead4",
-      "sha256": "97f8049b5bbb5d2591bf2dec7805ec80b3336d39d12449195c9fcb38db8f2a70"
+      "sha256": "129fd66c5b4e4ab85a918910a541ef2ea3063dfaa7909d670777f5fbb30d3d40"
     },
     {
       "phase": "H1",
@@ -356,7 +356,7 @@
       "phase": "A2",
       "path": "service/launch-sites.test.ts",
       "upstream_blob": null,
-      "sha256": "bb7354036bf54215832dfa41b7a9c71e36f56b81d473e6960035ab3dd154ceb0"
+      "sha256": "c8e22c9d433cae2e0d2d2ad344c451318dc96c2e3279329859215fbc01c9827f"
     },
     {
       "phase": "A2",
@@ -440,7 +440,7 @@
       "phase": "A2",
       "path": "mods/shepherdr-settings/provider-section.js",
       "upstream_blob": null,
-      "sha256": "eb72542e5ac3f136bdde4f5f8b0b257452736b4282d04ec794fb95d7c24f52c3"
+      "sha256": "21125988757065a48680c78728e19e62c5563cb7acc078918a14a005b973d556"
     },
     {
       "phase": "A2",
@@ -452,19 +452,19 @@
       "phase": "A2",
       "path": "service/compat.ts",
       "upstream_blob": "a336a209c254ee5911139b8f4eddfe854f0e48a1",
-      "sha256": "5597e2ad769ca46825ef38780cbded1d57ec614ddf72d1e49a18461b940e0400"
+      "sha256": "790d03662a143b105ddc11b01097c814656ffc459f0ba7b8ecf1ce4c9a0b38cd"
     },
     {
       "phase": "A2",
       "path": "service/selections.test.ts",
       "upstream_blob": null,
-      "sha256": "b218735254da446a80f846a95c6e6c7fe9d606627bc46d384dc6d04c6a8f2cea"
+      "sha256": "aff1e07db19ecee81d2cd672c95052e40a5f52b96049a79c3b27fb990740fded"
     },
     {
       "phase": "A2",
       "path": "service/selections.ts",
       "upstream_blob": null,
-      "sha256": "79b407aa9f0d2e70fa7a52183210a3481692f97bcd6eea7b32de4388b678c045"
+      "sha256": "b2c3cc6cdca7e3fbb1bee6d5b2617099f9ceb616f8d086bd50176505bc725cdc"
     },
     {
       "phase": "A2",
@@ -488,7 +488,7 @@
       "phase": "A2",
       "path": "web/plugins/tasks/select.tsx",
       "upstream_blob": null,
-      "sha256": "f9be77c1698fd8ac35fad20bb44c27e59a8b1c3e4b44c7710b183fea57f3dc40"
+      "sha256": "bc626da7cc76c95e9b89665f56f0483eb51d29610ed9dfb16eca2f4370390c81"
     },
     {
       "phase": "A2",
@@ -506,7 +506,7 @@
       "phase": "A2",
       "path": "core/agents.test.js",
       "upstream_blob": "d8285b4f0f1390afc8353ec1bf7caa51539efddd",
-      "sha256": "d68f3c3fcad6451a6bb9ea654b9d6fcea1d253ac04114b99a189b357670b3175"
+      "sha256": "235aba245d65728e42138c8cd9c798b63d976cefd8600c463359008fc8bb59a6"
     },
     {
       "phase": "A2",
@@ -530,43 +530,43 @@
       "phase": "A2",
       "path": "mods/tasks/main.js",
       "upstream_blob": "9b3b68c34e4e5970bf53845d38297b5820d7f893",
-      "sha256": "91c9c990d630fb7d44e16ec23afdff129a4b4224b693f9561e26e2f74c3a4dbd"
+      "sha256": "bffeae2cce30b4ea1f6139ed1187efe11f74ca658af20d854bb39acd6d186aa8"
     },
     {
       "phase": "A2",
       "path": "web/src/restart.tsx",
       "upstream_blob": "88fa0fe20310b35831d829bbd6efbdb452c2159d",
-      "sha256": "dc11f8a7e842ab7e0ad37400ffc9b9759391aad3b026fefb83c5190ac44b6a51"
+      "sha256": "1484a16ae64e850c3e0d1d85504307383714ab3bb7706bd8b3a3f2f0a4d3141b"
     },
     {
       "phase": "A2",
       "path": "core/tasks.js",
       "upstream_blob": "e5dfe39ceadc5def209d37b562279c3f3df2fb07",
-      "sha256": "2e5e191fb640ab2b25370cb09c429bf92deeb150b3ba9a9e40c58fe1136de694"
+      "sha256": "37436b8c667b219fb617e1d5361f88b8b926f5901fe4ecfce8ec4e9174d2ffda"
     },
     {
       "phase": "A2",
       "path": "core/tasks.test.js",
       "upstream_blob": "e49c07835e3b2324681b10b4fb61f3d72e1356db",
-      "sha256": "376e3cc9f755a4bbda4e02506e509bdb789eaf9bf8904c3d9d8539d72728b321"
+      "sha256": "d5704a213c136efd0d0f1133b1f608a64a9909f8b2d3872c20f52142dcc94ec2"
     },
     {
       "phase": "A2",
       "path": "mods/chat/core/tasks.js",
       "upstream_blob": "e5dfe39ceadc5def209d37b562279c3f3df2fb07",
-      "sha256": "2e5e191fb640ab2b25370cb09c429bf92deeb150b3ba9a9e40c58fe1136de694"
+      "sha256": "37436b8c667b219fb617e1d5361f88b8b926f5901fe4ecfce8ec4e9174d2ffda"
     },
     {
       "phase": "A2",
       "path": "mods/jump/core/tasks.js",
       "upstream_blob": "e5dfe39ceadc5def209d37b562279c3f3df2fb07",
-      "sha256": "2e5e191fb640ab2b25370cb09c429bf92deeb150b3ba9a9e40c58fe1136de694"
+      "sha256": "37436b8c667b219fb617e1d5361f88b8b926f5901fe4ecfce8ec4e9174d2ffda"
     },
     {
       "phase": "A2",
       "path": "mods/tasks/core/tasks.js",
       "upstream_blob": "e5dfe39ceadc5def209d37b562279c3f3df2fb07",
-      "sha256": "2e5e191fb640ab2b25370cb09c429bf92deeb150b3ba9a9e40c58fe1136de694"
+      "sha256": "37436b8c667b219fb617e1d5361f88b8b926f5901fe4ecfce8ec4e9174d2ffda"
     }
   ],
   "requirements": [

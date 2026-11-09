@@ -10,8 +10,13 @@ import type { Task } from '@shared/types.ts'
 import { act } from '@client/kernel.ts'
 import { field, Ghost, Primary, Tab, Tabs } from '@client/ui.tsx'
 import * as AG from '@core/agents.js'
+import * as TK from '@core/tasks.js'
 
 const { NAMES, levelName } = AG as unknown as { NAMES: Record<string, string>; levelName: (e: string | null) => string | null }
+const { webSelectSave, webSelectLevels } = TK as unknown as {
+  webSelectSave: (shown: unknown, form: { agent: string; dep: string; effort: string; fromList: boolean; levels: string[] }, azure: boolean) => Record<string, unknown>
+  webSelectLevels: (menus: unknown, clis: unknown, agent: string, dep: string) => string[]
+}
 type Model = { id: string; name: string; efforts: string[] }
 type View = {
   ok?: boolean; error?: string; locked: boolean; route: string; revision: string
@@ -20,6 +25,9 @@ type View = {
   selection: { agent: string | null; deployment: string | null; effort: string | null }
   clis: Record<string, { routing: string; deployment: string | null; problem: string | null }>
   menus: Record<string, { models: Model[] }> | null
+  /** each CLI's Refresh list revision and what it lists: a deployment picked from it carries the revision back */
+  inventory?: Record<string, string>
+  listed?: Record<string, string[]>
 }
 // Personal: each CLI's usual levels (its model's own aren't known before it starts)
 const LEVELS: Record<string, string[]> = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], codex: ['low', 'medium', 'high', 'xhigh'] }
@@ -44,6 +52,8 @@ export function TaskSelect({ task, done }: { task: Task; done: () => void }) {
   const [agent, setAgent] = useState('claude')
   const [dep, setDep] = useState('')
   const [effort, setEffort] = useState('')
+  // the deployment came from the found list (its revision goes with a save); typed by hand, none is needed
+  const [fromList, setFromList] = useState(false)
   const show = (r: View) => {
     setV(r)
     setAgent(r.selection.agent ?? r.inherit?.agent ?? 'claude')
@@ -65,7 +75,8 @@ export function TaskSelect({ task, done }: { task: Task; done: () => void }) {
   if (!v) return <p className="px-2 py-1.5 text-[0.8125rem] text-fg2" role={error ? 'alert' : undefined}>{error || '…'}</p>
   const azure = v.route === 'azure-foundry'
   const models = v.menus?.[agent]?.models ?? []
-  const levels = azure ? (models.find((m) => m.id === dep)?.efforts ?? []) : LEVELS[agent] ?? []
+  // its effort levels: the chosen deployment's, else the one it inherits (core/tasks.js webSelectLevels)
+  const levels = azure ? webSelectLevels(v.menus, v.clis, agent, dep) : LEVELS[agent] ?? []
   const problem = azure ? v.clis[agent]?.problem : null
   return (
     <div className="flex w-72 max-w-full flex-col gap-2 px-2 py-1.5 text-[0.8125rem] phone:px-3">
@@ -73,7 +84,7 @@ export function TaskSelect({ task, done }: { task: Task; done: () => void }) {
       {v.locked ? <p className="text-fg2">{WORDS.locked}</p> : null}
       <Tabs label="CLI">
         {Object.keys(NAMES).map((k) => (
-          <Tab key={k} on={agent === k} disabled={v.locked || busy} onClick={() => { if (k !== agent) { setAgent(k); setDep(''); setEffort('') } }}>{NAMES[k]}</Tab>
+          <Tab key={k} on={agent === k} disabled={v.locked || busy} onClick={() => { if (k !== agent) { setAgent(k); setDep(''); setFromList(false); setEffort('') } }}>{NAMES[k]}</Tab>
         ))}
       </Tabs>
       <p className="text-fg2">{v.clis[agent]?.routing}</p>
@@ -81,22 +92,22 @@ export function TaskSelect({ task, done }: { task: Task; done: () => void }) {
         <label className="flex flex-col gap-1">
           <span className="text-fg2">{WORDS.deployment}</span>
           {models.length ? (
-            <select aria-label={WORDS.deployment} disabled={v.locked || busy} value={models.some((m) => m.id === dep) ? dep : ''} onChange={(e) => { setDep(e.target.value); setEffort('') }}
+            <select aria-label={WORDS.deployment} disabled={v.locked || busy} value={models.some((m) => m.id === dep) ? dep : ''} onChange={(e) => { setDep(e.target.value); setFromList(true); setEffort('') }}
               className={clsx(field, 'h-8 rounded-md bg-bg px-2')}>
               <option value="">{v.clis[agent]?.deployment ? `${WORDS.dflt} (${v.clis[agent].deployment})` : WORDS.dflt}</option>
               {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           ) : null}
-          <input aria-label={WORDS.typed} placeholder={WORDS.typed} disabled={v.locked || busy} value={dep} onChange={(e) => { setDep(e.target.value.trim()); setEffort('') }}
+          <input aria-label={WORDS.typed} placeholder={WORDS.typed} disabled={v.locked || busy} value={dep} onChange={(e) => { setDep(e.target.value.trim()); setFromList(false); setEffort('') }}
             className={clsx(field, 'h-8 rounded-md bg-bg px-2')} />
         </label>
       ) : null}
       <label className="flex flex-col gap-1">
         <span className="text-fg2">{WORDS.effort}</span>
-        <select aria-label={WORDS.effort} disabled={v.locked || busy} value={levels.includes(effort) ? effort : ''} onChange={(e) => setEffort(e.target.value)}
+        <select aria-label={WORDS.effort} disabled={v.locked || busy} value={effort} onChange={(e) => setEffort(e.target.value)}
           className={clsx(field, 'h-8 rounded-md bg-bg px-2')}>
           <option value="">{WORDS.dflt}</option>
-          {levels.map((l) => <option key={l} value={l}>{levelName(l)}</option>)}
+          {(effort && !levels.includes(effort) ? [effort, ...levels] : levels).map((l) => <option key={l} value={l}>{levelName(l)}</option>)}
         </select>
       </label>
       {problem ? <p className="text-need-fg">{problem}</p> : null}
@@ -104,13 +115,8 @@ export function TaskSelect({ task, done }: { task: Task; done: () => void }) {
       {v.locked ? null : (
         <span className="flex flex-wrap items-center justify-end gap-1.5">
           <Ghost disabled={busy} onClick={() => void save({ default: true })}>{WORDS.defaults}</Ghost>
-          <Primary disabled={busy} onClick={() => {
-            // only what changed is saved: a deployment with its CLI (one belongs to one CLI), the CLI when it changed, the
-            // effort; a save that changes the effort alone keeps the binding its earlier choice has
-            const newDep = azure && dep !== (v.selection.deployment ?? '')
-            const newAgent = agent !== (v.selection.agent ?? v.inherit?.agent ?? 'claude')
-            void save({ ...(newAgent || newDep ? { agent } : {}), ...(newDep ? { deployment: dep } : {}), effort: levels.includes(effort) ? effort : 'default' })
-          }}>{WORDS.save}</Primary>
+          {/* only what changed is saved (core/tasks.js webSelectSave) */}
+          <Primary disabled={busy} onClick={() => void save(webSelectSave(v, { agent, dep, effort, fromList, levels }, azure))}>{WORDS.save}</Primary>
         </span>
       )}
     </div>

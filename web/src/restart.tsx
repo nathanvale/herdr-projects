@@ -231,7 +231,9 @@ type MenuPick = { agent: string; model: string | null; effort: string | null; fa
  *  instead of restarting anything; on Azure Foundry its list is the deployments */
 type MenuData = { current: MenuPick; menus: Record<string, AgentMenu>; permDefault: Record<string, string>; picks?: Picks; remote: string | null; newStart?: boolean; saved?: boolean
   /** newStart: each CLI's routing revision and (on Azure) its list's, as shown: a save carries them back */
-  revision?: Record<string, string>; inventory?: Record<string, string> }
+  revision?: Record<string, string>; inventory?: Record<string, string>
+  /** newStart: the space's saved pick's own revision, as shown: a save or a reset carries it, so a newer pick isn't overwritten */
+  pickRevision?: string }
 /** a stretch of the model list (core/agents.js modelSections): Pinned, Recent, All models, or an agent's matches */
 type Picks = { pinned: string[]; recent: string[] }
 type Section = { key: string; title: string | null; agent: string; rows: (MenuModel & { agent: string; pinned: boolean; typed?: boolean })[]; more: number }
@@ -416,7 +418,7 @@ function ModelMenu({ chat, typed }: { chat: string; typed?: string }) {
   const keep = async (pick: MenuPick | null) => {
     setBusy(true)
     setError(null)
-    const r = await act({ type: 'assistant-pick', chat, pick: pick && { ...pick, effort: level(pick) },
+    const r = await act({ type: 'assistant-pick', chat, pick: pick && { ...pick, effort: level(pick) }, pickRevision: data?.pickRevision ?? '',
       ...(pick ? { revision: data?.revision?.[pick.agent] ?? '', ...(data?.inventory ? { inventory: data.inventory[pick.agent] ?? '' } : {}) } : {}) } as never)
       .catch((e: Error) => ({ ok: false, error: e.message }))
     setBusy(false)

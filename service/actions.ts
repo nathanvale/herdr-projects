@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import { sendBody, steerNow, messageBody, refusal, reactionLine, mentionedIn, taskTag } from "../core/send.js";
 import { kindOf } from "../core/chat-reader.js";
 import { WORDS } from "../core/chat-view.js";
+import { withoutUsedPick } from "./selections.ts";
 import * as AGa from "../core/agents.js";
 import { answerCodex } from "./codex-ask.ts";
 const { sessionOf, forkArgv, inOtherFolder, OTHER_FOLDER, providerRefusal, routeRefusal, routeArgs, argvFor } = AGa as any;
@@ -580,8 +581,10 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     let out: any = {};
     try { out = JSON.parse(r.stdout || "{}"); } catch {}
     if (r.code !== 0 || !out.address) throw new Error(out.error || (r.stderr || r.stdout).trim().split("\n").pop() || "The Assistant didn't start.");
-    // the pick was for this first start: used, it goes (a later new start takes the settings again, or a new pick)
-    if (pick) { const rest = { ...picks }; delete rest[sp.id]; await compat.shared?.set("assistant.picks", rest); }
+    // the pick was for this first start: used, it goes (a later new start takes the settings again, or a new pick); only
+    // this space's, and only while it is still the pick used, inside the store's update (another space's save, or a newer
+    // pick for this one made meanwhile, stays)
+    if (pick) await compat.shared?.update?.("assistant.picks", (cur: any) => withoutUsedPick(cur, sp.id, pick));
     // what the person asked, for its chat to show apart from the template (the window's data/chat-first)
     const first = join(process.env.HERDR_APP_HOME || join(homedir(), ".config", "herdr-app"), "data", "chat-first");
     const addr = sp.machine && !String(out.address).includes("/") ? `${sp.machine}/${out.address}` : String(out.address);

@@ -55,7 +55,12 @@ const hub: any = {
     return { code: await proc.exited, stdout: Buffer.from(o).toString("base64"), stderr: Buffer.from(e).toString("base64") };
   },
 };
-const store = () => { const d: Record<string, any> = {}; return { d, value: (k: string) => d[k], set: async (k: string, v: unknown) => { d[k] = v; } }; };
+const store = () => {
+  const d: Record<string, any> = {};
+  return { d, value: (k: string) => d[k], set: async (k: string, v: unknown) => { d[k] = v; },
+    // as compat.shared.update: one key changed from the current document
+    update: async (k: string, change: (v: any) => any) => { const n = change(d[k]); if (n === undefined) delete d[k]; else d[k] = n; } };
+};
 const read = (p: string) => (existsSync(p) ? readFileSync(p, "utf8").trim().split("\n").filter(Boolean) : []);
 const compat = (folder: string): any => ({
   addrOf: () => null,

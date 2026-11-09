@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { argvFor, azureMenu, pickFits, current, line, menuFor, modelSections, parseDefaults, parsePicks, pickKey, providerRefusal, ROUTE_HELD, ROUTE_UNKNOWN, routeArgs, routeRefusal, withPin, withRecent } from "./agents.js";
 
 const codex = { models: Array.from({ length: 250 }, (_, i) => ({ id: `gpt-${i}`, label: `GPT ${i}`, efforts: ["low", "high"] })) };
@@ -109,4 +111,19 @@ test("a Personal pick keeps any model; only one made on Azure, or off the Azure 
   const az = { claude: azureMenu("claude", [{ value: "opus-dep", label: "opus-dep", model: "claude-opus-5-5" }], [], {}) };
   expect(pickFits({ agent: "claude", model: "opus-dep", azure: true }, az, true)).toBe(true);
   expect(pickFits({ agent: "claude", model: "opus" }, az, true)).toBe(false);
+});
+
+// A2: the window's Provider rows (mods/shepherdr-settings/provider-section.js, run only inside the window, so read as
+// source as the chat's checks are): a write is bound to the level it was entered at, and a pick from Refresh's list is
+// checked again against the reloaded file inside the write.
+test("the window's Provider write keeps its level and rechecks a listed pick inside the write", () => {
+  const src = readFileSync(join(import.meta.dir, "..", "mods", "shepherdr-settings", "provider-section.js"), "utf8");
+  const save = src.slice(src.indexOf("function save("), src.indexOf("// Refresh: this machine's service"));
+  expect(save.indexOf("const scope = view.scope ?? null")).toBeGreaterThan(-1);
+  expect(save.indexOf("const scope = view.scope ?? null")).toBeLessThan(save.indexOf("view.change("));
+  expect(save).toContain("view.target(next, scope)");
+  expect(save).toContain("view.layerOf(next, scope)");
+  expect(save).not.toContain("view.set(");
+  expect(save.indexOf("configOf(view, scope) !== expect")).toBeGreaterThan(save.indexOf("view.change("));
+  expect(src).toContain("save(view, p, row.field, value, cx, f.config)");
 });

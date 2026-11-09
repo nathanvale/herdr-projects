@@ -15,12 +15,13 @@ import { localService, localToken } from "./local.js";
 const TEXT_FIELDS = PROVIDER.rows.filter((r) => !r.choices).map((r) => r.field);
 
 // The value a scope's chain gives a field ("" when none sets it).
-const valueOf = (view, field) => {
-  const v = view.chain("provider", field).find((x) => x.value !== undefined)?.value;
+const valueOf = (view, field, scope = view.scope ?? null) => {
+  const v = view.chain("provider", field, scope).find((x) => x.value !== undefined)?.value;
   return typeof v === "string" ? v : "";
 };
 // What a Refresh's list was read under at a scope: a pick from it is refused once this changes.
-const configOf = (view) => JSON.stringify(DISCOVERY_FIELDS.map((f) => valueOf(view, f)));
+const configOf = (view, scope = view.scope ?? null) => JSON.stringify(DISCOVERY_FIELDS.map((f) => valueOf(view, f, scope)));
+const STALE = "Those deployments were found under another resource, endpoint or subscription. Nothing was saved; refresh again.";
 
 // Made in the window's init (an input needs a live host call): a box per typed field, and what Refresh found.
 export function providerInit(view) {
@@ -36,13 +37,23 @@ export function providerInit(view) {
   return p;
 }
 
-// Checked as herdr-task checks it (never repeating a refused value: it could be a pasted secret), then kept.
-function save(view, p, field, word, cx) {
+// Checked as herdr-task checks it (never repeating a refused value: it could be a pasted secret), then kept at the level
+// it was entered at (captured now: the write reloads the file first, and the person may switch levels meanwhile). A pick
+// from Refresh's list (expect: the configuration it was read under) is checked again against that reloaded file and
+// refused if another window or the web changed it. As view.set: the same as what the level inherits follows again.
+function save(view, p, field, word, cx, expect = null) {
   let v;
   try { v = providerValue(field, word); } catch (e) { p.err[field] = e.message; return cx.notify(); }
-  if (v === valueOf(view, field)) return cx.notify();
+  const scope = view.scope ?? null;
+  if (v === valueOf(view, field, scope)) return cx.notify();
   p.err[field] = "";
-  view.set("provider", field, v, cx);
+  view.change((next) => {
+    if (expect !== null && configOf(view, scope) !== expect) { p.err[field] = STALE; return; }
+    const inherited = view.chain("provider", field, scope).slice(1).find((x) => x.value !== undefined)?.value ?? null;
+    if (JSON.stringify(v) === JSON.stringify(inherited)) return view.drop(view.layerOf(next, scope), "provider", field);
+    const tg = view.target(next, scope);
+    tg.provider = { ...(tg.provider ?? {}), [field]: v };
+  }, cx);
   // A resource, endpoint, subscription or route changed: every list Refresh read here is stale now.
   if (DISCOVERY_FIELDS.includes(field)) p.found = {};
 }
@@ -75,8 +86,8 @@ async function refresh(view, p, kind, cx) {
 
 function pick(view, p, row, value, cx) {
   const f = p.found[`${view.scope ?? "all"}:${row.discover}`];
-  if (!f || f.config !== configOf(view)) { p.err[row.field] = "Those deployments were found under another resource, endpoint or subscription. Refresh again."; return cx.notify(); }
-  save(view, p, row.field, value, cx);
+  if (!f || f.config !== configOf(view)) { p.err[row.field] = STALE; return cx.notify(); }
+  save(view, p, row.field, value, cx, f.config);
 }
 
 // The rows: the route, and on Azure Foundry the rest (a half-set Azure setup under Personal is kept, only not shown).

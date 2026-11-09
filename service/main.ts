@@ -40,7 +40,7 @@ import { voiceTool, type VoiceIO, type Where } from "./voice-tools.ts";
 import { Artifacts } from "./artifacts.ts";
 import { TaskLogs } from "./task-logs.ts";
 import { Settings, onWritten, PUSH, pushBody, STALE_INVENTORY } from "./settings.ts";
-import { assistantChoices, taskSelection } from "./selections.ts";
+import { assistantChoices, pickRevision, taskSelection, withPick } from "./selections.ts";
 import { Secrets, SecretsHome } from "./secrets.ts";
 import { Agents } from "./agents.ts";
 import { Machines } from "./machines.ts";
@@ -268,7 +268,9 @@ const jobs = new Jobs(hub, host);
 jobs.watched = () => live.watched();
 jobs.start();
 model.doc = () => store.doc.value;
-compat.shared = { value: (k) => model.value(k), set: (k, v) => store.set(k, v) };
+compat.shared = { value: (k) => model.value(k), set: (k, v) => store.set(k, v),
+  // one key changed inside the store's version-retried update: each retry gets the current document (A2's picks)
+  update: (k, change) => store.update((v) => { const n = change(v[k]); if (n === undefined) delete v[k]; else v[k] = n; return v; }) };
 store.on(() => model.rebuild());
 void store.load().catch(() => {});
 const snapshotOf = (b: Parameters<NonNullable<typeof model.onBuild>>[0]) => live.setSnapshot(alertNewAnd(compat.snapshot({
@@ -519,9 +521,8 @@ async function doAction(body: any): Promise<Response> {
       const menus = azure ? view.menus : settings.choices?.menus ?? {};
       const picks = model.value("assistant.picks") ?? {};
       if (body.type === "assistant-pick") {
-        const next = { ...picks };
-        if (body.pick === null) delete next[sp.id];
-        else {
+        let rec: Record<string, unknown> | null = null;
+        if (body.pick !== null) {
           const k = body.pick?.agent, word = (v: unknown) => (typeof v === "string" && /^[\w.\[\]-]{1,128}$/.test(v) ? v : null);
           if (k !== "claude" && k !== "codex") throw new Error("Pick Claude Code or Codex.");
           const chosen = word(body.pick.model);
@@ -529,10 +530,13 @@ async function doAction(body: any): Promise<Response> {
           // what the menu showed must still hold: the routing its pick is bound to, and on Azure the list it came from
           if (body.revision !== (view.clis?.[k]?.revision ?? "")) throw new Error("The provider settings changed since this menu was opened. Nothing was saved; open it again.");
           if (azure && typeof body.inventory === "string" && body.inventory !== settings.discoveryFor(sp.id, k).revision) throw new Error(STALE_INVENTORY);
-          next[sp.id] = { agent: k, model: chosen, effort: word(body.pick.effort), fast: !!body.pick.fast, perm: word(body.pick.perm),
+          rec = { agent: k, model: chosen, effort: word(body.pick.effort), fast: !!body.pick.fast, perm: word(body.pick.perm),
             ...(azure ? { deployment: SC.providerValue(`${k}_deployment`, chosen) } : {}), revision: view.clis?.[k]?.revision ?? "" };
         }
-        await store.set("assistant.picks", next);
+        // only this space's pick changes (save or reset), and only from the pick the menu showed (its pickRevision),
+        // inside the store's update so a concurrent save for another space or a newer one for this space isn't lost
+        const expected = typeof body.pickRevision === "string" ? body.pickRevision : "";
+        await store.update((v) => { v["assistant.picks"] = withPick(v["assistant.picks"] as any, sp.id, rec, expected); return v; });
         return json({ ok: true });
       }
       const saved = picks[sp.id];
@@ -544,7 +548,7 @@ async function doAction(body: any): Promise<Response> {
       const revision = Object.fromEntries(Object.entries(view.clis ?? {}).map(([k, c]: [string, any]) => [k, c.revision]));
       const inventory = azure ? Object.fromEntries(["claude", "codex"].map((k) => [k, settings.discoveryFor(sp.id, k as "claude" | "codex").revision])) : null;
       return json({ ok: true, menu: { current, menus, permDefault: settings.choices?.permDefault ?? {}, picks: (compat.agents as any).picks(), remote: null,
-        newStart: true, saved: !!saved, revision, ...(inventory ? { inventory } : {}) } });
+        newStart: true, saved: !!saved, revision, pickRevision: pickRevision(saved), ...(inventory ? { inventory } : {}) } });
     } catch (err) { return json({ ok: false, error: (err as Error).message }); }
   }
   if (body?.type === "task-select" && (typeof body.chat === "string" || (body.task && typeof body.task === "object"))) {
@@ -560,7 +564,8 @@ async function doAction(body: any): Promise<Response> {
       const c = body.change && typeof body.change === "object" ? body.change : null;
       const change = c ? { ...(c.default ? { default: true } : {}), ...(typeof c.agent === "string" ? { agent: c.agent } : {}),
         ...(typeof c.deployment === "string" ? { deployment: c.deployment } : {}), ...(typeof c.model === "string" ? { model: c.model } : {}),
-        ...(typeof c.effort === "string" ? { effort: c.effort } : {}), revision: typeof c.revision === "string" ? c.revision : "" } : null;
+        ...(typeof c.effort === "string" ? { effort: c.effort } : {}), ...(typeof c.inventory === "string" ? { inventory: c.inventory } : {}),
+        revision: typeof c.revision === "string" ? c.revision : "" } : null;
       if (!settings.choices) await readDefaults();
       const v: any = await taskSelection(settings, { ref: t.ref, folder: t.folder, machine: t.machine ?? null, space: t.space }, change,
         await compat.agents!.ownDefaults());

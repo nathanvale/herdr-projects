@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { place, queueReason, reportOf, estimated, order, ago, autoPrefix, refOf, taskKey, matches, busyAgain, secondLine, leftOf, ORDER, STATUS, WORKING_AGAIN, fromLine, autoWhere, inSpace, selectChange } from "./tasks.js";
+import { place, queueReason, reportOf, estimated, order, ago, autoPrefix, refOf, taskKey, matches, busyAgain, secondLine, leftOf, ORDER, STATUS, WORKING_AGAIN, fromLine, autoWhere, inSpace, selectChange, webSelectSave, webSelectLevels } from "./tasks.js";
 import { REASONS, fit } from "./needs.js";
 
 const NOW = 1_800_000_000_000;
@@ -192,4 +192,21 @@ test("a task's new-start change carries its CLI with a model or deployment, and 
     .toEqual({ model: "opus", effort: "high", agent: "claude" });
   expect(selectChange(shown, { agent: "codex", model: null, effort: null }, "personal")).toBe(null);
   expect(selectChange({ agent: "claude", model: "opus", effort: "high" }, { agent: "claude", model: "opus", effort: null }, "personal")).toEqual({ effort: "default" });
+});
+
+// A2: the web's task selector saves only what changed.
+test("the web selector keeps an effort with an inherited deployment, and a CLI change sends its deployment on Azure", () => {
+  const menus = { claude: { models: [{ id: "role-dep", efforts: ["low", "high"] }, { id: "picked", efforts: ["low"] }] } };
+  const clis = { claude: { deployment: "role-dep" }, codex: { deployment: "" } };
+  // inherited deployment: its levels, so a kept effort shows and isn't cleared on Save
+  expect(webSelectLevels(menus, clis, "claude", "")).toEqual(["low", "high"]);
+  const kept = { selection: { agent: null, deployment: null, effort: "high" }, inherit: { agent: "claude" }, listed: { claude: ["picked"] }, inventory: { claude: "7" } };
+  expect(webSelectSave(kept, { agent: "claude", dep: "", effort: "high", fromList: false, levels: [] }, true)).toEqual({});
+  // a CLI change on Azure sends the deployment shown, even the same name the old CLI had
+  const own = { selection: { agent: "codex", deployment: "same", effort: null }, inherit: { agent: "claude" }, listed: {}, inventory: {} };
+  expect(webSelectSave(own, { agent: "claude", dep: "same", effort: "", fromList: false, levels: [] }, true)).toEqual({ agent: "claude", deployment: "same" });
+  // a listed pick carries its list's revision; a typed one doesn't
+  const base = { selection: { agent: "claude", deployment: null, effort: null }, listed: { claude: ["picked"] }, inventory: { claude: "7" } };
+  expect(webSelectSave(base, { agent: "claude", dep: "picked", effort: "", fromList: true, levels: [] }, true)).toEqual({ agent: "claude", deployment: "picked", inventory: "7" });
+  expect(webSelectSave(base, { agent: "claude", dep: "typed", effort: "", fromList: false, levels: [] }, true)).toEqual({ agent: "claude", deployment: "typed" });
 });

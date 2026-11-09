@@ -7,7 +7,7 @@ import { expect, test, beforeAll, afterAll, beforeEach } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assistantChoices, menusFor, taskSelection } from "./selections.ts";
+import { assistantChoices, menusFor, pickRevision, STALE_LIST, STALE_PICK, taskSelection, withoutUsedPick, withPick } from "./selections.ts";
 
 const DIR = mkdtempSync(join(tmpdir(), "shep-selections-"));
 const CALLS = join(DIR, "calls"), REPLY = join(DIR, "reply"), BIN = join(DIR, "herdr-task");
@@ -80,4 +80,40 @@ test("a task whose space is known is asked for in that space, so its choice read
   writeFileSync(REPLY, JSON.stringify(SHOWN));
   await taskSelection(settings, { ref: "HAT-3", folder: "/repo", machine: null, space: "vm1/sp4" }, null, {});
   expect(calls()).toEqual(["select HAT-3 --folder /repo --space sp4 --json"]);
+});
+
+// A web Assistant pick: only its space changes, inside the store's update, and only from the pick the menu showed.
+test("two spaces' picks saved from the same snapshot both stay; an older menu can't overwrite or clear a newer pick", () => {
+  const empty = pickRevision(undefined);
+  // two menus opened on an empty store: each save runs on the current document (as Store.update's retry gives it)
+  let doc: Record<string, unknown> = {};
+  doc = withPick(doc, "sp1", { agent: "claude", model: "a" }, empty);
+  doc = withPick(doc, "sp2", { agent: "codex", model: "b" }, empty);
+  expect(Object.keys(doc).sort()).toEqual(["sp1", "sp2"]);
+  // a menu opened before sp1's pick was saved quotes the old revision: refused, for a save and for a reset
+  expect(() => withPick(doc, "sp1", { agent: "claude", model: "c" }, empty)).toThrow(STALE_PICK);
+  expect(() => withPick(doc, "sp1", null, empty)).toThrow(STALE_PICK);
+  // the current one is accepted, and a reset clears only that space
+  expect(withPick(doc, "sp1", null, pickRevision(doc.sp1))).toEqual({ sp2: { agent: "codex", model: "b" } });
+});
+
+test("a start drops only the pick it used: a newer pick for its space, and other spaces' picks, stay", () => {
+  const used = { agent: "claude", model: "a" };
+  expect(withoutUsedPick({ sp1: used, sp2: { agent: "codex" } }, "sp1", { ...used })).toEqual({ sp2: { agent: "codex" } });
+  const newer = { agent: "claude", model: "z" };
+  expect(withoutUsedPick({ sp1: newer }, "sp1", used)).toEqual({ sp1: newer });
+});
+
+test("a task deployment picked from Refresh's list must come from the list in force; one typed by hand needs none", async () => {
+  writeFileSync(REPLY, JSON.stringify(SHOWN));
+  const t = { ref: "HAT-3", folder: "/repo", machine: null, space: null };
+  await expect(taskSelection(settings, t, { agent: "claude", deployment: "opus-deployment", inventory: "0", revision: "r" }, {})).rejects.toThrow(STALE_LIST);
+  expect(calls()).toEqual([]);
+  await taskSelection(settings, t, { agent: "claude", deployment: "opus-deployment", inventory: "1", revision: "r" }, {});
+  await taskSelection(settings, t, { agent: "claude", deployment: "typed-one", revision: "r" }, {});
+  expect(calls().length).toBe(2);
+  // what it shows carries each CLI's list revision and what that list holds
+  const shown: any = await taskSelection(settings, t, null, {});
+  expect(shown.inventory.claude).toBe("1");
+  expect(shown.listed.claude).toEqual(["opus-deployment", "custom-deployment"]);
 });
