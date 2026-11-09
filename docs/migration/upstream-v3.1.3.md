@@ -569,6 +569,9 @@ and `service/agents.ts` through `restart.sh` or `herdr-task switch`), which now 
 - Owner moved to L1 in the repair pass: `service/main.ts` (H1's until then). `/api/spaces` must
   answer a web-only New space's refused Assistant start (`assistantError`), as the approved repair
   item asked; no other line of it changed, and its H1 listener wiring is untouched.
+- Admitted under L1 for the same item: `web/plugins/places/add.tsx`. The New space page keeps the
+  made space and shows that `assistantError` to the person as an error toast; nothing else on the
+  page changed.
 
 - Preflight before any effect: the settings file read strictly (there but unreadable refuses,
   missing keeps Personal), the provider route (a task's Azure plan stays held; an Assistant admits

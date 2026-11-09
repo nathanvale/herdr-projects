@@ -69,7 +69,8 @@ test/test_bitbucket_publication.py test/test_native_publication.py'''.split()),
 mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py
 mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/settings.py
 mods/tasks/bin/herdr_task/takeover.py mods/tasks/bin/herdr_task/tick.py service/actions.ts service/launch-sites.test.ts
-service/main.ts service/spaces.ts test/test_herdr_task.py test/test_launch_admission.py test/test_providers.py'''.split()),
+service/main.ts service/spaces.ts test/test_herdr_task.py test/test_launch_admission.py test/test_providers.py
+web/plugins/places/add.tsx'''.split()),
 }
 # The shared table's second half (PR 19 decision D5, issue #7): what accepted changes add beyond exact
 # U and outside every phase's owners, admitted by name and left to review for content. With U's paths

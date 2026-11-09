@@ -369,6 +369,12 @@
       "path": "test/test_launch_admission.py",
       "upstream_blob": null,
       "sha256": "3c58aeb72b2a25dd4462c049b92c511417fb0e63440323e8ac6797d087fbad8e"
+    },
+    {
+      "phase": "L1",
+      "path": "web/plugins/places/add.tsx",
+      "upstream_blob": "5ff16a9c3a212f93f78d69ffca05147cba707155",
+      "sha256": "e02daf1146ab85a72df6b89aef0beb1c16462e69b756b1221c80bab993f13c22"
     }
   ],
   "requirements": [

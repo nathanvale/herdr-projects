@@ -13,6 +13,7 @@
 import clsx from 'clsx'
 import { useEffect, useId, useRef, useState } from 'react'
 import { goPlace, placeOf, setUI, useSnap, useUI } from '@client/kernel.ts'
+import { toast } from '@plugins/alerts/toasts.tsx'
 import { Sheet, SheetClose } from '@client/Stack.tsx'
 import { CheckIcon, FolderIcon, Ghost, MonitorIcon, Primary, ServerIcon, Who, ic } from '@client/ui.tsx'
 import type { Folders, Machine } from '@shared/types.ts'
@@ -209,8 +210,10 @@ function NewSpaceDialog() {
         headers: { 'content-type': 'application/json', 'x-shepherdr': '1' },
         body: JSON.stringify({ machine, path: folder, makeRepo: offers && makeRepo, icon: icon || null }),
       })
-      const b = (await r.json().catch(() => ({}))) as { place?: string; error?: string }
+      const b = (await r.json().catch(() => ({}))) as { place?: string; error?: string; assistantError?: string }
       if (!r.ok || !b.place) throw new Error(b.error ?? `${r.status}`)
+      // made, but its Assistant was refused (launch admission): the space opens, and the toast says why
+      if (b.assistantError) toast({ title: "The space's Assistant didn't start", body: b.assistantError, level: 'error' })
       setOpening(b.place)
     } catch (e) {
       setError((e as Error).message)
