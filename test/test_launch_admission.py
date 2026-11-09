@@ -589,7 +589,8 @@ class TaskStarts(unittest.TestCase):
         self.assertEqual(json.loads(out)["started"], [])
         t = f.task(second)
         self.assertEqual((t["state"], t["agents"], "queue" in t), ("queued", [], True))
-        self.assertTrue(t["attention"].startswith("Couldn't start: Azure Foundry is set"), t["attention"])
+        # A2 plans Azure, so what refuses it is the changed route under its claim (the revision), before it is sent.
+        self.assertTrue(t["attention"].startswith("Couldn't start: The settings this start was admitted on changed"), t["attention"])
         self.assertEqual(f.runs(), [])
         self.assertEqual([r["state"] for r in f.starts()], ["cancelled"])
         # Back on Personal the next tick starts it once.

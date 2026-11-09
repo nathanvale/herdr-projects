@@ -85,7 +85,7 @@ mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/task
 mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/revive.py
 mods/tasks/bin/herdr_task/settings.py mods/tasks-menu/main.js mods/tasks/core/tasks.js mods/tasks/local.js mods/tasks/main.js service/actions.ts service/agents.ts service/compat.ts service/launch-sites.test.ts
 service/main.ts service/selections.test.ts service/selections.ts service/settings.test.ts service/settings.ts
-service/spaces.ts service/watch.ts test/test_launch_admission.py test/test_providers.py web/plugins/tasks/client.tsx
+service/spaces.ts service/watch.ts test/test_herdr_task.py test/test_launch_admission.py test/test_providers.py web/plugins/tasks/client.tsx
 web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx web/src/restart.tsx'''.split()),
 }
 # The shared table's second half (PR 19 decision D5, issue #7): what accepted changes add beyond exact

@@ -38,7 +38,7 @@
       "phase": "A2",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "d2463e1a37c0aeefaee51eec7480d3de3df1f40d",
-      "sha256": "76c3ea9a5b5599fc5694f5436100d73b41a0abbb0cd25cf8ca9435b1455c4a01"
+      "sha256": "6f592e09d5e3004e902aecd2d9483d5c462f8363067a29588a1ea20a11ecb5b4"
     },
     {
       "phase": "B1",
@@ -89,10 +89,10 @@
       "sha256": "ed74e094fe3c3411b5f8af21af848bbe6b65cdc4573ff162d07ccb8ebeb15afc"
     },
     {
-      "phase": "L1",
+      "phase": "A2",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "82cfa36fd73760a95a88b6d07a09e9cc03dfa167",
-      "sha256": "bff3fbf823ce0bde720dbded21c28890b81880a6ad5083a7b484c772d9e12c59"
+      "sha256": "0153a9b101e02277ea7c5c730673bc8c60308b0f5a89a0c91bcb34ce79a0714f"
     },
     {
       "phase": "B2",
@@ -104,7 +104,7 @@
       "phase": "A2",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "439f42634c8ba4962dbe2890201dc4ac25dfda61ef50f2d2d3bfaed0ebb0aa6d"
+      "sha256": "52a5e9eabdf1999f62b90d745853114d74d61bf2b3def8d8978aa89bb94603b3"
     },
     {
       "phase": "A2",
@@ -368,7 +368,7 @@
       "phase": "A2",
       "path": "test/test_launch_admission.py",
       "upstream_blob": null,
-      "sha256": "fd6067e35a4f4a5e2ca2654c491475ab6d1cb30ed6133ab09cc91b4ff449b129"
+      "sha256": "9d8c303aa1bb65304a9de179ce5808e49d250ba48f1e5e8a24c53715908500c8"
     },
     {
       "phase": "L1",
@@ -458,13 +458,13 @@
       "phase": "A2",
       "path": "service/selections.test.ts",
       "upstream_blob": null,
-      "sha256": "da87892c9a18f4efe1e0ca517e123e71508445d0f42c2273aca12ea375771d3f"
+      "sha256": "b218735254da446a80f846a95c6e6c7fe9d606627bc46d384dc6d04c6a8f2cea"
     },
     {
       "phase": "A2",
       "path": "service/selections.ts",
       "upstream_blob": null,
-      "sha256": "fe9c3ad84a11b70684977983326ca5d7cf5f1994de67845276a2c76093485c06"
+      "sha256": "79b407aa9f0d2e70fa7a52183210a3481692f97bcd6eea7b32de4388b678c045"
     },
     {
       "phase": "A2",

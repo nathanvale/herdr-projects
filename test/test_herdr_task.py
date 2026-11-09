@@ -1853,10 +1853,11 @@ class CleanEnv(unittest.TestCase):
 
         real_admit = LA.admit_launch
 
-        def admit(s, argv, space=None, d=None):
+        def admit(s, argv, space=None, d=None, *rest, **kw):
             # The fork's provider gate (A1) runs first, for real, from launch admission (L1): with no settings, Personal passes.
+            # (A2 adds the start's role, chosen deployment, recorded binding and name: passed on as they come.)
             admitted.append((argv, space))
-            return real_admit(s, argv, space, d)
+            return real_admit(s, argv, space, d, *rest, **kw)
         none = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, none, True)
         # loc: the folder A1's gate reads its settings for (a store always has one).

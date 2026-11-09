@@ -40,7 +40,8 @@ export type TaskChange = { agent?: string; deployment?: string; model?: string; 
 /** A task's new-start selection: shown (change null), or saved (only with the revision it was shown at). On Azure, each
  *  CLI's deployment list as `menus`. */
 export async function taskSelection(settings: Settings, t: TaskRef, change: TaskChange | null, dflts: any) {
-  const args = [...(t.machine ? ["--on", t.machine] : []), "select", t.ref, "--folder", t.folder];
+  // its space when known, so the choice is judged by the settings its start reads (else the folder's own layers)
+  const args = [...(t.machine ? ["--on", t.machine] : []), "select", t.ref, "--folder", t.folder, ...(t.space ? ["--space", String(t.space).split("/").pop()!] : [])];
   if (change) {
     if (change.default) args.push("--default");
     else {

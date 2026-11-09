@@ -75,3 +75,9 @@ test("a space's list is the one Settings gives for it", () => {
   expect(menus.claude.models.map((m: any) => m.id)).toEqual(["opus-deployment", "custom-deployment"]);
   expect(menus.codex.models).toEqual([]);
 });
+
+test("a task whose space is known is asked for in that space, so its choice reads the settings its start reads", async () => {
+  writeFileSync(REPLY, JSON.stringify(SHOWN));
+  await taskSelection(settings, { ref: "HAT-3", folder: "/repo", machine: null, space: "vm1/sp4" }, null, {});
+  expect(calls()).toEqual(["select HAT-3 --folder /repo --space sp4 --json"]);
+});

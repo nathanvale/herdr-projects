@@ -920,7 +920,8 @@ def cmd_select(args):
     change = args.default or any(v is not None for v in (args.agent, args.deployment, args.model, args.effort))
     with open_store(args) as s:
         t = s.find(args.id)
-        space = bare(args.space) if args.space else (t.get("space") or default_space())
+        # Its space's settings when it has one, else the folder's own layers: an inspect and a save need no terminal.
+        space = bare(args.space) if args.space else (t.get("space") or None)
         cur = selection_of(s, t, space)
         if not change:
             v = cur
@@ -1088,7 +1089,7 @@ def cmd_resume(args):
         if t["state"] == "done":
             t["state"] = "running"
         back_to_work(s, t, "resumed")
-        a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=args.fresh)
+        a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=getattr(args, "fresh", False))
         v = view(s, t)
     say(args, {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed},
         f"{s.ref(t)} {'resumed its session' if resumed else 'started with a handoff'}: {a['address']}")
@@ -1108,8 +1109,8 @@ def cmd_switch(args):
             t.setdefault("started", now())
             t.pop("queue", None)
             t.pop("scheduled_for", None)
-        a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=args.fresh,
-                                 restart=args.restart)
+        a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=getattr(args, "fresh", False),
+                                 restart=getattr(args, "restart", False))
         v = view(s, t)
     ended = []
     if old and not args.keep:

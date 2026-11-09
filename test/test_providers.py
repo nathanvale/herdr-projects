@@ -656,7 +656,7 @@ class TaskSelection(unittest.TestCase):
         # The CLI, its model and effort are the choice on Personal; its first start runs on them.
         f.ok("select", str(tid), "--folder", f.repo, "--agent", "codex", "--model", "gpt-pick", "--effort", "high", "--revision", shown["revision"])
         self.assertEqual((f.task(tid)["agent"], f.task(tid)["model"], f.task(tid)["effort"]), ("codex", "gpt-pick", "high"))
-        f.ok("start", str(tid), "--folder", f.repo, "--now")
+        f.ok("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now")
         _, agent = f.agent_words(f.launches()[-1])
         self.assertEqual(agent[agent.index("-m") + 1], "gpt-pick")
         self.assertIn('model_reasoning_effort="high"', agent)
