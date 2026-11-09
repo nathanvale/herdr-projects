@@ -482,37 +482,48 @@ test("lost-session recovery refuses a custom folder: nothing typed, nothing star
   for (const s of [a, b, c]) expect(s.called()).toEqual([]);
 }, 60000);
 
-test("lost-session recovery is unchanged for a default agent", async () => {
+// L2: the service types nothing itself. At its shell herdr-task's launch owner brings it back (`launch revive TERMINAL
+// --lost`, the tick's revival's own owner, so it comes back once), and an ended one goes to restart.sh, whose start the
+// same owner plans; neither asks the route first, as the owner plans the binding and refuses what it can't carry.
+function owner(bin, out, code = 0) {
+  // Its reply comes from a file, so no quote in it (an owner's "can't") is ever read as shell; read and printf are the
+  // shell's own, as a child's PATH is this folder alone.
+  const called = join(bin, "called"), reply = join(bin, "owner-reply.json");
+  writeFileSync(reply, out);
+  writeFileSync(join(bin, "herdr-task"), `#!/bin/sh\necho "herdr-task $*" >> "${called}"\n` +
+    `while IFS= read -r line || [ -n "$line" ]; do printf '%s\\n' "$line"; done < "${reply}"\nexit ${code}\n`);
+  chmodSync(join(bin, "herdr-task"), 0o755);
+}
+
+test("lost-session recovery goes through herdr-task's launch owner, never typed by the service", async () => {
   const app = appWithRestart(), [a, b] = [standIns(), standIns()];
+  owner(a.bin, JSON.stringify({ how: "fresh", missing_history: true }));
   const plain = await agent();
   const [shell, gone] = await Promise.all([webLost(a.bin, atShell(plain.pid), app), webLost(b.bin, ended(), app)]);
-  expect(shell.sent.length).toBe(1);
-  expect(shell.sent[0].startsWith("claude ")).toBe(true);
-  expect(shell.sent[0]).not.toContain(SESSION);
-  expect(gone.sent).toEqual([]);
-  // herdr-task's provider owner is asked the route first (A2), then restart.sh runs
-  expect(b.called()).toEqual(["herdr-task provider", "bash " + join(app, "mods", "coordinator", "restart.sh")]);
+  for (const out of [shell, gone]) expect(out.sent).toEqual([]);
+  expect(a.called()).toEqual([`herdr-task launch revive ${ADDR} --lost --json`]);
+  expect(b.called()).toEqual(["bash " + join(app, "mods", "coordinator", "restart.sh")]);
   for (const out of [shell, gone]) expect(out.note).not.toContain("didn't start");
 }, 60000);
 
-// A2: under a route that isn't Personal a new start here would run on the CLI's own sign-in (L2 carries no plan), so
-// it is refused, asked of herdr-task's provider owner; one that can't be read refuses too. Nothing is typed or run.
-test("lost-session recovery refuses a route that isn't Personal: nothing typed, nothing started", async () => {
-  const app = appWithRestart(), [a, b, c] = [standIns(null, "azure-foundry"), standIns(null, "azure-foundry"), standIns(null, null)];
+test("lost-session recovery says the owner's refusal, and one already brought back, with nothing typed", async () => {
+  const app = appWithRestart(), [a, b] = [standIns(), standIns()];
+  owner(a.bin, JSON.stringify({ error: "Its recorded provider binding can't be found." }), 1);
+  owner(b.bin, JSON.stringify({ how: "none" }));
   const plain = await agent();
-  const [shell, gone, unread] = await Promise.all([webLost(a.bin, atShell(plain.pid), app), webLost(b.bin, ended(), app), webLost(c.bin, atShell(plain.pid), app)]);
-  for (const out of [shell, gone, unread]) expect(out.sent).toEqual([]);
-  for (const out of [shell, gone]) expect(out.note).toContain("Provider is Azure Foundry here");
-  expect(unread.note).toContain("can't be read now");
-  for (const s of [a, b, c]) expect(s.called()).toEqual(["herdr-task provider"]);
+  const [refused, handled] = await Promise.all([webLost(a.bin, atShell(plain.pid), app), webLost(b.bin, atShell(plain.pid), app)]);
+  for (const out of [refused, handled]) expect(out.sent).toEqual([]);
+  expect(refused.note).toContain("Its recorded provider binding can't be found.");
+  expect(handled.note).toContain("brought back already");
 }, 60000);
 
 // macOS shows no environment for its own /bin/zsh, so refusing here would end recovery for default agents there. No
 // folder can be lost: what's typed inherits this very shell, as the agent that left did.
 test.skipIf(!canSeal && process.platform !== "darwin")("a shell that can't be read keeps recovering: the new agent inherits it", async () => {
-  const app = appWithRestart(), { bin } = standIns();
+  const app = appWithRestart(), { bin, called } = standIns();
   const out = await webLost(bin, atShell(await sealed()), app);
-  expect(out.sent.length).toBe(1);
+  expect(out.sent).toEqual([]);
+  expect(called()).toEqual(["herdr-task launch"]);
 }, 60000);
 
 test("the rule itself: Codex is never asked, and an assignment counts wherever it stands before the agent", async () => {
@@ -541,14 +552,19 @@ test("the web's fork says why: another folder, or no session; a default session 
   expect((await webFork(bin, null)).error).toBe("This conversation has no saved session to fork.");
   expect(called()).toEqual([]);
   expect((await webFork(bin, join(fallback, "projects", "-work", `${SESSION}.jsonl`))).result).toEqual({ ok: true });
-  // herdr-task's provider owner is asked the route first (A2), then the window makes the tab
-  expect(called()).toEqual(["herdr-task provider", "herdr-app do"]);
+  // herdr-task's launch owner admits it first (L2), then the window makes the tab
+  expect(called()).toEqual(["herdr-task launch", "herdr-app do"]);
 }, 30000);
 
-test("the web's fork refuses under a route that isn't Personal: no tab is made (A2, L2 carries no plan)", async () => {
-  const { bin, called } = standIns(null, "azure-foundry");
-  expect((await webFork(bin, join(fallback, "projects", "-work", `${SESSION}.jsonl`))).error).toContain("Provider is Azure Foundry here");
-  expect(called()).toEqual(["herdr-task provider"]);
+test("the web's fork asks the launch owner with its own argv, and its refusal makes no tab (L2)", async () => {
+  const { bin, called } = standIns();
+  owner(bin, JSON.stringify({ admitted: true, route: "personal" }));
+  expect((await webFork(bin, join(fallback, "projects", "-work", `${SESSION}.jsonl`))).result).toEqual({ ok: true });
+  expect(called()[0]).toBe(`herdr-task launch run --role agent --space unplaced --slot fork --replaces ${ADDR} --argv ["claude","--resume","${SESSION}","--fork-session"] --check --json`);
+  const refused = standIns();
+  owner(refused.bin, JSON.stringify({ error: "Its conversation is recorded on Azure Foundry." }), 1);
+  expect((await webFork(refused.bin, join(fallback, "projects", "-work", `${SESSION}.jsonl`))).error).toBe("Its conversation is recorded on Azure Foundry.");
+  expect(refused.called()).toEqual([`herdr-task launch run --role agent --space unplaced --slot fork --replaces ${ADDR} --argv ["claude","--resume","${SESSION}","--fork-session"] --check --json`]);
 }, 30000);
 
 // main.js runs only inside the window, so these read its order, as the picker's check above does. The rule they call is
@@ -568,7 +584,10 @@ test("the window asks the process before it restarts or switches anything", () =
 test("the window's recovery asks before it types into a shell or restarts", () => {
   const lost = method(windowSource(), "  async lostSession(t, kind, fresh, cx) {");
   expect(lost.indexOf("agent.lostRefusal(")).toBeGreaterThan(-1);
-  expect(lost.indexOf("agent.lostRefusal(")).toBeLessThan(lost.indexOf('hc(["send"'));
+  // At its shell the launch owner types it (L2), never the window itself.
+  expect(lost.indexOf('hc(["send"')).toBe(-1);
+  expect(lost.indexOf('"launch", "revive", term, "--lost"')).toBeGreaterThan(-1);
+  expect(lost.indexOf("agent.lostRefusal(")).toBeLessThan(lost.indexOf('"launch", "revive", term, "--lost"'));
   expect(lost.indexOf("agent.lostRefusal(")).toBeLessThan(lost.indexOf("agent.restart(t,"));
 });
 

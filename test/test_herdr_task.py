@@ -1910,7 +1910,7 @@ class Revive(unittest.TestCase):
         self.log = os.path.join(self.dir, "S1.jsonl")
         open(self.log, "w").close()
         self.terms = {}
-        self.sent, self.screens, self.sessions = [], {}, {}
+        self.sent, self.screens, self.sessions, self.send_code = [], {}, {}, 0
 
         def hc(args):
             out, code = "", 0
@@ -1921,6 +1921,7 @@ class Revive(unittest.TestCase):
                 # each line first clears a parent Claude Code session's markers (SHEP-86)
                 self.assertTrue(args[3].startswith(revive.CLEAN_ENV + " "), args[3])
                 self.sent.append((args[2], args[3][len(revive.CLEAN_ENV) + 1:]))
+                code = self.send_code
             elif args[:2] == ["hc", "read"]:
                 out = self.screens.get(args[2], "")
             else:
@@ -1934,9 +1935,18 @@ class Revive(unittest.TestCase):
                 return json.loads(json.dumps(self.terms[args[1]]))
             raise AssertionError(f"hc {args}")
         self.tasks = {"dev#6": {"id": 6, "state": "running", "agents": []}}
-        for name, value in (("run", hc), ("hc_json", hc_json), ("session_of", lambda pid: self.sessions.get(pid, (None, None))),
+        for name, value in (("run", hc), ("hc_json", hc_json), ("session_of", lambda pid, any_folder=False: self.sessions.get(pid, (None, None))),
+                            ("claude_dir", lambda pid: None),
                             ("task_of", lambda k: self.tasks.get((k.get("labels") or {}).get("herdr.task")))):
             p = mock.patch.object(revive, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+        # Each typing is a start in launch admission's journal (L2): a throwaway one, and Personal settings (no file).
+        import herdr_task.launch_admission as LA
+        import herdr_task.providers as providers
+        self.LA = LA
+        for module, name, value in ((LA, "STORE", self.dir), (providers, "read_strict", lambda path=None: {})):
+            p = mock.patch.object(module, name, value)
             p.start()
             self.addCleanup(p.stop)
 
@@ -1965,11 +1975,54 @@ class Revive(unittest.TestCase):
         self.assertEqual(self.sent, [])
         self.crash("t1")
         report = self.tick()
-        self.assertEqual(report["revived"], [{"terminal": "t1", "how": "resume", "session": "S1"}])
+        [row] = report["revived"]
+        self.assertEqual({k: row[k] for k in ("terminal", "how", "session")}, {"terminal": "t1", "how": "resume", "session": "S1"})
+        self.assertNotIn("missing_history", row)
         self.assertEqual(self.sent, [("t1", "cd /home/me/app && command claude --model opus --resume S1")])
+        # Typed under the Assistant's own identity in launch admission's journal, confirmed by hc, its claim let go.
+        with open(os.path.join(self.dir, ".launches.json")) as f:
+            journal = json.load(f)
+        rec = journal["launches"][row["launch"]]
+        self.assertEqual((rec["identity"], rec["state"], rec["terminal"], rec["revival"]["how"]),
+                         ("coordinator:local/unplaced", "confirmed", "t1", "resume"))
+        self.assertEqual(journal["claims"], {})
         # Once: the next tick types nothing again, even while the agent starts.
         self.tick()
         self.assertEqual(len(self.sent), 1)
+
+    def test_the_journal_refuses_being_opened_again_inside_its_own_lock(self):
+        """A check run inside the journal's locked step (a revival's recheck) that read the journal again would wait on
+        its own flock for ever; it refuses instead, and the journal opens as usual afterwards."""
+        with self.LA.journal():
+            with self.assertRaises(self.LA.Fail) as e:
+                with self.LA.journal():
+                    pass
+        self.assertIn("opened again inside its own locked step", str(e.exception))
+        with self.LA.journal() as d:
+            self.assertEqual(d["claims"], {})
+
+    def test_a_send_hc_doesnt_confirm_is_held_and_never_typed_again(self):
+        """L2: a failed hc send may still have pasted the line, so the revival stays submission uncertain under its
+        launch id, holding the Assistant's identity, and no later tick types it again."""
+        self.assistant()
+        self.tick()
+        self.crash("t1")
+        self.send_code = 1
+        [held] = self.tick()["revive_uncertain"]
+        self.assertEqual((held["terminal"], held["state"], held["identity"]), ("t1", "submission-uncertain", "coordinator:local/unplaced"))
+        self.assertIn(f"herdr-task launch reconcile coordinator:local/unplaced {held['launch']}", held["why"])
+        self.send_code = 0
+        # Even its screen saying the session is gone types nothing: the uncertain start holds the identity.
+        self.screens["t1"] = "No conversation found with session ID: S1\n$ "
+        with self.mock.patch.object(self.r, "template_of", lambda name="assistant": ("claude", None)):
+            report = self.tick()
+            self.tick()
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn(f"launch reconcile coordinator:local/unplaced {held['launch']}", report["revive_held"][0]["why"])
+        with open(os.path.join(self.dir, ".launches.json")) as f:
+            journal = json.load(f)
+        self.assertEqual(journal["claims"], {"coordinator:local/unplaced": held["launch"]})
+        self.assertEqual(journal["launches"][held["launch"]]["state"], "submission-uncertain")
 
     def test_a_working_agent_carries_on(self):
         self.assistant(status="working")
@@ -2009,6 +2062,9 @@ class Revive(unittest.TestCase):
             report = self.tick()
             self.tick()
         self.assertEqual(report["revived"][0]["how"], "fresh")
+        # Missing history: a new conversation, said so, never as its session resumed.
+        self.assertEqual((report["revived"][0]["missing_history"], report["revived"][0]["previous_session"],
+                          report["revived"][0]["session"]), (True, "S1", None))
         self.assertEqual(len(self.sent), 2)
         self.assertIn("<restart>", self.sent[1][1])
 

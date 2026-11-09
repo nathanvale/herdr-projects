@@ -14,9 +14,10 @@ dispatched where its start records it (docs/migration/upstream-v3.1.3.md, A2): a
 start from its three new-start sites (`herdr-task launch run --new-start`). Each start records its
 nonsecret binding (recorded()); resuming a recorded conversation plans from that record, never
 from today's defaults, and refuses when its routing (route, resource or endpoint, sign-in method)
-changed since (admit_launch(bound=...)). What L2 owns stays Personal only: an Assistant's or a tab
-agent's restart (restart.sh, the web Restart and Switch agent) and revival, which refuse any other
-route with the reason (RESTART_HELD)."""
+changed since (admit_launch(bound=...)). Since L2 the same rule holds where an agent comes back: a
+restart (restart.sh, the window's and the web's Restart and Switch agent) or a revival continuing
+its conversation plans from its recorded binding, and one starting a new conversation from today's
+settings (admit_assistant; revive.py)."""
 
 import hashlib
 import json
@@ -107,12 +108,28 @@ UNREADABLE = ("Shepherdr settings ({}) are there but can't be read as a settings
               "provider they set. Nothing was started; fix or move the file.")
 NOT_EXECUTION_HOST = ("Provider is Azure Foundry here, and Azure Foundry starts agents only on the machine whose settings set "
                       "it; this start would run on {}. Nothing was started. Set Provider to Personal to start it.")
-# What L2 owns (docs/migration/upstream-v3.1.3.md): restarting an Assistant or a tab agent (restart.sh, the window's and
-# the web's Restart and Switch agent, a lost session started anew behind its chat) and revival don't carry a launch
-# plan or a recorded binding yet, so they never start or resume anything but Personal.
-RESTART_HELD = ("This restart can't carry an Azure Foundry binding yet (restart and revival are a later migration phase, "
-                "L2), so it starts Personal only, and {}. Nothing was started or changed. Ask the Assistant to resume or "
-                "switch a task's agent with herdr-task, or start a new Assistant chat.")
+# A start on Azure Foundry is planned from the agent's own command line; one that gives none (a template whose command
+# the owner can't read as one plain agent command) can't be, so it never starts on the CLI's own sign-in instead.
+RESTART_HELD = ("Provider is Azure Foundry here, and this start gives no agent command line to plan, so it would run on the "
+                "CLI's own sign-in. Nothing was started or changed. Start a new Assistant chat, or set Provider to Personal "
+                "for this space.")
+# A recorded binding an agent's terminal says it started on, but no owner holds (L2: revival and restart): never read
+# as Personal.
+NO_BINDING = ("{who} started on Azure Foundry, and its recorded provider binding can't be found (not on its task, its "
+              "terminal or its start's journal record), so it can't be continued on it. Nothing was started; it is never "
+              "moved to Personal. Start a new conversation with a handoff (a task: resume or switch with --fresh; an "
+              "Assistant: a new chat).")
+# A restart that continues a recorded Azure conversation keeps its deployment (A2): a model the menu names instead is
+# refused rather than silently replaced.
+RESTART_MODEL = ("{who}'s conversation is recorded on Azure Foundry deployment {deployment}, and continuing it keeps that "
+                 "deployment, so the model picked for this restart wouldn't be used. Nothing was started or changed. Pick "
+                 "{deployment} to restart it, or start a new conversation with a handoff (switch with --fresh).")
+# A restart starting a new conversation (a handoff, another CLI, a lost session's fresh start) takes today's settings,
+# but not onto another route than the agent it replaces started on: that would move its work to another provider unasked.
+RESTART_ROUTE = ("{who} started on {was}, and these settings now route new starts to {now}. Restarting it with a new "
+                 "conversation here would move its work to another provider, so nothing was started or changed. Start a new "
+                 "conversation on today's settings yourself (a new Assistant chat, or herdr-task resume or switch with "
+                 "--fresh), or set the settings back.")
 # A recorded conversation keeps the routing it started on: today's defaults never reroute it (A2).
 CHANGED_ROUTING = ("{who}'s conversation started on {was}, and this folder's settings now route {cli} to {now}. Resuming it "
                    "would move it to another provider, resource or sign-in, so nothing was started or changed. Set the "
@@ -122,6 +139,11 @@ UNKNOWN_RECORD = ("{who}'s recorded provider binding can't be read as one this v
 TAB_PERSONAL = ("Provider is Azure Foundry here, and a tab agent starts Personal only: its start can't carry a launch plan "
                 "(only a task's agent and an Assistant's new start can). Nothing was started. Start it as a task, or set "
                 "Provider to Personal for this space.")
+# A tab agent (a fork opens as one) continuing a conversation recorded on Azure Foundry: tab agents start Personal only
+# (A2), and the conversation is never moved to Personal, so it isn't started.
+TAB_BOUND = ("{who}'s conversation is recorded on Azure Foundry, and this start would continue it as a tab agent (a fork "
+             "opens as one), which starts Personal only, so it would move to another provider. Nothing was started. "
+             "Continue it with a restart or a resume instead, or start a new conversation.")
 # A task's save-only choice for its first start (herdr-task select) under another routing than it was saved under: the
 # contract's next step is saving it again or clearing it, never running it elsewhere or falling back to Personal.
 STALE_TASK_CHOICE = ("{who}'s choice for its first start was saved under other provider settings (route, resource or "
@@ -435,6 +457,41 @@ def with_model(argv, flags, flag, model):
     return out if found else out[:1] + [flag, model] + out[1:]
 
 
+def model_of(argv):
+    """The model argv selects (its first --model, or Codex's -m), or None: options only, as with_model reads them."""
+    words = list(argv or [])
+    flags = ("--model",) if agent_key(words or [""]) == "claude" else ("-m", "--model")
+    end = options_end(words or [""])
+    for i in range(1, end):
+        a = words[i]
+        if a in flags:
+            return words[i + 1] if i + 1 < end and not words[i + 1].startswith("-") else None
+        for f in flags:
+            if a.startswith(f + "=") and f.startswith("--"):
+                return a.split("=", 1)[1]
+            if not f.startswith("--") and a.startswith(f) and a != f:
+                return a[3:] if a.startswith(f + "=") else a[2:]
+    return None
+
+
+def without_table(plan, argv):
+    """A Codex argv without the -c pairs an earlier Azure start put there: plan's own provider table (its args), or any
+    other in Shepherdr's reserved provider namespace (CODEX_PROVIDER, an earlier binding's, such as one with the
+    deployment a new conversation no longer takes). A provider the person named themselves is never taken off."""
+    own = set((plan.get("args") or [])[1::2])
+
+    def ours(value):
+        return value in own or value.startswith((f'model_provider="{CODEX_PROVIDER}', f"model_providers.{CODEX_PROVIDER}"))
+    end, out, i = options_end(argv), list(argv[:1]), 1
+    while i < len(argv):
+        if i + 1 < end and argv[i] in ("-c", "--config") and ours(argv[i + 1]):
+            i += 2
+            continue
+        out.append(argv[i])
+        i += 1
+    return out
+
+
 def codex_override_keys(argv):
     """The key of each -c/--config override in a Codex argv, as Codex reads it: the words before
     the first "=", trimmed (`-c key=value`, `-ckey=value`, `-c=key=value`, `--config key=value`,
@@ -497,6 +554,9 @@ def compose(plan, argv):
             out[i + 1] = json.dumps({**cur, "env": {**(cur.get("env") or {}), **plan["settings_env"]}})
             return out, dict(plan["env"])
         return out[:1] + ["--settings", json.dumps({"env": plan["settings_env"]})] + out[1:], dict(plan["env"])
+    # The plan's own provider table, from an earlier start on this very plan (a restart's or a revival's argv carries
+    # it): taken off and put back once. Any other provider in argv still refuses.
+    argv = without_table(plan, argv)
     own = any(k in ("model_provider", "model_providers") or k.startswith("model_providers.") for k in codex_override_keys(argv))
     if own or any(a in ("--oss", "--local-provider") or a.startswith("--local-provider=") for a in argv[1:options_end(argv)]):
         raise Fail("On Azure, Codex's provider comes from Settings: remove the argv's own provider (model_provider, --oss). Nothing was started.")
@@ -521,26 +581,76 @@ def admit_launch(s, argv, space=None, d=None, role=None, deployment=None, bound=
     return plan
 
 
-def admit_assistant(s, space=None, d=None, machine=None, argv=None, deployment=None, replaces=None, tab=False):
-    """An Assistant's (or a tab agent's) start, before any effect: its plan. Only a new start from its three
-    new-start sites carries one (argv: the agent's own argv, `launch run --new-start`); there an Azure binding is
-    planned for the Assistant's role (its deployment, or the chat's chosen one). Every other start (a restart, a lost
-    session started anew: L2) admits Personal only, and refuses to replace an agent whose start recorded Azure
-    (replaces: that agent's recorded route); tab: a tab agent's start, Personal only too, with its own reason.
-    machine: where it would run when that isn't here (`hc run --on`)."""
+def restart_route(was, bound, binding, kind, who):
+    """A restart starting a new conversation plans from today's settings, but never on another route than the agent it
+    replaces started on (was: its recorded route): that would move its work to another provider unasked (L2)."""
+    was = was or PERSONAL
+    if binding["route"] != was:
+        said = routing_words(bound) if bound else routing_words({"route": was}) if was == PERSONAL else "Azure Foundry"
+        raise Fail(RESTART_ROUTE.format(who=who, was=said, now=binding_words(binding, kind)))
+
+
+def resumes(argv):
+    """Whether argv continues a recorded conversation rather than starting one: Claude Code's --resume, -r, --continue
+    or -c (a fork adds --fork-session), or Codex's resume or fork subcommand (core/agents.js freshArgv and forkArgv
+    write the same words). Only its options are read."""
+    words = list(argv or [])[1:options_end(argv or [""])]
+    if agent_key(argv) == "claude":
+        return any(a in ("--resume", "-r", "--continue", "-c") or a.startswith("--resume=") for a in words)
+    return agent_key(argv) == "codex" and ("resume" in words or "fork" in words)
+
+
+def admit_assistant(s, space=None, d=None, machine=None, argv=None, deployment=None, restart=None, tab=False):
+    """An Assistant's (or a tab agent's) start, before any effect: its plan. A new start (argv: the agent's own argv,
+    `launch run --new-start`) plans an Azure binding for the Assistant's role (its deployment, or the chat's chosen one).
+    A restart or a fork (restart: {"bound": the replaced or forked agent's recorded binding, or None when it can't be
+    found; "route": the route its terminal says; "argv": its own argv; "continues": a lost session's new one behind its
+    chat; "who"}, L2) that continues the same conversation (resumes(argv)), or continues a lost one, plans from that
+    record, as a task's resume does (plan_of_record: changed routing refuses, the
+    recorded deployment is kept, and a model named in argv that it would replace refuses); one starting a new
+    conversation (a handoff, another CLI, a lost session's fresh start) plans from today's settings as a new start does,
+    never onto another route (restart_route). A start with no argv to plan admits Personal only. tab: a tab agent's
+    start (a fork opens as one), which never starts on Azure (only a task's agent and an Assistant can). machine: where
+    it would run when that isn't here (`hc run --on`)."""
     binding = binding_for(s, space, d)
-    if replaces not in (None, PERSONAL):
-        raise Fail(RESTART_HELD.format("the agent it replaces started on Azure Foundry: restarting it Personal would move its "
-                                       "conversation to another provider"))
+    if tab:
+        # A tab agent (a fork opens as one) starts Personal only (A2): one continuing a conversation that started on
+        # another route, or any under a route here that isn't Personal, refuses with its own reason.
+        if restart is not None and (restart.get("route") or PERSONAL) != PERSONAL:
+            raise Fail(TAB_BOUND.format(who=restart.get("who") or "This agent"))
+        if binding["route"] != PERSONAL:
+            raise Fail(TAB_PERSONAL)
+    if restart is not None and argv and (resumes(argv) or restart.get("continues")):
+        who = restart.get("who") or "This agent"
+        if restart.get("bound") is None:
+            raise Fail(NO_BINDING.format(who=who))
+        plan = plan_of_record(restart["bound"], binding, agent_key(argv), who)
+        if plan["route"] != PERSONAL:
+            if machine:
+                raise Fail(NOT_EXECUTION_HOST.format(machine))
+            if not same_model(argv, restart.get("argv"), plan["deployment"]):
+                raise Fail(RESTART_MODEL.format(who=who, deployment=plan["deployment"]))
+        compose(plan, argv)
+        return plan
+    if restart is not None:
+        restart_route(restart.get("route"), restart.get("bound"), binding, agent_key(argv) if argv else "claude",
+                      restart.get("who") or "This agent")
     if binding["route"] == PERSONAL:
         return launch_plan(agent_key(argv) if argv else "claude", binding)
     if machine:
         raise Fail(NOT_EXECUTION_HOST.format(machine))
     if argv is None:
-        raise Fail(TAB_PERSONAL if tab else RESTART_HELD.format("Provider is Azure Foundry here"))
+        raise Fail(RESTART_HELD)
     plan = launch_plan(agent_key(argv), binding, "coordinator", deployment)
     compose(plan, argv)
     return plan
+
+
+def same_model(argv, old, deployment):
+    """Whether argv's model selection (Claude Code's --model, Codex's -m) is none, the recorded deployment, or the one
+    the replaced agent's own argv already named: anything else is a new choice a recorded binding would override."""
+    want = model_of(argv)
+    return want in (None, deployment, model_of(old or []))
 
 
 # What can outrank a plan on the execution host, so a plan shown here is never said to be what
@@ -638,7 +748,7 @@ def cmd_provider(args):
     azure = plan["route"] == AZURE
     out = {**plan, "argv": argv, "env": env, "dispatch": "planned" if azure else "pass-through",
            "revision": selection_revision(binding, kind),
-           "pending": ["restart and revival (L2)", "native qualification"] if azure else [],
+           "pending": ["fork (a window tab can't carry a plan)", "native qualification"] if azure else [],
            **({"outranked_by": precedence(kind)} if azure else {})}
     if getattr(args, "json", False):
         print(json.dumps(out))
@@ -653,6 +763,7 @@ def cmd_provider(args):
         f"Signs in with {how}.",
         f"Binding {plan['fingerprint'][:12]} (CLI, endpoint or resource, deployment and method; not an account).",
         "A task's start and an Assistant's new start use this plan and record its binding; a resume keeps the recorded "
-        "one. Restart and revival (L2) stay Personal only, and native qualification is pending.",
+        "one, and so do a restart and a revival that continue it (L2). A fork stays Personal only, and native "
+        "qualification is pending.",
         *[f"Can be outranked by {r['layer']}: {r['effect']} ({r['observed']})." for r in precedence(kind)],
         "This is a plan, not a check: no sign-in, credential or model request was tried. --json shows its argv and env."]))

@@ -1021,21 +1021,19 @@ export default class Chat extends View {
     const mine = t.address === this.addr;
     if (mine) { this.note = { id: `note-${Date.now()}`, text: WORDS.sessionGone }; cx.notify(); }
     try {
-      // An agent that started on Azure Foundry, or a route here that isn't Personal: a new start here can't carry a
-      // binding or a plan (L2, core/agents.js), so it is refused, asked of herdr-task's provider owner.
-      const held = agent.providerRefusal(t);
-      if (held) throw new Error(held);
       // fresh drops what its launch set, and a new start carries no CLAUDE_CONFIG_DIR (core/agents.js).
       const why = await agent.lostRefusal(kind, t, this.folderReader(t.address), mine ? this.path : null);
       if (why) throw new Error(why);
-      const shown = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, agent.routeArgs(t, t.address.includes("/") ? t.address.split("/")[0] : null))
-        .then((r) => (r.code === 0 ? JSON.parse(r.stdout || "null") : null), () => null).catch(() => null);
-      const off = agent.routeRefusal(shown);
-      if (off) throw new Error(off);
+      // Its provider and route are herdr-task's launch owner's to plan (L2): a binding it can't carry refuses there.
       if (t.state === "live") {
-        // hc send pastes the line into the shell and presses Enter.
-        const r = await hc(["send", t.address, [...fresh, msg].map(shellWord).join(" ")]);
-        if (r.code !== 0) throw new Error(refusal(r).message);
+        // The launch owner types it into the shell, as the tick's revival does (herdr-task launch revive --lost): the
+        // same owner, so it never comes back twice, claimed in the launch journal before anything is typed.
+        const [m, term] = t.address.includes("/") ? t.address.split("/") : [null, t.address];
+        const r = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, [...(m ? ["--on", m] : []), "launch", "revive", term, "--lost", "--json"]);
+        let said = null;
+        try { said = JSON.parse(r.stdout || "null"); } catch {}
+        if (r.code !== 0) throw new Error(said?.error || refusal(r).message);
+        if (said?.how === "none") throw new Error("It was brought back already, or an agent runs there.");
       } else {
         const pane = this.myPane();
         if (!mine || !pane) return;
@@ -2293,19 +2291,24 @@ export default class Chat extends View {
   fork(cx) {
     const session = agent.sessionOf(this.kind, this.path);
     if (!session) { toast({ title: "Can't fork", body: agent.inOtherFolder(this.kind, this.path) ? agent.OTHER_FOLDER : "This conversation has no saved session.", level: "info" }); return; }
-    // A fork copies its flags but no Azure Foundry binding or plan (L2): an Azure-started agent, or a route at its space
-    // that isn't Personal (herdr-task's provider owner says), is refused rather than run on the CLI's own sign-in.
-    const held = agent.providerRefusal(this.t);
-    if (held) { toast({ title: "Can't fork", body: held, level: "info" }); return; }
     const tab = panes().find((p) => p.pane === this.myPane())?.tab;
     const space = spaces().find((s) => s.tabs.some((x) => x.id === tab));
     const folder = this.t?.foreground?.cwd ?? this.t?.cwd ?? undefined;
-    const argv = agent.forkArgv(this.kind, this.argv, session), t = this.t;
+    const argv = agent.forkArgv(this.kind, this.argv, session), addr = this.addr;
     cx.spawn(async () => {
-      const shown = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, agent.routeArgs(t, this.machine))
-        .then((r) => (r.code === 0 ? JSON.parse(r.stdout || "null") : null), () => null).catch(() => null);
-      const off = agent.routeRefusal(shown);
-      if (off) { toast({ title: "Can't fork", body: off, level: "info" }); return; }
+      // herdr-task's launch owner admits it first (L2): a fork is a tab agent continuing this conversation, so it plans
+      // from the binding the agent recorded, and refuses in its own words what it can't carry (a conversation on Azure
+      // Foundry, as tab agents start Personal only) or a route changed since. The window then makes the tab.
+      const [m, term] = addr.includes("/") ? addr.split("/") : [null, addr];
+      const r = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, [...(m ? ["--on", m] : []), "launch", "run", "--role", "agent",
+        "--space", String(space?.id ?? "unplaced").split("/").pop(), "--slot", "fork", "--replaces", term, "--argv", JSON.stringify(argv),
+        "--check", "--json"]).catch(() => null);
+      if (!r || r.code !== 0) {
+        let why = null;
+        try { why = JSON.parse(r?.stdout || "null")?.error; } catch {}
+        toast({ title: "Can't fork", body: why || "herdr-task couldn't admit the fork now, so nothing was started.", level: "info" });
+        return;
+      }
       run("tab.new", { space: space?.id, folder, argv });
     });
   }
@@ -2721,9 +2724,8 @@ export default class Chat extends View {
     cx.spawn(async (cx) => {
       try {
         const t = JSON.parse((await hc(["get", this.addr, "--json"])).stdout);
-        // Restart can't carry an Azure Foundry binding yet (L2): one that started there is refused (core/agents.js).
-        const held = agent.providerRefusal(t);
-        if (held) throw new Error(held);
+        // Its provider binding is the launch owner's (L2): restart.sh and herdr-task switch plan it, and refuse what they
+        // can't carry.
         const why = await agent.restartRefusal(this.kind, t.foreground?.pid, this.folderReader(this.addr));
         if (why) throw new Error(why);
         const built = agent.argvFor(pick, { agent: this.kind, argv: t.foreground?.argv ?? [], session: agent.sessionOf(this.kind, this.path) });
@@ -2752,9 +2754,7 @@ export default class Chat extends View {
     cx.spawn(async (cx) => {
       try {
         const t = JSON.parse((await hc(["get", this.addr, "--json"])).stdout);
-        // Restart can't carry an Azure Foundry binding yet (L2): one that started there is refused (core/agents.js).
-        const held = agent.providerRefusal(t);
-        if (held) throw new Error(held);
+        // Its provider binding is herdr-task switch's to plan (L2), which refuses what it can't carry.
         const why = await agent.restartRefusal(this.kind, t.foreground?.pid, this.folderReader(this.addr));
         if (why) throw new Error(why);
         const k = this.taskKey;

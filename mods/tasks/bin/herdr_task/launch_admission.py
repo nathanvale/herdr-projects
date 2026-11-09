@@ -45,7 +45,8 @@ import types
 import uuid
 
 from .base import Fail, guard, HOME, now, run, STORE
-from .providers import admit_assistant, admit_launch, AZURE, PERSONAL, read_strict, STALE_SELECTION, STALE_TASK_CHOICE
+from .providers import (admit_assistant, admit_launch, AZURE, NO_BINDING, PERSONAL, read_strict, STALE_SELECTION,
+                        STALE_TASK_CHOICE)
 # TEMPLATES_DIR: herdr-core's templates folder (HERDR_TASK_TEMPLATES, else ~/.config/herdr-core/templates).
 from .settings import agent_key, bare, TEMPLATES as TEMPLATES_DIR
 
@@ -118,20 +119,31 @@ def _save(d):
         os.close(fd)
 
 
+# Whether this process holds the journal's lock now: a second open in the same process would wait on its own flock for
+# ever (two open files' locks conflict), so it refuses instead (a check inside a locked step must not read the journal).
+_HELD = []
+
+
 @contextlib.contextmanager
 def journal():
     """The journal under its own lock (machine-wide, apart from any task list's): changes made
     inside are saved when the block ends without an error, and dropped when it raises."""
+    if _HELD:
+        raise Fail("The launch journal was opened again inside its own locked step, which would wait for ever. Nothing "
+                   "was started.")
     os.makedirs(STORE, exist_ok=True)
     lock = open(os.path.join(STORE, ".launches.lock"), "a")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX)
+        _HELD.append(True)
         d = _load()
         before = json.dumps(d, sort_keys=True)
         yield d
         if json.dumps(d, sort_keys=True) != before:
             _save(d)
     finally:
+        if _HELD:
+            _HELD.pop()
         fcntl.flock(lock, fcntl.LOCK_UN)
         lock.close()
 
@@ -323,22 +335,7 @@ class Admission:
         carry its launch id."""
         if self.parent and parent_live and not parent_live(self.parent):
             raise Fail(PARENT_CHANGED.format(self.parent))
-        guard(["hc"])  # a refused environment sends nothing: refused while the claim is still unsent
-        changed = False
-        with journal() as d:
-            rec = d["launches"].get(self.launch)
-            if not rec or rec["state"] != NEVER or d["claims"].get(self.identity) != self.launch:
-                raise Fail(REVOKED.format(self.launch))
-            if self.revise() != self.revision:
-                rec.update(state=CANCELLED, reason="settings changed before it was sent", updated=now())
-                d["claims"].pop(self.identity, None)
-                changed = True
-            else:
-                rec.update(state=UNCERTAIN, sent_at=now(), updated=now(), **(record or {}))
-        if changed:
-            raise Fail(CHANGED.format("sent"))
-        self.sent = True
-        self._restore()
+        self._mark_sent(record)
         try:
             r = run(["hc", *hc_args])
         except (FileNotFoundError, PermissionError):
@@ -372,6 +369,57 @@ class Admission:
         e.launch = {"launch": self.launch, "identity": self.identity, "state": UNCERTAIN}
         raise e
 
+    def _mark_sent(self, record=None):
+        """The step before anything is sent: under the journal's lock the claim must still be this start's own (a
+        recovery revokes it) and its revision unchanged; it is then recorded submission-uncertain (with record's
+        facts). Settings changed meanwhile cancel it, and it refuses."""
+        guard(["hc"])  # a refused environment sends nothing: refused while the claim is still unsent
+        changed = False
+        with journal() as d:
+            rec = d["launches"].get(self.launch)
+            if not rec or rec["state"] != NEVER or d["claims"].get(self.identity) != self.launch:
+                raise Fail(REVOKED.format(self.launch))
+            if self.revise() != self.revision:
+                rec.update(state=CANCELLED, reason="settings changed before it was sent", updated=now())
+                d["claims"].pop(self.identity, None)
+                changed = True
+            else:
+                rec.update(state=UNCERTAIN, sent_at=now(), updated=now(), **(record or {}))
+        if changed:
+            raise Fail(CHANGED.format("sent"))
+        self.sent = True
+        self._restore()
+
+    def type_into(self, address, line, record=None, sender=None, written=None):
+        """Revival's send (L2): the agent's command line typed into its own kept terminal (`hc send`), the same steps
+        as submit() around it. hc's success confirms it (its terminal is the one it was typed into, so the claim is
+        released); anything else keeps it submission uncertain under its launch id, since the line may have been
+        pasted: nothing types it again until `launch reconcile` finds an agent running there. sender: what runs hc
+        (revive's own run); written(launch): marks the terminal handled, while this start still holds its claim, so
+        another sender that planned from the terminal as it was finds it changed (its revision) rather than a released
+        claim."""
+        self._mark_sent(dict(record or {}, terminal=address))
+        try:
+            r = (sender or run)(["hc", "send", address, line])
+        except (FileNotFoundError, PermissionError):
+            self._close(UNCERTAIN, CANCELLED, reason="hc could not be started")
+            raise Fail("hc could not be started, so nothing was typed. Nothing was started.")
+        except OSError:
+            r = types.SimpleNamespace(returncode=1, stdout="", stderr="hc's reply was lost")
+        if written:
+            written(self.launch)
+        if r.returncode == 0:
+            self._close(UNCERTAIN, CONFIRMED, address=address)
+            return {"launch": self.launch, "state": CONFIRMED, "address": address}
+        said = f"hc exited {r.returncode}"
+        self._close(UNCERTAIN, UNCERTAIN, reply=said)
+        e = Fail(f"hc didn't confirm typing {self.who} back into {address} ({said}), and it may have been typed anyway, "
+                 f"so it is kept as launch {self.launch}, submission uncertain. Nothing will type it again. "
+                 f"`herdr-task launch reconcile {self.identity} {self.launch}` confirms it once an agent runs there. "
+                 f"{HELD_UNCERTAIN}")
+        e.launch = {"launch": self.launch, "identity": self.identity, "state": UNCERTAIN}
+        raise e
+
     def _close(self, was, state, **facts):
         with journal() as d:
             rec = d["launches"].get(self.launch)
@@ -397,6 +445,15 @@ def labelled(lid):
     except (ValueError, AttributeError):
         return []
     return [k["address"] for k in rows if isinstance(k, dict) and k.get("address")]
+
+
+def revived_in(rec):
+    """A revival's positive evidence (launch reconcile): an agent runs now in the terminal its line was typed into.
+    Empty proves nothing (the line may still be starting, or the terminal can't be read)."""
+    from .agents import agent_running
+    from .base import hc_json
+    k = hc_json("get", rec["terminal"]) if rec.get("terminal") else None
+    return [rec["terminal"]] if k and k.get("state") == "live" and agent_running(k) else []
 
 
 def attach(rec):
@@ -482,12 +539,14 @@ def admit_task(s, task, argv, space, parent=None, role=None, select=None, resolv
             if task.get("selection_routing") != selection_revision(binding_for(s, space, d), agent_key(argv)):
                 raise Fail(STALE_TASK_CHOICE.format(who=s.ref(task)))
         plan = admit_launch(s, argv, space, d, "worker", chosen, bound, s.ref(task))
-        held["plan"] = plan
+        from .providers import binding_for
+        held["plan"], held["binding"] = plan, binding_for(s, space, d)
         return digest({"role": role or "task", "route": plan["route"], "fingerprint": plan["fingerprint"], "argv": list(argv),
                        "selected": select() if select else None, "space": bare(space) if space else None,
                        "config_dir": folder, "bound": (bound or {}).get("fingerprint") if bound is not None else None})
     adm = Admission(identity, role or "task", bare(space) if space else None, None, revise, who=s.ref(task))
-    adm.task, adm.config_dir, adm.plan = task, folder, held["plan"]
+    # binding: the settings' routing it was planned under (a restart's new conversation is checked against it).
+    adm.task, adm.config_dir, adm.plan, adm.binding = task, folder, held["plan"], held["binding"]
     # The argv chosen from settings a moment ago must still be what they choose: the revision binds both.
     if select and select() != list(argv):
         raise Fail(CHANGED.format("admitted"))
@@ -517,14 +576,72 @@ def space_binding(space):
     return binding_for(space_scope(space, d), space, d)
 
 
+# ---- the agent already in a terminal (L2: revival and restart) ------------------------------------
+
+def agent_identity(k):
+    """The launch identity of the agent in terminal k (hc get's record): the one its own starts are claimed under, a
+    task's agent (herdr.task; a reviewer's adds /reviewer), an Assistant (coordinator:local/<its space>), or any other
+    chat's agent, a tab agent (agent:local/<its space>/<its chat pane, else its tab, else its terminal>), each as
+    restart.sh names it. Revival is claimed under it too, so a revival and any start of the same agent fence each other
+    in the journal: one owner, never two agents."""
+    from .settings import ASSISTANT_TEMPLATES
+    labels = k.get("labels") or {}
+    if labels.get("herdr.task"):
+        return f"task:{labels['herdr.task']}" + ("/reviewer" if labels.get("herdr.role") == "reviewer" else "")
+    space = bare(str(labels.get("herdr.space") or labels.get("herdr.coordinator.space") or "")) or "unplaced"
+    if labels.get("herdr.role") == "coordinator" or k.get("template") in ASSISTANT_TEMPLATES:
+        return assistant_identity("coordinator", None, space)
+    slot = str(labels.get("herdr.chat") or labels.get("herdr.tab") or k.get("address") or "")
+    return assistant_identity("agent", None, space, slot if SLOT.fullmatch(slot) else "unnamed")
+
+
+def read_resume(k):
+    """The record revival keeps on terminal k (label herdr.resume, revive.py), or None."""
+    try:
+        rec = json.loads(((k.get("labels") or {}).get("herdr.resume")) or "null")
+    except (ValueError, TypeError):
+        return None
+    return rec if isinstance(rec, dict) else None
+
+
+def recorded_binding(k, task=None, resume=None):
+    """The nonsecret provider binding the agent in terminal k started on (providers.recorded's shape), from the first
+    owner that has it: its task's agent row (task: its task as read now), the copy revival keeps on its terminal
+    (resume: its herdr.resume record), then its start's journal record (its herdr.launch label). An agent whose
+    terminal says Personal (no herdr.provider label) with nothing else recorded is Personal. None when it started on
+    another route and no record of it is found, or two owners disagree on the route: never read as Personal."""
+    from .providers import PERSONAL_RECORD
+    labels = k.get("labels") or {}
+    route = labels.get("herdr.provider") or PERSONAL
+
+    def fits(b):
+        return isinstance(b, dict) and b.get("route") == route
+    if task is not None:
+        rows = (task.get("agents") or []) + (task.get("reviewers") or [])
+        row = next((a for a in rows if a.get("address") == k.get("address")), None)
+        if row is not None:
+            b = row.get("provider") or dict(PERSONAL_RECORD)
+            return b if fits(b) else None
+    if isinstance(resume, dict) and resume.get("provider") is not None:
+        return resume["provider"] if fits(resume["provider"]) else None
+    lid = labels.get(LABEL)
+    if route != PERSONAL and isinstance(lid, str) and LAUNCH_ID.fullmatch(lid):
+        with journal() as d:
+            rec = d["launches"].get(lid) or {}
+        b = rec.get("provider") or ((rec.get("task") or {}).get("agent") or {}).get("provider")
+        return b if fits(b) else None
+    return dict(PERSONAL_RECORD) if route == PERSONAL else None
+
+
 def admit_assistant_start(role, space, hc_args, slot=None, config_dir=None, argv=None, deployment=None, revision=None,
                           replaces=None):
     """Preflight for an Assistant's (role coordinator) or a tab agent's (role agent) start through hc_args, its `hc run`
     words. A new start (argv: the agent's own argv, `--new-start`) is planned: Personal as it always was, Azure
     Foundry for the Assistant's role here (providers.admit_assistant), and a chat's save-only choice (deployment)
-    must still be on the routing it was chosen under (revision). Any other start (a restart: L2) admits Personal
-    only, here or on the machine its --on names, and never replaces an agent that started on Azure (replaces: its
-    recorded route). An earlier start of the same space (and slot) still open refuses."""
+    must still be on the routing it was chosen under (revision). A restart or a fork (replaces: the replaced or forked
+    agent's recorded binding, route, argv and words, L2) continuing the same conversation plans from that binding, and
+    one starting a new conversation plans from today's settings as a new start does (providers.admit_assistant). An
+    earlier start of the same space (and slot) still open refuses."""
     machine = on_machine(hc_args)
     if machine is not None and not WORD.fullmatch(machine):
         raise Fail("`hc run --on` names a machine as a single word (letters, digits, dots, underscores, @ and dashes). "
@@ -541,10 +658,11 @@ def admit_assistant_start(role, space, hc_args, slot=None, config_dir=None, argv
             now = selection_revision(binding_for(s, space, d), agent_key(argv))
             if now != revision:
                 raise Fail(STALE_SELECTION.format(revision))
-        plan = admit_assistant(s, space, d, machine, argv, deployment, replaces, tab=role == "agent" and not replaces and not argv)
+        plan = admit_assistant(s, space, d, machine, argv, deployment, replaces, tab=role == "agent")
         held["plan"] = plan
         return digest({"role": role, "route": plan["route"], "fingerprint": plan["fingerprint"], "space": space,
-                       "machine": machine, "hc": list(hc_args), "argv": list(argv) if argv else None, "config_dir": config_dir})
+                       "machine": machine, "hc": list(hc_args), "argv": list(argv) if argv else None, "config_dir": config_dir,
+                       "bound": ((replaces or {}).get("bound") or {}).get("fingerprint")})
     identity = assistant_identity(role, machine, space, slot)
     adm = Admission(identity, role, space, machine, revise)
     adm.config_dir, adm.plan = config_dir, held["plan"]
@@ -558,6 +676,9 @@ def cmd_launch(args):
         return launch_run(args, say)
     if args.launch == "folder":
         return launch_folder(args, say)
+    if args.launch == "revive":
+        from .revive import cmd_revive
+        return cmd_revive(args, say)
     if args.launch == "status":
         if args.identity and not IDENTITY.fullmatch(args.identity):
             raise Fail("That isn't a launch identity: `herdr-task launch status` lists them.")
@@ -633,7 +754,7 @@ def reconcile(args, say, ident, lid):
             raise Fail(f"No start {lid} of {ident} in the launch journal.")
         state, held = rec["state"], d["claims"].get(ident) == lid
     if state == UNCERTAIN:
-        found = labelled(lid)
+        found = revived_in(rec) if rec.get("revival") else labelled(lid)
         with journal() as d:
             rec = d["launches"][lid]
             if rec["state"] == UNCERTAIN and len(found) == 1:
@@ -645,6 +766,8 @@ def reconcile(args, say, ident, lid):
             state, held = rec["state"], d["claims"].get(ident) == lid
         if state != CONFIRMED:
             why = (f"{len(found)} terminals carry its launch id ({', '.join(found)})" if found else
+                   f"no agent runs in {rec.get('terminal')}, which doesn't prove it was never typed there (herdr-core keeps "
+                   f"no receipt)" if rec.get("revival") else
                    "no terminal carries its launch id, which doesn't prove it never started (herdr-core keeps no receipt)")
             e = Fail(f"{ident} {lid} stays submission uncertain: {why}. Nothing was started or released. {HELD_UNCERTAIN}")
             e.launch = {"launch": lid, "identity": ident, "state": UNCERTAIN}
@@ -718,15 +841,28 @@ def template_argv(name, command):
     return words
 
 
-def write_one_off(source, body, argv, env, need, lid):
+def one_line_word(a):
+    """One argv word as POSIX shell words on a single line (a template's command is one line): quoted as it is, or one
+    holding a newline (a lost session's first message) rebuilt by printf in place, the same word, never split."""
+    import shlex
+    if "\n" not in a:
+        return shlex.quote(a)
+    fmt = a.replace("\\", "\\\\").replace("%", "%%").replace("'", "'\\''").replace("\n", "\\n")
+    return f'"$(printf \'{fmt}\')"'
+
+
+def write_one_off(source, body, argv, env, need, lid, config_dir=None):
     """An owner-written one-off template for an Azure Assistant start: the source template's words, and a command
-    that clears a parent Claude Code session's markers (launch.CLEAN_ENV), exports the plan's nonsecret variables,
-    starts the agent only when its credential variable is set (launch.provider_words), then execs the planned argv.
-    Named for its launch; removed once hc has run. Gives its name."""
+    that clears a parent Claude Code session's markers (launch.CLEAN_ENV), exports the plan's nonsecret variables (and
+    config_dir, the Claude Code folder a restart carries, as CLAUDE_CONFIG_DIR), starts the agent only when its
+    credential variable is set (launch.provider_words), then execs the planned argv. Named for its launch; removed once
+    hc has run. Gives its name."""
     import shlex
     from .launch import CLEAN_ENV, provider_words
     before, after = provider_words(env, need)
-    words = " ".join(shlex.quote(a) for a in argv)
+    if config_dir:
+        before = f"export CLAUDE_CONFIG_DIR={shlex.quote(config_dir)}; {before}"
+    words = " ".join(one_line_word(a) for a in argv)
     command = f"{CLEAN_ENV} {before}exec {words}; {after}exit 1" if after else f"{CLEAN_ENV} {before}exec {words}"
     name = f"herdr-{source}-az-{lid[:8]}"
     text = (f"---\nname: {name}\ndescription: A one-off Azure Foundry {source} start (herdr-task launch run), removed "
@@ -744,9 +880,10 @@ def launch_run(args, say):
     --json. A new start (--new-start WORD: the template word its hc words name) is planned: on
     Azure Foundry the owner writes its own one-off template from --source's words and the planned
     argv (--argv, else --source's command), puts it in WORD's place, labels the start with its
-    route and records its binding. --replaced-route: the route the agent a restart replaces
-    started on (L2: only Personal is restarted)."""
-    from .providers import compose, recorded
+    route and records its binding. --replaces: the terminal of the agent a restart replaces (L2):
+    continuing its conversation plans from its recorded binding (recorded_binding), a new one from
+    today's settings; on Azure the restart's own one-off is WORD (--new-start) and --argv its argv."""
+    from .providers import compose, recorded, resumes
     words = list(args.hc_args or [])
     if words[:1] == ["--"]:
         words = words[1:]
@@ -766,13 +903,20 @@ def launch_run(args, say):
            for a in options_of(words)):
         raise Fail("A start's launch and provider labels are the launch owner's own: leave them out.")
     new = getattr(args, "new_start", None)
-    if (getattr(args, "argv", None) or getattr(args, "deployment", None) or getattr(args, "revision", None)) and not new:
-        raise Fail("--argv, --deployment and --revision are for a new start (--new-start).")
+    old = getattr(args, "replaces", None)
+    if old is not None and not SLOT.fullmatch(old):
+        raise Fail("--replaces names the terminal of the agent a restart replaces.")
+    if (getattr(args, "deployment", None) or getattr(args, "revision", None)) and not new:
+        raise Fail("--deployment and --revision are for a new start (--new-start).")
+    if getattr(args, "argv", None) and not (new or old):
+        raise Fail("--argv is for a new start (--new-start) or a restart (--replaces).")
+    if getattr(args, "continues", False) and not old:
+        raise Fail("--continues is for a restart (--replaces): it says the start continues the agent it replaces.")
     if new and args.role != "coordinator":
         raise Fail("A new start's plan is an Assistant's (--role coordinator).")
     argv = None
     source = getattr(args, "source", None) or "assistant"
-    if new:
+    if new or old:
         if getattr(args, "argv", None):
             try:
                 argv = json.loads(args.argv)
@@ -780,11 +924,20 @@ def launch_run(args, say):
                 argv = None
             if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
                 raise Fail("--argv is the agent's argv as a JSON list of words.")
-    # The agent a restart replaces: the route its start recorded on its terminal (label herdr.provider; restart.sh
-    # reads it with the rest of the old agent). Empty: Personal (started before A2, or Personal).
-    replaces = (getattr(args, "replaced_route", None) or "").strip() or None
-    if replaces and not WORD.fullmatch(replaces):
-        raise Fail("--replaced-route is the route the replaced agent's start recorded.")
+    # The agent a restart replaces (L2): the binding its start recorded (its task's row, revival's copy on its terminal
+    # or its start's journal record), which continuing its conversation keeps. A terminal that can't be read refuses:
+    # its binding is never guessed.
+    replaces = None
+    if old is not None:
+        from .base import hc_json
+        k = hc_json("get", old)
+        if not isinstance(k, dict):
+            raise Fail(f"The agent this restart replaces ({old}) can't be read, so the binding it started on can't be "
+                       f"known. Nothing was started or changed.")
+        replaces = {"bound": recorded_binding(k, None, read_resume(k)), "who": f"The agent in {old}",
+                    "continues": bool(getattr(args, "continues", False)),
+                    "route": (k.get("labels") or {}).get("herdr.provider") or PERSONAL,
+                    "argv": (k.get("foreground") or {}).get("argv") or k.get("argv") or []}
     if not args.check and not words:
         raise Fail("Give the hc run words after \"--\".")
     # An Azure new start without its own argv runs its source template's command, planned; a Personal one keeps
@@ -792,7 +945,7 @@ def launch_run(args, say):
     if new and argv is None and on_machine(words) is None and space_binding(space)["route"] == AZURE:
         argv = template_argv(source, read_template(source)[0])
     adm = admit_assistant_start(args.role, space, words, args.slot if args.role == "agent" else None, folder,
-                                (argv or ["claude"]) if new else None, getattr(args, "deployment", None),
+                                (argv or ["claude"]) if new else argv, getattr(args, "deployment", None),
                                 getattr(args, "revision", None), replaces)
     azure = adm.plan["route"] == AZURE
     if azure and argv is None:
@@ -802,7 +955,14 @@ def launch_run(args, say):
     if args.check:
         # Preflight only, before the start site changes anything: its route and an earlier start still open.
         return say(args, {"admitted": True, "identity": adm.identity, "route": adm.plan["route"]}, f"{adm.identity}: admitted.")
+    if azure and not new:
+        # A restart (restart.sh) gives its one-off template's word only once its check said Azure: Personal there and
+        # Azure now means the settings changed between the two. Refused before anything is claimed or sent.
+        raise Fail(CHANGED.format("planned"))
     if azure and words.count(new) != 1:
+        if old is not None:
+            # A restart whose check said Personal runs its own template word, not --new-start's: the settings changed.
+            raise Fail(CHANGED.format("planned"))
         raise Fail("--new-start names the template word its hc run words give once. Nothing was started.")
     made = None
     try:
@@ -811,10 +971,15 @@ def launch_run(args, say):
             extra = adm.label() + ([] if "--json" in options_of(words) else ["--json"])
             if azure:
                 cmd, env = compose(adm.plan, argv)
-                made = write_one_off(source, read_template(source)[1], cmd, env, adm.plan.get("credential"), adm.launch)
+                made = write_one_off(source, read_template(source)[1], cmd, env, adm.plan.get("credential"), adm.launch,
+                                     folder)
                 sent[sent.index(new)] = made[0]
                 extra += ["--label", f"herdr.provider={adm.plan['route']}"]
-            out = adm.submit(["run", *extra, *sent], record={"provider": recorded(adm.plan)} if azure else None)
+            facts = {"provider": recorded(adm.plan)} if azure else {}
+            if replaces and replaces["continues"] and not resumes(argv or []):
+                # A lost session started anew behind its chat: missing history, said so, never a resume (L2).
+                facts["missing_history"] = True
+            out = adm.submit(["run", *extra, *sent], record=facts or None)
     finally:
         if made:
             try:

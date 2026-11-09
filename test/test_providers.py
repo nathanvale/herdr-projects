@@ -59,7 +59,7 @@ FP = {"entra-id": "b4ff5e524c831cf3eb23385562a1e07606b2f98a18ab17b71030acd4286ad
       "codex": "44e019ec9ff5b99ccb91a33d83e95ec6c5d75bfd66c5d3b91e6bd7bb6fe9169b",
       "space": "05c67c012ea6fc16ea0739ba8dbffac40c853fd73df3a2ac9acfc646e756536c"}
 # What an Azure plan still waits for since A2 (restart and revival stay Personal only):
-PENDING = ["restart and revival (L2)", "native qualification"]
+PENDING = ["fork (a window tab can't carry a plan)", "native qualification"]
 # Settings' start limits off: the runner's own load, memory or disk never decides what a tick starts.
 ROOM = {"machine": {"start_load": None, "start_memory": None, "start_disk": None}}
 INLINE = "marker-inline-credential-3b9d"
@@ -546,22 +546,77 @@ class AzureStartsBound(unittest.TestCase):
         self.assertNotIn("provider", f.task(tid)["agents"][-1])
         f.settle(2, tid=tid)
 
-    def test_a_model_menus_restart_stays_personal_only(self):
+    def test_a_model_menus_restart_carries_the_recorded_binding(self):
+        """L2: the window's and the web's Restart (herdr-task switch --restart) continue a recorded Azure conversation on
+        its own binding, as resume does: its deployment survives a changed default, a different model the menu named
+        is refused rather than silently replaced, and a new conversation is never moved to another route."""
         f = Fixture(self)
         tid = self.start(f, {"route": "azure-foundry", **CLAUDE})
         f.settle(tid=tid)
+        f.give_session(tid, "66666666-7777-4888-8999-aaaaaaaaaaaa")
+        f.provider({"route": "azure-foundry", **CLAUDE, "claude_deployment": "new-default"})
         before = f.snapshot()
-        why = f.refused("switch", str(tid), "--folder", f.repo, "--space", "sp1", "--restart")
-        self.assertIn("can't carry an Azure Foundry binding yet", why)
+        why = f.refused("switch", str(tid), "--folder", f.repo, "--space", "sp1", "--restart",
+                        "--argv", json.dumps(["claude", "--model", "other-model"]))
+        self.assertIn("recorded on Azure Foundry deployment claude-deployment", why)
         f.nothing_started(before)
-        # A Personal agent under Azure settings: what it would start isn't Personal either.
+        out = f.ok("switch", str(tid), "--folder", f.repo, "--space", "sp1", "--restart",
+                   "--argv", json.dumps(["claude", "--model", "claude-deployment", "--effort", "high"]))
+        self.assertTrue(out["resumed"])
+        _, agent = f.agent_words(f.launches()[-1])
+        self.assertEqual(agent[agent.index("--model") + 1], "claude-deployment")
+        self.assertEqual(agent[agent.index("--effort") + 1], "high")
+        self.assertEqual(agent[agent.index("--resume") + 1], "66666666-7777-4888-8999-aaaaaaaaaaaa")
+        self.assertEqual(json.loads(agent[agent.index("--settings") + 1])["env"], claude_env("claude-deployment"))
+        self.assertNotIn("new-default", json.dumps(agent))
+        self.assertEqual(f.task(tid)["agents"][-1]["provider"], record())
+        f.settle(2, tid=tid)
+        f.no_secret()
+        # A Personal agent with no conversation to continue, under Azure settings now: a new conversation there would
+        # move its work to another provider, so nothing starts.
         g = Fixture(self)
         tid = self.start(g, {"route": "personal"})
         g.settle(tid=tid)
         g.provider({"route": "azure-foundry", **CLAUDE})
         before = g.snapshot()
-        self.assertIn("Provider is Azure Foundry here", g.refused("switch", str(tid), "--folder", g.repo, "--space", "sp1", "--restart"))
+        self.assertIn("would move its work to another provider",
+                      g.refused("switch", str(tid), "--folder", g.repo, "--space", "sp1", "--restart"))
         g.nothing_started(before)
+
+    def test_a_codex_restart_carries_its_own_provider_table_once(self):
+        """The window's and the web's restart build Codex's argv from the running agent's own (core/agents.js kept()),
+        which carries the provider table its start put there: the owner takes exactly that table off and puts it back
+        once, keeping effort and Fast, instead of refusing it as the argv's own provider (L2)."""
+        f = Fixture(self)
+        # Started as Codex (the worker settings' CLI is Claude Code, which this binding doesn't set up).
+        own = ["codex", "--no-daemon", "-c", 'model_reasoning_effort="high"', "-c", 'service_tier="fast"']
+        tid = self.start(f, {"route": "azure-foundry", **CODEX}, "--argv", json.dumps(own))
+        f.settle(tid=tid)
+        f.give_session(tid, "77777777-8888-4999-8aaa-bbbbbbbbbbbb")
+        table = f.plan("--agent", "codex")["args"]
+        argv = ["codex", *table, "--no-daemon", "-m", "code-deployment", "-c", 'model_reasoning_effort="high"', "-c", 'service_tier="fast"']
+        out = f.ok("switch", str(tid), "--folder", f.repo, "--space", "sp1", "--restart", "--argv", json.dumps(argv))
+        self.assertTrue(out["resumed"])
+        _, agent = f.agent_words(f.launches()[-1])
+        ident = "shepherdr_azure_" + FP["codex"]
+        self.assertEqual(agent.count(f'model_provider="{ident}"'), 1)
+        self.assertEqual(agent[1:3], ["-c", f'model_provider="{ident}"'])
+        self.assertEqual((agent.count("-m"), agent[agent.index("-m") + 1]), (1, "code-deployment"))
+        self.assertEqual(agent[-5:], ["-c", 'model_reasoning_effort="high"', "-c", 'service_tier="fast"', "77777777-8888-4999-8aaa-bbbbbbbbbbbb"])
+        f.settle(2, tid=tid)
+        # A new conversation after the default deployment changed: the old binding's table (in Shepherdr's own provider
+        # namespace) comes off, and today's goes on once, on the new deployment.
+        f.provider({"route": "azure-foundry", **CODEX, "codex_deployment": "new-default"})
+        new = f.plan("--agent", "codex")["args"]
+        self.assertNotEqual(new, table)
+        out = f.ok("switch", str(tid), "--folder", f.repo, "--space", "sp1", "--restart", "--fresh", "--argv", json.dumps(argv))
+        self.assertFalse(out["resumed"])
+        _, agent = f.agent_words(f.launches()[-1])
+        self.assertEqual(agent[1:5], new)
+        self.assertEqual(sum(1 for a in agent if a.startswith("model_provider=")), 1)
+        self.assertEqual(agent[agent.index("-m") + 1], "new-default")
+        f.settle(3, tid=tid)
+        f.no_secret()
 
     def test_an_automation_starts_its_task_on_the_plan(self):
         f = Fixture(self)
@@ -984,7 +1039,7 @@ class LaunchPlans(unittest.TestCase):
         p = f.run("provider", "plan", "--folder", f.repo, "--agent", "claude")
         self.assertEqual((p.returncode, p.stderr), (0, ""))
         for words in ("claude: Azure Foundry, deployment claude-deployment, API key.", "the ANTHROPIC_FOUNDRY_API_KEY variable on the execution host",
-                      "Restart and revival (L2) stay Personal only", "no sign-in, credential or model request was tried"):
+                      "a restart and a revival that continue it (L2)", "A fork stays Personal only", "no sign-in, credential or model request was tried"):
             self.assertIn(words, p.stdout)
         p = f.run("provider", "plan", "--help")
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -1116,20 +1171,32 @@ class Binding(unittest.TestCase):
         self.assertTrue(row["reason"].startswith("Out of allowance, backup held: Codex"), row["reason"])
         self.assertLessEqual(len(row["reason"]), 40)
 
-    def test_revival_holds_an_agent_whose_route_or_start_isnt_personal(self):
-        """revive.plan (L2's site): a lost Assistant is typed back on Personal only. Under an Azure route at its space,
-        or with an Azure-started label, it is held, never started on the CLI's own sign-in."""
+    def test_revival_comes_back_on_its_recorded_binding_or_is_held(self):
+        """revive.plan (L2): a lost Assistant is typed back on the binding its start recorded, planned by the provider
+        owner against today's routing. Personal stays Personal; a Personal conversation under an Azure route now, or an
+        Azure-started one whose binding can't be found, is held with its reason, never started on another provider."""
         import herdr_task.revive as revive
+        p = self.mock.patch.object(revive, "template_of", lambda name="assistant": ("claude", None))
+        p.start()
+        self.addCleanup(p.stop)
         k = {"address": "t1", "pid": 7, "argv": ["/bin/zsh"], "labels": {"herdr.role": "coordinator", "herdr.coordinator.space": "sp1"}}
         rec = {"kind": "claude", "session": "s1", "log": "/nonexistent/s1.jsonl", "argv": ["claude"], "pid": 1}
-        for provider, label, held in (({"route": "personal"}, None, False), ({"route": "azure-foundry", **CLAUDE}, None, True),
-                                      ({"route": "personal"}, "azure-foundry", True)):
+        for provider, label, words in (({"route": "personal"}, None, None),
+                                       ({"route": "azure-foundry", **CLAUDE}, None, "would move it to another provider"),
+                                       ({"route": "personal"}, "azure-foundry", "it is never moved to Personal")):
             with self.subTest(route=provider["route"], label=label):
                 with open(self.file, "w") as f:
                     json.dump({"everywhere": {"provider": provider}}, f)
                 labels = {**k["labels"], **({"herdr.provider": label} if label else {})}
                 step = revive.plan({**k, "labels": labels}, dict(rec), set())
-                self.assertEqual(step is not None and step[0] == "held", held, step)
+                if words is None:
+                    # Its log is gone: a new conversation (missing history) on Personal, nothing added to its line.
+                    self.assertEqual((step[0], step[3]["plan"]["route"], step[3]["env"], step[3]["previous"]),
+                                     ("fresh", "personal", {}, "s1"))
+                    self.assertNotIn("--resume", step[1])
+                else:
+                    self.assertEqual(step[0], "held", step)
+                    self.assertIn(words, step[1])
         # Settings that can't be read now (a write in flight, say): nothing typed and nothing recorded, so the next
         # tick looks again rather than holding a Personal agent for good.
         with open(self.file, "w") as f:
@@ -1142,8 +1209,33 @@ class Binding(unittest.TestCase):
         self.assertEqual(step[0], "held")
         self.assertIn("settings' provider section", step[1])
 
+    def test_revival_of_an_azure_assistant_resumes_on_its_recorded_deployment(self):
+        """The copy of its binding revival keeps on its terminal (herdr.resume's provider) is planned again: the recorded
+        deployment survives a changed default, and Claude Code's Foundry environment is rebuilt into its --settings."""
+        import herdr_task.revive as revive
+        log = os.path.join(tempfile.mkdtemp(), "s1.jsonl")
+        open(log, "w").close()
+        with open(self.file, "w") as f:
+            json.dump({"everywhere": {"provider": {"route": "azure-foundry", **CLAUDE, "claude_deployment": "new-default"}}}, f)
+        k = {"address": "t1", "pid": 7, "argv": ["/bin/zsh"],
+             "labels": {"herdr.role": "coordinator", "herdr.coordinator.space": "sp1", "herdr.provider": "azure-foundry"}}
+        rec = {"kind": "claude", "session": "s1", "log": log, "argv": ["claude", "--effort", "high"], "pid": 1, "shell": True,
+               "provider": record()}
+        how, argv, direct, carry = revive.plan(k, dict(rec), set())
+        self.assertEqual((how, direct, carry["plan"]["deployment"], carry["need"]), ("resume", False, "claude-deployment", None))
+        self.assertEqual(argv[argv.index("--model") + 1], "claude-deployment")
+        self.assertEqual(json.loads(argv[argv.index("--settings") + 1])["env"], claude_env("claude-deployment", None))
+        self.assertEqual(argv[-2:], ["--resume", "s1"])
+        self.assertIn("--effort", argv)
+        # Its routing changed since (another resource): held with the reason, nothing planned onto it.
+        with open(self.file, "w") as f:
+            json.dump({"everywhere": {"provider": {"route": "azure-foundry", **CLAUDE, "claude_resource": "other"}}}, f)
+        step = revive.plan(k, dict(rec), set())
+        self.assertEqual(step[0], "held")
+        self.assertIn("Azure Foundry other with Entra ID", step[1])
+
     def test_revival_reads_the_settings_once(self):
-        """personal_here reads the file once and judges both answers from that read: a second read landing mid-write
+        """binding_here reads the file once and judges every answer from that read: a second read landing mid-write
         would otherwise hold a Personal agent for good as a lasting fault."""
         import herdr_task.launch_admission as LA
         import herdr_task.providers as providers
@@ -1157,13 +1249,13 @@ class Binding(unittest.TestCase):
             if len(reads) > 1:
                 raise self.p.Fail("mid-write")
             return real(path)
-        # Both names a read could go through: providers' own, and the copy launch admission imported (space_binding's,
-        # which the two-read version used for its second read): with only the first patched it would pass without the fix.
+        # Both names a read could go through: providers' own, and the copy launch admission imported.
         for module in (providers, LA):
             p = self.mock.patch.object(module, "read_strict", once)
             p.start()
             self.addCleanup(p.stop)
-        self.assertIs(revive.personal_here({"herdr.coordinator.space": "sp1"}), True)
+        k = {"address": "t1", "labels": {"herdr.coordinator.space": "sp1"}}
+        self.assertEqual(revive.binding_here(k, None, None, "claude")["route"], "personal")
         self.assertEqual(len(reads), 1)
 
     def test_an_assistants_route_that_turns_azure_between_reads_is_refused_not_a_traceback(self):
@@ -1181,7 +1273,7 @@ class Binding(unittest.TestCase):
             self.addCleanup(p.stop)
         args = T.SimpleNamespace(role="coordinator", space="sp1", slot=None, config_dir=None, check=False, json=True,
                                  hc_args=["--", "--bg", "assistant", "hello"], new_start="assistant", source="assistant",
-                                 argv=None, deployment=None, revision=None, replaced_route=None)
+                                 argv=None, deployment=None, revision=None, replaces=None)
         with self.assertRaises(self.p.Fail) as e:
             LA.launch_run(args, lambda *a: None)
         self.assertIn("changed before it was planned", str(e.exception))

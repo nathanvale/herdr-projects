@@ -11,7 +11,7 @@ import * as AG from "../core/agents.js";
 import { kindOf } from "../core/chat-reader.js";
 import { FOLDER } from "../core/chat-log.js";
 
-const { DEFAULTS, parseDefaults, current, menuFor, rowFor, argvFor, sessionOf, inOtherFolder, OTHER_FOLDER, restartRefusal, lostRefusal, providerRefusal, NAMES, line, PICKS_FILE, parsePicks, pickKey, withPin, withRecent } = AG as any;
+const { DEFAULTS, parseDefaults, current, menuFor, rowFor, argvFor, sessionOf, inOtherFolder, OTHER_FOLDER, restartRefusal, lostRefusal, NAMES, line, PICKS_FILE, parsePicks, pickKey, withPin, withRecent } = AG as any;
 const APP = process.env.HERDR_APP_HOME || join(HOME, ".config", "herdr-app");
 
 async function run(cmd: string[]) {
@@ -144,10 +144,8 @@ export class Agents {
     const kind = kindOf(t) ?? "claude";
     // Both ways below end it and start one without its CLAUDE_CONFIG_DIR, as the window's picker refuses (core/agents.js).
     if (inOtherFolder(kind, reader?.path ?? null)) throw new Error(OTHER_FOLDER);
-    // A restart can't carry an Azure Foundry binding yet (L2): one that started there is refused (core/agents.js), and
-    // herdr-task switch --restart refuses a non-Personal route for what it would start.
-    const held = providerRefusal(t);
-    if (held) throw new Error(held);
+    // Its provider binding is the launch owner's (L2): herdr-task switch --restart and restart.sh keep the binding a
+    // continued conversation recorded, plan a new one from today's settings, and refuse what they can't carry.
     const why = await this.folderRefusal(addr, t);
     if (why) throw new Error(why);
     const old = { agent: kind, argv: t.foreground?.argv ?? t.argv ?? [], session: sessionOf(kind, reader?.path ?? null) };

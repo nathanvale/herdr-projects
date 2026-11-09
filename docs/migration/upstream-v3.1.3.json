@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "phase": "A2",
+  "phase": "L2",
   "architecture": "full-upstream-3.x",
   "candidate_readiness": "blocked",
   "inputs": {
@@ -29,16 +29,16 @@
       "sha256": "29a393ecd604f70bb599538463e18680d4668daf851c5a41148b518ceb22c69d"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/cli.py",
       "upstream_blob": "af0c7d2ee16ea26fa1fa458020f6d9181d78774d",
-      "sha256": "bb39be08135645dc3ccadf035bafea13645c30d79025d0100a4103809ec269c6"
+      "sha256": "7eab9b79e2e59d78d675a54ef02da2498be7e436f1a8dce4148ebc3678ff7800"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "d2463e1a37c0aeefaee51eec7480d3de3df1f40d",
-      "sha256": "2c7d5802be4953861ca3d794069207b01934bf11da90e0d08df13a578d63391f"
+      "sha256": "cd90508ac0f59ff417090d83a910bd8ac8f925d568de4dce3da5d43fc37813ee"
     },
     {
       "phase": "B1",
@@ -53,10 +53,10 @@
       "sha256": "c5de059ccaea714c67e1328eb84a88f786fa41396438fd3ce469ac753a0c39c4"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/providers.py",
       "upstream_blob": null,
-      "sha256": "86317c7bd7d6d7494429bd460f0479ddff6f6b847cb14550637c13dec0fd49d1"
+      "sha256": "116bdf3275df2683c3bf0080838ae74374ac1068583ff3049c9c1322451ed1e9"
     },
     {
       "phase": "L1",
@@ -89,10 +89,10 @@
       "sha256": "ed74e094fe3c3411b5f8af21af848bbe6b65cdc4573ff162d07ccb8ebeb15afc"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "82cfa36fd73760a95a88b6d07a09e9cc03dfa167",
-      "sha256": "f6a8cdcd83a4a730565df54e436a6499cd765f090ae078d50195dd49075585d1"
+      "sha256": "b4b75ae2a65efdda7bde5d2a6b04827d68f9882bde4c4e8eae448fd1fe3fe24c"
     },
     {
       "phase": "B2",
@@ -101,10 +101,10 @@
       "sha256": "6029cb7c77a0b1c3db33ee76cd88fc264f56f63bf27f44320b3bf9785f851b4b"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "ce901348fe5aaafe68b5267718916900c3389d8d1853eabc401274677192bccf"
+      "sha256": "ccfe53727eb8f5dc3b594cfeb59874513575fb2ec6ae135a0d1929652f3d0086"
     },
     {
       "phase": "A2",
@@ -113,10 +113,10 @@
       "sha256": "a56246e5d4271d1ba7a211db0e24d0943a2246fadf2a26a81b50812a0529720c"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "core/chat-find.test.js",
       "upstream_blob": null,
-      "sha256": "cf78bc788d374e7a2524e90e01afe2bd1d67049607eb8c14d6cf69b43c8cd18f"
+      "sha256": "9b3b8ae4a7b274e411df98160ad53f57cb387a19a497b700cee822f815f243f9"
     },
     {
       "phase": "C1",
@@ -137,10 +137,10 @@
       "sha256": "851713bb6a5b48a2f581a7a2d3b197703272536804a0f69ec596026efceac778"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "mods/chat/main.js",
       "upstream_blob": "4cdd115719ff5ea07827776304cd093aec0f11b3",
-      "sha256": "7fa297e36768c9c94c52119916e7bc7b9d83e2fe6b7c7be12f2a524f51bcbc36"
+      "sha256": "1451fe32770fd64d6490953e8c441cd20df0cfba7d33ffc65041c56772980a10"
     },
     {
       "phase": "A2",
@@ -173,28 +173,28 @@
       "sha256": "89832c671ca9a4dd5c19a93df568aa06c29a7ffcf5fcc9ca09df511bb16d42fe"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "service/actions.ts",
       "upstream_blob": "3151c718fa60aa19e317cf3a61b6b11541573ef2",
-      "sha256": "cf7b6b09b6bff556b463d407e8e0d35283f7efb5868ca97e84598bd2a9c96c61"
+      "sha256": "f2af3d0d766e33da5be025bd0bce0a2db59364b844c75f549c307ae0477cd028"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "service/agents.ts",
       "upstream_blob": "485c1f38b787d9c40f2a84fb87441f9e37e8cf8d",
-      "sha256": "a24f7a12b641a77f4db70279804d1c4f54ee9f233429e49098f28c5f3a256bf1"
+      "sha256": "78cc29b5624e592d72c2c2f59a4f7848f9ae89689385ffb33ace4f2c48ae02a7"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "service/watch.ts",
       "upstream_blob": "7e38406d2becbab5a05014de9afa229d7250f160",
-      "sha256": "bbb1f37771e1122d652a509d2d6c0b74cbf1c2cd4c34dfae1aff129fafd88566"
+      "sha256": "b31f3e055b226ce572437228ef96f2a9b5976d7dde7e7e239fd4fd63b3a059bf"
     },
     {
-      "phase": "C1",
+      "phase": "L2",
       "path": "test/test_session_discovery.py",
       "upstream_blob": null,
-      "sha256": "a358820e2ff62079a8cf06ce5454bfc66478ee8bf909bb385d21a884b69e81e4"
+      "sha256": "878b6974f9cfe782a3c1ca6fe215c1563170e3c14b11e0e63216e267d4b0c9cf"
     },
     {
       "phase": "W1",
@@ -335,16 +335,16 @@
       "sha256": "e58611687e7c1eca2fbda340673e0d13db42bf2fd381a23b8692efcdb90b3240"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "mods/coordinator/restart.sh",
       "upstream_blob": "3e19fcf877ae17eac7ae88e86b29279aa70fd2de",
-      "sha256": "d36cc9a850bd9b4b2e12ecd07abb1141e0d7c5da3f630ed4d8fe64253b24bc28"
+      "sha256": "cfd7e6c97e49cb893108a7e5d749b72e914c7f1ac7f080079305517f528ca7fe"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/launch_admission.py",
       "upstream_blob": null,
-      "sha256": "ff540f68b6c185553a9879a249eeca50c87b081ca659d4bfe49366567f410747"
+      "sha256": "9c7e90bede3dc9a6cc8d641b08e52fa9c777d232c3cdd8e3cf925d9c52cb1acd"
     },
     {
       "phase": "A2",
@@ -365,10 +365,10 @@
       "sha256": "7063988e5cf5d18cbfb5b77876184be53205df3e553dec969f17d753fb7efa63"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "test/test_launch_admission.py",
       "upstream_blob": null,
-      "sha256": "3588d71573d3ca0489bb3b9bf24a94254aad2382144c17a393cc2cfd0eedaaf3"
+      "sha256": "b333cfebed5418de91925fbda21bd1f6875a258895b4b3d1baa3e67b37c735b9"
     },
     {
       "phase": "L1",
@@ -383,16 +383,16 @@
       "sha256": "f824ed1493c56b3717777dd43ccb9b14a53363bbfd0a57447dedee78f2dc5039"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "lib/agent.js",
       "upstream_blob": "55fa97c8fda93efde489cb42efb7fbc49199b32f",
-      "sha256": "178803ddfe50cbdc0d84c5bc383b292d8742d05b77508cd0d5347c06f1acc02e"
+      "sha256": "c5f3828f7ebafc71b7dd859927895b664379dca5c197a5ffd86f06f8b8c0fcbe"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "mods/chat/agent.js",
       "upstream_blob": "55fa97c8fda93efde489cb42efb7fbc49199b32f",
-      "sha256": "178803ddfe50cbdc0d84c5bc383b292d8742d05b77508cd0d5347c06f1acc02e"
+      "sha256": "c5f3828f7ebafc71b7dd859927895b664379dca5c197a5ffd86f06f8b8c0fcbe"
     },
     {
       "phase": "A2",
@@ -407,10 +407,10 @@
       "sha256": "f824ed1493c56b3717777dd43ccb9b14a53363bbfd0a57447dedee78f2dc5039"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "mods/newspace/agent.js",
       "upstream_blob": "55fa97c8fda93efde489cb42efb7fbc49199b32f",
-      "sha256": "178803ddfe50cbdc0d84c5bc383b292d8742d05b77508cd0d5347c06f1acc02e"
+      "sha256": "c5f3828f7ebafc71b7dd859927895b664379dca5c197a5ffd86f06f8b8c0fcbe"
     },
     {
       "phase": "A2",
@@ -419,10 +419,10 @@
       "sha256": "f824ed1493c56b3717777dd43ccb9b14a53363bbfd0a57447dedee78f2dc5039"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "mods/shepherdr-settings/agent.js",
       "upstream_blob": "55fa97c8fda93efde489cb42efb7fbc49199b32f",
-      "sha256": "178803ddfe50cbdc0d84c5bc383b292d8742d05b77508cd0d5347c06f1acc02e"
+      "sha256": "c5f3828f7ebafc71b7dd859927895b664379dca5c197a5ffd86f06f8b8c0fcbe"
     },
     {
       "phase": "A2",
@@ -443,10 +443,10 @@
       "sha256": "a3d4a4f5d6c22fff8fabfb7c38d951f7199f3064517e4437e59352fd8e5caf6e"
     },
     {
-      "phase": "A2",
+      "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/revive.py",
       "upstream_blob": "1ed629e083e5ede0f620e0be32c2ccc08bffb0c3",
-      "sha256": "c8a84c88e2ff295fd8786b7e091b4edce0fd1c16e2c407b6d152145a1762487b"
+      "sha256": "996c2a924483f787b1d30ca45f88c623ec958cc8965ef6d6dffa7e7502a9b412"
     },
     {
       "phase": "A2",
@@ -567,6 +567,12 @@
       "path": "mods/tasks/core/tasks.js",
       "upstream_blob": "e5dfe39ceadc5def209d37b562279c3f3df2fb07",
       "sha256": "a3f733546b43133d115dc4d7ab790dc5e50323c4ae4c405c4438896ff0fe02b1"
+    },
+    {
+      "phase": "L2",
+      "path": "test/test_native_restart.py",
+      "upstream_blob": null,
+      "sha256": "64988a938926f64566f666107bc6b2cd7e375d48b18750d6cba3948dace8f603"
     }
   ],
   "requirements": [
@@ -836,7 +842,7 @@
         "test/core-bitbucket-cli.test.ts",
         "test/core-bitbucket.test.ts"
       ],
-      "evidence": "source-inspected; B2's Ready admits exactly the branch's commit here and re-checks it, Bitbucket's head and the remote's views before each effect (test/test_bitbucket_publication.py authored, CI pending); Accept's exact-head admission is B1's and L2's; native qualification pending"
+      "evidence": "source-inspected; B2's Ready admits exactly the branch's commit here and re-checks it, Bitbucket's head and the remote's views before each effect (test/test_bitbucket_publication.py authored, CI pending); Accept's exact-head admission is B1's and L2's; native qualification pending; L2: revival and restart write no task list and leave Accept's exact-head admission as it was"
     },
     {
       "id": "request-replay",
@@ -1135,7 +1141,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "A2 source: each start records its nonsecret binding; resume and switch of a recorded conversation plan from it (Claude Foundry --settings env rebuilt, Codex provider table and recorded deployment) and refuse changed routing before effects; revive, watch and manual restart refuse Azure-started agents (L2 carries the binding); authored regressions; CI and native qualification pending"
+      "evidence": "A2 source: each start records its nonsecret binding; resume and switch of a recorded conversation plan from it (Claude Foundry --settings env rebuilt, Codex provider table and recorded deployment) and refuse changed routing before effects; L2: revival, a lost session at its shell and restart plan a continued conversation from its recorded binding (its task's row, the copy revival keeps on its terminal or its start's journal record; none found refuses, never Personal) and a new one from today's settings, never onto another route; a fork is admitted by the owner and refused when its conversation is on Azure (tab agents start Personal only) (test/test_native_restart.py, test/test_providers.py authored, CI pending); authored regressions; CI and native qualification pending"
     },
     {
       "id": "selection-effort-fast",
@@ -1159,7 +1165,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "A2 source: a resume keeps the recorded argv's effort, Fast and permission words beside the rebuilt routing; selectors offer effort levels only for deployments whose model the CLI's catalogue knows; authored regressions; native Codex/Claude effort and Fast behavior on Azure pending"
+      "evidence": "A2 source: a resume keeps the recorded argv's effort, Fast and permission words beside the rebuilt routing; selectors offer effort levels only for deployments whose model the CLI's catalogue knows; authored regressions; native Codex/Claude effort and Fast behavior on Azure pending; L2: revival and restart keep the argv's effort, Fast and permission words beside the rebuilt routing (Codex's own table taken off a revival's or a restart's argv and put back once by compose), and a restart (an Assistant's or a task's) naming a model its recorded deployment would replace refuses (authored, CI pending)"
     },
     {
       "id": "settings-inheritance",
@@ -1206,7 +1212,7 @@
         "test/core-launch-admission.test.ts",
         "test/core-operator.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; L2: native revival (the tick) and a lost session at its shell go through launch admission's journal under the agent's own identity (claimed, recorded submission uncertain before hc send, confirmed by hc), so one execution per agent, resuming its own session on its recorded binding and Claude Code folder (test/test_native_restart.py, test/test_herdr_task.py authored, CI pending); a real CLI resuming after a real crash or reboot is native qualification, pending"
     },
     {
       "id": "missing-history",
@@ -1226,7 +1232,7 @@
         "test/core-launch-admission.test.ts",
         "test/core-operator.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; L2 keeps native's automatic new conversation for a session that is gone, on the same recorded binding, and reports it apart (how fresh, missing_history, previous_session, on its journal record; a lost session restarted behind its chat keeps its recorded binding and records missing_history too), never as a resume (test/test_native_restart.py, test/test_herdr_task.py authored, CI pending); whether a genuine missing-history case should hold instead stays the held decision; native qualification pending"
     },
     {
       "id": "launch-uncertainty",
@@ -1274,7 +1280,7 @@
         "test/core-launch-admission.test.ts",
         "test/core-operator.test.ts"
       ],
-      "evidence": "source-inspected; L1's `herdr-task launch recover` revokes only a never-submitted claim and the delayed sender then sends nothing (its submit finds the claim gone), while a replacement start keeps its own; the five Assistant start sites, restart.sh among them, run `herdr-task launch run` (test/test_launch_admission.py authored, CI pending); the journal fences only this application's senders on one machine, and fencing an unknown running process or another machine stays a held native gap"
+      "evidence": "source-inspected; L1's `herdr-task launch recover` revokes only a never-submitted claim and the delayed sender then sends nothing (its submit finds the claim gone), while a replacement start keeps its own; the five Assistant start sites, restart.sh among them, run `herdr-task launch run` (test/test_launch_admission.py authored, CI pending); the journal fences only this application's senders on one machine, and fencing an unknown running process or another machine stays a held native gap; L2: revival's send passes the same claim check before hc send (a revoked claim sends nothing), not separately tested"
     },
     {
       "id": "one-revival-owner",
@@ -1302,7 +1308,7 @@
         "test/core-launch-admission.test.ts",
         "test/core-operator.test.ts"
       ],
-      "evidence": "source-inspected; L1 routes every task start (start, tick, automation, resume, switch, backup) and the five Assistant start sites through T/launch_admission.py, and service/watch.ts's lost-session restart behind a chat reaches it through restart.sh; revival that types into a kept or live terminal (T/revive.py, watch.ts's live case) does not go through it yet: L2; native qualification pending"
+      "evidence": "source-inspected; L1 routes every task start (start, tick, automation, resume, switch, backup) and the five Assistant start sites through T/launch_admission.py; L2 brings revival (T/revive.py) and a lost session at its shell (service/watch.ts and the window's chat, through herdr-task launch revive --lost) through it under the agent's own identity, so the tick and a lost-session recovery can't both bring an agent back, and restart.sh (launch run --replaces) and switch --restart plan through it, a revival marking its terminal before it lets its claim go and rechecking it under the journal's lock (a two-process regression); a fork is admitted through it (--check), though the window's tab.new starts it, so its own start isn't journalled (test/test_native_restart.py, core/chat-find.test.js authored, CI pending); native qualification pending"
     },
     {
       "id": "manual-recovery",
@@ -1322,7 +1328,7 @@
         "test/core-launch-admission.test.ts",
         "test/core-operator.test.ts"
       ],
-      "evidence": "source-inspected; L1 offers only `launch recover` for a never-submitted start and `launch reconcile` on positive evidence; a submission-uncertain start that no terminal confirms stays blocked, and its refusals name this held decision (no release command, a person's word is not non-submission evidence); reboot evidence, exact revocation and automatic recovery remain held; native qualification pending"
+      "evidence": "source-inspected; L1 offers only `launch recover` for a never-submitted start and `launch reconcile` on positive evidence; a submission-uncertain start that no terminal confirms stays blocked, and its refusals name this held decision (no release command, a person's word is not non-submission evidence); reboot evidence, exact revocation and automatic recovery remain held; native qualification pending; L2: a revival hc doesn't confirm stays submission uncertain, holds that agent's revivals and starts, and launch reconcile confirms it only on an agent running in its terminal; no release command is added"
     },
     {
       "id": "delivery-retries",
@@ -1346,7 +1352,7 @@
         "test/core-launch-admission.test.ts",
         "test/core-operator.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; L2: the tick's revival, tried each pass, never types past an open start of the same agent (never submitted or uncertain) and never types an uncertain revival again; queued and scheduled starts and the tick's retries keep L1's journal check; message delivery (news.py's held sends) and provider retry lines are unchanged and unqualified; herdr-core keeps no turn or effect receipt (held); native qualification pending"
     },
     {
       "id": "task-lifecycle-holds",
@@ -1373,7 +1379,7 @@
         "server/core/pilot-lifecycle.ts",
         "test/core-task-processes.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; L2: revival writes no task list and brings back a task's agent only while its task is Working or Ready (state, queue, hold, dependency, review, approval head and cleanup unchanged: test/test_native_restart.py asserts the list unchanged, authored, CI pending), and restart and switch keep L1's claim and task ownership; native qualification pending"
     },
     {
       "id": "screen-reconnect",
@@ -1396,7 +1402,7 @@
         "server/core/screens.ts",
         "test/core-screens.test.ts"
       ],
-      "evidence": "source-inspected; native qualification pending"
+      "evidence": "source-inspected; L2: revival types only into a terminal whose process the core replaced with a shell (its labels, chat and task kept) and checks its own record's process, so a record for another process isn't taken as typed there; native reconnect qualification pending"
     },
     {
       "id": "protected-update",
@@ -1494,7 +1500,7 @@
     }
   ],
   "inventory": "upstream-v3.1.3-files.json",
-  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held, N1 native pull request adoption and fail-closed publication, the C1 session discovery under each agent's own folder, the W1 web chat flag kept apart from background work, the H1 opt-in private custom-domain listener, the S1 forge seam with GitHub as its first adapter, the B1 Bitbucket reads (a saved Bitbucket pull request and its head's complete checks on the execution host's own Git credentials, merge refused), the B2 Bitbucket publication (Ready pushes on a frozen route, opens a draft and prepares it for review under this host's durable claims, reconciled only by positive same-id evidence; merge still refused), and the L1 launch admission (every task and Assistant start through one owner and a durable launch journal: claimed before its first effect, rechecked and recorded as uncertain before hc run, confirmed only by its reply or its own launch label; Azure still held); no required fork port is complete, CI-proved or runtime-qualified",
+  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held, N1 native pull request adoption and fail-closed publication, the C1 session discovery under each agent's own folder, the W1 web chat flag kept apart from background work, the H1 opt-in private custom-domain listener, the S1 forge seam with GitHub as its first adapter, the B1 Bitbucket reads (a saved Bitbucket pull request and its head's complete checks on the execution host's own Git credentials, merge refused), the B2 Bitbucket publication (Ready pushes on a frozen route, opens a draft and prepares it for review under this host's durable claims, reconciled only by positive same-id evidence; merge still refused), and the L1 launch admission (every task and Assistant start through one owner and a durable launch journal: claimed before its first effect, rechecked and recorded as uncertain before hc run, confirmed only by its reply or its own launch label; Azure still held), and the L2 native restart (revival, a lost session at its shell and every restart through the launch owner on the recorded binding, claimed before anything is typed or started; missing history reported apart; a fork admitted by the owner, Personal only); no required fork port is complete, CI-proved or runtime-qualified",
   "azure_cli_design": {
     "skill": "my-second-brain-playground:cli-design",
     "route": "maintain/extend existing-project",

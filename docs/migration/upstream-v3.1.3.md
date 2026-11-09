@@ -10,7 +10,8 @@ its head's complete checks through a second, B2 publishes a Bitbucket folder's t
 Ready (a push on a frozen route, a draft, then ready for review) under durable claims, L1
 admits every task and Assistant start through one owner with a durable launch journal, and A2
 adds the person's Provider settings, save-only new-start selectors and recorded bindings that
-resume keeps, dispatching Azure where a start records its binding.
+resume keeps, dispatching Azure where a start records its binding, and L2 brings revival, a lost
+session and restart through that one owner on the recorded binding.
 Required Azure and lifecycle ports are pending, and no Azure, Bitbucket or lifecycle port is qualified. This checkpoint is not deployable or ready for application use. Check's
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
@@ -634,10 +635,47 @@ Detail, decisions and authored regressions: [Azure selectors and bound starts](.
   (`service/watch.ts`, the chat) and `revive.py` admit Personal only: they refuse an Azure-started agent
   (`core/agents.js providerRefusal`, `--replaced-route`) and a route at the agent's space that isn't
   Personal (`routeRefusal`, from `herdr-task provider show`; `revive.py` reads it through launch
-  admission's strict read).
+  admission's strict read). L2 replaced each of these with the launch owner's plan, fork's as its admission
+  (see the L2 checkpoint).
 - Not qualified: every native route, the credential check's timing (after the terminal exists),
   Codex's root overrides before `resume`, managed or required-provider layers, and content revisions
   that can't see settings changed away and back.
+
+### L2 native restart checkpoint
+
+Detail, the binding rule, gaps and open choices: [Native restart and revival](../native-restart.md).
+L2 is its own row in `PHASES` after A2. Its owners are `T/cli.py`, `T/commands.py`, `T/launch_admission.py`,
+`T/providers.py`, `T/revive.py`, `lib/agent.js` and its three copies, `mods/chat/main.js`, `service/actions.ts`,
+`mods/coordinator/restart.sh`, `service/agents.ts`, `service/watch.ts`, `core/chat-find.test.js`,
+`test/test_herdr_task.py`, `test/test_launch_admission.py`, `test/test_providers.py`,
+`test/test_session_discovery.py` and `test/test_native_restart.py`; those earlier phases admitted are L2's from here,
+and their pins are L2's. `docs/native-restart.md` is named under L2.
+
+- One owner: revival (`T/revive.py`), a lost session at its shell (`service/watch.ts` and the window's chat, through
+  `herdr-task launch revive TERMINAL --lost`), every restart (`restart.sh` with `launch run --replaces`, and
+  `herdr-task switch --restart`) and the fork's admission (`launch run --role agent --slot fork --replaces --check`, from
+  the window and `service/actions.ts`) go through `T/launch_admission.py`. The service and the window type nothing
+  themselves, and a revival marks its terminal before it lets its claim go and rechecks the terminal under the
+  journal's lock, so the tick's revival and a lost-session recovery can't both bring an agent back.
+- Bindings: continuing a conversation plans from its recorded binding; a new conversation from today's settings but
+  never onto another route; a missing-history start (revival, or behind its chat with `--continues`) stays on its
+  recorded binding; an Azure-started agent with no record found is refused or held, never read as Personal; a fork
+  recorded on Azure is refused (tab agents start Personal only). A restart naming a model its recorded deployment would
+  replace refuses; Codex's own provider table in a restart's argv is put back once.
+- Uncertainty: a revival is claimed under the agent's own identity before anything is typed, recorded submission
+  uncertain before `hc send`, and confirmed by hc's success; otherwise it stays uncertain, holds that agent's later
+  revivals and starts, and `launch reconcile` confirms it only on an agent running in its terminal.
+- Missing history is reported apart (`how: fresh`, `missing_history`, `previous_session`), never as a resume.
+- Kept: task state, holds, queue, dependencies, approval head and cleanup (revival writes no task list); tab agents
+  (and so forks) Personal only; no convenience retired.
+- Held, not invented: core receipts and revocation for `hc send` and `hc run`, other machines' senders, a fork's own
+  start (the window's `tab.new`, not journalled), automatic reconcile or release (`manual-recovery`), the
+  missing-history fallback-versus-hold decision, and every native route.
+- Regression: `test/test_native_restart.py` (processes, reopened journal, task list and labels) and the updated cases
+  in the files above. CI pending; native qualification pending. The window's paths are source-inspected only.
+- Not a required port's completion: `ordinary-resume`, `screen-reconnect` stay reuse-unqualified, `missing-history`
+  and `manual-recovery` decision-held, and `one-revival-owner`, `azure-bound-resume`, `selection-effort-fast`,
+  `delivery-retries`, `task-lifecycle-holds` and `approval-exact-head` pending until Root CI and native qualification.
 
 ### Bitbucket contract
 
@@ -746,7 +784,9 @@ Bitbucket read tests (`test/test_bitbucket.py`), the B2 publication tests
 (`test/test_bitbucket_publication.py`), the L1 launch admission tests
 (`test/test_launch_admission.py`, `service/launch-sites.test.ts`), the A2 selector tests
 (`service/settings.test.ts`, `service/selections.test.ts`, with A2's cases in `test/test_providers.py`
-and `test/test_launch_admission.py`) and every native Check command. CI owns
+and `test/test_launch_admission.py`), the L2 restart tests (`test/test_native_restart.py`, with L2's cases
+in `test/test_herdr_task.py`, `test/test_providers.py`, `test/test_launch_admission.py`,
+`test/test_session_discovery.py` and `core/chat-find.test.js`) and every native Check command. CI owns
 frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.

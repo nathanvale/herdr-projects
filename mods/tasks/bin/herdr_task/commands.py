@@ -1046,13 +1046,11 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     with a handoff. `message` goes after either. A resumed session keeps the provider binding its
     conversation recorded (providers.plan_of_record): today's defaults never reroute it, and
     changed routing refuses here, before anything changes. restart: a model menu's Restart or
-    Switch agent (the window's or the web's), which can't carry a binding yet (L2): only Personal,
-    for the agent it replaces and for what it starts."""
-    from .providers import PERSONAL, PERSONAL_RECORD, RESTART_HELD
+    Switch agent (the window's or the web's); since L2 it goes the same way as resume and switch (its
+    recorded binding when it continues the conversation, today's settings for a new one), and only a
+    model it names that the recorded deployment would replace refuses (RESTART_MODEL)."""
+    from .providers import AZURE, PERSONAL_RECORD, restart_route, RESTART_MODEL, same_model
     prev = last_agent(t)
-    if restart and ((prev or {}).get("provider") or PERSONAL_RECORD)["route"] != PERSONAL:
-        raise Fail(RESTART_HELD.format("this task's agent started on Azure Foundry: restarting it Personal would move its "
-                                       "conversation to another provider"))
     # The last agent's argv again, unless the task's agent, model or effort changed since (edit).
     keep = prev and prev.get("argv") and (t.get("pick_at") or 0) <= (prev.get("at") or 0)
     argv = agent_argv(None, argv_json) if argv_json else worker_argv(s, t, space, key) if key else \
@@ -1065,8 +1063,13 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     adm = admit_task(s, t, argv, space, parent or (prev or {}).get("parent"),
                      select=None if fixed else (lambda: worker_argv(s, t, space, key)), prev=prev,
                      bound=(prev.get("provider") or PERSONAL_RECORD) if resuming else None)
-    if restart and adm.plan["route"] != PERSONAL:
-        raise Fail(RESTART_HELD.format("Provider is Azure Foundry here"))
+    if restart and not resuming:
+        # A new conversation takes today's settings, never onto another route than the agent it replaces (L2).
+        was = (prev or {}).get("provider") or PERSONAL_RECORD
+        restart_route(was["route"], was, adm.binding, agent_key(argv), s.ref(t))
+    if restart and resuming and adm.plan["route"] == AZURE and not same_model(argv, prev.get("argv"), adm.plan["deployment"]):
+        # A recorded conversation keeps its deployment (A2): a model picked in the menu would be replaced silently.
+        raise Fail(RESTART_MODEL.format(who=s.ref(t), deployment=adm.plan["deployment"]))
     unarchive(s, t)
     parent = adm.parent
     res = resume_argv(argv, prev["session"]) if resuming else None
