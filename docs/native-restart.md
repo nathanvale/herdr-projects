@@ -68,13 +68,15 @@ once by `compose` (`without_table`); any other provider in the argv still refuse
   success confirms it and lets the claim go. Its record carries `revival`: how (`resume` or `fresh`),
   `missing_history`, the session it resumed or the one that was lost, and its `provider`.
 - **One sender at a time.** A revival marks its terminal handled (`herdr.resume`, with its launch id) while it still
-  holds its claim, and its revision includes the terminal as it planned from it: the same process, still at its shell,
-  its record unchanged. The binding is found once while planning, outside any lock, and the recheck reads only the
-  terminal and the settings (the journal refuses being opened again inside its own lock rather than wait on itself).
-  So of two senders that planned at once (the tick and a lost-session recovery), the second
-  either finds the first's claim open or, under the journal's lock just before it would be sent, the terminal changed,
-  and types nothing. A later genuine loss in the same shell plans from the record the tick wrote while that agent
-  ran, so it comes back again.
+  holds its claim, and once it holds its claim it rechecks the terminal it planned from: the same process, still at its
+  shell, its record unchanged. So of two senders that planned at once (the tick and a lost-session recovery), the
+  second either finds the first's claim open or, holding its own, finds the terminal changed, and types nothing. The
+  recheck runs outside the journal's lock (its `hc get` can be slow while herdr-core comes back), and under the lock
+  only the settings are read again; the binding was found once while planning (the journal refuses being opened again
+  inside its own lock rather than wait on itself). A later genuine loss in the same shell plans from the record the
+  tick wrote while that agent ran, so it comes back again.
+- **Its shell's syntax.** The line is written for the shell running in the terminal now (its foreground shell, else its
+  launch's first word): a terminal that fell back to fish gets fish's line, not the POSIX one its `sh -c` launch implies.
 - **Uncertain.** hc failing or its reply lost may still have pasted the line. The start stays submission uncertain
   under its launch id, the terminal is marked handled, and nothing types it again: not the tick, not a lost-session
   recovery, not a task's resume. `herdr-task launch reconcile IDENTITY LAUNCH` confirms it once an agent runs in that
@@ -174,12 +176,13 @@ Authored, not run locally (repository policy allows only `bun run typecheck`). C
   running there; an open start holding a revival until recovered; a finished task's agent left a shell; its own folder
   carried; an Azure task agent on its recorded deployment with the credential check; changed routing held; Codex's
   table before `resume` with its effort and Fast; an Azure Assistant from its start's journal record and one with no
-  record held; a second sender that planned before the first typed (two processes) typing nothing, and a second
-  loss in the same shell coming back again; `launch revive --lost` once whoever asks;
+  record held; a second loss in the same shell coming back again; `launch revive --lost` once whoever asks;
   `restart.sh` continuing an Azure Assistant on its recorded deployment, a lost session behind its chat on its
   recorded binding with a multi-line message kept one word, a model the recorded deployment would replace refused, and
   a new conversation refused on another route; a fork admitted on Personal and refused by the owner on Azure; the
-  misused flags refused; a chat agent with no labels brought back by the real owner under its own identity.
+  misused flags refused; a chat agent with no labels brought back by the real owner under its own identity; a fish
+  shell given fish's line; a restart whose route changed between its check and its start refused with nothing started;
+  both orders of two senders (one types, the other types nothing).
 - `test/test_herdr_task.py` (`Revive`, in-process): the journal record, missing history, an unconfirmed send held.
 - `test/test_providers.py`: `revive.plan` on its recorded binding or held; the settings read once; a model menu's
   restart on its recorded binding, a picked model it would replace refused, a new conversation never moved; a Codex

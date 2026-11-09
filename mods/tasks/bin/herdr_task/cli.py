@@ -503,9 +503,9 @@ def main():
     c.add_argument("identity", metavar="PID", help="the agent's process id")
     c.add_argument("--json", action="store_true")
     c.set_defaults(fn=cmd_launch)
-    revive_help = ("type an Assistant or a task's agent back into its own kept terminal, through launch admission: its "
-                   "session resumed on its recorded provider binding, or with --lost (its screen says the session is gone) "
-                   "a new conversation that says so. Claimed in the journal before anything is typed; a send hc doesn't "
+    revive_help = ("type an agent back into its own kept terminal, through launch admission: an Assistant's or a task "
+                   "agent's session resumed on its recorded provider binding, or with --lost (its screen says the session "
+                   "is gone) a new conversation for any chat's agent, that says so. Claimed in the journal before anything is typed; a send hc doesn't "
                    "confirm stays submission uncertain. With no TERMINAL (and no --lost): every one here the core gave a "
                    "plain shell (the tick's pass)")
     c = la.add_parser("revive", help=revive_help, description=revive_help)

@@ -306,17 +306,20 @@ class Revival(unittest.TestCase):
         self.assertEqual(len(f.sends()), 1)
 
     def test_a_second_sender_that_planned_before_the_first_typed_types_nothing(self):
-        """Two senders of the same agent at once (the tick's pass and a lost-session recovery): the second plans from the
-        terminal as it was, then waits; the first types it back and marks its terminal while it still holds its claim;
-        the second, let go, finds the terminal changed and types nothing (two processes, the journal reopened)."""
+        """Two senders of the same agent at once (the tick's pass and a lost-session recovery): the second reads the
+        terminal, then waits (on its look at another terminal) before planning; the first types it back and marks its
+        terminal while it still holds its claim; the second, let go, plans from what it read, claims, rechecks the
+        terminal and types nothing (two processes, the journal reopened)."""
         f = Fixture(self)
         f.worker()
-        held_env = dict(f.env, FAKE_HC_GATE_MATCH="get t5 --json", FAKE_HC_GATE_SKIP="1")
+        f.seed(address="t6", state="live", pid=600, cwd=f.repo, argv=["/bin/bash"],
+               foreground={"pid": 600, "name": "bash", "argv": ["/bin/bash"]}, labels={})
+        held_env = dict(f.env, FAKE_HC_GATE_MATCH="get t6 --json")
         open(f.gate, "w").close()
         second = subprocess.Popen(f.argv("launch", "revive", "--json"), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                   text=True, env=held_env)
         f.procs.append(second)
-        f.reached()  # planned from the record as it was, waiting before its claim
+        f.reached()  # it has read t5 as it was, and waits
         first = f.revive()["revived"][0]["launch"]
         f.release()
         out, err = second.communicate(timeout=120)
@@ -326,6 +329,26 @@ class Revival(unittest.TestCase):
         self.assertEqual(len(f.sends()), 1)
         self.assertEqual([r["launch"] for r in f.revivals() if r["state"] == "confirmed"], [first])
         self.assertEqual(f.journal()["claims"], {})
+
+    def test_a_sender_holding_the_claim_keeps_the_other_off(self):
+        """The other order: the second sender holds its claim while it rechecks the terminal; the first finds that
+        start open and types nothing; the second then types it once."""
+        f = Fixture(self)
+        key = f.worker()
+        held_env = dict(f.env, FAKE_HC_GATE_MATCH="get t5 --json", FAKE_HC_GATE_SKIP="1")
+        open(f.gate, "w").close()
+        second = subprocess.Popen(f.argv("launch", "revive", "--json"), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  text=True, env=held_env)
+        f.procs.append(second)
+        f.reached()  # claimed, at its recheck of t5
+        [held] = f.revive()["revive_held"]
+        self.assertIn(f"task:{key}", held["why"])
+        self.assertEqual(f.sends(), [])
+        f.release()
+        out, err = second.communicate(timeout=120)
+        self.assertEqual(second.returncode, 0, out + err)
+        self.assertEqual(json.loads(out)["revived"][0]["how"], "resume")
+        self.assertEqual(len(f.sends()), 1)
 
     def test_a_second_loss_in_the_same_shell_starts_anew_again(self):
         """A lost session typed anew into its shell, running, then lost again in that same shell (no core restart): the
@@ -476,12 +499,26 @@ class LostSession(unittest.TestCase):
         out = f.revive("t8", "--lost")
         self.assertEqual((out["how"], out["missing_history"]), ("fresh", True))
         [send] = f.sends()
-        self.assertTrue(send[2].startswith("claude '<restart>Your earlier session is gone"), send[2])
+        # Typed in its shell's own syntax (the zsh it fell back to), the agent as it started: without the person's shell.
+        self.assertIn(f"cd {f.repo} && command claude '<restart>Your earlier session is gone", send[2])
+        shell_ok(self, send[2])
         self.assertNotIn("--resume", send[2])
         [rec] = f.revivals()
         self.assertEqual((rec["identity"], rec["state"]), ("agent:local/unplaced/t8", "confirmed"))
         self.assertEqual(f.revive("t8", "--lost")["how"], "none")
         self.assertEqual(len(f.sends()), 1)
+
+    def test_the_line_takes_the_running_shells_syntax_not_the_launchs(self):
+        """An agent launched by a POSIX `sh -c` (restart.sh's way) whose terminal fell back to the person's fish: the line
+        is fish's (no POSIX for-loop), not sh's, so it isn't typed broken and reported as started."""
+        f = Fixture(self)
+        f.seed(address="t9", state="live", pid=900, cwd=f.repo, screen=LOST, labels={},
+               argv=["sh", "-c", 'exec "$@"', "herdr-clean", "claude", "--resume", SESSION],
+               foreground={"pid": 900, "name": "fish", "argv": ["fish"], "cwd": f.repo})
+        self.assertEqual(f.revive("t9", "--lost")["how"], "fresh")
+        [send] = f.sends()
+        self.assertFalse(send[2].startswith("for v in"), send[2])
+        self.assertTrue(send[2].startswith(f"cd {f.repo} && claude '<restart>"), send[2])
 
     def test_its_refusal_is_the_owners_words_and_nothing_is_typed(self):
         f = Fixture(self)
@@ -565,6 +602,27 @@ class RestartOnAzure(unittest.TestCase):
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("recorded on Azure Foundry deployment assistant-deployment", p.stderr)
         self.assertEqual({c[0] for c in f.calls()[calls:]}, {"get"})
+
+    def test_settings_changed_between_its_check_and_its_start_refuse_before_anything_starts(self):
+        """restart.sh checks, then saves the old agent's screen and handoff, then starts: a route changed in between
+        (Personal to Azure Foundry) refuses at the start, with nothing started and the old agent left running."""
+        f = Fixture(self)
+        os.makedirs(os.path.join(f.tmp, "templates"), exist_ok=True)
+        with open(os.path.join(f.tmp, "templates", "assistant.md"), "w") as fh:
+            fh.write("---\nname: assistant\ndescription: the Assistant\ncommand: claude\n---\nYou are the Assistant.\n")
+        f.seed(address="t1", state="live", pid=10, cwd=f.repo, template="assistant", argv=["claude"],
+               labels={"herdr.space": "sp1", "herdr.tab": "tb1", "herdr.role": "coordinator"})
+        env = dict(f.env, FAKE_HC_GATE_MATCH="read t1")
+        open(f.gate, "w").close()
+        p = subprocess.Popen(["bash", la.RESTART, "t1"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        f.procs.append(p)
+        f.reached()  # its check passed on Personal; it is saving the old agent's screen
+        f.provider({"route": "azure-foundry", **CLAUDE})
+        f.release()
+        out, err = p.communicate(timeout=120)
+        self.assertEqual(p.returncode, 1, out + err)
+        self.assertIn("would move its work to another provider", err)
+        self.assertEqual([c for c in f.calls() if c[:1] in (["run"], ["kill"])], [])
 
     def test_a_new_conversation_is_never_moved_to_another_route(self):
         f = Fixture(self)

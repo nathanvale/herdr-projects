@@ -292,6 +292,13 @@ def binding_here(k, rec, task, kind, bound=FIND):
     return plan_of_record(bound, binding_for(space_scope(space, d), space, d), kind, who_of(k))
 
 
+def shell_of(k):
+    """The shell a line typed into k runs in: the terminal's foreground program when it is a shell (what the core gave
+    it, or the person's own after an agent's launch shell exec'd it), else its launch's first word."""
+    fg = os.path.basename((k.get("foreground") or {}).get("name") or "")
+    return fg if fg in SHELLS else os.path.basename(str((k.get("argv") or [""])[0]))
+
+
 def restarted(k):
     """A terminal the core gave a new process (a plain shell) since its agent ran there, and where
     no agent runs now."""
@@ -350,7 +357,7 @@ def plan(k, rec, running):
     if p is UNREAD:
         return None  # its settings can't be read now (a write in flight, say): nothing typed, looked at again next tick
     folder = (rec or {}).get("config_dir")
-    shell = os.path.basename(((k.get("argv") or [""])[0]) or "")
+    shell = shell_of(k)
     if (p["route"] != "personal" or folder) and shell not in LINE_SHELLS:
         return ("held", f"Its shell ({shell or 'unknown'}) can't be given the provider binding or Claude Code folder this "
                         f"agent started with, so it isn't typed back. Nothing was started.", False, None)
@@ -405,8 +412,7 @@ def bring_back(k, rec, step, report):
         else:
             report.setdefault("revived", []).append({"terminal": k["address"], "how": how, "session": rec.get("session")})
         return
-    shell = (k.get("argv") or [""])[0]
-    line = shell_line(shell, rec.get("cwd") or k.get("cwd"), {**env_of(k), **carry["env"]}, argv, direct, carry["need"])
+    line = shell_line(shell_of(k), rec.get("cwd") or k.get("cwd"), {**env_of(k), **carry["env"]}, argv, direct, carry["need"])
     p = carry["plan"]
     labels = k.get("labels") or {}
     task = task_of(k) if labels.get("herdr.task") else None
@@ -415,16 +421,20 @@ def bring_back(k, rec, step, report):
 
     seen = (k.get("labels") or {}).get(LABEL)
 
-    def revise():
-        # Its terminal as this revival planned from it: the same process, still at its shell, and its record unchanged.
-        # Another sender (the tick, or a lost-session recovery) that typed it back first wrote that record while still
-        # holding its claim, so this refuses rather than type it twice. Then the binding again from a fresh read: a
-        # route, resource, endpoint or sign-in changed since refuses the typing.
+    def unchanged():
+        # Its terminal as this revival planned from it: the same process, still at its shell, its record unchanged. Read
+        # once its claim is held (outside the journal's lock, so a slow hc never holds up other starts): another sender
+        # of this agent (the tick, or a lost-session recovery) marks the terminal before it lets its claim go, so this
+        # sees that and types nothing twice.
         now_k = hc_json("get", k["address"])
         if (not now_k or now_k.get("pid") != k.get("pid") or not restarted(now_k)
                 or (now_k.get("labels") or {}).get(LABEL) != seen):
             raise Fail(f"{who_of(k)} in {k['address']} changed since this revival was planned (another sender brought it "
                        f"back, or an agent runs there). Nothing was typed.")
+
+    def revise():
+        # The binding again from a fresh read of the settings only: a route, resource, endpoint or sign-in changed since
+        # refuses the typing (run under the journal's lock: nothing here reads the journal or calls hc).
         q = binding_here(k, rec, task, carry["kind"], carry["bound"])
         if q is UNREAD:
             raise Fail("Shepherdr settings can't be read now, so this revival waits. Nothing was typed.")
@@ -437,6 +447,7 @@ def bring_back(k, rec, step, report):
         # claimed(): an open start of the same agent refuses here (its task as read now releases a start it records).
         adm.task, adm.config_dir = task, carry.get("config_dir")
         with adm.claimed():
+            unchanged()
             out = adm.type_into(k["address"], line, facts, run, lambda lid: write_record(k, dict(rec, launch=lid)))
     except Fail as e:
         launch = getattr(e, "launch", None)
