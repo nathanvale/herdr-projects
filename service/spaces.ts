@@ -136,10 +136,13 @@ export async function newSpace(hub: Hub, opts: { machine: string | null; path: s
   // Settings › Window › Assistant in new spaces off: it opens without one
   if (opts.store.value("coordinator.auto") === false) return machine ? `${machine}/${id}` : id;
   const t = await execTemplate(hub, "assistant", machine);
-  // through launch admission (herdr-task launch run): Personal only, claimed, rechecked and recorded as sent, then hc
-  // run. A refused or failed start keeps the space, without its Assistant, and says why (opts.refused, and the log).
-  // SHEPHERDR_HERDR_TASK: a test's stand-in (as SHEPHERDR_HC for hc); unset, herdr-task on PATH as before.
-  const r = await run([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", "launch", "run", "--role", "coordinator", "--space", id, "--json", "--",
+  // through launch admission (herdr-task launch run): a new start (--new-start: the template word it runs), planned for
+  // its provider (on Azure Foundry the owner puts its own one-off template in that word's place), claimed, rechecked
+  // and recorded as sent, then hc run. A refused or failed start keeps the space, without its Assistant, and says why
+  // (opts.refused, and the log). SHEPHERDR_HERDR_TASK: a test's stand-in (as SHEPHERDR_HC for hc); unset, herdr-task
+  // on PATH as before.
+  const r = await run([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", "launch", "run", "--role", "coordinator", "--space", id,
+    "--new-start", t.name, "--source", "assistant", "--json", "--",
     "--bg", "--keep", "--no-parent", ...(machine ? ["--on", machine] : []), "--cwd", abs,
     "--label", "herdr.role=coordinator", "--label", `herdr.coordinator.space=${id}`, "--label", `herdr.space=${id}`, t.name]);
   t.done();

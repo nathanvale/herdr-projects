@@ -248,6 +248,11 @@ def plan(k, rec, running):
         if not LOST.search("\n".join(screen.split("\n")[-30:])):
             return None
         rec = dict(rec, session=None)
+    # An agent whose start recorded Azure Foundry (herdr.provider): revival types its flags back without its launch
+    # plan's environment or binding (the migration's L2), so it is held, said once (its record then marks it
+    # handled), and left for its task's resume.
+    if labels.get("herdr.provider") not in (None, "", "personal"):
+        return ("held", None, False)
     if not rec:
         # From before records (or lost before the first one): only a terminal the core plainly gave a shell.
         if not bare_shell(k):
@@ -289,6 +294,11 @@ def revive_pass(report):
             continue
         how, argv, direct = step
         rec = dict(rec or {}, pid=k.get("pid"), how=how, sent=now())
+        if how == "held":
+            write_record(k, rec)
+            report.setdefault("revive_held", []).append({"terminal": k["address"], "why": "started on Azure Foundry: revival "
+                                                         "can't carry its binding yet (L2); resume its task with herdr-task"})
+            continue
         if argv:
             shell = (k.get("argv") or [""])[0]
             r = run(["hc", "send", k["address"], shell_line(shell, rec.get("cwd") or k.get("cwd"), env_of(k), argv, direct)])

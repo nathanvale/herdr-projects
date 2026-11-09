@@ -8,12 +8,15 @@ A binding's fingerprint covers its CLI, endpoint or resource, deployment and aut
 method: it does not attest an account, and rotating a credential doesn't change it.
 
 The supported combinations are the four in docs/azure-launch-plans.md, each from the official
-contract for the inspected CLI version; anything else is refused. In this source checkpoint a
-valid Azure plan is still not dispatched: launch admission (launch_admission.py, L1) consults this
-module before every start, but bound resume is a later migration phase
-(docs/migration/upstream-v3.1.3.md, A2 and L2), so admit_launch() refuses it before any effect,
-and `herdr-task provider plan` only shows it. An Assistant's start can't carry a plan yet, so
-admit_assistant() refuses any route but Personal for it."""
+contract for the inspected CLI version; anything else is refused. Since A2 a valid Azure plan is
+dispatched where its start records it (docs/migration/upstream-v3.1.3.md, A2): a task's agent
+(start, the tick's queue, an automation's run, resume, switch, a backup) and an Assistant's new
+start from its three new-start sites (`herdr-task launch run --new-start`). Each start records its
+nonsecret binding (recorded()); resuming a recorded conversation plans from that record, never
+from today's defaults, and refuses when its routing (route, resource or endpoint, sign-in method)
+changed since (admit_launch(bound=...)). What L2 owns stays Personal only: an Assistant's or a tab
+agent's restart (restart.sh, the web Restart and Switch agent) and revival, which refuse any other
+route with the reason (RESTART_HELD)."""
 
 import hashlib
 import json
@@ -34,7 +37,11 @@ KINDS = ("claude", "codex")
 # Personal too (settings are copied between machines, so a secret there is said, not started
 # past); with no "provider" section at all nothing is checked. azure_subscription is discovery's only.
 FIELDS = ("route", "azure_subscription", "claude_resource", "claude_deployment", "claude_auth",
-          "codex_endpoint", "codex_deployment", "codex_auth")
+          "codex_endpoint", "codex_deployment", "codex_auth", "worker_claude_deployment", "worker_codex_deployment",
+          "coordinator_claude_deployment", "coordinator_codex_deployment")
+# A role's own deployment for each CLI (Settings › Agents: the Assistant's and the workers'), for new starts only.
+# Unset or "" follows the CLI's deployment above. A task's reviewer and backup are workers.
+ROLES = ("worker", "coordinator")
 # Each authentication method and the variable the CLI reads for it (None: no variable, the
 # Azure SDK's default credential chain on the execution host).
 CLAUDE_AUTH = {"entra-id": None, "api-key": "ANTHROPIC_FOUNDRY_API_KEY", "bearer-token": "ANTHROPIC_FOUNDRY_AUTH_TOKEN"}
@@ -98,14 +105,22 @@ NO_SETTINGS_VALUE = "On Azure Foundry, Claude Code's --settings needs its inline
 # provider section could say otherwise (P17-7). Never repeats the file's words.
 UNREADABLE = ("Shepherdr settings ({}) are there but can't be read as a settings file, so this start can't tell which "
               "provider they set. Nothing was started; fix or move the file.")
-NOT_ASSISTANT = ("Provider is Azure Foundry here, but an Assistant's start can't carry a launch plan yet (pending: settings "
-                 "and selectors): it would start on the CLI's own sign-in. Nothing was started. Set Provider to Personal "
-                 "for this machine or space to start it.")
 NOT_EXECUTION_HOST = ("Provider is Azure Foundry here, and Azure Foundry starts agents only on the machine whose settings set "
                       "it; this start would run on {}. Nothing was started. Set Provider to Personal to start it.")
-HELD = ("Azure Foundry is set for {}, and its launch plan is valid, but this version only plans it: starting or resuming an "
-        "agent on Azure waits for bound resume and its settings and selectors (still pending). Nothing was started or changed. "
-        "`herdr-task provider plan --agent {}` shows the plan; set Provider to Personal to start on the CLI's own sign-in.")
+# What L2 owns (docs/migration/upstream-v3.1.3.md): restarting an Assistant or a tab agent (restart.sh, the window's and
+# the web's Restart and Switch agent, a lost session started anew behind its chat) and revival don't carry a launch
+# plan or a recorded binding yet, so they never start or resume anything but Personal.
+RESTART_HELD = ("This restart can't carry an Azure Foundry binding yet (restart and revival are a later migration phase, "
+                "L2), so it starts Personal only, and {}. Nothing was started or changed. Ask the Assistant to resume or "
+                "switch a task's agent with herdr-task, or start a new Assistant chat.")
+# A recorded conversation keeps the routing it started on: today's defaults never reroute it (A2).
+CHANGED_ROUTING = ("{who}'s conversation started on {was}, and this folder's settings now route {cli} to {now}. Resuming it "
+                   "would move it to another provider, resource or sign-in, so nothing was started or changed. Set the "
+                   "settings back, or start a new conversation with a handoff (resume or switch with --fresh).")
+UNKNOWN_RECORD = ("{who}'s recorded provider binding can't be read as one this version planned, so it can't be resumed on "
+                  "it. Nothing was started; start a new conversation with a handoff (resume or switch with --fresh).")
+STALE_SELECTION = ("The provider settings or the choice changed since this start was chosen (revision {}), so it isn't what "
+                   "was picked. Nothing was started; choose again.")
 
 
 def clean(field, value):
@@ -128,9 +143,9 @@ def clean(field, value):
         if not m:
             raise Fail(NO_ENDPOINT)
         v = m.group(1)
-    elif field in ("claude_deployment", "codex_deployment"):
+    elif field.endswith(("claude_deployment", "codex_deployment")) and field in FIELDS:
         if not DEPLOYMENT.fullmatch(v):
-            raise Fail(NO_DEPLOYMENT.format("Claude Code" if field.startswith("claude") else "Codex"))
+            raise Fail(NO_DEPLOYMENT.format("Claude Code" if "claude" in field else "Codex"))
     elif field == "claude_auth":
         if v not in CLAUDE_AUTH:
             raise Fail(NO_CLAUDE_AUTH)
@@ -235,24 +250,37 @@ def fingerprint(kind, target, deployment, auth):
     return hashlib.sha256(json.dumps([kind, target, deployment, AUTH_WORDS[auth]], separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
 
 
-def launch_plan(kind, binding):
-    """How one CLI is routed, from the binding alone: {route, agent, fingerprint, deployment, auth,
-    credential (a variable's name, or None), settings_env (Claude Code's --settings env),
-    args (Codex's -c overrides), env (nonsecret process variables)}. Personal changes nothing.
-    An unsupported or incomplete combination is refused, with what to set."""
-    if binding["route"] == PERSONAL:
-        return {"route": PERSONAL, "agent": kind, "fingerprint": PERSONAL, "deployment": None, "auth": None, "credential": None,
-                "settings_env": {}, "args": [], "env": {}}
-    if kind not in KINDS:
-        raise Fail(NO_KIND.format(kind))
+def host_checks(binding):
+    """Azure runs only where its settings were set: refused on a Serve-from client's copy, when that can't be read, or
+    on a copy pushed here."""
     if binding.get("source") == "serve-from":
         raise Fail(NOT_SERVED_HERE)
     if binding.get("source") == "unknown":
         raise Fail(NOT_KNOWN_HERE)
     if not binding.get("local", True):
         raise Fail(NOT_LOCAL)
+
+
+def role_deployment(binding, kind, role=None):
+    """The deployment a new start of `role` uses for kind: the role's own when it sets one, else the CLI's."""
+    own = binding.get(f"{role}_{kind}_deployment") if role in ROLES else ""
+    return own or binding.get(f"{kind}_deployment") or ""
+
+
+def launch_plan(kind, binding, role=None, deployment=None):
+    """How one CLI is routed, from the binding alone: {route, agent, fingerprint, deployment, auth, target,
+    credential (a variable's name, or None), settings_env (Claude Code's --settings env), args (Codex's -c
+    overrides), env (nonsecret process variables)}. Personal changes nothing. role: whose deployment a new start
+    takes (role_deployment); deployment: one chosen for this start itself (a task's or a chat's save-only
+    selection), which wins. An unsupported or incomplete combination is refused, with what to set."""
+    if binding["route"] == PERSONAL:
+        return {"route": PERSONAL, "agent": kind, "fingerprint": PERSONAL, "deployment": None, "auth": None, "target": None,
+                "credential": None, "settings_env": {}, "args": [], "env": {}}
+    if kind not in KINDS:
+        raise Fail(NO_KIND.format(kind))
+    host_checks(binding)
     name = "Claude Code" if kind == "claude" else "Codex"
-    deployment = clean(f"{kind}_deployment", binding[f"{kind}_deployment"])
+    deployment = clean(f"{kind}_deployment", deployment or role_deployment(binding, kind, role))
     if not deployment:
         raise Fail(NO_DEPLOYMENT.format(name))
     plan = {"route": AZURE, "agent": kind, "deployment": deployment, "settings_env": {}, "args": [], "env": {}}
@@ -265,7 +293,8 @@ def launch_plan(kind, binding):
         env = {v: "" for v in CLAUDE_ROUTING if v != credential}
         env.update(CLAUDE_CODE_USE_FOUNDRY="1", ANTHROPIC_FOUNDRY_RESOURCE=resource, ANTHROPIC_DEFAULT_OPUS_MODEL=deployment,
                    ANTHROPIC_DEFAULT_SONNET_MODEL=deployment, ANTHROPIC_DEFAULT_HAIKU_MODEL=deployment)
-        plan.update(fingerprint=fingerprint(kind, resource, deployment, auth), auth=auth, credential=credential, settings_env=env)
+        plan.update(fingerprint=fingerprint(kind, resource, deployment, auth), auth=auth, target=resource, credential=credential,
+                    settings_env=env)
         return plan
     endpoint = clean("codex_endpoint", binding["codex_endpoint"])
     if not endpoint:
@@ -275,11 +304,89 @@ def launch_plan(kind, binding):
     mark = fingerprint(kind, endpoint, deployment, auth)
     ident = CODEX_PROVIDER + mark
     table = {"name": "Azure Foundry", "base_url": endpoint, "env_key": credential, "wire_api": "responses", "requires_openai_auth": False}
-    plan.update(fingerprint=mark, auth=auth, credential=credential,
+    plan.update(fingerprint=mark, auth=auth, target=endpoint, credential=credential,
                 args=["-c", f"model_provider={json.dumps(ident)}",
                       "-c", f"model_providers.{ident}={{{','.join(f'{k}={json.dumps(v)}' for k, v in table.items())}}}"],
                 env={"OPENAI_BASE_URL": "", "OPENAI_API_KEY": ""})
     return plan
+
+
+# ---- recorded bindings: what a conversation started on (A2) ----------------------------------
+
+PERSONAL_RECORD = {"route": PERSONAL}
+
+
+def recorded(plan):
+    """The nonsecret binding a start records with its agent: Personal's route alone, or an Azure plan's CLI, resource
+    or endpoint (target), deployment, sign-in method and fingerprint. No variable's value, no account."""
+    if plan["route"] == PERSONAL:
+        return dict(PERSONAL_RECORD)
+    return {k: plan[k] for k in ("route", "agent", "target", "deployment", "auth", "fingerprint")}
+
+
+def routing_words(rec):
+    """A recorded binding or plan's routing, in words for a refusal (never a value: none is kept)."""
+    if (rec or {}).get("route") != AZURE:
+        return "Personal (the CLI's own sign-in)"
+    return f"Azure Foundry {rec.get('target')} with {AUTH_WORDS.get(rec.get('auth'), rec.get('auth'))}"
+
+
+def same_routing(rec, plan):
+    """Whether resuming the conversation recorded as rec on plan keeps its routing: the route, and on Azure the
+    resource or endpoint and the sign-in method. The deployment is not compared: a resume keeps the recorded one."""
+    if rec.get("route") != plan["route"]:
+        return False
+    return rec.get("route") == PERSONAL or (rec.get("target") == plan["target"] and rec.get("auth") == plan["auth"])
+
+
+def binding_words(binding, kind):
+    """Today's routing for kind, in words: only checked values are said (an unchecked one could be a pasted secret)."""
+    if binding["route"] != AZURE:
+        return routing_words(PERSONAL_RECORD)
+    field = "claude_resource" if kind == "claude" else "codex_endpoint"
+    try:
+        target = clean(field, binding.get(field) or "")
+        auth = clean(f"{kind}_auth", binding.get(f"{kind}_auth") or "") or ("entra-id" if kind == "claude" else "api-key")
+    except Fail:
+        return "Azure Foundry"
+    return routing_words({"route": AZURE, "target": target or "(no resource set)", "auth": auth})
+
+
+def plan_of_record(rec, binding, kind, who):
+    """The plan a recorded conversation resumes on: its own recorded deployment and routing, rebuilt by the same
+    planner (so the Claude Code environment and the Codex provider table are what its first start had), checked
+    against today's settings: their routing for kind must still be the recorded one (a change refuses before any
+    effect), and a record this version didn't write refuses. A deployment default changed since doesn't matter: the
+    recorded one is kept."""
+    rec = rec or PERSONAL_RECORD
+    route = rec.get("route")
+    if route not in (PERSONAL, AZURE) or (route == AZURE and rec.get("agent") != kind):
+        raise Fail(UNKNOWN_RECORD.format(who=who))
+    changed = Fail(CHANGED_ROUTING.format(who=who, was=routing_words(rec), cli="Claude Code" if kind == "claude" else "Codex",
+                                          now=binding_words(binding, kind)))
+    if route == PERSONAL:
+        if binding["route"] != PERSONAL:
+            raise changed
+        return launch_plan(kind, binding)
+    if binding["route"] != AZURE:
+        raise changed
+    now = launch_plan(kind, {**binding, f"{kind}_deployment": rec.get("deployment") or ""})
+    if not same_routing(rec, now):
+        raise changed
+    if now["fingerprint"] != rec.get("fingerprint"):
+        raise Fail(UNKNOWN_RECORD.format(who=who))
+    return now
+
+
+def selection_revision(binding, kind):
+    """What a save-only new-start choice is bound to (a task's selector, an Assistant chat's pick): the routing its
+    deployment would run on (route, resource or endpoint, sign-in method), as a short digest. Changed, a choice made
+    under the old one is stale and refuses rather than run elsewhere (and never falls back to Personal)."""
+    parts = {"route": binding["route"], "kind": kind}
+    if binding["route"] == AZURE:
+        target = binding.get("claude_resource" if kind == "claude" else "codex_endpoint") or ""
+        parts.update(target=target.strip(), auth=(binding.get(f"{kind}_auth") or "").strip())
+    return hashlib.sha256(json.dumps(parts, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
 
 
 # Where an argv's options are taken to end: at its first bare "--", else at its end. For Codex
@@ -388,27 +495,42 @@ def compose(plan, argv):
     return out[:1] + plan["args"] + out[1:], dict(plan["env"])
 
 
-def admit_launch(s, argv, space=None, d=None):
-    """Before any launch effect (a worktree, a task's state, a terminal): Personal passes, as it
-    always did, and gives its plan. An Azure binding is checked whole, so an unsupported one says
-    what is wrong, and a valid one is held: this version plans Azure launches and doesn't
-    dispatch them. d: the settings as launch admission read them (read_strict)."""
+def admit_launch(s, argv, space=None, d=None, role=None, deployment=None, bound=None, who=None):
+    """Before any launch effect (a worktree, a task's state, a terminal): the plan this start runs on. A new
+    conversation (bound None) plans from today's settings: Personal passes as it always did; an Azure binding is
+    checked whole, so an unsupported one says what is wrong, and a valid one is planned for role (its deployment,
+    or `deployment` chosen for this start). A recorded conversation's resume (bound: its recorded binding,
+    PERSONAL_RECORD for one recorded before A2) plans from that record (plan_of_record). d: the settings as launch
+    admission read them (read_strict)."""
     binding = binding_for(s, space, d)
     kind = agent_key(argv)
-    if binding["route"] == PERSONAL:
-        return launch_plan(kind, binding)
-    compose(launch_plan(kind, binding), argv)
-    raise Fail(HELD.format("Claude Code" if kind == "claude" else "Codex", kind))
+    if bound is not None:
+        plan = plan_of_record(bound, binding, kind, who or "This task")
+    else:
+        plan = launch_plan(kind, binding, role, deployment)
+    compose(plan, argv)
+    return plan
 
 
-def admit_assistant(s, space=None, d=None, machine=None):
-    """An Assistant's (or a tab agent's) start, before any effect. Its start sites can't apply a
-    plan, so only Personal passes; machine: where it would run when that isn't here (`hc run
-    --on`), named in the refusal. Gives the route."""
+def admit_assistant(s, space=None, d=None, machine=None, argv=None, deployment=None, replaces=None):
+    """An Assistant's (or a tab agent's) start, before any effect: its plan. Only a new start from its three
+    new-start sites carries one (argv: the agent's own argv, `launch run --new-start`); there an Azure binding is
+    planned for the Assistant's role (its deployment, or the chat's chosen one). Every other start (a restart, a lost
+    session started anew: L2) admits Personal only, and refuses to replace an agent whose start recorded Azure
+    (replaces: that agent's recorded route). machine: where it would run when that isn't here (`hc run --on`)."""
     binding = binding_for(s, space, d)
-    if binding["route"] != PERSONAL:
-        raise Fail(NOT_EXECUTION_HOST.format(machine) if machine else NOT_ASSISTANT)
-    return binding["route"]
+    if replaces not in (None, PERSONAL):
+        raise Fail(RESTART_HELD.format("the agent it replaces started on Azure Foundry: restarting it Personal would move its "
+                                       "conversation to another provider"))
+    if binding["route"] == PERSONAL:
+        return launch_plan(agent_key(argv) if argv else "claude", binding)
+    if machine:
+        raise Fail(NOT_EXECUTION_HOST.format(machine))
+    if argv is None:
+        raise Fail(RESTART_HELD.format("Provider is Azure Foundry here"))
+    plan = launch_plan(agent_key(argv), binding, "coordinator", deployment)
+    compose(plan, argv)
+    return plan
 
 
 # What can outrank a plan on the execution host, so a plan shown here is never said to be what
@@ -447,12 +569,45 @@ def precedence(kind):
     return rows
 
 
+def selection_view(binding, role):
+    """What a new-start selector shows for role (`provider show`): the route, and per CLI its routing in words, the
+    deployment a new start takes now (checked; "" when unset or not one) and the revision a choice made now is bound
+    to. Never refuses an incomplete Azure setup: the selector says what is missing instead."""
+    out = {"route": binding["route"], "role": role, "clis": {}}
+    for kind in KINDS:
+        try:
+            dep = clean(f"{kind}_deployment", role_deployment(binding, kind, role) or "")
+        except Fail:
+            dep = ""
+        try:
+            launch_plan(kind, binding, role)
+            problem = None
+        except Fail as e:
+            problem = str(e)
+        out["clis"][kind] = {"routing": binding_words(binding, kind), "deployment": dep if binding["route"] == AZURE else None,
+                             "revision": selection_revision(binding, kind), "problem": problem}
+    return out
+
+
 def cmd_provider(args):
-    """`provider plan`: the launch plan for one CLI under this folder's settings, read-only. It
-    starts nothing, signs in nowhere, reads no credential and doesn't say one is there."""
+    """`provider plan`: the launch plan for one CLI under this folder's settings; `provider show`: what a new-start
+    selector shows. Both read-only: they start nothing, sign in nowhere, read no credential and don't say one is
+    there."""
     from .store import locate
     s = types.SimpleNamespace(loc=locate(args.folder))
     binding = binding_for(s, bare(args.space) if args.space else None)
+    role = getattr(args, "role", None) or "worker"
+    if role not in ROLES:
+        raise Fail("--role is worker or coordinator.")
+    if args.provider == "show":
+        out = selection_view(binding, role)
+        if getattr(args, "json", False):
+            print(json.dumps(out))
+            return
+        print("\n".join([f"{role}: {'Azure Foundry' if out['route'] == AZURE else 'Personal'}."] +
+                        [f"{k}: {c['routing']}" + (f", deployment {c['deployment'] or '(not set)'}" if c["deployment"] is not None else "")
+                         + (f". {c['problem']}" if c["problem"] else "") for k, c in out["clis"].items()]))
+        return
     if not args.agent and not args.argv:
         raise Fail("Which CLI? Pass --agent claude or --agent codex.")
     try:
@@ -462,11 +617,12 @@ def cmd_provider(args):
     kind = agent_key(base)
     if args.agent and kind != args.agent:
         raise Fail(f"--argv starts {kind}, not {args.agent}.")
-    plan = launch_plan(kind, binding)
+    plan = launch_plan(kind, binding, role, getattr(args, "deployment", None))
     argv, env = compose(plan, base)
     azure = plan["route"] == AZURE
-    out = {**plan, "argv": argv, "env": env, "dispatch": "held" if azure else "pass-through",
-           "pending": ["bound resume", "settings and selectors", "native qualification"] if azure else [],
+    out = {**plan, "argv": argv, "env": env, "dispatch": "planned" if azure else "pass-through",
+           "revision": selection_revision(binding, kind),
+           "pending": ["restart and revival (L2)", "native qualification"] if azure else [],
            **({"outranked_by": precedence(kind)} if azure else {})}
     if getattr(args, "json", False):
         print(json.dumps(out))
@@ -480,6 +636,7 @@ def cmd_provider(args):
         f"{kind}: Azure Foundry, deployment {plan['deployment']}, {AUTH_WORDS[plan['auth']]}.",
         f"Signs in with {how}.",
         f"Binding {plan['fingerprint'][:12]} (CLI, endpoint or resource, deployment and method; not an account).",
-        "Dispatch is held in this version: launch admission checks every start, and bound resume, settings and selectors, and native qualification are pending.",
+        "A task's start and an Assistant's new start use this plan and record its binding; a resume keeps the recorded "
+        "one. Restart and revival (L2) stay Personal only, and native qualification is pending.",
         *[f"Can be outranked by {r['layer']}: {r['effect']} ({r['observed']})." for r in precedence(kind)],
         "This is a plan, not a check: no sign-in, credential or model request was tried. --json shows its argv and env."]))

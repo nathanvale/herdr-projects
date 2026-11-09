@@ -385,6 +385,15 @@ export async function lostRefusal(kind, t, read, path = null) {
   return pid && folderWord(await read(pid)) === "other" ? OTHER_FOLDER : null;
 }
 
+// An agent whose start recorded Azure Foundry (its terminal's herdr.provider label, set by herdr-task's launch owner):
+// a restart, a fork, a lost session's new start and revival can't carry its provider binding yet (the migration's L2),
+// so each refuses it rather than move its conversation to the CLI's own sign-in. Personal (no label) refuses nothing.
+export const PROVIDER_HELD = "It started on Azure Foundry, and restarting it here can't carry that yet, so its conversation would move to another provider. Nothing was restarted. Resume or switch a task's agent with herdr-task.";
+export function providerRefusal(t) {
+  const route = t?.labels?.["herdr.provider"];
+  return route && route !== "personal" ? PROVIDER_HELD : null;
+}
+
 // The conversation's id, from its log's file name; none for one nothing may continue (inOtherFolder).
 export function sessionOf(kind, path) {
   if (inOtherFolder(kind, path)) return null;

@@ -18,7 +18,7 @@ import { sh } from "./model.ts";
 
 const { ScreenWatch, starting, cliOf, readScreen, screenText, pressKeys, SCREEN } = SC as any;
 const { LOST, lostMessage, shellWord, WORDS, sessionStarted, sessionFailed } = CV as any;
-const { freshArgv, lostRefusal } = AG as any;
+const { freshArgv, lostRefusal, providerRefusal } = AG as any;
 const APP = process.env.HERDR_APP_HOME || join(HOME, ".config", "herdr-app");
 type Run = (args: string[]) => Promise<{ code: number; stdout: string; stderr?: string }>;
 /** an agent to watch: its address, and its task's id when it is a task's worker */
@@ -99,6 +99,9 @@ export class AgentWatch {
     if (done() || (now?.state === "live" && cliOf(now))) return;
     this.note(addr, WORDS.sessionGone);
     try {
+      // an agent that started on Azure Foundry: a new start here can't carry its binding (L2, core/agents.js)
+      const held = providerRefusal(t);
+      if (held) throw new Error(held);
       // fresh drops what its launch set, and a new start carries no CLAUDE_CONFIG_DIR (core/agents.js)
       const machine = addr.includes("/") ? addr.split("/")[0] : null;
       const why = await lostRefusal(kind, t, (pid: number) => sh(this.hub, FOLDER, ["folder", String(pid)], machine).then((r: any) => r.stdout, () => ""));

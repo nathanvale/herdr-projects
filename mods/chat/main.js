@@ -1003,6 +1003,9 @@ export default class Chat extends View {
     const mine = t.address === this.addr;
     if (mine) { this.note = { id: `note-${Date.now()}`, text: WORDS.sessionGone }; cx.notify(); }
     try {
+      // An agent that started on Azure Foundry: a new start here can't carry its binding (L2, core/agents.js).
+      const held = agent.providerRefusal(t);
+      if (held) throw new Error(held);
       // fresh drops what its launch set, and a new start carries no CLAUDE_CONFIG_DIR (core/agents.js).
       const why = await agent.lostRefusal(kind, t, this.folderReader(t.address), mine ? this.path : null);
       if (why) throw new Error(why);
@@ -1661,12 +1664,18 @@ export default class Chat extends View {
         ...(space ? ["--label", `herdr.coordinator.space=${String(space.id).split("/").pop()}`] : []),
         ...(rec?.tab ? ["--label", `herdr.coordinator.tab=${String(rec.tab).split("/").pop()}`] : []),
         launch, ...(task ? [task] : [])];
-      // Every start goes through launch admission (herdr-task launch run, launch_admission.py): Personal only,
-      // claimed, rechecked and recorded as sent, then this hc run; its reply is hc's own, or {error} when refused.
-      // A tab agent is named by its chat pane, as restart.sh names it (HERDR_RESTART_CHAT), so the two are one identity.
+      // Every start goes through launch admission (herdr-task launch run, launch_admission.py): claimed, rechecked
+      // and recorded as sent, then this hc run; its reply is hc's own, or {error} when refused. An Assistant's start
+      // here is a new start (--new-start: the template word it runs), planned for its provider: on Azure Foundry the
+      // owner puts its own one-off template in that word's place, with the chosen agent (--argv) and, from this chat's
+      // save-only Azure pick, its deployment and the revision it was chosen under (a changed one refuses). A tab
+      // agent is named by its chat pane, as restart.sh names it (HERDR_RESTART_CHAT), so the two are one identity.
       const role = this.role === "coordinator" ? ["--role", "coordinator"] : ["--role", "agent", "--slot", String(pane)];
       const where = ["--space", space ? String(space.id).split("/").pop() : "unplaced"];
-      const r = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, ["launch", "run", ...role, ...where, "--json", "--", ...args.slice(1)])
+      const plan = this.role !== "coordinator" ? [] : ["--new-start", launch, "--source", template,
+        ...(st?.agent && there ? ["--argv", JSON.stringify(agent.argvFor(st, { agent: null, argv: [] }).argv)] : []),
+        ...(st?.deployment ? ["--deployment", String(st.deployment), ...(st.revision ? ["--revision", String(st.revision)] : [])] : [])];
+      const r = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, ["launch", "run", ...role, ...where, ...plan, "--json", "--", ...args.slice(1)])
         .catch((e) => ({ code: 1, stderr: String(e?.message ?? e), stdout: "" }));
       if (oneOff) exec("sh", ["-c", TEMPLATE + 'rm -f "$dir/$1.md"', "x", oneOff], on);
       let out = {};
@@ -2234,6 +2243,9 @@ export default class Chat extends View {
   fork(cx) {
     const session = agent.sessionOf(this.kind, this.path);
     if (!session) { toast({ title: "Can't fork", body: agent.inOtherFolder(this.kind, this.path) ? agent.OTHER_FOLDER : "This conversation has no saved session.", level: "info" }); return; }
+    // A fork copies its flags but not an Azure Foundry binding (L2): refused rather than run elsewhere.
+    const held = agent.providerRefusal(this.t);
+    if (held) { toast({ title: "Can't fork", body: held, level: "info" }); return; }
     const tab = panes().find((p) => p.pane === this.myPane())?.tab;
     const space = spaces().find((s) => s.tabs.some((x) => x.id === tab));
     const folder = this.t?.foreground?.cwd ?? this.t?.cwd ?? undefined;
@@ -2651,6 +2663,9 @@ export default class Chat extends View {
     cx.spawn(async (cx) => {
       try {
         const t = JSON.parse((await hc(["get", this.addr, "--json"])).stdout);
+        // Restart can't carry an Azure Foundry binding yet (L2): one that started there is refused (core/agents.js).
+        const held = agent.providerRefusal(t);
+        if (held) throw new Error(held);
         const why = await agent.restartRefusal(this.kind, t.foreground?.pid, this.folderReader(this.addr));
         if (why) throw new Error(why);
         const built = agent.argvFor(pick, { agent: this.kind, argv: t.foreground?.argv ?? [], session: agent.sessionOf(this.kind, this.path) });
@@ -2679,6 +2694,9 @@ export default class Chat extends View {
     cx.spawn(async (cx) => {
       try {
         const t = JSON.parse((await hc(["get", this.addr, "--json"])).stdout);
+        // Restart can't carry an Azure Foundry binding yet (L2): one that started there is refused (core/agents.js).
+        const held = agent.providerRefusal(t);
+        if (held) throw new Error(held);
         const why = await agent.restartRefusal(this.kind, t.foreground?.pid, this.folderReader(this.addr));
         if (why) throw new Error(why);
         const k = this.taskKey;
@@ -2689,7 +2707,7 @@ export default class Chat extends View {
         const on = k?.machine ?? this.machine;
         this.swapping = true;
         const r = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, [...(on ? ["--on", on] : []), "switch", ref, "--folder", folder,
-          "--argv", JSON.stringify(built.base), "--json"]);
+          "--argv", JSON.stringify(built.base), "--restart", "--json"]);
         let out = null;
         try { out = JSON.parse(r.stdout || "null"); } catch {}
         if (r.code !== 0 || !out?.terminal) throw new Error(out?.error || r.stderr?.trim().split("\n").pop() || "Its agent didn't start.");

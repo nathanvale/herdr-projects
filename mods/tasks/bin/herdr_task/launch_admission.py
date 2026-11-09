@@ -45,7 +45,7 @@ import types
 import uuid
 
 from .base import Fail, guard, HOME, now, run, STORE
-from .providers import admit_assistant, admit_launch, read_strict
+from .providers import admit_assistant, admit_launch, AZURE, PERSONAL, read_strict, STALE_SELECTION
 from .settings import agent_key, bare
 
 LABEL = "herdr.launch"
@@ -454,25 +454,35 @@ KEEP = object()
 
 
 def admit_task(s, task, argv, space, parent=None, role=None, select=None, resolve_parent=True, prev=None, folder=KEEP,
-               repair=False):
-    """Preflight for a task's agent, before any effect: the settings read strictly, its route
-    (providers.py: Personal passes, Azure is held, anything unsupported refuses), its Claude Code
-    folder (config_dir_for, carried from prev: the agent it follows), an earlier start still open,
-    and its Assistant (parent_for: `parent` while live, else the space's). select: how its argv is
-    chosen again from settings (None: argv was given as it is). folder: the one a queued plan
-    kept (None: inherit), never this herdr-task's own; repair: see refuse_busy."""
+               repair=False, bound=None):
+    """Preflight for a task's agent, before any effect: the settings read strictly, its plan (providers.py: a new
+    conversation plans from today's settings, with the task's own save-only deployment when its CLI is the one chosen;
+    a recorded conversation's resume, bound, plans from its recorded binding and refuses changed routing), its Claude
+    Code folder (config_dir_for, carried from prev: the agent it follows), an earlier start still open, and its
+    Assistant (parent_for: `parent` while live, else the space's). select: how its argv is chosen again from settings
+    (None: argv was given as it is). folder: the one a queued plan kept (None: inherit), never this herdr-task's own;
+    repair: see refuse_busy. The admission's plan is what the start composes and records (launch.launch)."""
     from .launch import parent_for
+    from .settings import task_deployment
     identity = task_identity(s, task, role)
     folder = config_dir_for(argv, prev) if folder is KEEP else (folder if agent_key(argv) == "claude" else None)
+    chosen = None if (role or bound is not None) else task_deployment(task, agent_key(argv))
+    held = {}
 
     def revise():
         d = read_strict()
-        plan = admit_launch(s, argv, space, d)
+        if chosen:
+            # The task's choice was saved under one routing (select): under another it refuses, never runs elsewhere.
+            from .providers import binding_for, selection_revision
+            if task.get("selection_routing") != selection_revision(binding_for(s, space, d), agent_key(argv)):
+                raise Fail(STALE_SELECTION.format(task.get("selection_routing") or "none"))
+        plan = admit_launch(s, argv, space, d, "worker", chosen, bound, s.ref(task))
+        held["plan"] = plan
         return digest({"role": role or "task", "route": plan["route"], "fingerprint": plan["fingerprint"], "argv": list(argv),
                        "selected": select() if select else None, "space": bare(space) if space else None,
-                       "config_dir": folder})
+                       "config_dir": folder, "bound": (bound or {}).get("fingerprint") if bound is not None else None})
     adm = Admission(identity, role or "task", bare(space) if space else None, None, revise, who=s.ref(task))
-    adm.task, adm.config_dir = task, folder
+    adm.task, adm.config_dir, adm.plan = task, folder, held["plan"]
     # The argv chosen from settings a moment ago must still be what they choose: the revision binds both.
     if select and select() != list(argv):
         raise Fail(CHANGED.format("admitted"))
@@ -487,29 +497,52 @@ def assistant_identity(role, machine, space, slot=None):
     return f"{role}:{machine or 'local'}/{space}" + (f"/{slot}" if slot else "")
 
 
-def admit_assistant_start(role, space, hc_args, slot=None, config_dir=None):
-    """Preflight for an Assistant's (role coordinator) or a tab agent's (role agent) start through
-    hc_args, its `hc run` words: only Personal is admitted (its start sites can't apply a plan),
-    here or on the machine its --on names; an earlier start of the same space (and slot) still
-    open refuses."""
+def space_scope(space, d):
+    """A store-like scope for a space's settings: the space's own layer is the one settings_layers() picks for its
+    folder; a space the file doesn't have gets a folder no layer has, so only Everywhere's and this machine's apply."""
+    spaces = d.get("spaces") if isinstance(d.get("spaces"), dict) else {}
+    entry = spaces.get(space)
+    return types.SimpleNamespace(loc={"folder": entry.get("folder") if isinstance(entry, dict) else f"\0{space}"})
+
+
+def space_binding(space):
+    """The provider binding at a space, read strictly (the route a new start would plan on now)."""
+    from .providers import binding_for
+    d = read_strict()
+    return binding_for(space_scope(space, d), space, d)
+
+
+def admit_assistant_start(role, space, hc_args, slot=None, config_dir=None, argv=None, deployment=None, revision=None,
+                          replaces=None):
+    """Preflight for an Assistant's (role coordinator) or a tab agent's (role agent) start through hc_args, its `hc run`
+    words. A new start (argv: the agent's own argv, `--new-start`) is planned: Personal as it always was, Azure
+    Foundry for the Assistant's role here (providers.admit_assistant), and a chat's save-only choice (deployment)
+    must still be on the routing it was chosen under (revision). Any other start (a restart: L2) admits Personal
+    only, here or on the machine its --on names, and never replaces an agent that started on Azure (replaces: its
+    recorded route). An earlier start of the same space (and slot) still open refuses."""
     machine = on_machine(hc_args)
     if machine is not None and not WORD.fullmatch(machine):
         raise Fail("`hc run --on` names a machine as a single word (letters, digits, dots, underscores, @ and dashes). "
                    "Nothing was started.")
+    held = {}
 
     def revise():
+        from .providers import binding_for, selection_revision
         d = read_strict()
         # The space's own layer is the one settings_layers() picks for its folder; a space the file
         # doesn't have gets a folder no layer has, so only Everywhere's and this machine's apply.
-        spaces = d.get("spaces") if isinstance(d.get("spaces"), dict) else {}
-        entry = spaces.get(space)
-        folder = entry.get("folder") if isinstance(entry, dict) else f"\0{space}"
-        route = admit_assistant(types.SimpleNamespace(loc={"folder": folder}), space, d, machine)
-        return digest({"role": role, "route": route, "space": space, "machine": machine, "hc": list(hc_args),
-                       "config_dir": config_dir})
+        s = space_scope(space, d)
+        if revision and argv:
+            now = selection_revision(binding_for(s, space, d), agent_key(argv))
+            if now != revision:
+                raise Fail(STALE_SELECTION.format(revision))
+        plan = admit_assistant(s, space, d, machine, argv, deployment, replaces)
+        held["plan"] = plan
+        return digest({"role": role, "route": plan["route"], "fingerprint": plan["fingerprint"], "space": space,
+                       "machine": machine, "hc": list(hc_args), "argv": list(argv) if argv else None, "config_dir": config_dir})
     identity = assistant_identity(role, machine, space, slot)
     adm = Admission(identity, role, space, machine, revise)
-    adm.config_dir = config_dir
+    adm.config_dir, adm.plan = config_dir, held["plan"]
     open_start(identity)
     return adm
 
@@ -647,10 +680,69 @@ def launch_folder(args, say):
     say(args, {"folder": folder, "default": folder == os.path.join(HOME, ".claude")}, folder)
 
 
+TEMPLATES_DIR = os.path.join(HOME, ".config", "herdr-core", "templates")
+NOT_PLAIN = ("The {} template's command isn't one plain agent command (claude or codex and its words, nothing a shell "
+             "expands, chains or redirects), so an Azure Foundry plan can't be applied to it. Nothing was started.")
+
+
+def read_template(name):
+    """(command, body) of a herdr-core template on this machine; refuses when it can't be read."""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", name or ""):
+        raise Fail("--source names a template (letters, digits, dots, dashes and underscores).")
+    try:
+        with open(os.path.join(TEMPLATES_DIR, f"{name}.md")) as f:
+            text = f.read()
+    except OSError:
+        raise Fail(f"The {name} template can't be read on this machine, so its start can't be planned. Nothing was started.")
+    head = re.match(r"^---\n([\s\S]*?)\n---\n?", text)
+    m = re.search(r"^command:[ \t]*(.+)$", head.group(1), re.M) if head else None
+    return (m.group(1).strip() if m else None), (text[head.end():] if head else text)
+
+
+def template_argv(name, command):
+    """The agent argv in a template's command line: its words when they are one plain claude or codex command."""
+    import shlex
+    cmd = re.sub(r"^exec\s+", "", command or "")
+    if not cmd or re.search(r"[;&|<>`$()\n\\]", cmd):
+        raise Fail(NOT_PLAIN.format(name))
+    try:
+        words = shlex.split(cmd)
+    except ValueError:
+        raise Fail(NOT_PLAIN.format(name))
+    if not words or agent_key(words) not in ("claude", "codex"):
+        raise Fail(NOT_PLAIN.format(name))
+    return words
+
+
+def write_one_off(source, body, argv, env, need, lid):
+    """An owner-written one-off template for an Azure Assistant start: the source template's words, and a command
+    that clears a parent Claude Code session's markers (launch.CLEAN_ENV), exports the plan's nonsecret variables,
+    starts the agent only when its credential variable is set (launch.provider_words), then execs the planned argv.
+    Named for its launch; removed once hc has run. Gives its name."""
+    import shlex
+    from .launch import CLEAN_ENV, provider_words
+    before, after = provider_words(env, need)
+    words = " ".join(shlex.quote(a) for a in argv)
+    command = f"{CLEAN_ENV} {before}exec {words}; {after}exit 1" if after else f"{CLEAN_ENV} {before}exec {words}"
+    name = f"herdr-{source}-az-{lid[:8]}"
+    text = (f"---\nname: {name}\ndescription: A one-off Azure Foundry {source} start (herdr-task launch run), removed "
+            f"after use.\ncommand: {command}\n---\n{body}")
+    os.makedirs(TEMPLATES_DIR, exist_ok=True)
+    path = os.path.join(TEMPLATES_DIR, f"{name}.md")
+    with open(path, "w") as f:
+        f.write(text)
+    return name, path
+
+
 def launch_run(args, say):
     """`launch run`: an Assistant's or a tab agent's start, admitted, claimed, sent and confirmed
     here; the hc run words after "--" are its start site's own, given the launch's label and
-    --json."""
+    --json. A new start (--new-start WORD: the template word its hc words name) is planned: on
+    Azure Foundry the owner writes its own one-off template from --source's words and the planned
+    argv (--argv, else --source's command), puts it in WORD's place, labels the start with its
+    route and records its binding. --replaced-route: the route the agent a restart replaces
+    started on (L2: only Personal is restarted)."""
+    from .providers import compose, recorded
     words = list(args.hc_args or [])
     if words[:1] == ["--"]:
         words = words[1:]
@@ -666,16 +758,59 @@ def launch_run(args, say):
         raise Fail("--config-dir is the absolute Claude Code folder its start carries.")
     # The same refusals for --check as for the run: words that carry its own launch label, or name a machine
     # (--on) that can't be an identity, refuse either way; only the run needs words at all.
-    if any(a.startswith(f"{LABEL}=") or a.startswith(f"--label={LABEL}=") for a in options_of(words)):
-        raise Fail("A start's launch label is the launch owner's own: leave it out.")
+    if any(a.startswith(f"{LABEL}=") or a.startswith(f"--label={LABEL}=") or a.startswith("herdr.provider=")
+           for a in options_of(words)):
+        raise Fail("A start's launch and provider labels are the launch owner's own: leave them out.")
+    new = getattr(args, "new_start", None)
+    if (getattr(args, "argv", None) or getattr(args, "deployment", None) or getattr(args, "revision", None)) and not new:
+        raise Fail("--argv, --deployment and --revision are for a new start (--new-start).")
+    if new and args.role != "coordinator":
+        raise Fail("A new start's plan is an Assistant's (--role coordinator).")
+    argv = None
+    source = getattr(args, "source", None) or "assistant"
+    if new:
+        if getattr(args, "argv", None):
+            try:
+                argv = json.loads(args.argv)
+            except ValueError:
+                argv = None
+            if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
+                raise Fail("--argv is the agent's argv as a JSON list of words.")
+    # The agent a restart replaces: the route its start recorded on its terminal (label herdr.provider; restart.sh
+    # reads it with the rest of the old agent). Empty: Personal (started before A2, or Personal).
+    replaces = (getattr(args, "replaced_route", None) or "").strip() or None
+    if replaces and not WORD.fullmatch(replaces):
+        raise Fail("--replaced-route is the route the replaced agent's start recorded.")
+    if not args.check and not words:
+        raise Fail("Give the hc run words after \"--\".")
+    # An Azure new start without its own argv runs its source template's command, planned; a Personal one keeps
+    # its words as they are, so its template isn't read.
+    if new and argv is None and space_binding(space)["route"] == AZURE:
+        argv = template_argv(source, read_template(source)[0])
+    adm = admit_assistant_start(args.role, space, words, args.slot if args.role == "agent" else None, folder,
+                                (argv or ["claude"]) if new else None, getattr(args, "deployment", None),
+                                getattr(args, "revision", None), replaces)
     if args.check:
         # Preflight only, before the start site changes anything: its route and an earlier start still open.
-        adm = admit_assistant_start(args.role, space, words, args.slot if args.role == "agent" else None, folder)
-        return say(args, {"admitted": True, "identity": adm.identity}, f"{adm.identity}: admitted.")
-    if not words:
-        raise Fail("Give the hc run words after \"--\".")
-    adm = admit_assistant_start(args.role, space, words, args.slot if args.role == "agent" else None, folder)
-    with adm.claimed():
-        extra = adm.label() + ([] if "--json" in options_of(words) else ["--json"])
-        out = adm.submit(["run", *extra, *words])
+        return say(args, {"admitted": True, "identity": adm.identity, "route": adm.plan["route"]}, f"{adm.identity}: admitted.")
+    azure = adm.plan["route"] == AZURE
+    if azure and words.count(new) != 1:
+        raise Fail("--new-start names the template word its hc run words give once. Nothing was started.")
+    made = None
+    try:
+        with adm.claimed():
+            sent = list(words)
+            extra = adm.label() + ([] if "--json" in options_of(words) else ["--json"])
+            if azure:
+                cmd, env = compose(adm.plan, argv)
+                made = write_one_off(source, read_template(source)[1], cmd, env, adm.plan.get("credential"), adm.launch)
+                sent[sent.index(new)] = made[0]
+                extra += ["--label", f"herdr.provider={adm.plan['route']}"]
+            out = adm.submit(["run", *extra, *sent], record={"provider": recorded(adm.plan)} if azure else None)
+    finally:
+        if made:
+            try:
+                os.remove(made[1])
+            except OSError:
+                pass
     say(args, out, out["address"])
