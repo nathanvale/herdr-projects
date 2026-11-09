@@ -1867,7 +1867,7 @@ class CleanEnv(unittest.TestCase):
                 mock.patch.object(LA, "STORE", none), mock.patch.object(L, "folder_for", lambda s, t: "/tmp"), \
                 mock.patch.object(L, "agent_name", lambda *a: "dev-6-fake"), mock.patch.object(L, "track", lambda *a: None), \
                 mock.patch.object(L, "coordinator_tab", lambda a: None), mock.patch.object(L, "own_argv", lambda a: a), \
-                mock.patch.object(L, "in_shell", lambda a: a), mock.patch.object(L, "low_priority", lambda a, n: a), \
+                mock.patch.object(L, "in_shell", lambda a, config_dir=None: a), mock.patch.object(L, "low_priority", lambda a, n: a), \
                 mock.patch.object(LA, "admit_launch", admit), \
                 mock.patch.object(settings, "SETTINGS", os.path.join(none, "shepherdr.json")):
             L.launch(s, task, ["env"], "sp1")

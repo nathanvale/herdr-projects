@@ -175,11 +175,13 @@ def put_on(t, rec):
     return True
 
 
-def refuse_busy(d, identity, who=None, task=None):
+def refuse_busy(d, identity, who=None, task=None, repair=False):
     """Refuses while `identity` has a start that isn't resolved: never submitted, submission
     uncertain, or confirmed while its task list hasn't recorded its agent (its herdr-task ended
     before saving). With task (the task as this start reads it): a recorded one releases its
-    claim; an unrecorded one is put on it, and this start still refuses, so it never runs twice."""
+    claim. An unrecorded one refuses this start, so it never runs twice; with repair (a caller
+    that saves its task list after a refusal: the tick) it is put on the task too, and the
+    refusal carries its address (Fail.put_on)."""
     lid = d["claims"].get(identity)
     if not lid:
         return
@@ -189,19 +191,22 @@ def refuse_busy(d, identity, who=None, task=None):
             rec.update(recorded=True, updated=now())
             d["claims"].pop(identity, None)
             return
-        on = task is not None and put_on(task, rec)
-        raise Fail(f"{who or identity}'s last start ({lid}) runs as {rec.get('address')}, but its task list never recorded it "
-                   f"(its herdr-task ended before saving). Nothing was started. "
-                   + ("It is on the task now." if on else f"`herdr-task launch reconcile {identity} {lid}` records it on its task."))
+        on = repair and task is not None and put_on(task, rec)
+        e = Fail(f"{who or identity}'s last start ({lid}) runs as {rec.get('address')}, but its task list never recorded it "
+                 f"(its herdr-task ended before saving). Nothing was started. "
+                 + ("It is on the task now." if on else f"`herdr-task launch reconcile {identity} {lid}` records it on its task."))
+        if on:
+            e.put_on = rec["address"]
+        raise e
     if rec and rec.get("state") not in OPEN:
         return
     raise Fail(busy_words(identity, rec, lid, who))
 
 
-def open_start(identity, who=None, task=None):
+def open_start(identity, who=None, task=None, repair=False):
     """Refuses while `identity` has an unresolved start (preflight's look, before any effect)."""
     with journal() as d:
-        refuse_busy(d, identity, who, task)
+        refuse_busy(d, identity, who, task, repair)
 
 
 def options_of(words):
@@ -399,15 +404,17 @@ def attach(rec):
 
 
 def config_dir_for(argv, prev=None):
-    """The Claude Code folder a task's agent starts on, passed to it explicitly and recorded: the
-    previous agent's own when it has one (switch, resume, a backup keep its profile), else this
-    herdr-task's CLAUDE_CONFIG_DIR when set, else None: the terminal's own environment decides, as
-    before L1 (recorded as inherited). As C1's rule (sessions.claude_dir): one absolute path, and
-    no other folder called .claude. Codex and other CLIs: None."""
+    """The Claude Code folder a task's agent starts on, passed to it explicitly and recorded. After
+    a previous Claude Code agent (switch, resume, a backup): its recorded folder, or None when it
+    has none (started before L1, or on an inherited folder), so it inherits as it did and is never
+    moved to the caller's profile. A first start: this herdr-task's CLAUDE_CONFIG_DIR when set,
+    else None (the terminal's own environment decides, as before L1). As C1's rule
+    (sessions.claude_dir): one absolute path, and no other folder called .claude. Codex and other
+    CLIs: None."""
     if agent_key(argv) != "claude":
         return None
-    if prev and prev.get("agent") == "claude" and prev.get("config_dir"):
-        return prev["config_dir"]
+    if prev and prev.get("agent") == "claude":
+        return prev.get("config_dir") or None
     v = os.environ.get("CLAUDE_CONFIG_DIR")
     if not v:
         return None
@@ -424,15 +431,20 @@ def task_identity(s, task, role=None):
     return f"task:{s.key(task)}" + (f"/{role}" if role else "")
 
 
-def admit_task(s, task, argv, space, parent=None, role=None, select=None, resolve_parent=True, prev=None):
+KEEP = object()
+
+
+def admit_task(s, task, argv, space, parent=None, role=None, select=None, resolve_parent=True, prev=None, folder=KEEP,
+               repair=False):
     """Preflight for a task's agent, before any effect: the settings read strictly, its route
     (providers.py: Personal passes, Azure is held, anything unsupported refuses), its Claude Code
     folder (config_dir_for, carried from prev: the agent it follows), an earlier start still open,
     and its Assistant (parent_for: `parent` while live, else the space's). select: how its argv is
-    chosen again from settings (None: argv was given as it is)."""
+    chosen again from settings (None: argv was given as it is). folder: the one a queued plan
+    kept (None: inherit), never this herdr-task's own; repair: see refuse_busy."""
     from .launch import parent_for
     identity = task_identity(s, task, role)
-    folder = config_dir_for(argv, prev)
+    folder = config_dir_for(argv, prev) if folder is KEEP else (folder if agent_key(argv) == "claude" else None)
 
     def revise():
         d = read_strict()
@@ -445,7 +457,7 @@ def admit_task(s, task, argv, space, parent=None, role=None, select=None, resolv
     # The argv chosen from settings a moment ago must still be what they choose: the revision binds both.
     if select and select() != list(argv):
         raise Fail(CHANGED.format("admitted"))
-    open_start(identity, s.ref(task), task)
+    open_start(identity, s.ref(task), task, repair)
     adm.parent = parent_for(parent, space) if resolve_parent else parent
     return adm
 

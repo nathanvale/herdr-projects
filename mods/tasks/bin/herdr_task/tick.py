@@ -15,7 +15,7 @@ from .provider import NUDGE, provider_cut, provider_error, PROVIDER_WAITS
 from .sessions import find_lost_logs, refresh_sessions, session_of
 from .github import GhFailed, finish, merged_here, watch_main
 from .forge import already_merged, merge_reach, pr_merged, pr_pending, pr_problem, pr_view, provider_of, reach, repository
-from .launch import default_space
+from .launch import default_space, track
 from .store import locate, read_list, Store, store_files
 from .queues import machine_hold, refresh_ext, running_count, set_hold, waiting_ext, waiting_for
 from .archive import archive_pass
@@ -198,10 +198,17 @@ def tick_store(s, report):
         try:
             sp = q.get("space") or t.get("space") or default_space()
             a = begin(s, t, q.get("argv") or worker_argv(s, t, sp), sp, q.get("parent"),
-                      select=None if q.get("argv") else (lambda: worker_argv(s, t, sp)))
+                      select=None if q.get("argv") else (lambda: worker_argv(s, t, sp)), folder=q.get("config_dir"))
         except Fail as e:
-            t["attention"] = f"Couldn't start: {e}"
             s.dirty = True
+            # Its last start runs and is back on the task now (launch admission): not a failure; watch it.
+            if getattr(e, "put_on", None):
+                try:
+                    track(s, t, e.put_on)
+                except OSError:
+                    pass
+                continue
+            t["attention"] = f"Couldn't start: {e}"
             continue
         n += 1
         report["started"].append({"folder": s.loc["folder"], "id": t["id"], "ref": s.ref(t), "terminal": a["address"]})

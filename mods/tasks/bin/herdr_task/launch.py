@@ -212,17 +212,23 @@ def clean_env(argv):
     return ["sh", "-c", CLEAN_ENV + ' exec "$@"', "herdr-clean", *argv]
 
 
-def in_shell(argv):
+def in_shell(argv, config_dir=None):
     """Runs the agent in the person's interactive shell, as Herdr does: their functions and
-    aliases apply (claude() adding flags), and the shell stays when the agent exits."""
+    aliases apply (claude() adding flags), and the shell stays when the agent exits. config_dir:
+    a Claude Code folder exported in that shell after its startup files, so they can't change it
+    and a claude() function still runs (launch_admission.config_dir_for)."""
     sh = os.environ.get("SHELL") or "/bin/sh"
     name = os.path.basename(sh)
     flag = "-lic" if sys.platform == "darwin" else "-ic"
     if name in ("bash", "zsh", "sh", "ksh", "dash"):
+        if config_dir:
+            return [sh, flag, 'export CLAUDE_CONFIG_DIR="$1"; shift; "$@"; exec "$0" -i', sh, config_dir] + argv
         return [sh, flag, '"$@"; exec "$0" -i', sh] + argv
     if name == "fish":
-        return [sh, flag, " ".join(shlex.quote(a) for a in argv) + "; exec fish -i"]
-    return argv
+        own = f"set -gx CLAUDE_CONFIG_DIR {shlex.quote(config_dir)}; " if config_dir else ""
+        return [sh, flag, own + " ".join(shlex.quote(a) for a in argv) + "; exec fish -i"]
+    # Another shell isn't run: no function to keep, so env sets it.
+    return ["env", f"CLAUDE_CONFIG_DIR={config_dir}", *argv] if config_dir else argv
 
 
 # ---- workers run at low priority (HERD-61) ---------------------------------------------------
@@ -595,10 +601,6 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
         cmd = own_argv(cmd)
     if message:
         cmd = cmd + [message]
-    if admission.config_dir:
-        # Its Claude Code folder, carried (launch_admission.config_dir_for): set inside the person's shell,
-        # so their shell's own startup files can't change it.
-        cmd = ["env", f"CLAUDE_CONFIG_DIR={admission.config_dir}", *cmd]
     labels = ["--label", f"herdr.task={key}", "--label", f"herdr.task.space={bare(space)}",
               "--label", f"herdr.agent={agent_key(argv)}"]
     ctab = coordinator_tab(parent)
@@ -620,7 +622,7 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
     # The journal keeps this record too: a reconcile after a lost reply or a crash puts it on the task.
     job = {"folder": s.loc["folder"], "id": task["id"], "space": bare(space), "role": role, "agent": dict(a)}
     out = admission.submit(["run", "--bg", "--json", "--keep", "--cwd", folder, "--name", name, *labels, *rel, "--",
-                            *low_priority(clean_env(["env", f"HERDR_BROWSER_TASK={key}", *in_shell(cmd)]), name)],
+                            *low_priority(clean_env(["env", f"HERDR_BROWSER_TASK={key}", *in_shell(cmd, admission.config_dir)]), name)],
                            parent_live=live_parent, record={"task": job})
     a = {"address": out["address"], **a, "launch": out["launch"]}
     s.dirty = True

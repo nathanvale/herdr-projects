@@ -82,7 +82,7 @@ NOT_SERVED_HERE = ("Azure Foundry starts agents only on the machine whose settin
                    "Set Provider to Personal for this machine or space.")
 NOT_KNOWN_HERE = ("Azure Foundry starts agents only on the machine whose settings set it, and whether this machine's settings "
                   "are its own or a Serve-from copy can't be read now (herdr-core's documents). Nothing was started.")
-NODE_DOC, HOST_DOC = "shepherdr.node", "shepherdr.host"
+NODE_DOC = "shepherdr.node"
 NOT_LOCAL = ("Azure Foundry starts agents only on the machine whose window holds these settings: this machine's are a copy. "
              "Set Provider to Personal for this machine or space.")
 # Never names the field it found: a key pasted in as a field's name would be repeated, and this
@@ -167,8 +167,9 @@ def binding_for(s, space=None, d=None):
     machine's, then the space's own "provider" fields; a field a layer leaves out (or null) follows
     the layer above, and "" there is its own empty value. With no route anywhere: Personal.
     "local" is False for a copy the settings window or the service pushed to this machine
-    ("pushed_from"). It is not a full local-only guard: a Serve-from host's file is its own, so launch admission (L1)
-    records the execution machine and refuses Azure for a start on another one. d: the settings as read_strict() read
+    ("pushed_from"); "source" says whose the file is for a route other than Personal (settings_source(): a
+    Serve-from client's copy is the serving machine's). Launch admission (L1) also refuses Azure for a start on
+    another machine. d: the settings as read_strict() read
     them (read here when not given): a file that is there but unreadable refuses, never reads as Personal."""
     d = read_strict() if d is None else d
     out = {f: "" for f in FIELDS}
@@ -206,7 +207,7 @@ def settings_source():
     """Whose this machine's settings file is, for a route that must run where it was set: "own" (no
     Shepherdr service here, so nothing syncs it, or this machine serves the web app), "serve-from" (its
     node record says another machine serves, so service/sync.ts keeps the file in step with that one),
-    or "unknown" (the documents are there but can't be read, or the record says neither)."""
+    or "unknown" (the documents are there but can't be read, or the node record says neither)."""
     path = core_docs()
     try:
         with open(path) as f:
@@ -222,10 +223,7 @@ def settings_source():
         return "own"
     if not isinstance(node, dict) or not isinstance(node.get("serving"), bool):
         return "unknown"
-    host = (docs.get(HOST_DOC) or {}).get("value") if isinstance(docs.get(HOST_DOC), dict) else None
-    # The host record names the serving machine; this one's node record says whether that is it.
-    if isinstance(host, dict) and host.get("id") and node.get("id") and (host["id"] == node["id"]) != node["serving"]:
-        return "unknown"
+    # This machine's own service decides serving (a host record it rejected doesn't count), so its flag is the answer.
     return "own" if node["serving"] else "serve-from"
 
 

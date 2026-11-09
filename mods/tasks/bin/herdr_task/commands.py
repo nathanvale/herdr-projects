@@ -299,12 +299,14 @@ def cmd_show(args):
 MADE = ("worktree", "branch", "base", "start")
 
 
-def begin(s, t, argv, space, parent=None, admission=None, select=None):
+def begin(s, t, argv, space, parent=None, admission=None, select=None, folder=None):
     """Starts the task's first agent. Returns its record. admission: its preflight (admit_task),
-    else made here; select: how its argv is chosen from settings again (None: as given)."""
+    else made here, for the tick: folder is then its queued plan's Claude Code folder (None:
+    inherit), and a confirmed start its task list lost is put back on it (the tick saves it);
+    select: how its argv is chosen from settings again (None: as given)."""
     # Before its state or worktree changes: launch admission (its provider route, an open earlier
     # start, its Assistant) refuses here.
-    adm = admission or admit_task(s, t, argv, space, parent, select=select)
+    adm = admission or admit_task(s, t, argv, space, parent, select=select, folder=folder, repair=True)
     before = copy.deepcopy(t)
     try:
         # Claimed (never-submitted) before the first effect; a failure before it is sent cancels it.
@@ -353,7 +355,8 @@ def cmd_start(args):
         parent = args.parent or q.get("parent")
         # Before it is queued too: launch admission refuses here, before anything changes.
         adm = admit_task(s, t, argv, space, parent, select=None if fixed else (lambda: worker_argv(s, t, space, args.agent)))
-        plan = {"argv": argv, "space": space, "parent": parent, **({"custom": True} if args.argv else {})}
+        # Its Claude Code folder goes with a queued or scheduled plan: the tick runs it on that one, not its own.
+        plan = {"argv": argv, "space": space, "parent": parent, "config_dir": adm.config_dir, **({"custom": True} if args.argv else {})}
         at = scheduled_at(args)
         if at:
             # start --at / --in: it starts by itself then, as this start would now.

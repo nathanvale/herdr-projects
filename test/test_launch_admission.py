@@ -442,6 +442,29 @@ class TaskStarts(unittest.TestCase):
         self.assertEqual((t["state"], [x["launch"] for x in t["agents"]]), ("running", [done["launch"]]))
         self.assertEqual(len([r for r in f.runs() if f"herdr.task=" in " ".join(r) and f"#{first}" in " ".join(r)]), 1)
 
+    def test_a_command_refusing_a_lost_record_says_how_to_repair_it(self):
+        """Round 3: a confirmed start its task list lost (herdr-task ended before saving; here the list
+        is put back as it would then be) refuses a switch truthfully, naming reconcile, which repairs it."""
+        f = Fixture(self)
+        f.add()
+        self.assertEqual(f.start().returncode, 0)
+        [rec] = f.starts()
+        path = next(os.path.join(f.store, n) for n in os.listdir(f.store) if n.endswith(".json") and not n.startswith("."))
+        with open(path) as fh:
+            d = json.load(fh)
+        t = next(x for x in d["tasks"] if x["id"] == 1)
+        t.update(state="todo", agents=[])
+        with open(path, "w") as fh:
+            json.dump(d, fh)
+        err = f.refused("switch", "1", "--folder", f.repo, "--space", "sp1")["error"]
+        self.assertIn(f"herdr-task launch reconcile {rec['identity']} {rec['launch']}", err)
+        self.assertNotIn("on the task now", err)
+        self.assertEqual(f.task()["agents"], [])
+        out = f.ok("launch", "reconcile", rec["identity"], rec["launch"])
+        self.assertEqual((out["attached"], [a["launch"] for a in f.task()["agents"]]), (True, [rec["launch"]]))
+        self.assertNotIn(rec["identity"], f.journal()["claims"])
+        self.assertEqual(len(f.runs()), 1)
+
     def test_an_unconfirmed_resume_keeps_its_launch_id(self):
         f = Fixture(self)
         f.add()
@@ -637,10 +660,16 @@ class ClaudeFolder(unittest.TestCase):
     """Carried to L1 from C1: a task's Claude Code start passes its folder (CLAUDE_CONFIG_DIR)
     explicitly and records it; a switch carries the previous agent's own folder."""
 
+    EXPORT = 'export CLAUDE_CONFIG_DIR="$1"; shift; "$@"; exec "$0" -i'
+
     def folder_word(self, run):
-        i = next(i for i, a in enumerate(run) if a.startswith("CLAUDE_CONFIG_DIR="))
-        self.assertEqual((run[i - 1], run[i + 1]), ("env", "claude"))
-        return run[i].split("=", 1)[1]
+        """The folder the person's shell exports before it runs claude (so a claude() function still runs)."""
+        i = run.index(self.EXPORT)
+        self.assertEqual((run[i + 1], run[i + 3]), ("/bin/sh", "claude"))
+        return run[i + 2]
+
+    def exported(self, run):
+        return self.EXPORT in run or any(a.startswith("CLAUDE_CONFIG_DIR=") for a in run)
 
     def test_a_start_carries_and_records_its_folder_and_a_switch_keeps_it(self):
         f = Fixture(self)
@@ -665,8 +694,32 @@ class ClaudeFolder(unittest.TestCase):
         self.assertEqual(f.start().returncode, 0)
         [rec] = f.starts()
         self.assertIsNone(rec["config_dir"])
-        self.assertFalse(any(a.startswith("CLAUDE_CONFIG_DIR=") for a in f.runs()[0]))
+        self.assertFalse(self.exported(f.runs()[0]))
         self.assertNotIn("config_dir", f.task()["agents"][0])
+
+    def test_an_agent_with_no_recorded_folder_is_never_moved_to_the_callers(self):
+        """Round 3: a resume after an inherited start (no folder recorded) adds none, whatever the
+        caller's own CLAUDE_CONFIG_DIR is, so the conversation stays on its profile."""
+        f = Fixture(self)
+        f.add()
+        self.assertEqual(f.start().returncode, 0)
+        f.finish(f.starts()[0]["address"])
+        f.env["CLAUDE_CONFIG_DIR"] = os.path.join(f.tmp, "callers-profile")
+        self.assertEqual(f.run("resume", "1", "--folder", f.repo, "--space", "sp1", "--json").returncode, 0)
+        self.assertIsNone(f.starts()[1]["config_dir"])
+        self.assertFalse(self.exported(f.runs()[1]))
+
+    def test_a_queued_start_keeps_the_folder_it_was_queued_with(self):
+        f = Fixture(self)
+        mine = os.path.join(f.tmp, "profile")
+        first, second = f.add(), f.add("--after", "1")
+        f.env["CLAUDE_CONFIG_DIR"] = mine
+        self.assertTrue(f.ok("start", str(second), "--folder", f.repo, "--space", "sp1")["queued"])
+        del f.env["CLAUDE_CONFIG_DIR"]
+        f.ok("rm", str(first), "--folder", f.repo)
+        f.ok("tick", "--folder", f.repo)
+        [run] = f.runs()
+        self.assertEqual((self.folder_word(run), f.starts()[0]["config_dir"]), (mine, mine))
 
 
 @ON_CI

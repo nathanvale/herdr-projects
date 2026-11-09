@@ -42,8 +42,15 @@ fi
 # before any change. A start of another CLI (an argv naming it) carries none.
 cdir=$HOME/.claude carry=""
 if [ "$app" = claude-code ] && [ -n "$pid" ]; then
-  cdir=$("$owner" launch folder "$pid") || exit 1
   first=$(jq -r '.[0] // empty' <<<"${argv:-[]}")
+  if found=$("$owner" launch folder "$pid" 2>&1); then
+    cdir=$found
+  elif [ -n "$argv" ] && [ "${first##*/}" != claude ]; then
+    : # switching to another CLI carries nothing: its log is looked for under ~/.claude, as before
+  else
+    printf '%s\n' "${found#herdr-task: }" >&2
+    exit 1
+  fi
   if [ "$cdir" != "$HOME/.claude" ] && { [ -z "$argv" ] || [ "${first##*/}" = claude ]; }; then
     carry=$cdir
     admit+=(--config-dir "$carry")

@@ -43,9 +43,10 @@ its own kept terminal, and `service/watch.ts` types a fresh start into a live on
    look for a terminal carrying its launch id. Exactly one confirms it; none keeps it uncertain, and
    the start refuses with its launch id (`--json` gives it as `launch`). Nothing retries it.
 5. **Recorded.** A confirmed task start keeps its claim until its task list holds the agent. The
-   next start of that task reads the list: the agent there releases the claim; missing (its
-   herdr-task ended before saving) it is put on the task and that start refuses, so the agent
-   never runs twice. `launch reconcile` does the same for a person, and starts its watcher.
+   next start of that task reads the list: the agent there releases the claim. Missing (its
+   herdr-task ended before saving), that start refuses, so the agent never runs twice: the tick
+   then puts the agent on the task and watches it, and any other command names
+   `launch reconcile`, which puts it there for a person and starts its watcher.
 
 A task refused before its start is sent keeps its queue, hold and state, so a tick that saves it
 never drops what was queued. Once sent, a tick keeps the task started whatever follows (it may be
@@ -63,15 +64,18 @@ is not ended. A worktree the start made stays the task's.
   `${XDG_STATE_HOME:-~/.local/state}/herdr-core/default/docs.json`) says it doesn't serve. No
   documents (no Shepherdr service here) reads as its own; documents that can't be read, or a
   record that contradicts the host record, refuse. Personal never reads them.
-- **Claude Code folder (carried from C1).** A task's Claude Code start passes its folder
-  explicitly, as `env CLAUDE_CONFIG_DIR=<folder>` inside the person's shell, so their startup files
-  can't change it, and records it on the start and its agent. The folder is the previous agent's
-  own for a switch, resume or backup, else this herdr-task's `CLAUDE_CONFIG_DIR`. Unset, nothing
-  is added and the terminal's own environment decides, as before L1. A value that isn't one
-  absolute path (or is another folder called `.claude`) refuses. `restart.sh` reads the old
+- **Claude Code folder (carried from C1).** A task's Claude Code start exports its folder
+  (`CLAUDE_CONFIG_DIR`) inside the person's shell after its startup files, so they can't change it
+  and a `claude()` function still runs, and records it on the start and its agent. After a
+  previous Claude Code agent (switch, resume, a backup) the folder is that agent's recorded one;
+  with none recorded (started before L1, or inherited) nothing is added, so it is never moved to
+  the caller's profile. A first start uses this herdr-task's `CLAUDE_CONFIG_DIR`; a queued or
+  scheduled one keeps the folder from when it was queued, and the tick never uses its own. Unset,
+  nothing is added and the terminal's own environment decides, as before L1. A value that isn't
+  one absolute path (or is another folder called `.claude`) refuses. `restart.sh` reads the old
   Claude Code agent's folder from its process (`herdr-task launch folder PID`, C1's rule), looks
-  for its log there instead of a fixed `~/.claude`, and carries it into the agent it starts.
-  Unreadable refuses before any change. The Assistant's other start sites start fresh and pass
+  for its log there instead of a fixed `~/.claude`, and carries it into a Claude Code agent it
+  starts. Unreadable refuses before any change, unless the restart switches to another CLI. The Assistant's other start sites start fresh and pass
   none. L2 owns the rest: native revive and resume reconstructing the folder (`T/revive.py`,
   `service/watch.ts`), and recording sessions found under it (`session_of()` still records only
   `~/.claude` ones, so a resume there starts with a handoff).

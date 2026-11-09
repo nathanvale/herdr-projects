@@ -373,7 +373,7 @@ def fire(s, a, why, brief=None):
         reason = queue_reason(s, t)
         if reason:
             t["state"], t["queued_at"] = "queued", now()
-            t["queue"] = {"argv": argv, "space": space, "parent": parent}
+            t["queue"] = {"argv": argv, "space": space, "parent": parent, "config_dir": adm.config_dir}
             run_rec["queued"] = reason
         else:
             begin(s, t, argv, space, parent, admission=adm)

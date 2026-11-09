@@ -113,7 +113,8 @@ stays blocked.
   `mods/coordinator/restart.sh`) do not read the binding. No control, command or
   selector may set an Azure route until each refuses or plans through the provider owner.
 - Carried to L1: binding the execution machine. A pushed settings copy refuses Azure,
-  but a Serve-from host's file is its own.
+  but a Serve-from host's file is its own. Done in L1: a Serve-from client's copy refuses
+  Azure too (see the L1 checkpoint).
 - Carried to Q: empty settings `env` values are documented as unset for provider
   selection only; the same treatment of endpoint, credential and model variables is unproved.
   The backup's gate has in-module proof only; its public-process proof is Q's.
@@ -196,7 +197,9 @@ for each candidate process and never for the caller:
   `T/news.py` alone asks for, so for a non-default folder nothing records it and no path
   that starts an agent gains anything. A default agent whose environment can't be read
   does change: it gets no record, so a resume starts fresh. `sessionOf()` in `core/agents.js`
-  gives a session under another folder no id. Carrying the folder belongs to L1 and L2.
+  gives a session under another folder no id. Carrying the folder belongs to L1 and L2. L1
+  carries it into task starts and `restart.sh` (see the L1 checkpoint); revive, `service/watch.ts`
+  and sessions recorded under another folder stay L2's.
 - What would start an agent again asks its process, not a found log: FIND prints nothing for
   a custom-folder agent with no log, and a reader can be gone or have no path yet. `FOLDER`
   in `core/chat-log.js` runs on the agent's machine and prints `default`, `other` or nothing.
