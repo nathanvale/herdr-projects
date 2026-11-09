@@ -1629,7 +1629,7 @@ class Scheduled(unittest.TestCase):
                         "--allow-empty", "-m", "base"], check=True)
         self.started, self.clock = [], None
 
-        def begin(s, t, argv, space, parent=None, admission=None, select=None):
+        def begin(s, t, argv, space, parent=None, admission=None, select=None, folder=None):
             t["state"], t["started"] = "running", 1
             for k in ("queue", "queued_at", "held", "scheduled_for"):
                 t.pop(k, None)
@@ -1639,7 +1639,7 @@ class Scheduled(unittest.TestCase):
 
         # Launch admission's preflight (L1) is test_launch_admission's: here it admits, starting nothing.
         def admit(s, t, argv, space, parent=None, **kw):
-            return __import__("types").SimpleNamespace(parent=parent)
+            return __import__("types").SimpleNamespace(parent=parent, config_dir=None)
 
         later = lambda: self.clock if self.clock is not None else int(__import__("time").time() * 1000)
         patches = [mock.patch.object(store, "STORE", os.path.join(self.tmp, "tasks")),
@@ -2123,7 +2123,7 @@ class AutomationFromAnotherMachine(unittest.TestCase):
                 return real_run([sys.executable, os.path.join(BIN, "herdr-task"), *rest], env=self.b_env, **kw)
             return real_run(argv, **kw)
 
-        def begin(s, t, argv, space, parent=None, admission=None, select=None):
+        def begin(s, t, argv, space, parent=None, admission=None, select=None, folder=None):
             t["state"], t["started"] = "running", 1
             self.started.append({"ref": s.ref(t), "prompt": t["prompt"]})
 
@@ -2133,7 +2133,8 @@ class AutomationFromAnotherMachine(unittest.TestCase):
                    mock.patch.object(au.subprocess, "run", run), mock.patch.object(au, "guard", lambda a: None),
                    mock.patch.object(au, "begin", begin), mock.patch.object(au, "queue_reason", lambda s, t: None),
                    # Launch admission's preflight (L1) is test_launch_admission's: here it admits, starting nothing.
-                   mock.patch.object(au, "admit_task", lambda s, t, argv, space, parent=None, **kw: None),
+                   mock.patch.object(au, "admit_task", lambda s, t, argv, space, parent=None, **kw:
+                                     __import__("types").SimpleNamespace(parent=parent, config_dir=None)),
                    mock.patch.object(au, "worker_argv", lambda s, t, space: ["claude"]),
                    mock.patch.object(au, "ensure_scheduler", lambda quiet=False: {}),
                    mock.patch.object(au, "default_space", lambda: "sp1"),

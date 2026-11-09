@@ -369,7 +369,9 @@ def fire(s, a, why, brief=None):
         argv = worker_argv(s, t, space)
         parent = a.get("parent")
         # Before it is queued too: a start launch admission refuses is this run's error, now.
-        adm = admit_task(s, t, argv, space, parent, select=lambda: worker_argv(s, t, space))
+        # The scheduler runs automations unattended: its own CLAUDE_CONFIG_DIR is never a task's folder (folder=None:
+        # the terminal's environment decides, as before L1).
+        adm = admit_task(s, t, argv, space, parent, select=lambda: worker_argv(s, t, space), folder=None)
         reason = queue_reason(s, t)
         if reason:
             t["state"], t["queued_at"] = "queued", now()

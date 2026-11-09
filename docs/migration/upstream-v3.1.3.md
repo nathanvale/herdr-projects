@@ -191,9 +191,9 @@ for each candidate process and never for the caller:
 - Behaviour change: on macOS FIND now needs python3 on its PATH. Without it every Claude
   agent there loses Chat, including default ones that work today. `session_of()` runs in
   python already and doesn't.
-- A session under another folder is for reading only. Revive, resume, a restart and a fork
-  carry no `CLAUDE_CONFIG_DIR`, so continuing it would start on another profile, perhaps
-  another account. `session_of()` returns such a session only to `any_folder=True`, which
+- A session under another folder is for reading only. Revive and a fork carry no
+  `CLAUDE_CONFIG_DIR` (since L1 a task's resume and `restart.sh` do), so continuing it there
+  would start on another profile, perhaps another account. `session_of()` returns such a session only to `any_folder=True`, which
   `T/news.py` alone asks for, so for a non-default folder nothing records it and no path
   that starts an agent gains anything. A default agent whose environment can't be read
   does change: it gets no record, so a resume starts fresh. `sessionOf()` in `core/agents.js`
@@ -214,7 +214,8 @@ for each candidate process and never for the caller:
 - A lost session: `lostRefusal()`, called by the window's `lostSession()` and
   `service/watch.ts`. The agent has gone, so it has no process to ask. Refused: a
   `CLAUDE_CONFIG_DIR=` word before the agent's in the launch's argv, which `freshArgv()` drops
-  (any value, even `~/.claude` written out); a live shell that reads another folder; in the
+  (any value, even `~/.claude` written out; since L1 a task start exports its folder inside its
+  shell instead, so no such word is there and the shell keeps that folder); a live shell that reads another folder; in the
   window, a log it had found under another folder. Not refused, as the two rules conflict
   here and each departs from "unreadable refuses": a shell that can't be read, since macOS
   shows no environment for a system binary such as `/bin/zsh`, and what's typed inherits that

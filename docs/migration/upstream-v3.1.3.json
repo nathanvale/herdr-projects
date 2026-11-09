@@ -26,7 +26,7 @@
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/automations.py",
       "upstream_blob": "dbec2e28ee77282b3862dd07f537a9200942683e",
-      "sha256": "f03f980d28fca55821d596a73fc938783a73fe40c530030184bc1a80a4dac878"
+      "sha256": "29a393ecd604f70bb599538463e18680d4668daf851c5a41148b518ceb22c69d"
     },
     {
       "phase": "L1",
@@ -62,13 +62,13 @@
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/takeover.py",
       "upstream_blob": "5af6c073493766adc3b052cb3677b75e71beb14b",
-      "sha256": "7f4426ef023b6d8866d95bc572d9d5524bdc995be8ae5c936b25c8da05028e7d"
+      "sha256": "325e222a620143e63b32e0b90b433b545c8d3d6349b06b9c5f388ff318a7fb17"
     },
     {
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/tick.py",
       "upstream_blob": "079934ac912d084b2c4803e772007778d5791d71",
-      "sha256": "abb07b701673b3e09e9e252a6bcd3aefe3d52a261945877d62a3332731542aa3"
+      "sha256": "c7bca97b05f24d5cdbdac16cf5b731016a06e37bd2a607ae2adbcb055c5e4013"
     },
     {
       "phase": "A1",
@@ -92,7 +92,7 @@
       "phase": "L1",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "82cfa36fd73760a95a88b6d07a09e9cc03dfa167",
-      "sha256": "b03061b0c2da97ffeb1dd1259511603368fc9b55109b25204a622b8fb9d216c8"
+      "sha256": "bff3fbf823ce0bde720dbded21c28890b81880a6ad5083a7b484c772d9e12c59"
     },
     {
       "phase": "B2",

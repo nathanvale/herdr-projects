@@ -62,20 +62,27 @@ is not ended. A worktree the start made stays the task's.
   step with the serving machine and writes without that mark, refuses too: this machine's node
   record in herdr-core's documents (`shepherdr.node`, read from
   `${XDG_STATE_HOME:-~/.local/state}/herdr-core/default/docs.json`) says it doesn't serve. No
-  documents (no Shepherdr service here) reads as its own; documents that can't be read, or a
-  record that contradicts the host record, refuse. Personal never reads them.
+  documents (no Shepherdr service here) reads as its own; documents that can't be read, or a node
+  record with no `serving` flag, refuse. Personal never reads them.
 - **Claude Code folder (carried from C1).** A task's Claude Code start exports its folder
   (`CLAUDE_CONFIG_DIR`) inside the person's shell after its startup files, so they can't change it
   and a `claude()` function still runs, and records it on the start and its agent. After a
   previous Claude Code agent (switch, resume, a backup) the folder is that agent's recorded one;
   with none recorded (started before L1, or inherited) nothing is added, so it is never moved to
   the caller's profile. A first start uses this herdr-task's `CLAUDE_CONFIG_DIR`; a queued or
-  scheduled one keeps the folder from when it was queued, and the tick never uses its own. Unset,
+  scheduled one keeps the folder from when it was queued. What the scheduler starts by itself (an
+  automation's run, a backup) never takes the scheduler's own folder: a backup keeps the stuck
+  Claude Code agent's recorded one, and otherwise nothing is added. Unset,
   nothing is added and the terminal's own environment decides, as before L1. A value that isn't
   one absolute path (or is another folder called `.claude`) refuses. `restart.sh` reads the old
   Claude Code agent's folder from its process (`herdr-task launch folder PID`, C1's rule), looks
   for its log there instead of a fixed `~/.claude`, and carries it into a Claude Code agent it
-  starts. Unreadable refuses before any change, unless the restart switches to another CLI. The Assistant's other start sites start fresh and pass
+  starts. Unreadable refuses before any change, unless the restart switches to another CLI.
+  The export lasts in the person's shell that stays after the agent exits, so a `claude` typed
+  there uses the same folder. A task start now carries no `CLAUDE_CONFIG_DIR=` word in its argv,
+  so C1's lost-session refusal (which looks for that word) doesn't see these folders; a lost
+  session's fresh restart from Chat reads the live shell instead, and on macOS, where a shell's
+  environment can't be read, it starts on that shell's exported folder, the agent's own. The Assistant's other start sites start fresh and pass
   none. L2 owns the rest: native revive and resume reconstructing the folder (`T/revive.py`,
   `service/watch.ts`), and recording sessions found under it (`session_of()` still records only
   `~/.claude` ones, so a resume there starts with a handoff).

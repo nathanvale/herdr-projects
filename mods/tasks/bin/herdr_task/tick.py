@@ -207,6 +207,7 @@ def tick_store(s, report):
                     track(s, t, e.put_on)
                 except OSError:
                     pass
+                n += 1  # it runs, so it counts toward max_running in this pass
                 continue
             t["attention"] = f"Couldn't start: {e}"
             continue

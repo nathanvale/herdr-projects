@@ -222,7 +222,9 @@ def takeover(s, t, k, row, log, report):
         # Before the task's one backup is spent: launch admission may not start it (Settings'
         # Provider, or an earlier start of the task still unresolved).
         stuck = next((a for a in t.get("agents") or [] if a.get("address") == k["address"]), None)
-        adm = admit_task(s, t, argv, space, (t["agents"][-1] if t.get("agents") else {}).get("parent"), prev=stuck)
+        # The tick runs a backup: the stuck agent's folder when it was Claude Code, else none (never the tick's own).
+        carried = (stuck or {}).get("config_dir") if (stuck or {}).get("agent") == "claude" else None
+        adm = admit_task(s, t, argv, space, (t["agents"][-1] if t.get("agents") else {}).get("parent"), folder=carried)
     except Fail as e:
         # The refusal's own words follow, as far as the line holds them: they name a setting, a
         # variable or a launch id, never a value (providers.py, launch_admission.py).
