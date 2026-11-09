@@ -504,18 +504,62 @@ async function doAction(body: any): Promise<Response> {
       return json(await assistantChoices(settings, sp ? { id: sp.id, folder: sp.folder ?? null } : null, await compat.agents!.ownDefaults()));
     } catch (err) { return json({ ok: false, error: (err as Error).message }); }
   }
-  if (body?.type === "task-select" && typeof body.chat === "string") {
-    // a task's row menu › Model for its start: its save-only choice (herdr-task select), shown or saved with the
-    // revision it was shown at; saving starts nothing and keeps its holds
+  if ((body?.type === "model-menu" || body?.type === "assistant-pick") && typeof body.chat === "string" && body.chat.startsWith("p:")
+      && !compat.addrOf(body.chat)) {
+    // a space whose Assistant hasn't started (the web's model line): its new-start pick, save-only (A2). The menu lists
+    // each CLI's deployments on Azure Foundry (service/selections.ts), else its models; a save keeps the pick for this
+    // space with the revision of the routing it was made under (herdr-task provider show), which its first-message start
+    // carries (service/actions.ts) so a changed route refuses rather than reinterpret it. Nothing starts here.
     try {
-      const t = compat.taskOf(body.chat.split("/")[0]);
+      const space = body.chat.slice(2).replace(":", "/"), sp: any = (compat as any).spaceOf?.(space);
+      if (!sp) throw new Error("That space isn't here any more.");
+      if (!settings.choices) await readDefaults();
+      const view: any = await assistantChoices(settings, { id: sp.id, folder: sp.folder ?? null }, await compat.agents!.ownDefaults());
+      const azure = view.route === "azure-foundry";
+      const menus = azure ? view.menus : settings.choices?.menus ?? {};
+      const picks = model.value("assistant.picks") ?? {};
+      if (body.type === "assistant-pick") {
+        const next = { ...picks };
+        if (body.pick === null) delete next[sp.id];
+        else {
+          const k = body.pick?.agent, word = (v: unknown) => (typeof v === "string" && /^[\w.\[\]-]{1,128}$/.test(v) ? v : null);
+          if (k !== "claude" && k !== "codex") throw new Error("Pick Claude Code or Codex.");
+          const chosen = word(body.pick.model);
+          if (azure && !chosen) throw new Error("Pick a deployment, or type its name.");
+          next[sp.id] = { agent: k, model: chosen, effort: word(body.pick.effort), fast: !!body.pick.fast, perm: word(body.pick.perm),
+            ...(azure ? { deployment: SC.providerValue(`${k}_deployment`, chosen) } : {}), revision: view.clis?.[k]?.revision ?? "" };
+        }
+        await store.set("assistant.picks", next);
+        return json({ ok: true });
+      }
+      const saved = picks[sp.id];
+      const first = Object.keys(menus)[0] ?? "claude";
+      const current = saved ? { agent: saved.agent, model: saved.model, effort: saved.effort, fast: !!saved.fast, perm: saved.perm }
+        : azure ? { agent: first, model: view.clis?.[first]?.deployment || null, effort: null, fast: false, perm: settings.choices?.permDefault?.[first] ?? null }
+        : settings.choices?.defaults ?? { agent: first, model: null, effort: null, fast: false, perm: null };
+      return json({ ok: true, menu: { current, menus, permDefault: settings.choices?.permDefault ?? {}, picks: (compat.agents as any).picks(), remote: null,
+        newStart: true, saved: !!saved } });
+    } catch (err) { return json({ ok: false, error: (err as Error).message }); }
+  }
+  if (body?.type === "task-select" && (typeof body.chat === "string" || (body.task && typeof body.task === "object"))) {
+    // a task's Model for its start (the web's row menu, by its chat; the window's Tasks panel, by its ref and folder):
+    // its save-only choice (herdr-task select), shown or saved with the revision it was shown at; saving starts nothing
+    // and keeps its holds
+    try {
+      const w = typeof body.chat === "string" ? compat.taskOf(body.chat.split("/")[0]) : null;
+      const b = body.task ?? {};
+      const t = w ?? (typeof b.ref === "string" && typeof b.folder === "string"
+        ? { ref: b.ref, folder: b.folder, machine: typeof b.machine === "string" && b.machine ? b.machine : null, space: typeof b.space === "string" && b.space ? b.space : null } : null);
       if (!t) throw new Error("That task isn't here any more.");
       const c = body.change && typeof body.change === "object" ? body.change : null;
       const change = c ? { ...(c.default ? { default: true } : {}), ...(typeof c.agent === "string" ? { agent: c.agent } : {}),
-        ...(typeof c.deployment === "string" ? { deployment: c.deployment } : {}), ...(typeof c.effort === "string" ? { effort: c.effort } : {}),
-        revision: typeof c.revision === "string" ? c.revision : "" } : null;
-      return json(await taskSelection(settings, { ref: t.ref, folder: t.folder, machine: t.machine ?? null, space: t.space }, change,
-        await compat.agents!.ownDefaults()));
+        ...(typeof c.deployment === "string" ? { deployment: c.deployment } : {}), ...(typeof c.model === "string" ? { model: c.model } : {}),
+        ...(typeof c.effort === "string" ? { effort: c.effort } : {}), revision: typeof c.revision === "string" ? c.revision : "" } : null;
+      if (!settings.choices) await readDefaults();
+      const v: any = await taskSelection(settings, { ref: t.ref, folder: t.folder, machine: t.machine ?? null, space: t.space }, change,
+        await compat.agents!.ownDefaults());
+      // Personal: each CLI's own models (the window's model menu shows them); Azure: its deployments
+      return json({ ...v, menus: v.menus ?? settings.choices?.menus ?? {}, permDefault: settings.choices?.permDefault ?? {} });
     } catch (err) { return json({ ok: false, error: (err as Error).message }); }
   }
   if (body?.type === "setting" && typeof body.key === "string") {

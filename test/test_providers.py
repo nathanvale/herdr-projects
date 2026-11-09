@@ -585,7 +585,7 @@ class TaskSelection(unittest.TestCase):
         first, tid = f.add("--here"), f.add("--here", "--after", "1")
         self.assertEqual(f.ok("start", str(tid), "--folder", f.repo, "--space", "sp1")["queued"], True)
         shown = f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1")
-        self.assertEqual((shown["locked"], shown["route"], shown["selection"]), (False, "azure-foundry", {"agent": None, "deployment": None, "effort": None}))
+        self.assertEqual((shown["locked"], shown["route"], shown["selection"]), (False, "azure-foundry", {"agent": None, "deployment": None, "model": None, "effort": None}))
         self.assertEqual(shown["clis"]["codex"]["deployment"], "code-deployment")
         before = f.task(tid)
         calls = len(f.calls())
@@ -596,7 +596,7 @@ class TaskSelection(unittest.TestCase):
         self.assertEqual(f.task(tid), before)
         saved = f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1", "--agent", "codex", "--deployment", "picked-deployment",
                      "--effort", "high", "--revision", shown["revision"])
-        self.assertEqual(saved["selection"], {"agent": "codex", "deployment": "picked-deployment", "effort": "high"})
+        self.assertEqual(saved["selection"], {"agent": "codex", "deployment": "picked-deployment", "model": None, "effort": "high"})
         after = f.task(tid)
         # Its state, place in the queue, dependency and hold are as they were; nothing was started or sent.
         for k in ("state", "queued_at", "after", "held", "scheduled_for", "agents"):
@@ -650,9 +650,21 @@ class TaskSelection(unittest.TestCase):
         self.assertIn("on Azure Foundry only", f.refused("select", str(tid), "--folder", f.repo, "--agent", "claude", "--deployment", "x",
                                                          "--revision", shown["revision"]))
         self.assertNotIn("deployment", f.task(tid))
-        # The CLI and effort are still a choice on Personal.
-        f.ok("select", str(tid), "--folder", f.repo, "--agent", "codex", "--effort", "high", "--revision", shown["revision"])
-        self.assertEqual((f.task(tid)["agent"], f.task(tid)["effort"]), ("codex", "high"))
+        # The CLI, its model and effort are the choice on Personal; its first start runs on them.
+        f.ok("select", str(tid), "--folder", f.repo, "--agent", "codex", "--model", "gpt-pick", "--effort", "high", "--revision", shown["revision"])
+        self.assertEqual((f.task(tid)["agent"], f.task(tid)["model"], f.task(tid)["effort"]), ("codex", "gpt-pick", "high"))
+        f.ok("start", str(tid), "--folder", f.repo, "--now")
+        _, agent = f.agent_words(f.launches()[-1])
+        self.assertEqual(agent[agent.index("-m") + 1], "gpt-pick")
+        self.assertIn('model_reasoning_effort="high"', agent)
+        f.settle(tid=tid)
+        # On Azure the deployment is the model: --model refuses there.
+        g = Fixture(self)
+        g.provider({"route": "azure-foundry", **CODEX})
+        other = g.add("--here")
+        shown = g.ok("select", str(other), "--folder", g.repo)
+        self.assertIn("the deployment is the model", g.refused("select", str(other), "--folder", g.repo, "--agent", "codex", "--model", "gpt-pick",
+                                                                "--revision", shown["revision"]))
 
     def test_a_deployment_that_cant_be_one_is_refused_and_never_repeated(self):
         f = Fixture(self)

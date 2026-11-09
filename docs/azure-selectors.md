@@ -12,8 +12,10 @@ qualification of every sign-in route stays with Q.
 | --- | --- |
 | Settings › Agents › Provider (window and web) | Personal or Azure Foundry at Everywhere or a space. On Azure: each CLI's resource or endpoint, deployment and sign-in, the discovery subscription, and the Assistant's and the workers' own deployments. |
 | A deployment row | Type its name, or press Refresh and pick from what this machine's Azure CLI login finds. Refresh selects nothing. |
-| A task's row menu, before it starts (web) | Model for its start: the CLI, and on Azure its deployment and effort. Save starts nothing and keeps its holds. Use configured defaults clears it. |
-| An Assistant's chat before its first message (window) | Its model menu lists each CLI's deployments on Azure. The pick goes with the start. |
+| A task's row menu, before it starts (web) | Model for its start: the CLI, and on Azure its deployment and effort (on Personal its effort). Save starts nothing and keeps its holds. Use configured defaults clears it. |
+| A task's row menu, before it starts (window) | Model for its start… opens the model menu (settings mode): on Azure each CLI's deployments, on Personal its models. Each change is saved at once through `herdr-task select` with the revision it was shown at. |
+| An Assistant's chat before its first message (window) | Its model menu lists each CLI's deployments on Azure. The pick, on either route, carries the revision of the routing it was made under. |
+| A space's chat with no Assistant (web) | Its model line opens the model menu in new-start mode: Save for new start keeps a pick for the space (with its revision), Use configured defaults clears it. The first message's start carries it, then drops it. |
 | `herdr-task select ID` | The same task choice from the command line. Without a change it only shows it. |
 | `herdr-task provider show --role worker\|coordinator` | What a selector shows: the route, each CLI's routing, the deployment a new start takes, and the revision a pick is bound to. |
 
@@ -48,7 +50,8 @@ the service; without a running service it offers typed entry only.
 
 ## New-start selections
 
-A task's choice is `agent`, `deployment` and `effort` on the task, saved by `herdr-task select`:
+A task's choice is `agent`, `deployment` (Azure) or `model` (Personal) and `effort` on the task,
+saved by `herdr-task select`:
 
 - A save must quote the revision `select` showed. That revision covers the choice, a save counter,
   the task's recorded agents and each CLI's routing. A stale one refuses and changes nothing.
@@ -63,9 +66,13 @@ A task's choice is `agent`, `deployment` and `effort` on the task, saved by `her
   model the inventory reports) gets that model's levels; any other gets Default only. `herdr-task`
   checks an effort's shape; the selectors offer only those levels.
 
-An Assistant chat's pick lives in the window, as before. On Azure its list is the deployments, and
-the start carries `--deployment` with the revision from `provider show`. Changed routing refuses
-the start.
+An Assistant chat's pick lives in the window, as before. On Azure its list is the deployments. A pick
+the person made carries the revision `provider show` gave when the chat loaded, Personal too, so a
+route changed before its start refuses it rather than reinterpreting it. The shown default (no pick)
+is marked auto and isn't sent: the Assistant's own deployment decides. The web's pick for a space
+whose Assistant hasn't started is kept by the service (`assistant.picks`, per space, with its
+revision); the first message's start carries it as `--argv`, `--deployment` and `--revision`, and
+drops it once used.
 
 ## Starts and resumes
 
@@ -106,6 +113,9 @@ the start.
   Once a role deployment is saved (and pushed to another machine), a machine still on an older
   herdr-task refuses its starts, Personal included, until it is updated or the field is removed.
 - A tab agent (a chat of another role) starts Personal only, with its own reason.
+- `herdr-task select` gains `--model` (Personal); `provider show --space` reads a space the settings
+  file holds by its own folder, as launch admission does.
+- Shared store: the web's Assistant picks live in the service's `assistant.picks` (nonsecret).
 
 ## Held, not invented
 
@@ -118,12 +128,14 @@ the start.
 - Selection and settings revisions are content digests plus a task's save counter. Settings
   changed away and back read as unchanged, as in L1. A window chat's pick made under Personal
   carries no revision.
-- The window's task rows have no selector; the web's do, and so does `herdr-task select`. The web
-  has no Assistant pick: a web New space or first message starts on the Assistant's deployment.
 - Source-inspected only, with no test of their own: the window's Provider rows
-  (`provider-section.js`), the chat's Azure pick and its `--deployment`/`--revision` words, the web's
-  `select.tsx` and `DeploymentValue`, and the route refusal in `service/watch.ts` and the chat's lost
-  session. Their owners' rules are tested through `herdr-task` and the service.
+  (`provider-section.js`), the window chat's Assistant pick and its fork's and lost session's route
+  check, the window's task selector (`mods/tasks`, `mods/tasks-menu`), the web's `select.tsx`,
+  `DeploymentValue` and new-start model menu (`restart.tsx`), and the service's `assistant-pick` and
+  `model-menu` handlers in `service/main.ts`. Their owners' rules are tested through `herdr-task` and
+  the service.
+- A window chat's revision is the one read when the chat loaded its choices: settings changed after
+  that refuse its pick until the chat is opened again.
 - Inventory and an effort list don't prove account, inference, tool or effort support.
 
 ## Regressions
@@ -146,7 +158,11 @@ no dependencies installed). CI runs them.
   selected, a stale pick refused, typed entry, and Everywhere's one-machine rule.
 - `service/selections.test.ts`: what the service asks herdr-task, revision carried on a save, each
   CLI's list and its effort levels.
-- `service/launch-sites.test.ts`: the service's two Assistant sites send `--new-start`.
+- `service/launch-sites.test.ts`: the service's two Assistant sites send `--new-start`; a first
+  message carries the web's saved pick with its revision, then drops it.
+- `core/chat-find.test.js`: the service's lost-session recovery and fork ask `provider show` and
+  refuse a route that isn't Personal (or can't be read), with nothing typed or made.
+- `core/agents.test.js`: the shared refusals, the words that ask the route, and the Azure list.
 
 ## CLI design notes
 

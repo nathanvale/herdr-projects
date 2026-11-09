@@ -531,6 +531,7 @@ def main():
                                   "save-only, before it starts (starts nothing, keeps its holds)")
     c.add_argument("--agent", choices=["claude", "codex"], help="the CLI it starts on")
     c.add_argument("--deployment", help="its Azure Foundry deployment, on Azure (\"\": the role's)")
+    c.add_argument("--model", help="its model on Personal, an id or alias (\"default\": the role's)")
     c.add_argument("--effort", help="its effort (\"default\": the role's)")
     c.add_argument("--default", action="store_true", help="clear its choice: the configured defaults again")
     c.add_argument("--revision", help="the revision `select` showed; a save refuses when it changed since")

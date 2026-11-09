@@ -10,7 +10,7 @@ import { kindOf } from "../core/chat-reader.js";
 import { WORDS } from "../core/chat-view.js";
 import * as AGa from "../core/agents.js";
 import { answerCodex } from "./codex-ask.ts";
-const { sessionOf, forkArgv, inOtherFolder, OTHER_FOLDER, providerRefusal } = AGa as any;
+const { sessionOf, forkArgv, inOtherFolder, OTHER_FOLDER, providerRefusal, routeRefusal, routeArgs, argvFor } = AGa as any;
 import * as SP from "../core/spaces.js";
 const { READ, withMove, withSection, withoutSection, withSectionName, withIcon, withMachineLook, DELETED, deletedSection, withRestoredSection } = SP as any;
 import type { Compat } from "./compat.ts";
@@ -519,9 +519,14 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     const a = chat(b.chat), t: any = hub.terminals.get(a), r = compat.reader?.(a);
     const kind = kindOf(t) ?? "claude", session = sessionOf(kind, r?.path ?? null);
     if (!session) throw new Error(inOtherFolder(kind, r?.path ?? null) ? OTHER_FOLDER : "This conversation has no saved session to fork.");
-    // a fork copies its flags but not an Azure Foundry binding (L2): refused rather than run elsewhere (core/agents.js)
+    // a fork copies its flags but no Azure Foundry binding or plan (L2): an Azure-started agent, or a route at its space
+    // that isn't Personal (herdr-task's provider owner says), is refused rather than run on the CLI's own sign-in
     const held = providerRefusal(t);
     if (held) throw new Error(held);
+    const shown = await run([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", ...routeArgs(t, a.includes("/") ? a.split("/")[0] : null)])
+      .then((x) => (x.code === 0 ? JSON.parse(x.stdout || "null") : null)).catch(() => null);
+    const off = routeRefusal(shown);
+    if (off) throw new Error(off);
     const space = ["herdr.space", "herdr.task.space", "herdr.coordinator.space"].map((k) => t?.labels?.[k]).find(Boolean);
     const res = await run(["herdr-app", "do", "tab.new", ...(space ? ["--space", space] : []), "--folder", t?.foreground?.cwd ?? t?.cwd ?? "", "--argv", JSON.stringify(forkArgv(kind, t?.foreground?.argv ?? t?.argv ?? [], session))]);
     if (res.code !== 0) throw new Error("A fork opens as a tab in the Herdr window: it needs the window open.");
@@ -556,16 +561,23 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
         "--label", `herdr.coordinator.space=${bare}`, ...(rec.tab ? ["--label", `herdr.coordinator.tab=${String(rec.tab).split("/").pop()}`] : [])]
       : ["--label", "herdr.role=coordinator", "--label", `herdr.coordinator.space=${bare}`, "--label", `herdr.space=${bare}`];
     const tpl = await execTemplate(hub, "assistant", sp.machine ?? null);
+    // the web's save-only pick for this space's first start (service/main.ts assistant-pick): its agent, and on Azure its
+    // deployment, with the revision it was made under, so a changed route refuses it instead of reinterpreting it
+    const picks: Record<string, any> = compat.shared?.value("assistant.picks") ?? {}, pick = picks[sp.id];
+    const chose = pick ? ["--argv", JSON.stringify(argvFor(pick, { agent: null, argv: [] }).argv),
+      ...(pick.deployment ? ["--deployment", pick.deployment] : []), ...(pick.revision ? ["--revision", pick.revision] : [])] : [];
     // through launch admission (herdr-task launch run): a new start planned for its provider (--new-start: the template
     // word it runs; on Azure Foundry the owner's own one-off takes its place), claimed, rechecked and recorded as sent,
     // then hc run
     const r = await run([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", "launch", "run", "--role", "coordinator", "--space", bare,
-      "--new-start", tpl.name, "--source", "assistant", "--json", "--",
+      "--new-start", tpl.name, "--source", "assistant", ...chose, "--json", "--",
       "--bg", "--json", "--no-parent", "--keep", ...(sp.machine ? ["--on", sp.machine] : []), ...(sp.folder ? ["--cwd", sp.folder] : []), ...labels, tpl.name, task]);
     tpl.done();
     let out: any = {};
     try { out = JSON.parse(r.stdout || "{}"); } catch {}
     if (r.code !== 0 || !out.address) throw new Error(out.error || (r.stderr || r.stdout).trim().split("\n").pop() || "The Assistant didn't start.");
+    // the pick was for this first start: used, it goes (a later new start takes the settings again, or a new pick)
+    if (pick) { const rest = { ...picks }; delete rest[sp.id]; await compat.shared?.set("assistant.picks", rest); }
     // what the person asked, for its chat to show apart from the template (the window's data/chat-first)
     const first = join(process.env.HERDR_APP_HOME || join(homedir(), ".config", "herdr-app"), "data", "chat-first");
     const addr = sp.machine && !String(out.address).includes("/") ? `${sp.machine}/${out.address}` : String(out.address);

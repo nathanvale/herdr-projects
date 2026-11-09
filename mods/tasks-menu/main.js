@@ -10,8 +10,9 @@
 //   "row"     a task row's right-click: Pin or Unpin (props().on) the task props().key, in shared
 //             "tasks.pinned" (mods/tasks keeps the same list). A task not started yet (props().status
 //             todo, queued or scheduled) also starts later (SHEP-38): herdr-task edit --in / --at on
-//             props().machine, folder and ref; a scheduled one Start now and Unschedule. What herdr-task
-//             refuses shows as a toast.
+//             props().machine, folder and ref; a scheduled one Start now and Unschedule, and Model for its
+//             start… (its save-only choice, opened by the Tasks panel: shared "tasks.selectreq"). What
+//             herdr-task refuses shows as a toast.
 // ↑/↓ move, Enter picks, Esc closes.
 
 import { View, div } from "gpui-kit";
@@ -55,6 +56,11 @@ function rowSections(p) {
     cur.items.push({ key: `${it.id}:${cur.items.length}`, label: it.label, at: it.at, in: it.in, id: it.id,
       icon: it.icon === "play" ? "mods/tasks/play.svg" : `mods/workspace-chrome/${it.icon}.svg` });
   }
+  // A task not started yet: its save-only new-start choice (A2), in the model menu the Tasks panel opens (mods/tasks).
+  if (["todo", "queued", "scheduled"].includes(p.status))
+    out.push({ title: null, checks: false, current: null, pick: () => setShared("tasks.selectreq", { ref: p.ref, folder: p.folder,
+      machine: p.machine ?? null, space: p.space ?? null, at: Date.now() }),
+    items: [{ key: "select", label: "Model for its start…", id: "select", icon: "mods/workspace-chrome/arrow-left-right.svg" }] });
   return out.filter((s) => s.items.length);
 }
 

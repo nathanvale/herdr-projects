@@ -119,3 +119,18 @@ test("a refused first-message start says the owner's words and starts nothing", 
   expect(read(TASK_CALLS)).toHaveLength(1);
   expect(read(HC_CALLS)).toEqual([]);
 });
+
+test("a space's first message carries the web's saved pick for its Assistant, bound to its revision, then drops it (A2)", async () => {
+  const s = store();
+  await s.set("assistant.picks", { sp1: { agent: "claude", model: "picked-deployment", effort: "high", fast: false, perm: null,
+    deployment: "picked-deployment", revision: "0123abcd0123abcd" }, sp2: { agent: "codex", model: null, revision: "r2" } });
+  const c = { ...compat(FOLDER), shared: s };
+  const r: any = await A.act(hub, { type: "send", chat: "p:sp1", text: "Plan the week" }, c);
+  expect(r).toMatchObject({ ok: true, started: true });
+  const [call] = read(TASK_CALLS);
+  expect(call).toContain(` --argv ["claude","--model","picked-deployment","--effort","high","--settings","{\\"fastMode\\":false}"] `);
+  expect(call).toContain(" --deployment picked-deployment --revision 0123abcd0123abcd --json -- ");
+  // used for this first start only: another space's pick stays
+  expect(s.d["assistant.picks"]).toEqual({ sp2: { agent: "codex", model: null, revision: "r2" } });
+  expect(read(HC_CALLS)).toEqual([]);
+});

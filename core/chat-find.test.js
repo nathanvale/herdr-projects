@@ -316,14 +316,15 @@ test("FIND's arguments and output are as they were beside FOLDER", async () => {
 
 // What the service would run, as stand-ins, each saying it was called: its restart's herdr-task and herdr-app, hc for
 // another machine's record, and the bash that would run restart.sh. A child's PATH is this folder alone.
-function standIns(record = null) {
+// herdr-task's `provider show` answers with `route` (A2: lost-session recovery asks it first; Personal by default).
+function standIns(record = null, route = "personal") {
   const bin = folder(), called = join(bin, "called");
   mkdirSync(bin);
   const tool = (name, out) => {
     writeFileSync(join(bin, name), `#!/bin/sh\necho "${name} $1" >> "${called}"\necho '${out}'\n`);
     chmodSync(join(bin, name), 0o755);
   };
-  tool("herdr-task", '{"terminal":"t9"}');
+  tool("herdr-task", JSON.stringify({ terminal: "t9", route }));
   tool("herdr-app", '{"terminal":"t9"}');
   tool("hc", JSON.stringify(record));
   tool("bash", "t9");
@@ -489,8 +490,21 @@ test("lost-session recovery is unchanged for a default agent", async () => {
   expect(shell.sent[0].startsWith("claude ")).toBe(true);
   expect(shell.sent[0]).not.toContain(SESSION);
   expect(gone.sent).toEqual([]);
-  expect(b.called()).toEqual(["bash " + join(app, "mods", "coordinator", "restart.sh")]);
+  // herdr-task's provider owner is asked the route first (A2), then restart.sh runs
+  expect(b.called()).toEqual(["herdr-task provider", "bash " + join(app, "mods", "coordinator", "restart.sh")]);
   for (const out of [shell, gone]) expect(out.note).not.toContain("didn't start");
+}, 60000);
+
+// A2: under a route that isn't Personal a new start here would run on the CLI's own sign-in (L2 carries no plan), so
+// it is refused, asked of herdr-task's provider owner; one that can't be read refuses too. Nothing is typed or run.
+test("lost-session recovery refuses a route that isn't Personal: nothing typed, nothing started", async () => {
+  const app = appWithRestart(), [a, b, c] = [standIns(null, "azure-foundry"), standIns(null, "azure-foundry"), standIns(null, null)];
+  const plain = await agent();
+  const [shell, gone, unread] = await Promise.all([webLost(a.bin, atShell(plain.pid), app), webLost(b.bin, ended(), app), webLost(c.bin, atShell(plain.pid), app)]);
+  for (const out of [shell, gone, unread]) expect(out.sent).toEqual([]);
+  for (const out of [shell, gone]) expect(out.note).toContain("Provider is Azure Foundry here");
+  expect(unread.note).toContain("can't be read now");
+  for (const s of [a, b, c]) expect(s.called()).toEqual(["herdr-task provider"]);
 }, 60000);
 
 // macOS shows no environment for its own /bin/zsh, so refusing here would end recovery for default agents there. No
@@ -527,7 +541,14 @@ test("the web's fork says why: another folder, or no session; a default session 
   expect((await webFork(bin, null)).error).toBe("This conversation has no saved session to fork.");
   expect(called()).toEqual([]);
   expect((await webFork(bin, join(fallback, "projects", "-work", `${SESSION}.jsonl`))).result).toEqual({ ok: true });
-  expect(called()).toEqual(["herdr-app do"]);
+  // herdr-task's provider owner is asked the route first (A2), then the window makes the tab
+  expect(called()).toEqual(["herdr-task provider", "herdr-app do"]);
+}, 30000);
+
+test("the web's fork refuses under a route that isn't Personal: no tab is made (A2, L2 carries no plan)", async () => {
+  const { bin, called } = standIns(null, "azure-foundry");
+  expect((await webFork(bin, join(fallback, "projects", "-work", `${SESSION}.jsonl`))).error).toContain("Provider is Azure Foundry here");
+  expect(called()).toEqual(["herdr-task provider"]);
 }, 30000);
 
 // main.js runs only inside the window, so these read its order, as the picker's check above does. The rule they call is

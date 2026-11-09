@@ -889,11 +889,11 @@ def selection_of(s, t, space):
     binding = binding_for(s, space)
     shown = selection_view(binding, "worker")
     locked = bool(t.get("agents") or t.get("reviewers")) or t["state"] not in ("todo", "queued", "scheduled")
-    rev = hashlib_digest({"agent": t.get("agent"), "deployment": t.get("deployment"), "effort": t.get("effort"),
+    rev = hashlib_digest({"agent": t.get("agent"), "deployment": t.get("deployment"), "model": t.get("model"), "effort": t.get("effort"),
                           "saves": t.get("select_rev") or 0, "agents": len(t.get("agents") or []),
                           "routing": {k: selection_revision(binding, k) for k in KINDS}})
     return {"id": t["id"], "ref": s.ref(t), "state": t["state"], "locked": locked, "route": shown["route"],
-            "selection": {"agent": t.get("agent"), "deployment": t.get("deployment"), "effort": t.get("effort")},
+            "selection": {"agent": t.get("agent"), "deployment": t.get("deployment"), "model": t.get("model"), "effort": t.get("effort")},
             "clis": shown["clis"], "revision": rev}
 
 
@@ -915,7 +915,7 @@ def cmd_select(args):
     from .launch_admission import open_start, task_identity
     from .providers import binding_for, clean, selection_revision
     from .settings import EFFORTS
-    change = args.default or any(v is not None for v in (args.agent, args.deployment, args.effort))
+    change = args.default or any(v is not None for v in (args.agent, args.deployment, args.model, args.effort))
     with open_store(args) as s:
         t = s.find(args.id)
         space = bare(args.space) if args.space else (t.get("space") or default_space())
@@ -930,16 +930,16 @@ def cmd_select(args):
             # A start of it that is still open (claimed or maybe sent) is a conversation in the making: locked too.
             open_start(task_identity(s, t), s.ref(t), t)
             if args.default:
-                for k in ("agent", "deployment", "effort", "selection_routing"):
+                for k in ("agent", "deployment", "model", "effort", "selection_routing"):
                     t.pop(k, None)
             else:
                 agent = args.agent if args.agent is not None else t.get("agent")
                 if agent not in ("claude", "codex"):
                     raise Fail("Choose the CLI it starts on: --agent claude or --agent codex.")
                 if args.agent is not None and args.agent != t.get("agent"):
-                    # Another CLI: the previous CLI's deployment and effort don't carry over.
-                    t.pop("deployment", None)
-                    t.pop("effort", None)
+                    # Another CLI: the previous CLI's deployment, model and effort don't carry over.
+                    for k in ("deployment", "model", "effort"):
+                        t.pop(k, None)
                 t["agent"] = agent
                 if args.deployment is not None:
                     dep = clean(f"{agent}_deployment", args.deployment)
@@ -951,6 +951,16 @@ def cmd_select(args):
                         t["deployment"] = dep
                     else:
                         t.pop("deployment", None)
+                if args.model is not None:
+                    m = args.model.strip()
+                    if m and m.lower() != "default" and cur["route"] == "azure-foundry":
+                        raise Fail("On Azure Foundry the deployment is the model: choose --deployment instead. Nothing was changed.")
+                    if not m or m.lower() == "default":
+                        t.pop("model", None)
+                    elif not re.fullmatch(r"[\w.\[\]:-]{1,128}", m):
+                        raise Fail("A model is its id or alias (letters, digits, dots, dashes, underscores and brackets).")
+                    else:
+                        t["model"] = m
                 if args.effort is not None:
                     e = args.effort.strip().lower()
                     if e in ("", "default"):
@@ -976,6 +986,7 @@ def cmd_select(args):
     words = (f"{v['ref']}: " + ("locked, its recorded conversation keeps its binding. " if v["locked"] else "")
              + (f"{sel['agent']}" if sel["agent"] else "the configured defaults")
              + (f", deployment {sel['deployment']}" if sel.get("deployment") else "")
+             + (f", model {sel['model']}" if sel.get("model") else "")
              + (f", effort {sel['effort']}" if sel.get("effort") else "")
              + (". Saved for its first start; nothing was started." if change else ".")
              + f" Revision {v['revision']}.")

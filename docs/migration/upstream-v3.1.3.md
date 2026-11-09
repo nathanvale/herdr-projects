@@ -619,8 +619,11 @@ Detail, decisions and authored regressions: [Azure selectors and bound starts](.
 - Discovery: A1's `service/azure-deployments.ts`, reached only by an explicit Refresh; a pick
   carries its list's revision and a stale one refuses (`service/main.ts`, `service/settings.ts`).
 - Selectors: `herdr-task select` (a task's save-only, revision-bound choice, locked once it has a
-  recorded agent; a deployment choice bound to its routing) and `provider show`; the web's
-  `web/plugins/tasks/select.tsx` through `service/selections.ts`; the window chat's Assistant pick.
+  recorded agent; a deployment choice bound to its routing) and `provider show`; the web's task row
+  menu (`web/plugins/tasks/select.tsx`) and Assistant new-start pick (`web/src/restart.tsx`, kept by
+  the service and carried by the first message's start) through `service/selections.ts`; the
+  window's task row menu (`mods/tasks`, `mods/tasks-menu`) and its chat's Assistant pick, each bound
+  to the revision of the routing it was made under.
 - Starts: `launch.py` composes the admitted plan, exports its nonsecret variables in the agent's
   shell with a credential-presence check, labels the terminal and records the binding; `commands.py`
   resumes a recorded conversation on its record (`--fresh` for a new one). An Assistant's new start

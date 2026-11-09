@@ -75,17 +75,17 @@ web/plugins/places/add.tsx'''.split()),
     # save-only new-start selectors for a task and an Assistant, each start's binding recorded and kept on resume, and
     # the L2 sites (restart, fork, a lost session, revival) refusing anything but Personal. Earlier owners it changes are
     # A2's from here.
-    'A2': frozenset('''core/agents.js core/settings.js lib/agent.js mods/chat-models/core/agents.js mods/chat/agent.js
+    'A2': frozenset('''core/agents.js core/agents.test.js core/chat-find.test.js core/settings.js lib/COPIES lib/agent.js mods/chat-models/core/agents.js mods/chat/agent.js
 mods/chat/core/agents.js mods/chat/core/settings.js mods/chat/main.js mods/coordinator/core/agents.js
 mods/coordinator/core/settings.js mods/coordinator/restart.sh mods/newspace/agent.js mods/newspace/core/agents.js
 mods/newspace/core/settings.js mods/shepherdr-settings/agent.js mods/shepherdr-settings/core/agents.js
 mods/shepherdr-settings/core/settings.js mods/shepherdr-settings/main.js mods/shepherdr-settings/provider-section.js
 mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py
 mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/revive.py
-mods/tasks/bin/herdr_task/settings.py service/actions.ts service/agents.ts service/compat.ts service/launch-sites.test.ts
+mods/tasks/bin/herdr_task/settings.py mods/tasks-menu/main.js mods/tasks/local.js mods/tasks/main.js service/actions.ts service/agents.ts service/compat.ts service/launch-sites.test.ts
 service/main.ts service/selections.test.ts service/selections.ts service/settings.test.ts service/settings.ts
 service/spaces.ts service/watch.ts test/test_launch_admission.py test/test_providers.py web/plugins/tasks/client.tsx
-web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx'''.split()),
+web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx web/src/restart.tsx'''.split()),
 }
 # The shared table's second half (PR 19 decision D5, issue #7): what accepted changes add beyond exact
 # U and outside every phase's owners, admitted by name and left to review for content. With U's paths

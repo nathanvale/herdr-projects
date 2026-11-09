@@ -114,12 +114,11 @@ export class AgentWatch {
       const held = providerRefusal(t);
       if (held) throw new Error(held);
       const machine = addr.includes("/") ? addr.split("/")[0] : null;
-      const route = await routeOf(routeArgs(t, machine));
-      const off = routeRefusal(route);
-      if (off) throw new Error(off);
       // fresh drops what its launch set, and a new start carries no CLAUDE_CONFIG_DIR (core/agents.js)
       const why = await lostRefusal(kind, t, (pid: number) => sh(this.hub, FOLDER, ["folder", String(pid)], machine).then((r: any) => r.stdout, () => ""));
       if (why) throw new Error(why);
+      const off = routeRefusal(await routeOf(routeArgs(t, machine)));
+      if (off) throw new Error(off);
       const named = /^([a-z][a-z0-9]*)-(\d+)(?:-|$)/.exec(t.name ?? "");
       const ref = w.ref ?? (t.labels?.["herdr.task"] && named ? `${named[1].toUpperCase()}-${named[2]}` : null);
       const tplFile = join(HOME, ".config", "herdr-core", "templates", "assistant.md");

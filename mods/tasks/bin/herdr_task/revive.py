@@ -314,7 +314,8 @@ def revive_pass(report):
             write_record(k, rec)
             report.setdefault("revive_held", []).append({"terminal": k["address"], "why": "its provider isn't Personal (it started "
                                                          "on Azure Foundry, or its space routes there): revival can't carry "
-                                                         "that yet (L2); resume its task with herdr-task"})
+                                                         "that yet (L2). A task's agent: herdr-task resume (--fresh for a "
+                                                         "new conversation on today's settings); an Assistant: a new chat"})
             continue
         if argv:
             shell = (k.get("argv") or [""])[0]

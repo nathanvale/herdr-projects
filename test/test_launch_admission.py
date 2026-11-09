@@ -1042,6 +1042,14 @@ class AssistantStarts(unittest.TestCase):
                 self.assertFalse(os.path.exists(os.path.join(f.tmp, "templates", name + ".md")))
                 self.assertNotIn("marker-foundry-key-7f3a", json.dumps(f.calls()) + json.dumps(f.journal()) + p.stdout + p.stderr)
 
+    def test_a_tab_agent_starts_personal_only_with_its_own_reason(self):
+        f = Fixture(self)
+        self.azure(f)
+        p = f.run("launch", "run", "--role", "agent", "--space", "sp1", "--slot", "p7", "--json", "--", *self.WORDS)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("a tab agent starts Personal only", json.loads(p.stdout)["error"])
+        self.assertEqual(f.calls(), [])
+
     def test_a_codex_assistant_starts_on_its_provider_table(self):
         f = Fixture(self)
         self.template(f, "codex --no-daemon")

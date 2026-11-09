@@ -598,8 +598,14 @@ def cmd_provider(args):
     selector shows. Both read-only: they start nothing, sign in nowhere, read no credential and don't say one is
     there."""
     from .store import locate
-    s = types.SimpleNamespace(loc=locate(args.folder))
-    binding = binding_for(s, bare(args.space) if args.space else None)
+    space = bare(args.space) if args.space else None
+    d = read_strict()
+    # A space the settings file holds is read by its own entry's folder, as launch admission reads it (space_scope),
+    # so a shell or folder below its top can't answer for another layer.
+    entry = d.get("spaces", {}).get(space) if space and isinstance(d.get("spaces"), dict) else None
+    folder = entry.get("folder") if isinstance(entry, dict) and isinstance(entry.get("folder"), str) and entry.get("folder") else None
+    s = types.SimpleNamespace(loc={"folder": folder} if folder else locate(args.folder))
+    binding = binding_for(s, space, d)
     role = getattr(args, "role", None) or "worker"
     if role not in ROLES:
         raise Fail("--role is worker or coordinator.")

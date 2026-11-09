@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { argvFor, current, line, menuFor, modelSections, parseDefaults, parsePicks, pickKey, withPin, withRecent } from "./agents.js";
+import { argvFor, azureMenu, current, line, menuFor, modelSections, parseDefaults, parsePicks, pickKey, providerRefusal, ROUTE_HELD, ROUTE_UNKNOWN, routeArgs, routeRefusal, withPin, withRecent } from "./agents.js";
 
 const codex = { models: Array.from({ length: 250 }, (_, i) => ({ id: `gpt-${i}`, label: `GPT ${i}`, efforts: ["low", "high"] })) };
 const menus = { claude: menuFor("claude", {}), codex: menuFor("codex", codex) };
@@ -68,4 +68,32 @@ test("every agent with a fast mode shows the Fast switch, and turning it off sti
   expect(current("codex", on, {}, dflt).fast).toBe(true);
   const claudeOff = argvFor({ agent: "claude", model: "opus", fast: false }, { agent: "claude", argv: ["claude"] }).argv;
   expect(current("claude", claudeOff, {}, { fast: true }).fast).toBe(false);
+});
+
+// A2: the L2 sites' refusals and the words they ask herdr-task's provider owner with.
+test("restart, fork, a lost session and revival refuse anything but Personal", () => {
+  expect(routeRefusal({ route: "personal" })).toBe(null);
+  expect(routeRefusal({ route: "azure-foundry" })).toBe(ROUTE_HELD);
+  for (const shown of [null, {}, { route: 7 }]) expect(routeRefusal(shown)).toBe(ROUTE_UNKNOWN);
+  expect(providerRefusal({ labels: {} })).toBe(null);
+  expect(providerRefusal({ labels: { "herdr.provider": "personal" } })).toBe(null);
+  expect(providerRefusal({ labels: { "herdr.provider": "azure-foundry" } })).toContain("started on Azure Foundry");
+});
+
+test("the route is asked for the agent's role, space and folder, on its own machine", () => {
+  const task = { labels: { "herdr.task": "repo#4", "herdr.task.space": "sp1" }, cwd: "/w", foreground: { cwd: "/w/sub" } };
+  expect(routeArgs(task)).toEqual(["provider", "show", "--role", "worker", "--space", "sp1", "--folder", "/w/sub", "--json"]);
+  const assistant = { labels: { "herdr.coordinator.space": "vm1/sp2" }, cwd: "/r" };
+  expect(routeArgs(assistant, "vm1")).toEqual(["--on", "vm1", "provider", "show", "--role", "coordinator", "--space", "sp2", "--folder", "/r", "--json"]);
+  expect(routeArgs(null)).toEqual(["provider", "show", "--role", "coordinator", "--json"]);
+});
+
+test("an Azure list offers each deployment as found, the saved ones first, efforts only for a known model", () => {
+  const m = azureMenu("claude", [{ value: "opus-dep", label: "opus-dep · claude-opus-5-5 (1)", model: "claude-opus-5-5" },
+    { value: "house", label: "house · house-model", model: "house-model" }], ["saved", "opus-dep"], {});
+  expect(m.models.map((x) => x.id)).toEqual(["saved", "opus-dep", "house"]);
+  expect(m.models.find((x) => x.id === "opus-dep").efforts.length).toBeGreaterThan(0);
+  expect(m.models.find((x) => x.id === "house").efforts).toEqual([]);
+  expect(m.models.every((x) => x.fast === false && x.deployment === true)).toBe(true);
+  expect(m.azure).toBe(true);
 });

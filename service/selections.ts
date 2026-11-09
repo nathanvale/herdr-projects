@@ -35,7 +35,7 @@ export function menusFor(settings: Settings, space: string | null, keep: Record<
 }
 
 export type TaskRef = { ref: string; folder: string; machine: string | null; space?: string | null };
-export type TaskChange = { agent?: string; deployment?: string; effort?: string; default?: boolean; revision?: string };
+export type TaskChange = { agent?: string; deployment?: string; model?: string; effort?: string; default?: boolean; revision?: string };
 
 /** A task's new-start selection: shown (change null), or saved (only with the revision it was shown at). On Azure, each
  *  CLI's deployment list as `menus`. */
@@ -46,6 +46,7 @@ export async function taskSelection(settings: Settings, t: TaskRef, change: Task
     else {
       if (change.agent !== undefined) args.push("--agent", String(change.agent));
       if (change.deployment !== undefined) args.push("--deployment", String(change.deployment));
+      if (change.model !== undefined) args.push("--model", String(change.model));
       if (change.effort !== undefined) args.push("--effort", String(change.effort));
     }
     args.push("--revision", String(change.revision ?? ""));

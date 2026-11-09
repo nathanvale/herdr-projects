@@ -201,10 +201,11 @@ function parts(text) {
 
 let bound = false;
 
-// An Assistant's new-start choices on Azure Foundry at a space ("all": Everywhere), from this machine's service
-// (service/selections.ts: herdr-task provider show, and what Settings' Refresh found): null on Personal, or when the
-// service can't say (the window then offers its usual list, and launch admission plans the Assistant's deployment).
-async function azureChoices(place) {
+// An Assistant's new-start choices at a space ("all": Everywhere), from this machine's service (service/selections.ts:
+// herdr-task provider show, and on Azure Foundry what Settings' Refresh found): the route, each CLI's revision a pick is
+// bound to, and on Azure each CLI's deployments; null when the service can't say (the window then offers its usual list
+// unbound, and launch admission plans the Assistant's own deployment).
+async function providerChoices(place) {
   try {
     const token = await localToken();
     const svc = token ? await localService().catch(() => null) : null;
@@ -212,7 +213,7 @@ async function azureChoices(place) {
     const r = await fetch(`${svc.base}/api/action`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({ type: "azure-choices", place }) });
     const j = await r.json().catch(() => null);
-    return j?.ok && j.route === "azure-foundry" && j.menus ? j : null;
+    return j?.ok && typeof j.route === "string" ? j : null;
   } catch { return null; }
 }
 
@@ -1023,13 +1024,13 @@ export default class Chat extends View {
       // binding or a plan (L2, core/agents.js), so it is refused, asked of herdr-task's provider owner.
       const held = agent.providerRefusal(t);
       if (held) throw new Error(held);
+      // fresh drops what its launch set, and a new start carries no CLAUDE_CONFIG_DIR (core/agents.js).
+      const why = await agent.lostRefusal(kind, t, this.folderReader(t.address), mine ? this.path : null);
+      if (why) throw new Error(why);
       const shown = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, agent.routeArgs(t, t.address.includes("/") ? t.address.split("/")[0] : null))
         .then((r) => (r.code === 0 ? JSON.parse(r.stdout || "null") : null), () => null).catch(() => null);
       const off = agent.routeRefusal(shown);
       if (off) throw new Error(off);
-      // fresh drops what its launch set, and a new start carries no CLAUDE_CONFIG_DIR (core/agents.js).
-      const why = await agent.lostRefusal(kind, t, this.folderReader(t.address), mine ? this.path : null);
-      if (why) throw new Error(why);
       if (t.state === "live") {
         // hc send pastes the line into the shell and presses Enter.
         const r = await hc(["send", t.address, [...fresh, msg].map(shellWord).join(" ")]);
@@ -1665,8 +1666,10 @@ export default class Chat extends View {
       const pick = this.choice?.sel ?? props()?.settings;
       const az = this.choice?.data?.azure;
       const known = az && this.choice.data.menus?.[pick?.agent]?.models?.find((m) => m.id === pick?.model);
-      // A choice the person made (a pick replaces the shown default, which is marked auto) goes as the deployment.
-      const st = az && pick?.agent && !pick.auto ? { ...pick, deployment: pick.model, revision: az.revision?.[pick.agent], effort: known?.efforts?.includes(pick.effort) ? pick.effort : null } : pick;
+      // A choice the person made (not the shown default, marked auto) goes as the deployment on Azure, with the revision
+      // of the routing it was made under (Personal too): a changed route refuses it.
+      const mine = Boolean(pick?.agent) && !pick.auto;
+      const st = az && mine ? { ...pick, deployment: pick.model, effort: known?.efforts?.includes(pick.effort) ? pick.effort : null } : pick;
       const on = machine ? { on: machine } : {};
       const there = !machine || !st?.agent ? true : (await knownAgents(on).catch(() => []))
         .some((a) => (a.key === st.agent || (a.run ?? [])[0] === st.agent) && a.installed !== false);
@@ -1701,7 +1704,8 @@ export default class Chat extends View {
       const where = ["--space", space ? String(space.id).split("/").pop() : "unplaced"];
       const plan = this.role !== "coordinator" ? [] : ["--new-start", launch, "--source", template,
         ...(st?.agent && there ? ["--argv", JSON.stringify(agent.argvFor(st, { agent: null, argv: [] }).argv)] : []),
-        ...(st?.deployment ? ["--deployment", String(st.deployment), ...(st.revision ? ["--revision", String(st.revision)] : [])] : [])];
+        ...(st?.deployment ? ["--deployment", String(st.deployment)] : []),
+        ...(mine && st?.agent && there && st.revision ? ["--revision", String(st.revision)] : [])];
       const r = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, ["launch", "run", ...role, ...where, ...plan, "--json", "--", ...args.slice(1)])
         .catch((e) => ({ code: 1, stderr: String(e?.message ?? e), stdout: "" }));
       if (oneOff) exec("sh", ["-c", TEMPLATE + 'rm -f "$dir/$1.md"', "x", oneOff], on);
@@ -1782,19 +1786,23 @@ export default class Chat extends View {
         try { kept = JSON.parse(localStorage.getItem(`choice:${this.slot}`) ?? "null"); } catch {}
         const st = kept?.agent ? kept : props()?.settings;
         // An Assistant's new start on Azure Foundry (here only): its list is each CLI's deployments (what Settings'
-        // Refresh found, the saved ones), and the pick is bound to the routing it was made under (azureChoices).
-        const az = this.role === "coordinator" && !space?.machine ? await azureChoices(space?.id ?? "all") : null;
+        // Refresh found, the saved ones), and the pick is bound to the routing it was made under (providerChoices).
+        const shown = this.role === "coordinator" && !space?.machine ? await providerChoices(space?.id ?? "all") : null;
+        // Each CLI's revision of the routing in force now: a pick made here carries it (freshPick), Personal too, so a
+        // route changed before its start refuses it instead of reinterpreting it.
+        if (shown) data.revision = Object.fromEntries(Object.entries(shown.clis ?? {}).map(([k, c]) => [k, c.revision]));
+        const az = shown?.route === "azure-foundry" && shown.menus ? shown : null;
         if (az) {
           data.menus = Object.fromEntries(Object.entries(az.menus).filter(([k]) => data.menus[k]));
-          data.azure = { revision: Object.fromEntries(Object.entries(az.clis ?? {}).map(([k, c]) => [k, c.revision])) };
+          data.azure = { revision: data.revision };
         }
         const fits = st?.agent && data.menus[st.agent] && (!az || data.menus[st.agent].models.some((m) => m.id === st.model));
         const first = Object.keys(data.menus)[0];
         const sel = fits ? { perm: data.permDefault[st.agent], effort: null, fast: false, ...st }
           // shown as what it would start on; not a pick (auto), so the Assistant's own deployment still decides
-          : az && first ? { agent: first, model: az.clis?.[first]?.deployment || data.menus[first].models[0]?.id || null, effort: null, fast: false, perm: data.permDefault[first], auto: true }
+          : az && first ? { agent: first, model: az.clis?.[first]?.deployment || null, effort: null, fast: false, perm: data.permDefault[first], auto: true }
           : { ...data.defaults };
-        this.choice = { sel, data, key: this.choice.key };
+        this.choice = { sel, data, key: this.choice.key, ...(sel.auto ? { autoAgent: sel.agent, autoModel: sel.model } : {}) };
       } catch { this.choice = null; }
       cx.notify();
     });
@@ -2282,13 +2290,21 @@ export default class Chat extends View {
   fork(cx) {
     const session = agent.sessionOf(this.kind, this.path);
     if (!session) { toast({ title: "Can't fork", body: agent.inOtherFolder(this.kind, this.path) ? agent.OTHER_FOLDER : "This conversation has no saved session.", level: "info" }); return; }
-    // A fork copies its flags but not an Azure Foundry binding (L2): refused rather than run elsewhere.
+    // A fork copies its flags but no Azure Foundry binding or plan (L2): an Azure-started agent, or a route at its space
+    // that isn't Personal (herdr-task's provider owner says), is refused rather than run on the CLI's own sign-in.
     const held = agent.providerRefusal(this.t);
     if (held) { toast({ title: "Can't fork", body: held, level: "info" }); return; }
     const tab = panes().find((p) => p.pane === this.myPane())?.tab;
     const space = spaces().find((s) => s.tabs.some((x) => x.id === tab));
     const folder = this.t?.foreground?.cwd ?? this.t?.cwd ?? undefined;
-    run("tab.new", { space: space?.id, folder, argv: agent.forkArgv(this.kind, this.argv, session) });
+    const argv = agent.forkArgv(this.kind, this.argv, session), t = this.t;
+    cx.spawn(async () => {
+      const shown = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, agent.routeArgs(t, this.machine))
+        .then((r) => (r.code === 0 ? JSON.parse(r.stdout || "null") : null), () => null).catch(() => null);
+      const off = agent.routeRefusal(shown);
+      if (off) { toast({ title: "Can't fork", body: off, level: "info" }); return; }
+      run("tab.new", { space: space?.id, folder, argv });
+    });
   }
 
   // ---- dictation ----------------------------------------------------------------------------
@@ -3979,7 +3995,12 @@ export default class Chat extends View {
   // The model button before the first message (loadChoice): the same menu, choosing what it starts on.
   freshPick(t, cx) {
     // A pick lands in this.choice.sel just after a render (settings.js applyReply), which then
-    // redraws: a changed one is kept per slot here.
+    // redraws: a changed one is kept per slot here. The menu sends a whole new pick: one still on the
+    // shown default's agent and model stays that default (auto), only its effort or speed changed; any
+    // other is the person's own, bound to the revision of the routing it was made under (A2).
+    const sel = this.choice.sel;
+    if (sel && !sel.auto && this.choice.autoModel !== undefined && sel.agent === this.choice.autoAgent && sel.model === this.choice.autoModel) sel.auto = true;
+    if (sel && !sel.auto && !sel.revision && this.choice.data?.revision?.[sel.agent]) sel.revision = this.choice.data.revision[sel.agent];
     const now = JSON.stringify(this.choice.sel);
     if (this.choice.saved !== undefined && now !== this.choice.saved && this.slot) try { localStorage.setItem(`choice:${this.slot}`, now); } catch {}
     this.choice.saved = now;
