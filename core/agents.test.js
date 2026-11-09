@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { argvFor, azureMenu, current, line, menuFor, modelSections, parseDefaults, parsePicks, pickKey, providerRefusal, ROUTE_HELD, ROUTE_UNKNOWN, routeArgs, routeRefusal, withPin, withRecent } from "./agents.js";
+import { argvFor, azureMenu, pickFits, current, line, menuFor, modelSections, parseDefaults, parsePicks, pickKey, providerRefusal, ROUTE_HELD, ROUTE_UNKNOWN, routeArgs, routeRefusal, withPin, withRecent } from "./agents.js";
 
 const codex = { models: Array.from({ length: 250 }, (_, i) => ({ id: `gpt-${i}`, label: `GPT ${i}`, efforts: ["low", "high"] })) };
 const menus = { claude: menuFor("claude", {}), codex: menuFor("codex", codex) };
@@ -96,4 +96,17 @@ test("an Azure list offers each deployment as found, the saved ones first, effor
   expect(m.models.find((x) => x.id === "house").efforts).toEqual([]);
   expect(m.models.every((x) => x.fast === false && x.deployment === true)).toBe(true);
   expect(m.azure).toBe(true);
+});
+
+// A2 must not change Personal: a kept or chosen Assistant pick keeps its model, typed by id or no longer listed.
+test("a Personal pick keeps any model; only one made on Azure, or off the Azure list, gives way", () => {
+  const personal = { claude: menuFor("claude", {}) };
+  expect(pickFits({ agent: "claude", model: "claude-opus-4-1" }, personal, false)).toBe(true);
+  expect(pickFits({ agent: "claude", model: "opus", effort: "high" }, personal, false)).toBe(true);
+  expect(pickFits({ agent: "claude", model: null }, personal, false)).toBe(true);
+  expect(pickFits({ agent: "codex", model: "gpt-5" }, personal, false)).toBe(false);
+  expect(pickFits({ agent: "claude", model: "opus-dep", azure: true }, personal, false)).toBe(false);
+  const az = { claude: azureMenu("claude", [{ value: "opus-dep", label: "opus-dep", model: "claude-opus-5-5" }], [], {}) };
+  expect(pickFits({ agent: "claude", model: "opus-dep", azure: true }, az, true)).toBe(true);
+  expect(pickFits({ agent: "claude", model: "opus" }, az, true)).toBe(false);
 });

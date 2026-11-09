@@ -1796,9 +1796,9 @@ export default class Chat extends View {
           data.menus = Object.fromEntries(Object.entries(az.menus).filter(([k]) => data.menus[k]));
           data.azure = { revision: data.revision };
         }
-        // A kept pick fits only on the list in force now (a deployment kept from Azure isn't a Personal model, nor the
-        // other way round); one that doesn't is dropped for the defaults.
-        const fits = st?.agent && data.menus[st.agent] && (!st.model || data.menus[st.agent].models.some((m) => m.id === st.model));
+        // A kept pick that no longer fits what is offered gives way to the defaults (core/agents.js pickFits: on Personal
+        // any model fits, as before A2).
+        const fits = agent.pickFits(st, data.menus, Boolean(az));
         const first = Object.keys(data.menus)[0];
         const sel = fits ? { perm: data.permDefault[st.agent], effort: null, fast: false, ...st }
           // shown as what it would start on; not a pick (auto), so the Assistant's own deployment still decides
@@ -4003,9 +4003,13 @@ export default class Chat extends View {
     const sel = this.choice.sel;
     if (sel && !sel.auto && this.choice.autoModel !== undefined && sel.agent === this.choice.autoAgent && sel.model === this.choice.autoModel) sel.auto = true;
     if (sel && !sel.auto && !sel.revision && this.choice.data?.revision?.[sel.agent]) sel.revision = this.choice.data.revision[sel.agent];
+    if (sel && !sel.auto && this.choice.data?.azure) sel.azure = true;
     const now = JSON.stringify(this.choice.sel);
-    // Only the person's own pick is kept for this slot: a shown default isn't (it would outlive a route change).
-    if (this.choice.saved !== undefined && now !== this.choice.saved && this.slot && !sel?.auto) try { localStorage.setItem(`choice:${this.slot}`, now); } catch {}
+    // Only the person's own pick is kept for this slot: back on the shown default, the kept one goes too (it would
+    // otherwise come back on a reload).
+    if (this.choice.saved !== undefined && now !== this.choice.saved && this.slot) try {
+      if (sel?.auto) localStorage.removeItem(`choice:${this.slot}`); else localStorage.setItem(`choice:${this.slot}`, now);
+    } catch {}
     this.choice.saved = now;
     return choices.modelButton(t, this.choice, {}, cx);
   }

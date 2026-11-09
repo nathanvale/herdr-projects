@@ -18,8 +18,10 @@ mkdirSync(join(HOME_DIR, ".config", "herdr-core", "templates"), { recursive: tru
 mkdirSync(FOLDER);
 // the assistant template, as the machine's sync puts it there
 writeFileSync(join(HOME_DIR, ".config", "herdr-core", "templates", "assistant.md"), "---\nname: assistant\ncommand: claude\n---\nYou are the Assistant.\n");
-// herdr-task: one JSON line of its words; its reply is REPLY's, its exit code REPLY.code's
-writeFileSync(join(BIN, "herdr-task"), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${TASK_CALLS}"\ncat "${REPLY}"\nexit "$(cat "${REPLY}.code" 2>/dev/null || echo 0)"\n`, { mode: 0o755 });
+// herdr-task: one JSON line of its words, and the one-off templates there when it runs (TEMPLATES_SEEN: their words, as
+// the start found them; the site removes them after); its reply is REPLY's, its exit code REPLY.code's
+const TEMPLATES_SEEN = join(APP, "templates.seen");
+writeFileSync(join(BIN, "herdr-task"), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${TASK_CALLS}"\ncat "${HOME_DIR}/.config/herdr-core/templates/"herdr-*.md >> "${TEMPLATES_SEEN}" 2>/dev/null\ncat "${REPLY}"\nexit "$(cat "${REPLY}.code" 2>/dev/null || echo 0)"\n`, { mode: 0o755 });
 writeFileSync(join(BIN, "hc"), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${HC_CALLS}"\nexit 1\n`, { mode: 0o755 });
 
 let SP: typeof import("./spaces.ts");
@@ -39,7 +41,7 @@ afterAll(() => {
   rmSync(APP, { recursive: true, force: true });
 });
 beforeEach(() => {
-  for (const p of [TASK_CALLS, HC_CALLS, `${REPLY}.code`]) if (existsSync(p)) rmSync(p);
+  for (const p of [TASK_CALLS, HC_CALLS, `${REPLY}.code`, TEMPLATES_SEEN]) if (existsSync(p)) rmSync(p);
   writeFileSync(REPLY, JSON.stringify({ address: "t7", launch: "6f1c2d3e-4a5b-4c6d-8e7f-001122334455", state: "confirmed" }));
 });
 
@@ -108,6 +110,8 @@ test("a space's first message starts its Assistant through launch admission", as
   expect(call.startsWith(`launch run --role coordinator --space sp1 --new-start ${word} --source assistant --json -- --bg --json --no-parent --keep --cwd ${FOLDER} `)).toBe(true);
   expect(call).toContain(`--label herdr.role=coordinator --label herdr.coordinator.space=sp1 --label herdr.space=sp1 ${word}`);
   expect(call.endsWith(" Plan the week")).toBe(true);
+  // no pick: the one-off runs the template's own command, as before A2
+  expect(readFileSync(TEMPLATES_SEEN, "utf8")).toMatch(/^command: .* exec claude$/m);
   expect(read(HC_CALLS)).toEqual([]);
 });
 
@@ -130,6 +134,10 @@ test("a space's first message carries the web's saved pick for its Assistant, bo
   const [call] = read(TASK_CALLS);
   expect(call).toContain(` --argv ["claude","--model","picked-deployment","--effort","high","--settings","{\\"fastMode\\":false}"] `);
   expect(call).toContain(" --deployment picked-deployment --revision 0123abcd0123abcd --json -- ");
+  // on Personal the one-off it runs is the pick's own command (on Azure launch admission plans it from --argv instead)
+  const seen = readFileSync(TEMPLATES_SEEN, "utf8");
+  expect(seen).toContain(`exec claude --model picked-deployment --effort high --settings '{"fastMode":false}'`);
+  expect(seen).toContain("You are the Assistant.");
   // used for this first start only: another space's pick stays
   expect(s.d["assistant.picks"]).toEqual({ sp2: { agent: "codex", model: null, revision: "r2" } });
   expect(read(HC_CALLS)).toEqual([]);

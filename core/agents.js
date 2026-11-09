@@ -176,6 +176,15 @@ export function azureMenu(kind, options, keep, dflt) {
   return { name: NAMES[kind], perms: PERMS[kind], models: rows, azure: true };
 }
 
+// Whether a kept pick for an Assistant's new start ({ agent, model, azure }) still fits what the window chat offers now
+// (A2): its CLI must be offered; on Personal any model does, as before A2 (a model typed by id, or one the CLI no longer
+// lists, is kept and started on), except a pick made on Azure (marked azure: its model is a deployment); on Azure only a
+// deployment on the list. One that doesn't fit gives way to the defaults.
+export function pickFits(pick, menus, azure) {
+  if (!pick?.agent || !menus?.[pick.agent]) return false;
+  return azure ? menus[pick.agent].models.some((m) => m.id === pick.model) : !pick.azure;
+}
+
 // The levels a model typed by id gets: its agent's usual ones.
 export function typedModel(agent, id) {
   return { id, name: agent === "claude" ? modelName(id) : id, efforts: agent === "claude" ? CLAUDE_EFFORTS : ["low", "medium", "high", "xhigh"], defaultEffort: null, fast: false, typed: true };

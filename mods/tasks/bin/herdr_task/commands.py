@@ -974,11 +974,12 @@ def cmd_select(args):
                     else:
                         t["effort"] = e
                 # A deployment or a model is bound to the routing it was chosen under: under another one its start
-                # refuses (launch_admission), never reinterpreted.
-                if agent and (t.get("deployment") or t.get("model")):
-                    t["selection_routing"] = selection_revision(binding_for(s, space), agent)
-                else:
+                # refuses (launch_admission), never reinterpreted. Only a save that chooses one (its CLI, deployment or
+                # model) binds anew; one that changes the effort alone keeps the older binding, so it still refuses.
+                if not (agent and (t.get("deployment") or t.get("model"))):
                     t.pop("selection_routing", None)
+                elif args.agent is not None or args.deployment is not None or args.model is not None or "selection_routing" not in t:
+                    t["selection_routing"] = selection_revision(binding_for(s, space), agent)
             t["select_rev"] = (t.get("select_rev") or 0) + 1
             t["pick_at"] = now()
             q = t.get("queue") or {}

@@ -15,6 +15,8 @@ const { NAMES, levelName } = AG as unknown as { NAMES: Record<string, string>; l
 type Model = { id: string; name: string; efforts: string[] }
 type View = {
   ok?: boolean; error?: string; locked: boolean; route: string; revision: string
+  /** what it follows without a choice of its own: Settings' Workers CLI */
+  inherit?: { agent: string }
   selection: { agent: string | null; deployment: string | null; effort: string | null }
   clis: Record<string, { routing: string; deployment: string | null; problem: string | null }>
   menus: Record<string, { models: Model[] }> | null
@@ -44,7 +46,7 @@ export function TaskSelect({ task, done }: { task: Task; done: () => void }) {
   const [effort, setEffort] = useState('')
   const show = (r: View) => {
     setV(r)
-    setAgent(r.selection.agent ?? 'claude')
+    setAgent(r.selection.agent ?? r.inherit?.agent ?? 'claude')
     setDep(r.selection.deployment ?? '')
     setEffort(r.selection.effort ?? '')
   }
@@ -102,7 +104,10 @@ export function TaskSelect({ task, done }: { task: Task; done: () => void }) {
       {v.locked ? null : (
         <span className="flex flex-wrap items-center justify-end gap-1.5">
           <Ghost disabled={busy} onClick={() => void save({ default: true })}>{WORDS.defaults}</Ghost>
-          <Primary disabled={busy} onClick={() => void save({ agent, ...(azure ? { deployment: dep } : {}), effort: levels.includes(effort) ? effort : 'default' })}>{WORDS.save}</Primary>
+          <Primary disabled={busy} onClick={() => void save({
+            // its CLI only when chosen here, or with a deployment (one belongs to one CLI); an effort alone follows Settings' CLI
+            ...(agent !== (v.selection.agent ?? v.inherit?.agent ?? 'claude') || v.selection.agent || (azure && dep) ? { agent } : {}),
+            ...(azure ? { deployment: dep } : {}), effort: levels.includes(effort) ? effort : 'default' })}>{WORDS.save}</Primary>
         </span>
       )}
     </div>

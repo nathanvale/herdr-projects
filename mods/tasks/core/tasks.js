@@ -258,3 +258,17 @@ export function untilShort(ms, now = Date.now()) {
 }
 // A scheduled row's second line: "Starts Today 18:00"; "Starts now" once due.
 export const startsLine = (ms, now = Date.now()) => (typeof ms !== "number" ? "Scheduled" : ms <= now ? "Starts now" : `Starts ${startsAt(ms, now)}`);
+
+// A task's new-start choice from the window's model menu (A2, mods/tasks saveSelect): what one change saves with
+// `herdr-task select`, from what the menu showed ({ agent, model, effort }) and what it sends back ({ agent, model,
+// effort }) on route ("azure-foundry" or "personal"). Only what changed is saved, so the rest keeps following Settings.
+// A model (Personal) or a deployment (Azure) belongs to one CLI, so its CLI goes with it; an effort alone sends no CLI
+// (the task's own, if any, stays, and so does the routing its choice is bound to). Nothing changed: null.
+export function selectChange(shown, value, route) {
+  const change = {};
+  if (value.agent !== shown.agent || (value.model ?? null) !== (shown.model ?? null))
+    Object.assign(change, route === "azure-foundry" ? { deployment: value.model ?? "" } : { model: value.model ?? "default" });
+  if ((value.effort ?? null) !== (shown.effort ?? null)) change.effort = value.effort ?? "default";
+  if (value.agent !== shown.agent || "model" in change || "deployment" in change) change.agent = value.agent;
+  return Object.keys(change).length ? change : null;
+}

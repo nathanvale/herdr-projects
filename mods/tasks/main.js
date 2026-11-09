@@ -28,7 +28,7 @@ import { taskDot, ownProgress } from "./dot.js";
 import { taskMenu } from "./core/menus.js";
 // The rules for a task's status, order and words: shared with the web app (core/tasks.js).
 import { RANK, STATUS, RANK_OF, ORDER, GROUP_BY, groupBy, machineOf, machineName, refOf, taskKey, autoPrefix, place,
-  queueReason, reportOf as report, secondLine, leftOf, order, matches, day, ago, capital, short, autoWhere, fromLine, inSpace } from "./core/tasks.js";
+  queueReason, reportOf as report, secondLine, leftOf, order, matches, day, ago, capital, short, autoWhere, fromLine, inSpace, selectChange } from "./core/tasks.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
 import { TEXT, H, RADIUS, red, amber, toast } from "./ui.js";
 import { localService, localToken } from "./local.js";
@@ -968,7 +968,7 @@ export default class Tasks extends View {
         // only what the person changes here is saved, so the rest keeps following Settings).
         const agent = v.selection?.agent && menus[v.selection.agent] ? v.selection.agent : v.inherit?.agent && menus[v.inherit.agent] ? v.inherit.agent : Object.keys(menus)[0] ?? "claude";
         const model = azure ? v.selection?.deployment ?? v.clis?.[agent]?.deployment ?? null : v.selection?.model ?? null;
-        const shown = { agent, model, effort: v.selection?.effort ?? null, own: Boolean(v.selection?.agent) };
+        const shown = { agent, model, effort: v.selection?.effort ?? null };
         const key = `taskpick:${Date.now().toString(36)}`;
         this.taskPick = { key, task, revision: v.revision, route: v.route, shown, saving: Promise.resolve(), at: shared("newspace.pick")?.at ?? null };
         const W = 340, H = 2 + 10 + 34 + 36 + 8 * 31 + 9 + 26 + 34 + 31 + 31;
@@ -988,16 +988,12 @@ export default class Tasks extends View {
   saveSelect(value, cx) {
     const pick = this.taskPick;
     pick.saving = pick.saving.then(async () => {
-      const was = pick.shown, change = {};
-      if (value.agent !== was.agent || was.own) change.agent = value.agent;
-      if (value.agent !== was.agent || (value.model ?? null) !== was.model)
-        Object.assign(change, pick.route === "azure-foundry" ? { deployment: value.model ?? "" } : { model: value.model ?? "default" });
-      if ((value.effort ?? null) !== was.effort) change.effort = value.effort ?? "default";
-      if (!Object.keys(change).length) return;
+      const was = pick.shown, change = selectChange(was, value, pick.route);
+      if (!change) return;
       try {
         const out = await this.askService({ type: "task-select", task: pick.task, change: { ...change, revision: pick.revision } });
         pick.revision = out.revision;
-        pick.shown = { agent: value.agent, model: value.model ?? null, effort: value.effort ?? null, own: Boolean(change.agent) || was.own };
+        pick.shown = { agent: value.agent, model: value.model ?? null, effort: value.effort ?? null };
       } catch (e) {
         toast({ level: "error", title: `${pick.task.ref}'s model wasn't saved`, body: String(e?.message ?? e) });
       }

@@ -619,7 +619,7 @@ Detail, decisions and authored regressions: [Azure selectors and bound starts](.
 - Discovery: A1's `service/azure-deployments.ts`, reached only by an explicit Refresh; a pick
   carries its list's revision and a stale one refuses (`service/main.ts`, `service/settings.ts`).
 - Selectors: `herdr-task select` (a task's save-only, revision-bound choice, locked once it has a
-  recorded agent; a deployment choice bound to its routing) and `provider show`; the web's task row
+  recorded agent; a deployment or model choice bound to its routing) and `provider show`; the web's task row
   menu (`web/plugins/tasks/select.tsx`) and Assistant new-start pick (`web/src/restart.tsx`, kept by
   the service and carried by the first message's start) through `service/selections.ts`; the
   window's task row menu (`mods/tasks`, `mods/tasks-menu`) and its chat's Assistant pick, each bound

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { place, queueReason, reportOf, estimated, order, ago, autoPrefix, refOf, taskKey, matches, busyAgain, secondLine, leftOf, ORDER, STATUS, WORKING_AGAIN, fromLine, autoWhere, inSpace } from "./tasks.js";
+import { place, queueReason, reportOf, estimated, order, ago, autoPrefix, refOf, taskKey, matches, busyAgain, secondLine, leftOf, ORDER, STATUS, WORKING_AGAIN, fromLine, autoWhere, inSpace, selectChange } from "./tasks.js";
 import { REASONS, fit } from "./needs.js";
 
 const NOW = 1_800_000_000_000;
@@ -177,4 +177,16 @@ describe("This space (inSpace)", () => {
   test("no space: nothing is in it", () => {
     expect(inSpace(null, { machine: null, folder: "/work/shop" })).toBe(false);
   });
+});
+
+// A2: the window's task selector saves only what changed, and a model or deployment always with its CLI (a task with no
+// choice of its own has no CLI for herdr-task select to take it from).
+test("a task's new-start change carries its CLI with a model or deployment, and none with an effort alone", () => {
+  const shown = { agent: "codex", model: null, effort: null };
+  expect(selectChange(shown, { agent: "codex", model: "gpt-pick", effort: null }, "personal")).toEqual({ model: "gpt-pick", agent: "codex" });
+  expect(selectChange(shown, { agent: "codex", model: "dep-1", effort: null }, "azure-foundry")).toEqual({ deployment: "dep-1", agent: "codex" });
+  expect(selectChange(shown, { agent: "codex", model: null, effort: "high" }, "personal")).toEqual({ effort: "high" });
+  expect(selectChange(shown, { agent: "claude", model: null, effort: null }, "personal")).toEqual({ model: "default", agent: "claude" });
+  expect(selectChange(shown, { agent: "codex", model: null, effort: null }, "personal")).toBe(null);
+  expect(selectChange({ agent: "claude", model: "opus", effort: "high" }, { agent: "claude", model: "opus", effort: null }, "personal")).toEqual({ effort: "default" });
 });

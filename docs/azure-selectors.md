@@ -59,9 +59,10 @@ saved by `herdr-task select`:
   are, and no hc command runs. A queued task's plan takes the new argv in its old place.
 - A task with a recorded agent, or one that has left To do, Queued or Scheduled, is locked. So is
   one whose start is still open in the journal. A stopped recorded conversation is not unstarted.
-- A deployment choice records the routing it was made under (`selection_routing`). Under another
-  routing (a different route, resource, endpoint or sign-in), its start refuses. It never falls
-  back to Personal.
+- A deployment or model choice records the routing it was made under (`selection_routing`). Under
+  another routing (a different route, resource, endpoint or sign-in), its start refuses. It never
+  falls back to Personal. A save that changes the effort alone keeps the older binding; an effort
+  alone needs no CLI and follows Settings' Workers CLI.
 - Efforts on offer: a deployment whose model this CLI's own catalogue knows (by its id or the
   model the inventory reports) gets that model's levels; any other gets Default only. `herdr-task`
   checks an effort's shape; the selectors offer only those levels.
@@ -113,8 +114,9 @@ drops it once used.
   Once a role deployment is saved (and pushed to another machine), a machine still on an older
   herdr-task refuses its starts, Personal included, until it is updated or the field is removed.
 - A tab agent (a chat of another role) starts Personal only, with its own reason.
-- `herdr-task select` gains `--model` (Personal); `provider show --space` reads a space the settings
-  file holds by its own folder, as launch admission does.
+- `herdr-task select` gains `--model` (Personal), and its `--json` gives `inherit` (Settings' Workers
+  CLI); `provider show --space` reads a space the settings file holds by its own folder, as launch
+  admission does.
 - Shared store: the web's Assistant picks live in the service's `assistant.picks` (nonsecret).
 
 ## Held, not invented
