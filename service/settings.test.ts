@@ -169,9 +169,10 @@ test("Agents and Tasks say the window's words: the model button, Other CLI, Must
   s.start();
   s.choices = C.choicesFrom({ claude: { model: "opus[1m]", effort: "high", per: {} }, codex: { models: [{ id: "gpt-5", label: "GPT-5", efforts: ["low", "high"] }] } });
   const agents = s.sections(null).find((x) => x.name === "Agents" && x.level === "all")!;
-  expect(agents.rows.map((r) => r.label)).toEqual(["Assistant", "Workers", "Reviewer", "Backup agent", "Reactions", "Feedback offers", "Feedback repo", "Ask for a GitHub star"]);
-  expect(agents.rows[0].value).toBe("Opus 5.5 · 1M · High");
-  expect(agents.rows[2]).toMatchObject({ value: "Other CLI (Codex)", agent: { unset: true, other: false } });
+  expect(agents.rows.map((r) => r.label)).toEqual(["Provider", "Assistant", "Workers", "Reviewer", "Backup agent", "Reactions", "Feedback offers", "Feedback repo", "Ask for a GitHub star"]);
+  expect(agents.rows[0]).toMatchObject({ key: "provider.route", value: "Personal" });
+  expect(agents.rows[1].value).toBe("Opus 5.5 · 1M · High");
+  expect(agents.rows[3]).toMatchObject({ value: "Other CLI (Codex)", agent: { unset: true, other: false } });
   const tasks = s.sections(null).find((x) => x.name === "Tasks" && x.level === "all")!;
   expect(tasks.rows.some((r) => r.key === "tasks.must_fix")).toBe(false);
   expect(tasks.rows.find((r) => r.key === "tasks.max_running")).toMatchObject({ hint: C.ABOUT["tasks.max_running"], steps: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"] });
@@ -335,6 +336,7 @@ test("a space inherits field by field; its empty value is its own, and Reset fol
   expect(rows().find((r) => r.key === "provider.claude_deployment")).toMatchObject({ value: "", inherits: { value: "everywhere-deployment", from: "Everywhere" } });
   s.set("provider.claude_deployment", null, "sp7", scope);
   expect(fileNow().spaces.sp7.provider).toBeUndefined();
+  s.set("provider.claude_deployment", null);
   s.set("provider.route", "Personal");
 });
 
