@@ -11,7 +11,9 @@ Ready (a push on a frozen route, a draft, then ready for review) under durable c
 admits every task and Assistant start through one owner with a durable launch journal, and A2
 adds the person's Provider settings, save-only new-start selectors and recorded bindings that
 resume keeps, dispatching Azure where a start records its binding, and L2 brings revival, a lost
-session and restart through that one owner on the recorded binding.
+session and restart through that one owner on the recorded binding, and Q reconciles that
+candidate: every required behavior, removed fork test file and fork workflow test step is in
+one ledger with the native regressions that carry it or an explicit hold.
 Required Azure and lifecycle ports are pending, and no Azure, Bitbucket or lifecycle port is qualified. This checkpoint is not deployable or ready for application use. Check's
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
@@ -677,6 +679,73 @@ and their pins are L2's. `docs/native-restart.md` is named under L2.
   and `manual-recovery` decision-held, and `one-revival-owner`, `azure-bound-resume`, `selection-effort-fast`,
   `delivery-retries`, `task-lifecycle-holds` and `approval-exact-head` pending until Root CI and native qualification.
 
+### Q exact-candidate reconciliation
+
+Q is its own row in `PHASES` after L2 and changes no runtime owner. Its ledger,
+[q-reconciliation.json](q-reconciliation.json), and `bin/check-sensitivity` are named under Q.
+It is source and CI qualification only (Stage Q-A): no provider, Azure or agent was reached.
+
+- Candidate: `d53e014b` (tree `d15892f9`), the integration branch with B2, A2 and L2 merged.
+  Check run 42637636997 (pull request 57) checked out `03b73159`, whose tree is the same `d15892f9`:
+  577 Bun tests passed (71 files, 0 failed, 0 skipped); Python ran 715 with 1 skip (test_herdr_task's
+  negative control at `8a44f942`, absent after a squash merge; it ran on PR 29's CI) and no failure;
+  `check-migration` passed at L2. `candidate-readiness` is skipped on a pull request into `integrate/`.
+  This branch's own Check, on its exact head, is the evidence for Q's additions.
+- Requirements: all 40 keep the inventory's status. Each names its native regressions (99 tests across
+  the requirement rows; every one of the ledger's 139 named tests passed in that run), an evidence class (`process-observed-in-ci` 27, `ci-executed` 11,
+  `held` 2: `protected-update` and `matching-state-rollback`), what is still missing and who owns it:
+  Q-B (real Azure, separately approved) 11, native qualification on a real execution host 16, R 10,
+  Nathan's held decisions 2 (`missing-history`, `manual-recovery`), and Q itself 1 (`fork-ci-obligations`).
+- Removed test obligations: the 38 fork and PR 3 test files the file inventory declares (449 static
+  cases) are each covered (2), partial (11) or held (25), and 242 old cases are held by their exact
+  titles. A covered row holds nothing; a partial or held row says why. Upstream-identical cases in a
+  modified file are described in its hold rather than listed.
+- Fork workflows: all 43 test steps of F's `check.yml`, `core-rewrite.yml` and `foundry.yml` are
+  enumerated from the fixed objects. Four `foundry.yml` sensitivity steps are ported as native
+  guard-removal checks (Personal default preservation, discovery's capability filter, Codex resume's
+  recorded deployment, the final revision guard), five are suites whose files are reconciled above,
+  and 34 are held: 16 boot-recovery steps have no native owner (ADR 0003 is proposed only), three are
+  protected update (R), and the rest have native regressions without a guard-removal proof.
+- `check-migration` refuses a missing, repeated or recounted row, a status other than the inventory's,
+  a covered claim with a hold, a hold without words, a held case its fixed source doesn't declare, a
+  named test its file doesn't hold, a mutation that doesn't remove exactly one guard, a manifest phase
+  before Q, and any tracked path changed since the candidate outside Q's own paths, `docs/` and the root
+  prose files (markdown a command reads, such as `templates/*.md`, is source). A named test must be
+  declared by exactly that name: a Python `def`, or a Bun `test(` or `it(` title. `--require-ready` still exits 3.
+- After Q merges (an open decision for Nathan at Accept, as it adds a step to later units): a later unit
+  that changes such a path names it in `AFTER_Q` in `bin/check-migration`
+  under the unit's name, in its own reviewed change. Its own Check is its evidence; Q's ledger keeps
+  describing its candidate only and is never re-pointed to claim the later source. A later phase row
+  (R) keeps the ledger valid; a manifest before Q refuses.
+- `bin/check-sensitivity` (a Check step) runs each ported guard's regression with the guard, removes the
+  guard, requires that regression to fail, and puts the file back byte for byte (on SIGTERM too), with a
+  fresh bytecode cache. A skipped regression, or a Python one that errors rather than fails an assertion,
+  proves nothing and refuses. While a row is `ported`, its mutation must name one of that row's own native
+  regressions, and `check-migration` refuses a Check job that no longer runs it unconditionally (dropped,
+  commented out, `if:` or `continue-on-error`).
+- Native deliberately differs from fork cases (recorded in the holds, not changed here): GitHub merge
+  passes `--delete-branch` where the fork kept the source branch; a 401 or 403 on a Bitbucket create
+  is a refusal and a later Ready may post again, where the fork kept it uncertain; a GitLab folder
+  stays local where the fork refused it; a status link that isn't a URL is dropped where the fork
+  refused readiness; Bitbucket titles are bound at 255 characters (the fork took 512); the Azure
+  credential check runs in the agent's shell after its terminal exists; a task start refuses when
+  its Assistant has finished; settings changed away and back read as unchanged; missing history
+  falls back to a new conversation (the held decision). Each is a decision for Nathan, not a Q repair.
+- Plugins and persisted state (source-inspected): native web plugins are compiled from
+  `web/plugins.json` and `web/build-plugins.ts` writes no person-owned plugin (`user: []`), so the
+  fork's five-second setup deadline, last-good compilation and the optional production-plugin build
+  (`core-rewrite.yml`'s `production-plugin`, `SHEPHERDR_REAL_PLUGIN_BUILD=1`) have nothing native to run
+  on; default Check green does not stand in for them. `web/src/guard.tsx` isolates a failing plugin's
+  slots. The web outbox keeps an unsent message for Retry (`web/src/outbox.test.ts`); the fork's
+  sealed mailbox documents, drafts, labels and 2.x store keys are not imported, and nothing converts state.
+- GitHub news (`T/ghnews.py`), the worktree panels (`service/worktree.ts`, `mods/task-pr`) and the
+  provider retry cadence in `retry_pass` have no native regression; their fork cases stay held.
+- Still Q's (`fork-ci-obligations`): public-process proof through `herdr-task tick` that a backup
+  takeover is held by the provider gate before the task's one backup is spent (in-module only), and
+  empty settings `env` values for endpoint, credential and model variables (unproved).
+- Not a required port's completion: no requirement changes status. Native inference, state
+  conversion and cutover stay held; candidate readiness stays blocked.
+
 ### Bitbucket contract
 
 Port P's behavior into native owners, not its old server paths. GitHub retains
@@ -786,7 +855,8 @@ Bitbucket read tests (`test/test_bitbucket.py`), the B2 publication tests
 (`service/settings.test.ts`, `service/selections.test.ts`, with A2's cases in `test/test_providers.py`
 and `test/test_launch_admission.py`), the L2 restart tests (`test/test_native_restart.py`, with L2's cases
 in `test/test_herdr_task.py`, `test/test_providers.py`, `test/test_launch_admission.py`,
-`test/test_session_discovery.py` and `core/chat-find.test.js`) and every native Check command. CI owns
+`test/test_session_discovery.py` and `core/chat-find.test.js`), Q's reconciliation and sensitivity tests
+(`test/test_migration.py`, `bin/check-sensitivity`) and every native Check command. CI owns
 frozen dependency installation, web
 generation, shared-copy/parser checks, typecheck, Bun service/core/web tests,
 Python tests and production build. Locally run only `bun run typecheck`.

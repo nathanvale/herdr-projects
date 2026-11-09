@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "phase": "L2",
+  "phase": "Q",
   "architecture": "full-upstream-3.x",
   "candidate_readiness": "blocked",
   "inputs": {
@@ -1500,7 +1500,7 @@
     }
   ],
   "inventory": "upstream-v3.1.3-files.json",
-  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held, N1 native pull request adoption and fail-closed publication, the C1 session discovery under each agent's own folder, the W1 web chat flag kept apart from background work, the H1 opt-in private custom-domain listener, the S1 forge seam with GitHub as its first adapter, the B1 Bitbucket reads (a saved Bitbucket pull request and its head's complete checks on the execution host's own Git credentials, merge refused), the B2 Bitbucket publication (Ready pushes on a frozen route, opens a draft and prepares it for review under this host's durable claims, reconciled only by positive same-id evidence; merge still refused), and the L1 launch admission (every task and Assistant start through one owner and a durable launch journal: claimed before its first effect, rechecked and recorded as uncertain before hc run, confirmed only by its reply or its own launch label; Azure still held), and the L2 native restart (revival, a lost session at its shell and every restart through the launch owner on the recorded binding, claimed before anything is typed or started; missing history reported apart; a fork admitted by the owner, Personal only); no required fork port is complete, CI-proved or runtime-qualified",
+  "source_claim": "native foundation plus the A1 provider launch plan and deployment discovery owners, with Azure dispatch held, N1 native pull request adoption and fail-closed publication, the C1 session discovery under each agent's own folder, the W1 web chat flag kept apart from background work, the H1 opt-in private custom-domain listener, the S1 forge seam with GitHub as its first adapter, the B1 Bitbucket reads (a saved Bitbucket pull request and its head's complete checks on the execution host's own Git credentials, merge refused), the B2 Bitbucket publication (Ready pushes on a frozen route, opens a draft and prepares it for review under this host's durable claims, reconciled only by positive same-id evidence; merge still refused), and the L1 launch admission (every task and Assistant start through one owner and a durable launch journal: claimed before its first effect, rechecked and recorded as uncertain before hc run, confirmed only by its reply or its own launch label; Azure still held), and the L2 native restart (revival, a lost session at its shell and every restart through the launch owner on the recorded binding, claimed before anything is typed or started; missing history reported apart; a fork admitted by the owner, Personal only), and Q's reconciliation of that candidate (docs/migration/q-reconciliation.json: every required behavior, removed test file and fork workflow test step with its native regressions or an explicit hold, four fork sensitivity checks restored in Check); no required fork port is complete or runtime-qualified, and native suites passing in CI do not qualify one",
   "azure_cli_design": {
     "skill": "my-second-brain-playground:cli-design",
     "route": "maintain/extend existing-project",
