@@ -529,8 +529,8 @@ def main():
     c.add_argument("--restart", action="store_true", help=argparse.SUPPRESS)  # a model menu's Restart (L2): Personal only
     c = cmd("select", cmd_select, "show or save the CLI, Azure deployment and effort a task's first agent starts on: "
                                   "save-only, before it starts (starts nothing, keeps its holds)")
-    c.add_argument("--agent", choices=["claude", "codex"], help="the CLI it starts on (needed with --deployment or --model; "
-                                                                 "an --effort alone follows Settings' CLI)")
+    c.add_argument("--agent", choices=["claude", "codex"], help="the CLI it starts on (needed with --deployment or --model "
+                                                                 "unless the task has its own CLI; an --effort alone follows it)")
     c.add_argument("--deployment", help="its Azure Foundry deployment, on Azure (\"\": the role's)")
     c.add_argument("--model", help="its model on Personal, an id or alias (\"default\": the role's)")
     c.add_argument("--effort", help="its effort (\"default\": the role's)")

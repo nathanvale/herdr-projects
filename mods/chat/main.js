@@ -205,14 +205,15 @@ let bound = false;
 // herdr-task provider show, and on Azure Foundry what Settings' Refresh found): the route, each CLI's revision a pick is
 // bound to, and on Azure each CLI's deployments; null when the service can't say (the window then offers its usual list
 // unbound, and launch admission plans the Assistant's own deployment).
-async function providerChoices(place) {
+async function providerChoices(place, cx) {
   try {
     const token = await localToken();
-    const svc = token ? await localService().catch(() => null) : null;
+    // bounded, as localService's own look: a slow service never keeps the model button from showing (null: unbound)
+    const svc = token ? await localService(cx).catch(() => null) : null;
     if (!svc) return null;
-    const r = await fetch(`${svc.base}/api/action`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ type: "azure-choices", place }) });
-    const j = await r.json().catch(() => null);
+    const ask = fetch(`${svc.base}/api/action`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ type: "azure-choices", place }) }).then((r) => r.json()).catch(() => null);
+    const j = await Promise.race([ask, cx.sleep(3000).then(() => null)]);
     return j?.ok && typeof j.route === "string" ? j : null;
   } catch { return null; }
 }
@@ -1787,7 +1788,7 @@ export default class Chat extends View {
         const st = kept?.agent ? kept : props()?.settings;
         // An Assistant's new start on Azure Foundry (here only): its list is each CLI's deployments (what Settings'
         // Refresh found, the saved ones), and the pick is bound to the routing it was made under (providerChoices).
-        const shown = this.role === "coordinator" && !space?.machine ? await providerChoices(space?.id ?? "all") : null;
+        const shown = this.role === "coordinator" && !space?.machine ? await providerChoices(space?.id ?? "all", cx) : null;
         // Each CLI's revision of the routing in force now: a pick made here carries it (freshPick), Personal too, so a
         // route changed before its start refuses it instead of reinterpreting it.
         if (shown) data.revision = Object.fromEntries(Object.entries(shown.clis ?? {}).map(([k, c]) => [k, c.revision]));

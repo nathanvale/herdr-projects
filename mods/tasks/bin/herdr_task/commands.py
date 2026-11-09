@@ -939,8 +939,9 @@ def cmd_select(args):
                 # An effort alone can follow the configured CLI; a deployment or model belongs to one CLI.
                 if agent not in ("claude", "codex") and (agent is not None or args.deployment or args.model):
                     raise Fail("Choose the CLI it starts on: --agent claude or --agent codex.")
-                if args.agent is not None and args.agent != t.get("agent"):
-                    # Another CLI: the previous CLI's deployment, model and effort don't carry over.
+                if args.agent is not None and t.get("agent") and args.agent != t["agent"]:
+                    # Another CLI than the task's own: that CLI's deployment, model and effort don't carry over. (A task
+                    # with no CLI of its own keeps an effort saved alone.)
                     for k in ("deployment", "model", "effort"):
                         t.pop(k, None)
                 if agent:

@@ -632,7 +632,10 @@ class TaskSelection(unittest.TestCase):
             with self.subTest(changed=changed):
                 f.provider(changed)
                 before = f.snapshot()
-                self.assertIn("changed since this start was chosen", f.refused("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now"))
+                why = f.refused("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now")
+                # its next step, as the contract says: save it again, or clear it
+                self.assertIn("Save its choice again", why)
+                self.assertIn("herdr-task select --default", why)
                 f.nothing_started(before)
         # Back to configured defaults, it starts on today's settings.
         shown = f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1")
@@ -679,7 +682,7 @@ class TaskSelection(unittest.TestCase):
         f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1", "--agent", "claude", "--model", "sonnet", "--revision", shown["revision"])
         f.provider({"route": "azure-foundry", **CLAUDE})
         before = f.snapshot()
-        self.assertIn("changed since this start was chosen", f.refused("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now"))
+        self.assertIn("Save its choice again", f.refused("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now"))
         f.nothing_started(before)
         # An effort alone is no CLI's: it needs no --agent and binds no routing, so the task still follows Settings' CLI.
         other = f.add("--here")
@@ -691,6 +694,49 @@ class TaskSelection(unittest.TestCase):
         _, agent = f.agent_words(f.launches()[-1])
         self.assertEqual((agent[agent.index("--model") + 1], agent[agent.index("--effort") + 1]), ("claude-deployment", "high"))
         f.settle(tid=other)
+
+    def test_an_effort_saved_alone_stays_when_a_model_is_chosen_after(self):
+        f = Fixture(self)
+        tid = f.add("--here")
+        shown = f.ok("select", str(tid), "--folder", f.repo)
+        rev = f.ok("select", str(tid), "--folder", f.repo, "--effort", "high", "--revision", shown["revision"])["revision"]
+        saved = f.ok("select", str(tid), "--folder", f.repo, "--agent", "codex", "--model", "gpt-pick", "--revision", rev)
+        self.assertEqual(saved["selection"], {"agent": "codex", "deployment": None, "model": "gpt-pick", "effort": "high"})
+        # Another CLI than the task's own: that CLI's model and effort go.
+        saved = f.ok("select", str(tid), "--folder", f.repo, "--agent", "claude", "--revision", saved["revision"])
+        self.assertEqual(saved["selection"], {"agent": "claude", "deployment": None, "model": None, "effort": None})
+
+    def test_an_effort_saved_alone_keeps_the_older_binding(self):
+        f = Fixture(self)
+        f.provider({"route": "azure-foundry", **CLAUDE})
+        tid = f.add("--here")
+        shown = f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1")
+        rev = f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1", "--agent", "claude", "--deployment", "dep-a",
+                   "--revision", shown["revision"])["revision"]
+        f.provider({"route": "azure-foundry", **CLAUDE, "claude_resource": "other"})
+        f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1", "--effort", "high", "--revision", rev)
+        before = f.snapshot()
+        self.assertIn("Save its choice again", f.refused("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now"))
+        f.nothing_started(before)
+
+    def test_a_started_tasks_choice_doesnt_stop_a_fresh_conversation_after_a_routing_change(self):
+        """The save-only choice is for the first start: once its conversation is recorded, resume keeps the record (and
+        refuses changed routing), and --fresh starts a new conversation on today's settings, as documented."""
+        f = Fixture(self)
+        f.provider({"route": "azure-foundry", **CLAUDE})
+        tid = f.add("--here")
+        shown = f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1")
+        f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1", "--agent", "claude", "--deployment", "dep-a", "--revision", shown["revision"])
+        f.ok("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now")
+        f.settle(tid=tid)
+        f.give_session(tid, "55555555-6666-4777-8888-999999999999")
+        f.provider({"route": "azure-foundry", **CLAUDE, "claude_resource": "other"})
+        self.assertIn("--fresh", f.refused("resume", str(tid), "--folder", f.repo, "--space", "sp1"))
+        out = f.ok("resume", str(tid), "--folder", f.repo, "--space", "sp1", "--fresh")
+        self.assertFalse(out["resumed"])
+        rec = f.task(tid)["agents"][-1]["provider"]
+        self.assertEqual((rec["target"], rec["deployment"]), ("other", "claude-deployment"))
+        f.settle(2, tid=tid)
 
     def test_a_deployment_that_cant_be_one_is_refused_and_never_repeated(self):
         f = Fixture(self)
@@ -1079,10 +1125,11 @@ class Binding(unittest.TestCase):
                 labels = {**k["labels"], **({"herdr.provider": label} if label else {})}
                 step = revive.plan({**k, "labels": labels}, dict(rec), set())
                 self.assertEqual(step is not None and step[0] == "held", held, step)
-        # Settings that can't be read can't say Personal: held too.
+        # Settings that can't be read now (a write in flight, say): nothing typed and nothing recorded, so the next
+        # tick looks again rather than holding a Personal agent for good.
         with open(self.file, "w") as f:
             f.write("{")
-        self.assertEqual(revive.plan(k, dict(rec), set())[0], "held")
+        self.assertIsNone(revive.plan(k, dict(rec), set()))
 
     def test_the_credential_check_runs_the_agent_only_when_its_variable_is_set(self):
         """The guard in_shell() puts in the agent's own shell, run by a real POSIX shell: missing or empty, it names

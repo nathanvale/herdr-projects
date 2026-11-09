@@ -122,6 +122,12 @@ UNKNOWN_RECORD = ("{who}'s recorded provider binding can't be read as one this v
 TAB_PERSONAL = ("Provider is Azure Foundry here, and a tab agent starts Personal only: its start can't carry a launch plan "
                 "(only a task's agent and an Assistant's new start can). Nothing was started. Start it as a task, or set "
                 "Provider to Personal for this space.")
+# A task's save-only choice for its first start (herdr-task select) under another routing than it was saved under: the
+# contract's next step is saving it again or clearing it, never running it elsewhere or falling back to Personal.
+STALE_TASK_CHOICE = ("{who}'s choice for its first start was saved under other provider settings (route, resource or "
+                     "endpoint, or sign-in), so it isn't started on today's. Nothing was started. Save its choice again "
+                     "(Model for its start, or herdr-task select), or use the configured defaults (Use configured defaults, "
+                     "or herdr-task select --default).")
 STALE_SELECTION = ("The provider settings or the choice changed since this start was chosen (revision {}), so it isn't what "
                    "was picked. Nothing was started; choose again.")
 

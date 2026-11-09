@@ -60,9 +60,12 @@ saved by `herdr-task select`:
 - A task with a recorded agent, or one that has left To do, Queued or Scheduled, is locked. So is
   one whose start is still open in the journal. A stopped recorded conversation is not unstarted.
 - A deployment or model choice records the routing it was made under (`selection_routing`). Under
-  another routing (a different route, resource, endpoint or sign-in), its start refuses. It never
-  falls back to Personal. A save that changes the effort alone keeps the older binding; an effort
-  alone needs no CLI and follows Settings' Workers CLI.
+  another routing (a different route, resource, endpoint or sign-in), its start refuses and names
+  the next step: save the choice again, or use the configured defaults. It never falls back to
+  Personal. A save that changes the effort alone keeps the older binding; an effort alone needs no
+  CLI and follows Settings' Workers CLI.
+- The choice is for the task's first start. Once its conversation is recorded, resume plans from
+  the record, and `--fresh` (or another CLI) starts a new conversation on today's settings.
 - Efforts on offer: a deployment whose model this CLI's own catalogue knows (by its id or the
   model the inventory reports) gets that model's levels; any other gets Default only. `herdr-task`
   checks an effort's shape; the selectors offer only those levels.
@@ -112,7 +115,11 @@ drops it once used.
   `route`. All additive; the words and exit codes of existing refusals are kept.
 - Mixed versions: A1's and L1's herdr-task refuse a `provider` field they don't know, on every route.
   Once a role deployment is saved (and pushed to another machine), a machine still on an older
-  herdr-task refuses its starts, Personal included, until it is updated or the field is removed.
+  herdr-task refuses its starts, Personal included, until it is updated or the field is removed. On
+  Personal too, fork and lost-session recovery for an agent on a machine whose herdr-task has no
+  `provider show` refuse ("can't be read now") until that machine is updated.
+- Revival with a settings file that can't be read at that moment types nothing and tries again on
+  the next tick.
 - A tab agent (a chat of another role) starts Personal only, with its own reason.
 - `herdr-task select` gains `--model` (Personal), and its `--json` gives `inherit` (Settings' Workers
   CLI); `provider show --space` reads a space the settings file holds by its own folder, as launch

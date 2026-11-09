@@ -104,10 +104,13 @@ export function TaskSelect({ task, done }: { task: Task; done: () => void }) {
       {v.locked ? null : (
         <span className="flex flex-wrap items-center justify-end gap-1.5">
           <Ghost disabled={busy} onClick={() => void save({ default: true })}>{WORDS.defaults}</Ghost>
-          <Primary disabled={busy} onClick={() => void save({
-            // its CLI only when chosen here, or with a deployment (one belongs to one CLI); an effort alone follows Settings' CLI
-            ...(agent !== (v.selection.agent ?? v.inherit?.agent ?? 'claude') || v.selection.agent || (azure && dep) ? { agent } : {}),
-            ...(azure ? { deployment: dep } : {}), effort: levels.includes(effort) ? effort : 'default' })}>{WORDS.save}</Primary>
+          <Primary disabled={busy} onClick={() => {
+            // only what changed is saved: a deployment with its CLI (one belongs to one CLI), the CLI when it changed, the
+            // effort; a save that changes the effort alone keeps the binding its earlier choice has
+            const newDep = azure && dep !== (v.selection.deployment ?? '')
+            const newAgent = agent !== (v.selection.agent ?? v.inherit?.agent ?? 'claude')
+            void save({ ...(newAgent || newDep ? { agent } : {}), ...(newDep ? { deployment: dep } : {}), effort: levels.includes(effort) ? effort : 'default' })
+          }}>{WORDS.save}</Primary>
         </span>
       )}
     </div>

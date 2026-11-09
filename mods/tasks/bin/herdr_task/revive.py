@@ -219,7 +219,8 @@ def template_of(name="assistant"):
 
 
 def personal_here(labels):
-    """Whether the route at a terminal's space (its labels) is Personal, as launch admission reads it (strictly)."""
+    """Whether the route at a terminal's space (its labels) is Personal, as launch admission reads it (strictly); None
+    when the settings can't be read now."""
     from .base import Fail
     from .launch_admission import space_binding
     from .providers import PERSONAL
@@ -227,7 +228,7 @@ def personal_here(labels):
     try:
         return space_binding(str(space).split("/")[-1] if space else "")["route"] == PERSONAL
     except Fail:
-        return False
+        return None
 
 
 def restarted(k):
@@ -274,7 +275,10 @@ def plan(k, rec, running):
         return ("running", None, False)
     # A route at its space that isn't Personal: revival can't carry a plan (L2), so typing the agent back would start
     # it on the CLI's own sign-in. Held, as for an Azure-started agent; settings that can't be read hold it too.
-    if not personal_here(labels):
+    here = personal_here(labels)
+    if here is None:
+        return None  # its settings can't be read now (a write in flight, say): nothing typed, looked at again next tick
+    if not here:
         return ("held", None, False)
     if rec and rec.get("session") and rec.get("log") and os.path.isfile(rec["log"]):
         return ("resume", resume_argv(rec["kind"], rec["argv"], rec["session"], CUT if rec.get("working") else None), not rec.get("shell"))

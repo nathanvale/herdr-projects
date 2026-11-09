@@ -45,7 +45,7 @@ import types
 import uuid
 
 from .base import Fail, guard, HOME, now, run, STORE
-from .providers import admit_assistant, admit_launch, AZURE, PERSONAL, read_strict, STALE_SELECTION
+from .providers import admit_assistant, admit_launch, AZURE, PERSONAL, read_strict, STALE_SELECTION, STALE_TASK_CHOICE
 # TEMPLATES_DIR: herdr-core's templates folder (HERDR_TASK_TEMPLATES, else ~/.config/herdr-core/templates).
 from .settings import agent_key, bare, TEMPLATES as TEMPLATES_DIR
 
@@ -467,9 +467,11 @@ def admit_task(s, task, argv, space, parent=None, role=None, select=None, resolv
     from .settings import task_deployment
     identity = task_identity(s, task, role)
     folder = config_dir_for(argv, prev) if folder is KEEP else (folder if agent_key(argv) == "claude" else None)
-    chosen = None if (role or bound is not None) else task_deployment(task, agent_key(argv))
-    # A choice `select` saved for this CLI (a deployment or a model) is bound to the routing it was made under.
-    picked = None if (role or bound is not None) or task.get("agent") != agent_key(argv) else task.get("selection_routing")
+    # A choice `select` saved (a deployment or a model, for this CLI) is for the task's first start only, and bound to the
+    # routing it was made under. Later starts (resume, switch, --fresh, a backup) take today's settings or the record.
+    first = not (role or bound is not None or task.get("agents"))
+    chosen = task_deployment(task, agent_key(argv)) if first else None
+    picked = task.get("selection_routing") if first and task.get("agent") == agent_key(argv) else None
     held = {}
 
     def revise():
@@ -478,7 +480,7 @@ def admit_task(s, task, argv, space, parent=None, role=None, select=None, resolv
             # The task's choice was saved under one routing (select): under another it refuses, never runs elsewhere.
             from .providers import binding_for, selection_revision
             if task.get("selection_routing") != selection_revision(binding_for(s, space, d), agent_key(argv)):
-                raise Fail(STALE_SELECTION.format(task.get("selection_routing") or "none"))
+                raise Fail(STALE_TASK_CHOICE.format(who=s.ref(task)))
         plan = admit_launch(s, argv, space, d, "worker", chosen, bound, s.ref(task))
         held["plan"] = plan
         return digest({"role": role or "task", "route": plan["route"], "fingerprint": plan["fingerprint"], "argv": list(argv),
