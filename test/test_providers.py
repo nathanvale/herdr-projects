@@ -588,7 +588,9 @@ class AzureStartsBound(unittest.TestCase):
         which carries the provider table its start put there: the owner takes exactly that table off and puts it back
         once, keeping effort and Fast, instead of refusing it as the argv's own provider (L2)."""
         f = Fixture(self)
-        tid = self.start(f, {"route": "azure-foundry", **CODEX})
+        # Started as Codex (the worker settings' CLI is Claude Code, which this binding doesn't set up).
+        own = ["codex", "--no-daemon", "-c", 'model_reasoning_effort="high"', "-c", 'service_tier="fast"']
+        tid = self.start(f, {"route": "azure-foundry", **CODEX}, "--argv", json.dumps(own))
         f.settle(tid=tid)
         f.give_session(tid, "77777777-8888-4999-8aaa-bbbbbbbbbbbb")
         table = f.plan("--agent", "codex")["args"]

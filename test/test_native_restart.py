@@ -146,6 +146,12 @@ class Fixture(la.Fixture):
         out = self.plan(agent, role)
         return {k: out[k] for k in ("route", "agent", "target", "deployment", "auth", "fingerprint")}
 
+    def assistant_template(self, command="claude"):
+        """herdr-core's assistant template in the fixture's own templates folder (CI's HOME has none)."""
+        os.makedirs(os.path.join(self.tmp, "templates"), exist_ok=True)
+        with open(os.path.join(self.tmp, "templates", "assistant.md"), "w") as fh:
+            fh.write(f"---\nname: assistant\ndescription: the Assistant\ncommand: {command}\n---\nYou are the Assistant.\n")
+
     def new_assistant(self, *labels):
         """An Assistant's new start through launch admission (A2's --new-start), as the window's chat sends it."""
         p = self.run("launch", "run", "--role", "coordinator", "--space", "sp1", "--new-start", "assistant", "--json", "--",
@@ -429,18 +435,19 @@ class RevivalOnAzure(unittest.TestCase):
         shell_ok(self, line)
         self.assertIn('if [ -z "${AZURE_OPENAI_API_KEY:-}" ]', line)
         self.assertIn("OPENAI_BASE_URL='' ", line)
-        table = line.index("model_provider=")
-        self.assertLess(table, line.index(" resume "))
-        self.assertLess(line.index("-m code-deployment"), line.index(" resume "))
-        self.assertLess(line.index(" resume "), line.index("model_reasoning_effort"))
-        self.assertIn("service_tier=", line[line.index(" resume "):])
+        # The agent's own command, after the check's "else" (the check's own message says "resume the task").
+        cmd = line[line.index("; else ") + len("; else "):]
+        self.assertTrue(cmd.startswith("HERDR_BROWSER_TASK="), cmd)
+        at = cmd.index(" resume ")
+        self.assertLess(cmd.index("model_provider="), at)
+        self.assertLess(cmd.index("-m code-deployment"), at)
+        self.assertLess(at, cmd.index("model_reasoning_effort"))
+        self.assertIn("service_tier=", cmd[at:])
         self.assertTrue(line.rstrip().endswith(f"{SESSION}; fi"), line)
 
     def test_an_assistant_comes_back_on_its_starts_journal_record_and_never_on_personal(self):
         f = Fixture(self)
-        os.makedirs(os.path.join(f.tmp, "templates"), exist_ok=True)
-        with open(os.path.join(f.tmp, "templates", "assistant.md"), "w") as fh:
-            fh.write("---\nname: assistant\ndescription: the Assistant\ncommand: claude --dangerously-skip-permissions\n---\nYou are the Assistant.\n")
+        f.assistant_template("claude --dangerously-skip-permissions")
         f.provider({"route": "azure-foundry", **CLAUDE, "coordinator_claude_deployment": "assistant-deployment"})
         address = f.new_assistant("--label", "herdr.coordinator.space=sp1")
         labels = f.terminal(address)["labels"]
@@ -662,6 +669,7 @@ class Fork(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertEqual(json.loads(p.stdout), {"admitted": True, "identity": "agent:local/sp1/fork", "route": "personal"})
         # An Assistant that started on Azure Foundry: a tab agent would move its conversation to Personal.
+        f.assistant_template()
         f.provider({"route": "azure-foundry", **CLAUDE, "coordinator_claude_deployment": "assistant-deployment"})
         azure = f.new_assistant("--label", "herdr.space=sp1")
         p = self.check(f, azure)

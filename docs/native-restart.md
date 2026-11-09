@@ -63,8 +63,9 @@ once by `compose` (`without_table`); any other provider in the argv still refuse
   reviewer's adds `/reviewer`), `coordinator:local/<space>`, or for any other chat's agent brought back with `--lost`,
   `agent:local/<space>/<chat pane, else tab, else terminal>`, as `restart.sh` names them. So a revival and any start of
   the same agent (a task's resume or switch, `restart.sh`) fence each other.
-- **Order.** Preflight (the binding planned, the line composed), claim (`never-submitted`), then under the journal's
-  lock the claim checked as its own and its revision unchanged, `submission-uncertain`, then `hc send` next. hc's
+- **Order.** Preflight (the binding planned, the line composed), claim (`never-submitted`), then, holding the claim and
+  outside the lock, the terminal rechecked, then under the journal's lock the claim checked as its own and its revision
+  (the settings) unchanged, `submission-uncertain`, then `hc send` next. hc's
   success confirms it and lets the claim go. Its record carries `revival`: how (`resume` or `fresh`),
   `missing_history`, the session it resumed or the one that was lost, and its `provider`.
 - **One sender at a time.** A revival marks its terminal handled (`herdr.resume`, with its launch id) while it still
