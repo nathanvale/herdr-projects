@@ -32,7 +32,7 @@
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/cli.py",
       "upstream_blob": "af0c7d2ee16ea26fa1fa458020f6d9181d78774d",
-      "sha256": "aa8976f676d1e3a98556bb9182e322fc2203ccdc17e70ca5365a6de20e0f0b53"
+      "sha256": "2f85c247e6d6ed0092a030b06b7d66c6ffe1acc023b24f4988db7743fee4a5e4"
     },
     {
       "phase": "L2",
@@ -56,7 +56,7 @@
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/providers.py",
       "upstream_blob": null,
-      "sha256": "ebb518f5f313a375d045f3bdd220c439af61090b4d4d0acb8596631cd6572743"
+      "sha256": "116bdf3275df2683c3bf0080838ae74374ac1068583ff3049c9c1322451ed1e9"
     },
     {
       "phase": "L1",
@@ -104,7 +104,7 @@
       "phase": "L2",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "a3a417a2c7fb3b37fb4b1341520127d68f06fad8388650f6b04518f6fb35959a"
+      "sha256": "ee8ff9d07b73c9076ee153fbc7fdadd9764aaa9535f4d85f6f7513e3c70cee66"
     },
     {
       "phase": "A2",
@@ -344,7 +344,7 @@
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/launch_admission.py",
       "upstream_blob": null,
-      "sha256": "5483d2918a2f5d9f59e5c67a6210329319850d58a75a1d50ca54645e2d34c6a5"
+      "sha256": "cd78adb5c7ea403d980a0eb9133fcda9ca6f0487bd3def53cb7264175f4b73ea"
     },
     {
       "phase": "A2",
@@ -446,7 +446,7 @@
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/revive.py",
       "upstream_blob": "1ed629e083e5ede0f620e0be32c2ccc08bffb0c3",
-      "sha256": "651ef1955804a7d642681846b323b38d871aa176e7bbd84804a382f30634346b"
+      "sha256": "900050b5fb7a9b22a2fbb6eb5af27a5642622ea8889c609e9fbd4fc7f1df37a5"
     },
     {
       "phase": "A2",
@@ -572,7 +572,7 @@
       "phase": "L2",
       "path": "test/test_native_restart.py",
       "upstream_blob": null,
-      "sha256": "e7d46e724f095ac9fb46e8e0d16489cab351a04b7e0df112d9baf3ac5aa06e83"
+      "sha256": "7546b649daf731358f5c9864154f63fb589bb5e89c87c25ba00fc586ae2af92a"
     }
   ],
   "requirements": [
@@ -1308,7 +1308,7 @@
         "test/core-launch-admission.test.ts",
         "test/core-operator.test.ts"
       ],
-      "evidence": "source-inspected; L1 routes every task start (start, tick, automation, resume, switch, backup) and the five Assistant start sites through T/launch_admission.py; L2 brings revival (T/revive.py) and a lost session at its shell (service/watch.ts and the window's chat, through herdr-task launch revive --lost) through it under the agent's own identity, so the tick and a lost-session recovery can't both bring an agent back, and restart.sh (launch run --replaces) and switch --restart plan through it, with a journal fence against a second revival into the same terminal process; a fork is admitted through it (--check), though the window's tab.new starts it, so its own start isn't journalled (test/test_native_restart.py, core/chat-find.test.js authored, CI pending); native qualification pending"
+      "evidence": "source-inspected; L1 routes every task start (start, tick, automation, resume, switch, backup) and the five Assistant start sites through T/launch_admission.py; L2 brings revival (T/revive.py) and a lost session at its shell (service/watch.ts and the window's chat, through herdr-task launch revive --lost) through it under the agent's own identity, so the tick and a lost-session recovery can't both bring an agent back, and restart.sh (launch run --replaces) and switch --restart plan through it, a revival marking its terminal before it lets its claim go and rechecking it under the journal's lock (a two-process regression); a fork is admitted through it (--check), though the window's tab.new starts it, so its own start isn't journalled (test/test_native_restart.py, core/chat-find.test.js authored, CI pending); native qualification pending"
     },
     {
       "id": "manual-recovery",

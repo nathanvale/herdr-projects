@@ -22,12 +22,26 @@ import test_launch_admission as la  # noqa: E402
 UUID = la.UUID
 # hc with whole terminals kept in FAKE_HC_STATE: ls (by label), get, label (kept), read (its "screen"), send (logged;
 # FAKE_HC_SEND_FILE says "fail" to answer 1, as a lost or failed reply), run (a new terminal from its labels, its
-# one-off template's words logged as la's stand-in does), and kill, rm and wait (nothing).
+# one-off template's words logged as la's stand-in does), and kill, rm and wait (nothing). A process whose
+# FAKE_HC_GATE_MATCH is in a call's words waits there while FAKE_HC_GATE exists, after FAKE_HC_GATE_SKIP such calls
+# went through (FAKE_HC_GATE.reached says it got there).
 REVIVE_HC = r'''#!/usr/bin/env python3
-import fcntl, json, os, sys
+import fcntl, json, os, sys, time
 args = sys.argv[1:]
 with open(os.environ["FAKE_HC_LOG"], "a") as f:
     f.write(json.dumps(args) + "\n")
+gate, match = os.environ.get("FAKE_HC_GATE"), os.environ.get("FAKE_HC_GATE_MATCH")
+if gate and match and os.path.exists(gate) and match in " ".join(args):
+    seen = gate + ".seen"
+    n = len(open(seen).read()) if os.path.exists(seen) else 0
+    with open(seen, "a") as f:
+        f.write(".")
+    if n >= int(os.environ.get("FAKE_HC_GATE_SKIP", "0")):
+        open(gate + ".reached", "w").close()
+        for _ in range(1200):
+            if not os.path.exists(gate):
+                break
+            time.sleep(0.05)
 path = os.environ["FAKE_HC_STATE"]
 lock = open(path + ".lock", "a")
 fcntl.flock(lock, fcntl.LOCK_EX)
@@ -291,18 +305,40 @@ class Revival(unittest.TestCase):
         f.revive()
         self.assertEqual(len(f.sends()), 1)
 
-    def test_a_second_sender_into_the_same_process_types_nothing(self):
-        """Two senders that both planned before either wrote its record (the tick and a lost-session recovery): the
-        first types and lets its claim go, and the journal itself fences the second, under its lock, before hc send."""
+    def test_a_second_sender_that_planned_before_the_first_typed_types_nothing(self):
+        """Two senders of the same agent at once (the tick's pass and a lost-session recovery): the second plans from the
+        terminal as it was, then waits; the first types it back and marks its terminal while it still holds its claim;
+        the second, let go, finds the terminal changed and types nothing (two processes, the journal reopened)."""
         f = Fixture(self)
         f.worker()
+        held_env = dict(f.env, FAKE_HC_GATE_MATCH="get t5 --json", FAKE_HC_GATE_SKIP="1")
+        open(f.gate, "w").close()
+        second = subprocess.Popen(f.argv("launch", "revive", "--json"), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  text=True, env=held_env)
+        f.procs.append(second)
+        f.reached()  # planned from the record as it was, waiting before its claim
         first = f.revive()["revived"][0]["launch"]
-        # The second planned from the record as it was before the first wrote its own.
-        f.update("t5", labels={**f.terminal("t5")["labels"], "herdr.resume": json.dumps(f.record())})
-        [held] = f.revive()["revive_held"]
-        self.assertIn(f"brought back into t5 already (launch {first}, confirmed)", held["why"])
+        f.release()
+        out, err = second.communicate(timeout=120)
+        self.assertEqual(second.returncode, 0, out + err)
+        [held] = json.loads(out)["revive_held"]
+        self.assertIn("changed since this revival was planned", held["why"])
         self.assertEqual(len(f.sends()), 1)
-        self.assertEqual([r["state"] for r in f.revivals()], ["confirmed", "cancelled"])
+        self.assertEqual([r["launch"] for r in f.revivals() if r["state"] == "confirmed"], [first])
+        self.assertEqual(f.journal()["claims"], {})
+
+    def test_a_second_loss_in_the_same_shell_starts_anew_again(self):
+        """A lost session typed anew into its shell, running, then lost again in that same shell (no core restart): the
+        record the tick wrote while it ran is the one planned from, so it starts anew again (once)."""
+        f = Fixture(self)
+        f.add()
+        key = f.task_on()
+        f.lost("t5", {"herdr.task": key, "herdr.task.space": "sp1"}, f.record(pid=200), name="repo-1-fix-login", screen=LOST)
+        self.assertEqual(f.revive("t5", "--lost")["how"], "fresh")
+        # It ran (the tick recorded it, without how), and its session was lost again in the same shell.
+        f.update("t5", labels={**f.terminal("t5")["labels"], "herdr.resume": json.dumps(f.record(pid=200, session=None))})
+        self.assertEqual(f.revive("t5", "--lost")["how"], "fresh")
+        self.assertEqual(len(f.sends()), 2)
 
     def test_a_finished_tasks_agent_stays_a_shell(self):
         f = Fixture(self)
@@ -437,6 +473,12 @@ class LostSession(unittest.TestCase):
         self.assertIn("its recorded provider binding can't be found", f.refused("launch", "revive", "t7", "--lost")["error"])
         self.assertEqual(f.sends(), [])
         self.assertIn("isn't an Assistant's or a task agent's terminal", f.refused("launch", "revive", "t99", "--lost")["error"])
+        # Two shapes only: the tick's pass, or one terminal with --lost; a misused flag refuses with one error, nothing typed.
+        for words in (["t7"], ["--lost"]):
+            self.assertIn("launch revive is the tick's pass", f.refused("launch", "revive", *words)["error"])
+        self.assertIn("--continues is for a restart", f.refused("launch", "run", "--role", "coordinator", "--space", "sp1",
+                                                                  "--continues", "--check")["error"])
+        self.assertEqual(f.sends(), [])
 
 
 @la.ON_CI
@@ -551,10 +593,10 @@ class Fork(unittest.TestCase):
         self.assertEqual(p.returncode, 1, p.stdout)
         self.assertIn("conversation is recorded on Azure Foundry", json.loads(p.stdout)["error"])
         self.assertIn("tab agent", json.loads(p.stdout)["error"])
-        # A Personal conversation under an Azure route now: forking it there would move it too.
+        # A Personal conversation under an Azure route now: a tab agent starts Personal only, said as A2 says it.
         p = self.check(f, "t60")
         self.assertEqual(p.returncode, 1, p.stdout)
-        self.assertIn("would move it to another provider", json.loads(p.stdout)["error"])
+        self.assertIn("a tab agent starts Personal only", json.loads(p.stdout)["error"])
         # A check runs nothing.
         self.assertEqual([c for c in f.calls() if c[:1] == ["run"] and "herdr.launch=" not in " ".join(c)], [])
         self.assertEqual(len([c for c in f.calls() if c[:1] == ["run"]]), 1)  # the Assistant's own new start only

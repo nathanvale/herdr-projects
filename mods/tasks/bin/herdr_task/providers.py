@@ -139,13 +139,13 @@ UNKNOWN_RECORD = ("{who}'s recorded provider binding can't be read as one this v
 TAB_PERSONAL = ("Provider is Azure Foundry here, and a tab agent starts Personal only: its start can't carry a launch plan "
                 "(only a task's agent and an Assistant's new start can). Nothing was started. Start it as a task, or set "
                 "Provider to Personal for this space.")
-# A task's save-only choice for its first start (herdr-task select) under another routing than it was saved under: the
-# contract's next step is saving it again or clearing it, never running it elsewhere or falling back to Personal.
 # A tab agent (a fork opens as one) continuing a conversation recorded on Azure Foundry: tab agents start Personal only
 # (A2), and the conversation is never moved to Personal, so it isn't started.
 TAB_BOUND = ("{who}'s conversation is recorded on Azure Foundry, and this start would continue it as a tab agent (a fork "
              "opens as one), which starts Personal only, so it would move to another provider. Nothing was started. "
              "Continue it with a restart or a resume instead, or start a new conversation.")
+# A task's save-only choice for its first start (herdr-task select) under another routing than it was saved under: the
+# contract's next step is saving it again or clearing it, never running it elsewhere or falling back to Personal.
 STALE_TASK_CHOICE = ("{who}'s choice for its first start was saved under other provider settings (route, resource or "
                      "endpoint, or sign-in), so it isn't started on today's. Nothing was started. Save its choice again "
                      "(Model for its start, or herdr-task select), or use the configured defaults (Use configured defaults, "
@@ -475,12 +475,16 @@ def model_of(argv):
 
 
 def without_table(plan, argv):
-    """A Codex argv without the -c pairs whose values are exactly plan's own provider table (its args), where an earlier
-    start on this plan put them; nothing else is taken off."""
+    """A Codex argv without the -c pairs an earlier Azure start put there: plan's own provider table (its args), or any
+    other in Shepherdr's reserved provider namespace (CODEX_PROVIDER, an earlier binding's, such as one with the
+    deployment a new conversation no longer takes). A provider the person named themselves is never taken off."""
     own = set((plan.get("args") or [])[1::2])
+
+    def ours(value):
+        return value in own or value.startswith((f'model_provider="{CODEX_PROVIDER}', f"model_providers.{CODEX_PROVIDER}"))
     end, out, i = options_end(argv), list(argv[:1]), 1
     while i < len(argv):
-        if i + 1 < end and argv[i] in ("-c", "--config") and argv[i + 1] in own:
+        if i + 1 < end and argv[i] in ("-c", "--config") and ours(argv[i + 1]):
             i += 2
             continue
         out.append(argv[i])
@@ -609,22 +613,25 @@ def admit_assistant(s, space=None, d=None, machine=None, argv=None, deployment=N
     start (a fork opens as one), which never starts on Azure (only a task's agent and an Assistant can). machine: where
     it would run when that isn't here (`hc run --on`)."""
     binding = binding_for(s, space, d)
+    if tab:
+        # A tab agent (a fork opens as one) starts Personal only (A2): one continuing a conversation that started on
+        # another route, or any under a route here that isn't Personal, refuses with its own reason.
+        if restart is not None and (restart.get("route") or PERSONAL) != PERSONAL:
+            raise Fail(TAB_BOUND.format(who=restart.get("who") or "This agent"))
+        if binding["route"] != PERSONAL:
+            raise Fail(TAB_PERSONAL)
     if restart is not None and argv and (resumes(argv) or restart.get("continues")):
         who = restart.get("who") or "This agent"
         if restart.get("bound") is None:
             raise Fail(NO_BINDING.format(who=who))
         plan = plan_of_record(restart["bound"], binding, agent_key(argv), who)
         if plan["route"] != PERSONAL:
-            if tab:
-                raise Fail(TAB_BOUND.format(who=who))
             if machine:
                 raise Fail(NOT_EXECUTION_HOST.format(machine))
             if not same_model(argv, restart.get("argv"), plan["deployment"]):
                 raise Fail(RESTART_MODEL.format(who=who, deployment=plan["deployment"]))
         compose(plan, argv)
         return plan
-    if tab and binding["route"] != PERSONAL:
-        raise Fail(TAB_PERSONAL)
     if restart is not None:
         restart_route(restart.get("route"), restart.get("bound"), binding, agent_key(argv) if argv else "claude",
                       restart.get("who") or "This agent")

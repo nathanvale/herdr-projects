@@ -602,6 +602,18 @@ class AzureStartsBound(unittest.TestCase):
         self.assertEqual((agent.count("-m"), agent[agent.index("-m") + 1]), (1, "code-deployment"))
         self.assertEqual(agent[-5:], ["-c", 'model_reasoning_effort="high"', "-c", 'service_tier="fast"', "77777777-8888-4999-8aaa-bbbbbbbbbbbb"])
         f.settle(2, tid=tid)
+        # A new conversation after the default deployment changed: the old binding's table (in Shepherdr's own provider
+        # namespace) comes off, and today's goes on once, on the new deployment.
+        f.provider({"route": "azure-foundry", **CODEX, "codex_deployment": "new-default"})
+        new = f.plan("--agent", "codex")["args"]
+        self.assertNotEqual(new, table)
+        out = f.ok("switch", str(tid), "--folder", f.repo, "--space", "sp1", "--restart", "--fresh", "--argv", json.dumps(argv))
+        self.assertFalse(out["resumed"])
+        _, agent = f.agent_words(f.launches()[-1])
+        self.assertEqual(agent[1:5], new)
+        self.assertEqual(sum(1 for a in agent if a.startswith("model_provider=")), 1)
+        self.assertEqual(agent[agent.index("-m") + 1], "new-default")
+        f.settle(3, tid=tid)
         f.no_secret()
 
     def test_an_automation_starts_its_task_on_the_plan(self):

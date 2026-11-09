@@ -66,10 +66,12 @@ once by `compose` (`without_table`); any other provider in the argv still refuse
   lock the claim checked as its own and its revision unchanged, `submission-uncertain`, then `hc send` next. hc's
   success confirms it and lets the claim go. Its record carries `revival`: how (`resume` or `fresh`),
   `missing_history`, the session it resumed or the one that was lost, and its `provider`.
-- **One sender per terminal process.** Under the journal's lock, just before it is recorded as sent, a revival
-  refuses when another revival of the same `how` was already sent into the same terminal process (the tick and a
-  lost-session recovery that both planned before either wrote its record): the first releases its claim on hc's
-  success, so the journal itself, not the terminal's record, fences the second.
+- **One sender at a time.** A revival marks its terminal handled (`herdr.resume`, with its launch id) while it still
+  holds its claim, and its revision includes the terminal as it planned from it: the same process, still at its shell,
+  its record unchanged. So of two senders that planned at once (the tick and a lost-session recovery), the second
+  either finds the first's claim open or, under the journal's lock just before it would be sent, the terminal changed,
+  and types nothing. A later genuine loss in the same shell plans from the record the tick wrote while that agent
+  ran, so it comes back again.
 - **Uncertain.** hc failing or its reply lost may still have pasted the line. The start stays submission uncertain
   under its launch id, the terminal is marked handled, and nothing types it again: not the tick, not a lost-session
   recovery, not a task's resume. `herdr-task launch reconcile IDENTITY LAUNCH` confirms it once an agent runs in that
@@ -101,9 +103,10 @@ herdr-task launch revive [TERMINAL] [--lost] [--json]
 herdr-task launch run ... [--replaces TERMINAL] [--argv JSON] ...
 ```
 
-- `launch revive` with no terminal is the tick's pass (run outside the tick's lock it is fenced by the journal as
-  above). With one, it acts on that terminal here; `--lost` says its CLI reported its session gone, which it checks on
-  the terminal's own screen before typing anything. An agent running there, or one already brought back, types
+- `launch revive` has two shapes: no terminal is the tick's pass (outside the tick's lock it is fenced as above), and
+  `TERMINAL --lost` acts on one terminal here whose CLI reported its session gone, which it checks on the terminal's
+  own screen before typing anything. Either alone (a terminal without `--lost`, or `--lost` without one) refuses, as
+  does `--continues` without `--replaces`. An agent running there, or one already brought back, types
   nothing (`how: none`); one held before is planned again, so the caller hears why. Another machine's terminal:
   `herdr-task --on MACHINE launch revive TERMINAL --lost` (the service and the chat do this).
 - `launch run --replaces` names the terminal of the agent a restart (or a fork) replaces or continues; `--argv` is
@@ -145,6 +148,9 @@ Retiring any of them needs that convenience's own native qualification first.
 - Whether a revival held by an uncertain start may ever be released on other evidence (`manual-recovery`).
 - Whether missing history should start a new conversation automatically (today's native behaviour, kept and now
   reported apart) or hold for a person, per case (`missing-history`).
+- Whether a restart starting a new conversation may move an agent to the route the person has set since
+  (`RESTART_ROUTE` refuses it today, in either direction, as A2's restart refusals did): a person can start a new
+  conversation there themselves.
 - Whether reconcile may run by itself on positive evidence (automatic recovery).
 - Whether a tab agent (and so a fork) may ever start on Azure, and whether a fork's own start should be journalled
   (it needs the window to start tabs through `hc run`).
@@ -160,14 +166,16 @@ Authored, not run locally (repository policy allows only `bun run typecheck`). C
   running there; an open start holding a revival until recovered; a finished task's agent left a shell; its own folder
   carried; an Azure task agent on its recorded deployment with the credential check; changed routing held; Codex's
   table before `resume` with its effort and Fast; an Azure Assistant from its start's journal record and one with no
-  record held; a second sender into the same terminal process fenced; `launch revive --lost` once whoever asks;
+  record held; a second sender that planned before the first typed (two processes) typing nothing, and a second
+  loss in the same shell coming back again; `launch revive --lost` once whoever asks;
   `restart.sh` continuing an Azure Assistant on its recorded deployment, a lost session behind its chat on its
   recorded binding with a multi-line message kept one word, a model the recorded deployment would replace refused, and
-  a new conversation refused on another route; a fork admitted on Personal and refused by the owner on Azure.
+  a new conversation refused on another route; a fork admitted on Personal and refused by the owner on Azure; the
+  misused flags refused.
 - `test/test_herdr_task.py` (`Revive`, in-process): the journal record, missing history, an unconfirmed send held.
 - `test/test_providers.py`: `revive.plan` on its recorded binding or held; the settings read once; a model menu's
   restart on its recorded binding, a picked model it would replace refused, a new conversation never moved; a Codex
-  restart carrying its own provider table once.
+  restart carrying its own provider table once, and a new conversation after the default changed taking today's.
 - `test/test_launch_admission.py`: `restart.sh` refusals in the owner's words; a start with no command line on Azure.
 - `test/test_session_discovery.py`: a session under another folder recorded with its folder.
 - `core/chat-find.test.js`: the service's lost-session recovery through `launch revive` and `restart.sh`, never typed

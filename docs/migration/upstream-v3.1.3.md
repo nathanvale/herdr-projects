@@ -635,7 +635,7 @@ Detail, decisions and authored regressions: [Azure selectors and bound starts](.
   (`service/watch.ts`, the chat) and `revive.py` admit Personal only: they refuse an Azure-started agent
   (`core/agents.js providerRefusal`, `--replaced-route`) and a route at the agent's space that isn't
   Personal (`routeRefusal`, from `herdr-task provider show`; `revive.py` reads it through launch
-  admission's strict read). L2 replaced each of these with the launch owner's plan, except fork's
+  admission's strict read). L2 replaced each of these with the launch owner's plan, fork's as its admission
   (see the L2 checkpoint).
 - Not qualified: every native route, the credential check's timing (after the terminal exists),
   Codex's root overrides before `resume`, managed or required-provider layers, and content revisions
@@ -655,8 +655,8 @@ and their pins are L2's. `docs/native-restart.md` is named under L2.
   `herdr-task launch revive TERMINAL --lost`), every restart (`restart.sh` with `launch run --replaces`, and
   `herdr-task switch --restart`) and the fork's admission (`launch run --role agent --slot fork --replaces --check`, from
   the window and `service/actions.ts`) go through `T/launch_admission.py`. The service and the window type nothing
-  themselves, and the journal fences a second revival into the same terminal process, so the tick's revival and a
-  lost-session recovery can't both bring an agent back.
+  themselves, and a revival marks its terminal before it lets its claim go and rechecks the terminal under the
+  journal's lock, so the tick's revival and a lost-session recovery can't both bring an agent back.
 - Bindings: continuing a conversation plans from its recorded binding; a new conversation from today's settings but
   never onto another route; a missing-history start (revival, or behind its chat with `--continues`) stays on its
   recorded binding; an Azure-started agent with no record found is refused or held, never read as Personal; a fork

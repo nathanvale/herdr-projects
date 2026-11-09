@@ -258,9 +258,7 @@ class Admission:
         self._old = {}
         # task: the task as its start reads it (refuse_busy's record check); config_dir: a Claude
         # Code start's folder, carried explicitly (None: the terminal's own environment decides).
-        # fence(d): a start's own last check, under the journal's lock just before it is recorded as
-        # sent (revival's: the same terminal process wasn't brought back by another sender).
-        self.task, self.config_dir, self.fence = None, None, None
+        self.task, self.config_dir = None, None
 
     def label(self):
         return ["--label", f"{LABEL}={self.launch}"]
@@ -370,8 +368,6 @@ class Admission:
             rec = d["launches"].get(self.launch)
             if not rec or rec["state"] != NEVER or d["claims"].get(self.identity) != self.launch:
                 raise Fail(REVOKED.format(self.launch))
-            if self.fence:
-                self.fence(d)
             if self.revise() != self.revision:
                 rec.update(state=CANCELLED, reason="settings changed before it was sent", updated=now())
                 d["claims"].pop(self.identity, None)
@@ -383,12 +379,14 @@ class Admission:
         self.sent = True
         self._restore()
 
-    def type_into(self, address, line, record=None, sender=None):
+    def type_into(self, address, line, record=None, sender=None, written=None):
         """Revival's send (L2): the agent's command line typed into its own kept terminal (`hc send`), the same steps
         as submit() around it. hc's success confirms it (its terminal is the one it was typed into, so the claim is
-        released at once); anything else keeps it submission uncertain under its launch id, since the line may have
-        been pasted: nothing types it again until `launch reconcile` finds an agent running there. sender: what runs
-        hc (revive's own run)."""
+        released); anything else keeps it submission uncertain under its launch id, since the line may have been
+        pasted: nothing types it again until `launch reconcile` finds an agent running there. sender: what runs hc
+        (revive's own run); written(launch): marks the terminal handled, while this start still holds its claim, so
+        another sender that planned from the terminal as it was finds it changed (its revision) rather than a released
+        claim."""
         self._mark_sent(dict(record or {}, terminal=address))
         try:
             r = (sender or run)(["hc", "send", address, line])
@@ -397,6 +395,8 @@ class Admission:
             raise Fail("hc could not be started, so nothing was typed. Nothing was started.")
         except OSError:
             r = types.SimpleNamespace(returncode=1, stdout="", stderr="hc's reply was lost")
+        if written:
+            written(self.launch)
         if r.returncode == 0:
             self._close(UNCERTAIN, CONFIRMED, address=address)
             return {"launch": self.launch, "state": CONFIRMED, "address": address}
@@ -894,6 +894,8 @@ def launch_run(args, say):
         raise Fail("--deployment and --revision are for a new start (--new-start).")
     if getattr(args, "argv", None) and not (new or old):
         raise Fail("--argv is for a new start (--new-start) or a restart (--replaces).")
+    if getattr(args, "continues", False) and not old:
+        raise Fail("--continues is for a restart (--replaces): it says the start continues the agent it replaces.")
     if new and args.role != "coordinator":
         raise Fail("A new start's plan is an Assistant's (--role coordinator).")
     argv = None

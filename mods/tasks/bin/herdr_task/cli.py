@@ -506,11 +506,11 @@ def main():
     revive_help = ("type an Assistant or a task's agent back into its own kept terminal, through launch admission: its "
                    "session resumed on its recorded provider binding, or with --lost (its screen says the session is gone) "
                    "a new conversation that says so. Claimed in the journal before anything is typed; a send hc doesn't "
-                   "confirm stays submission uncertain. With no TERMINAL: every one here the core gave a plain shell (the "
-                   "tick's pass)")
+                   "confirm stays submission uncertain. With no TERMINAL (and no --lost): every one here the core gave a "
+                   "plain shell (the tick's pass)")
     c = la.add_parser("revive", help=revive_help, description=revive_help)
-    c.add_argument("identity", metavar="TERMINAL", nargs="?", help="the agent's terminal on this machine")
-    c.add_argument("--lost", action="store_true", help="its CLI said its session is gone: start a new one there")
+    c.add_argument("identity", metavar="TERMINAL", nargs="?", help="the agent's terminal on this machine (with --lost)")
+    c.add_argument("--lost", action="store_true", help="its CLI said its session is gone: start a new one there (needs TERMINAL)")
     c.add_argument("--json", action="store_true")
     c.set_defaults(fn=cmd_launch)
     c = la.add_parser("recover", help="release a start that was claimed and never sent (its herdr-task ended): its claim "
@@ -541,7 +541,8 @@ def main():
     c.add_argument("--keep", action="store_true", help="add the agent beside the old one")
     c.add_argument("--fresh", action="store_true", help="a new conversation with a handoff, not its recorded one "
                                                         "(it then takes today's provider settings)")
-    c.add_argument("--restart", action="store_true", help=argparse.SUPPRESS)  # a model menu's Restart (L2): Personal only
+    # A model menu's Restart (L2): its recorded binding, or today's settings on the same route.
+    c.add_argument("--restart", action="store_true", help=argparse.SUPPRESS)
     c = cmd("select", cmd_select, "show or save the CLI, Azure deployment and effort a task's first agent starts on: "
                                   "save-only, before it starts (starts nothing, keeps its holds)")
     c.add_argument("--agent", choices=["claude", "codex"], help="the CLI it starts on (needed with --deployment or --model "

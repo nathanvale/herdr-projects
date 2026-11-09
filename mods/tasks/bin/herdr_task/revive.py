@@ -381,7 +381,7 @@ def bring_back(k, rec, step, report):
     """Types step's line into k through launch admission (Admission.type_into), under the agent's own identity: an open
     start of that agent holds it, and a send hc doesn't confirm is kept uncertain. Records it on the terminal as
     handled (pid, how, sent, launch) once it was or may have been typed."""
-    from .launch_admission import Admission, agent_identity, CONFIRMED, digest, UNCERTAIN
+    from .launch_admission import Admission, agent_identity, digest
     from .providers import recorded
     how, argv, direct, carry = step
     rec = dict(rec or {}, pid=k.get("pid"), how=how, sent=now())
@@ -401,8 +401,18 @@ def bring_back(k, rec, step, report):
     identity = agent_identity(k)
     fixed = {"terminal": k["address"], "pid": k.get("pid"), "line": line}
 
+    seen = (k.get("labels") or {}).get(LABEL)
+
     def revise():
-        # The binding again from a fresh read: a route, resource, endpoint or sign-in changed since refuses the typing.
+        # Its terminal as this revival planned from it: the same process, still at its shell, and its record unchanged.
+        # Another sender (the tick, or a lost-session recovery) that typed it back first wrote that record while still
+        # holding its claim, so this refuses rather than type it twice. Then the binding again from a fresh read: a
+        # route, resource, endpoint or sign-in changed since refuses the typing.
+        now_k = hc_json("get", k["address"])
+        if (not now_k or now_k.get("pid") != k.get("pid") or not restarted(now_k)
+                or (now_k.get("labels") or {}).get(LABEL) != seen):
+            raise Fail(f"{who_of(k)} in {k['address']} changed since this revival was planned (another sender brought it "
+                       f"back, or an agent runs there). Nothing was typed.")
         q = binding_here(k, rec, task, carry["kind"])
         if q is UNREAD:
             raise Fail("Shepherdr settings can't be read now, so this revival waits. Nothing was typed.")
@@ -410,33 +420,23 @@ def bring_back(k, rec, step, report):
     facts = {"revival": {"how": how, "missing_history": how == "fresh", "session": rec.get("session") if how == "resume" else None,
                          "previous_session": carry.get("previous")},
              "provider": recorded(p), "terminal_pid": k.get("pid")}
-
-    def fence(d):
-        # Another sender (the tick, or a lost-session recovery) already typed this into the same terminal process: its
-        # claim may be released already, before its record on the terminal was written, so the journal itself says.
-        for r in d["launches"].values():
-            if (r.get("launch") != adm.launch and r.get("terminal") == k["address"] and r.get("terminal_pid") == k.get("pid")
-                    and (r.get("revival") or {}).get("how") == how and r.get("state") in (UNCERTAIN, CONFIRMED)):
-                raise Fail(f"{who_of(k)} was brought back into {k['address']} already (launch {r['launch']}, {r['state']}). "
-                           f"Nothing was typed again.")
     try:
         adm = Admission(identity, "revive", space_of(labels) or None, None, revise, who=who_of(k))
         # claimed(): an open start of the same agent refuses here (its task as read now releases a start it records).
-        adm.task, adm.config_dir, adm.fence = task, carry.get("config_dir"), fence
+        adm.task, adm.config_dir = task, carry.get("config_dir")
         with adm.claimed():
-            out = adm.type_into(k["address"], line, facts, run)
+            out = adm.type_into(k["address"], line, facts, run, lambda lid: write_record(k, dict(rec, launch=lid)))
     except Fail as e:
         launch = getattr(e, "launch", None)
         if launch:
-            # It may have been typed: handled, so nothing types it again; its launch id says how to confirm it.
-            write_record(k, dict(rec, launch=launch["launch"]))
+            # It may have been typed: marked handled before its claim was kept (type_into), so nothing types it again;
+            # its launch id says how to confirm it.
             report.setdefault("revive_uncertain", []).append({"terminal": k["address"], "how": how, **launch, "why": str(e)})
         else:
             # Nothing was typed (an open start of the same agent, settings changed): looked at again next tick.
             report.setdefault("revive_held", []).append({"terminal": k["address"], "why": str(e)})
         return
-    # Marked as handled before anything else looks: the next tick types nothing here again.
-    write_record(k, dict(rec, launch=out["launch"]))
+    # Marked as handled (type_into, before its claim went): the next tick types nothing here again.
     row = {"terminal": k["address"], "how": how, "session": rec.get("session") if how == "resume" else None,
            "launch": out["launch"]}
     if how == "fresh":
@@ -488,6 +488,11 @@ def cmd_revive(args, say):
     gone (the service's and the window's lost-session recovery): checked on its screen here, then a new conversation
     there, once. Nothing is typed where an agent runs."""
     report = {}
+    if bool(args.identity) != bool(args.lost):
+        # Two shapes only: the tick's pass (no terminal), or one terminal whose CLI said its session is gone (--lost).
+        # One terminal on its own isn't one: it can't tell which sessions run elsewhere, as the pass does.
+        raise Fail("launch revive is the tick's pass (no terminal), or one terminal with --lost (its CLI said its session "
+                   "is gone). Nothing was typed.")
     if not args.identity:
         revive_pass(report)
         lines = [f"{r['terminal']}: {r['how']}" + (" (missing history: a new conversation)" if r.get("missing_history") else "")
