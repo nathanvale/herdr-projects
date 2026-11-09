@@ -2073,12 +2073,12 @@
      ]
     }
    ],
-   "held": "Ported for Claude Code's Personal plan; the fork's step proved Claude Code and Codex.",
+   "held": "Ported at compose(), which keeps a Personal launch's argv and environment as they are (provider plan and every start take their environment from it); the regression checks Claude Code's, where the fork's step checked both CLIs.",
    "mutation": {
     "runner": "unittest",
     "file": "mods/tasks/bin/herdr_task/providers.py",
-    "before": "\"credential\": None, \"settings_env\": {}, \"args\": [], \"env\": {}}",
-    "after": "\"credential\": None, \"settings_env\": {}, \"args\": [], \"env\": {\"OPENAI_BASE_URL\": \"https://invalid.example\"}}",
+    "before": "    if plan[\"route\"] == PERSONAL:\n        return list(argv), {}",
+    "after": "    if plan[\"route\"] == PERSONAL:\n        return list(argv), {\"OPENAI_BASE_URL\": \"https://invalid.example\"}",
     "test_file": "test/test_providers.py",
     "test": "test_no_provider_setting_starts_the_cli_as_before"
    }
