@@ -204,6 +204,11 @@ class Reconciliation(unittest.TestCase):
             self.row(data, 'requirements', 'id', 'launch-uncertainty')['native'][0]['tests'].append('test_nobody_wrote_this')
         self.refused(rename, 'names a test test/test_launch_admission.py does not hold: test_nobody_wrote_this')
 
+        def prefix(data):
+            # a prefix of a real test's name is not that test
+            self.row(data, 'requirements', 'id', 'launch-uncertainty')['native'][0]['tests'].append('test_a_start_is_claimed')
+        self.refused(prefix, 'names a test test/test_launch_admission.py does not hold: test_a_start_is_claimed')
+
     def test_a_removed_test_file_cannot_drop_out_or_change_its_count(self):
         def drop(data):
             data['test_obligations'] = [row for row in data['test_obligations'] if row['path'] != 'test/core-operator.test.ts']
@@ -360,7 +365,20 @@ class NativeFoundation(unittest.TestCase):
         makes the record stale. bin/checkout-access is named, not pinned, so only this check sees it."""
         code, observed = self.changed('bin/checkout-access', lambda target: target.write_bytes(target.read_bytes() + b'\n'))
         self.assertEqual((code, observed['candidate_readiness']), (1, 'blocked'))
-        self.assertEqual(observed['error'], 'Source differs from the reconciled candidate outside Q: bin/checkout-access')
+        self.assertEqual(observed['error'], 'Source differs from the reconciled candidate outside Q: bin/checkout-access'
+                                            ' (a later unit names its paths in AFTER_Q)')
+
+    def test_a_later_unit_that_names_its_path_after_q_passes(self):
+        """The compliant route after Q merges: a later unit lists what it changes in AFTER_Q, in the checker."""
+        checker = self.copy / 'bin/check-migration'
+        text = checker.read_text()
+        self.assertEqual(text.count('AFTER_Q = {}'), 1)
+        try:
+            checker.write_text(text.replace('AFTER_Q = {}', "AFTER_Q = {'MIG-X': 'bin/checkout-access'}"))
+            code, observed = self.changed('bin/checkout-access', lambda target: target.write_bytes(target.read_bytes() + b'\n'))
+        finally:
+            checker.write_text(text)
+        self.assertEqual((code, observed['source_validation']), (0, 'passed'), observed)
 
     def test_a_document_change_keeps_the_reconciliation(self):
         code, observed = self.changed('docs/native-restart.md', lambda target: target.write_bytes(target.read_bytes() + b'\n'))
@@ -376,7 +394,8 @@ class Sensitivity(unittest.TestCase):
              'import q_probe_guard\n\n\nclass Probe(unittest.TestCase):\n'
              '    def test_probe_refuses_a_negative(self):\n        self.assertFalse(q_probe_guard.admit(-1))\n\n'
              '    def test_probe_admits_zero(self):\n        self.assertTrue(q_probe_guard.admit(0))\n\n'
-             '    def test_probe_always_fails(self):\n        self.assertTrue(q_probe_guard.admit(-5))\n')
+             '    def test_probe_always_fails(self):\n        self.assertTrue(q_probe_guard.admit(-5))\n\n'
+             '    @unittest.skip("not here")\n    def test_probe_skipped(self):\n        self.assertFalse(q_probe_guard.admit(-1))\n')
 
     @classmethod
     def setUpClass(cls):
@@ -412,6 +431,11 @@ class Sensitivity(unittest.TestCase):
         code, observed, said = self.prove('test_probe_always_fails')
         self.assertEqual((code, observed['proved']), (1, 0))
         self.assertIn('the regression does not pass with the guard in place', said)
+
+    def test_a_skipped_regression_proves_nothing(self):
+        code, observed, said = self.prove('test_probe_skipped')
+        self.assertEqual((code, observed['proved']), (1, 0))
+        self.assertIn('the regression was skipped, so it proves nothing here', said)
 
     def test_a_guard_that_isnt_there_exactly_once_is_never_changed(self):
         code, observed, said = self.prove('test_probe_refuses_a_negative', before='return')

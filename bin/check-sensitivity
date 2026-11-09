@@ -3,15 +3,17 @@
 must fail; with the guard back it must pass. The old fork proved its regressions this way in foundry.yml.
 
 Specs are the `ported` rows of docs/migration/q-reconciliation.json's `workflow_obligations` (bin/check-migration
-checks them statically). Check runs this after the suites. It changes a source file only for one test run and
-always puts its exact bytes back. Nothing here starts an agent, signs in or reaches a provider: the regressions
-use their own stand-ins."""
+checks them statically). Check runs this after the suites. It changes a source file in this checkout only for one
+test run and puts its exact bytes back, on an error, an interrupt or SIGTERM too (a SIGKILL can't be caught; the
+checker's content pins then refuse the changed file). Nothing here starts an agent, signs in or reaches a provider:
+the regressions use their own stand-ins."""
 import argparse
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -42,10 +44,16 @@ def run(spec):
     return result.returncode, result.stdout + result.stderr
 
 
+def skipped(spec, out):
+    if spec['runner'] == 'unittest':
+        return re.search(r'^OK \(.*skipped=', out, re.M) is not None
+    return ('(skip) ' + spec['test']) in out
+
+
 def passed(spec, code, out):
     if spec['runner'] == 'unittest':
         ran = re.search(r'^Ran (\d+) tests?', out, re.M)
-        return code == 0 and bool(ran) and int(ran.group(1)) >= 1
+        return code == 0 and bool(ran) and int(ran.group(1)) >= 1 and not skipped(spec, out)
     return code == 0 and ('(pass) ' + spec['test']) in out
 
 
@@ -64,6 +72,8 @@ def prove(row):
     if text.count(spec['before']) != 1:
         return 'the guard is not exactly once in ' + spec['file']
     code, out = run(spec)
+    if skipped(spec, out):
+        return 'the regression was skipped, so it proves nothing here:\n' + out[-4000:]
     if not passed(spec, code, out):
         return 'the regression does not pass with the guard in place:\n' + out[-4000:]
     try:
@@ -80,6 +90,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--ledger', type=Path, default=LEDGER)
     args = parser.parse_args()
+    # SIGTERM (a cancelled CI run) becomes an exit that unwinds, so the guard's file is put back.
+    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
     rows = [row for row in json.loads(args.ledger.read_text())['workflow_obligations'] if row['disposition'] == 'ported']
     results = []
     for row in rows:

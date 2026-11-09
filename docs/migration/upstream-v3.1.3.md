@@ -691,8 +691,8 @@ It is source and CI qualification only (Stage Q-A): no provider, Azure or agent 
   negative control at `8a44f942`, absent after a squash merge; it ran on PR 29's CI) and no failure;
   `check-migration` passed at L2. `candidate-readiness` is skipped on a pull request into `integrate/`.
   This branch's own Check, on its exact head, is the evidence for Q's additions.
-- Requirements: all 40 keep the inventory's status. Each names its native regressions (every one of the
-  139 named tests passed in that run), an evidence class (`process-observed-in-ci` 27, `ci-executed` 11,
+- Requirements: all 40 keep the inventory's status. Each names its native regressions (99 tests across
+  the requirement rows; every one of the ledger's 139 named tests passed in that run), an evidence class (`process-observed-in-ci` 27, `ci-executed` 11,
   `held` 2: `protected-update` and `matching-state-rollback`), what is still missing and who owns it:
   Q-B (real Azure, separately approved) 11, native qualification on a real execution host 16, R 10,
   Nathan's held decisions 2 (`missing-history`, `manual-recovery`), and Q itself 1 (`fork-ci-obligations`).
@@ -709,10 +709,16 @@ It is source and CI qualification only (Stage Q-A): no provider, Azure or agent 
 - `check-migration` refuses a missing, repeated or recounted row, a status other than the inventory's,
   a covered claim with a hold, a hold without words, a held case its fixed source doesn't declare, a
   named test its file doesn't hold, a mutation that doesn't remove exactly one guard, a manifest phase
-  before Q, and any tracked path changed since the candidate outside Q's own paths and documents
-  (so a later source change makes this record stale, not silently true). `--require-ready` still exits 3.
+  before Q, and any tracked path changed since the candidate outside Q's own paths, `docs/` and the root
+  prose files (markdown a command reads, such as `templates/*.md`, is source). A named test must be
+  declared by exactly that name. `--require-ready` still exits 3.
+- After Q merges: a later unit that changes such a path names it in `AFTER_Q` in `bin/check-migration`
+  under the unit's name, in its own reviewed change. Its own Check is its evidence; Q's ledger keeps
+  describing its candidate only and is never re-pointed to claim the later source. A later phase row
+  (R) keeps the ledger valid; a manifest before Q refuses.
 - `bin/check-sensitivity` (a Check step) runs each ported guard's regression with the guard, removes the
-  guard, requires that regression to fail, and puts the file back byte for byte, with a fresh bytecode cache.
+  guard, requires that regression to fail, and puts the file back byte for byte (on SIGTERM too), with a
+  fresh bytecode cache. A skipped regression proves nothing and refuses.
 - Native deliberately differs from fork cases (recorded in the holds, not changed here): GitHub merge
   passes `--delete-branch` where the fork kept the source branch; a 401 or 403 on a Bitbucket create
   is a refusal and a later Ready may post again, where the fork kept it uncertain; a GitLab folder
