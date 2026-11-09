@@ -468,11 +468,13 @@ def admit_task(s, task, argv, space, parent=None, role=None, select=None, resolv
     identity = task_identity(s, task, role)
     folder = config_dir_for(argv, prev) if folder is KEEP else (folder if agent_key(argv) == "claude" else None)
     chosen = None if (role or bound is not None) else task_deployment(task, agent_key(argv))
+    # A choice `select` saved for this CLI (a deployment or a model) is bound to the routing it was made under.
+    picked = None if (role or bound is not None) or task.get("agent") != agent_key(argv) else task.get("selection_routing")
     held = {}
 
     def revise():
         d = read_strict()
-        if chosen:
+        if chosen or picked:
             # The task's choice was saved under one routing (select): under another it refuses, never runs elsewhere.
             from .providers import binding_for, selection_revision
             if task.get("selection_routing") != selection_revision(binding_for(s, space, d), agent_key(argv)):

@@ -39,7 +39,7 @@ import { voiceCall, pageWhere, type ChatView } from "./voice.ts";
 import { voiceTool, type VoiceIO, type Where } from "./voice-tools.ts";
 import { Artifacts } from "./artifacts.ts";
 import { TaskLogs } from "./task-logs.ts";
-import { Settings, onWritten, PUSH, pushBody } from "./settings.ts";
+import { Settings, onWritten, PUSH, pushBody, STALE_INVENTORY } from "./settings.ts";
 import { assistantChoices, taskSelection } from "./selections.ts";
 import { Secrets, SecretsHome } from "./secrets.ts";
 import { Agents } from "./agents.ts";
@@ -526,6 +526,9 @@ async function doAction(body: any): Promise<Response> {
           if (k !== "claude" && k !== "codex") throw new Error("Pick Claude Code or Codex.");
           const chosen = word(body.pick.model);
           if (azure && !chosen) throw new Error("Pick a deployment, or type its name.");
+          // what the menu showed must still hold: the routing its pick is bound to, and on Azure the list it came from
+          if (body.revision !== (view.clis?.[k]?.revision ?? "")) throw new Error("The provider settings changed since this menu was opened. Nothing was saved; open it again.");
+          if (azure && typeof body.inventory === "string" && body.inventory !== settings.discoveryFor(sp.id, k).revision) throw new Error(STALE_INVENTORY);
           next[sp.id] = { agent: k, model: chosen, effort: word(body.pick.effort), fast: !!body.pick.fast, perm: word(body.pick.perm),
             ...(azure ? { deployment: SC.providerValue(`${k}_deployment`, chosen) } : {}), revision: view.clis?.[k]?.revision ?? "" };
         }
@@ -537,8 +540,11 @@ async function doAction(body: any): Promise<Response> {
       const current = saved ? { agent: saved.agent, model: saved.model, effort: saved.effort, fast: !!saved.fast, perm: saved.perm }
         : azure ? { agent: first, model: view.clis?.[first]?.deployment || null, effort: null, fast: false, perm: settings.choices?.permDefault?.[first] ?? null }
         : settings.choices?.defaults ?? { agent: first, model: null, effort: null, fast: false, perm: null };
+      // each CLI's routing revision and (on Azure) its list's: a save sends them back, and a changed one is refused
+      const revision = Object.fromEntries(Object.entries(view.clis ?? {}).map(([k, c]: [string, any]) => [k, c.revision]));
+      const inventory = azure ? Object.fromEntries(["claude", "codex"].map((k) => [k, settings.discoveryFor(sp.id, k as "claude" | "codex").revision])) : null;
       return json({ ok: true, menu: { current, menus, permDefault: settings.choices?.permDefault ?? {}, picks: (compat.agents as any).picks(), remote: null,
-        newStart: true, saved: !!saved } });
+        newStart: true, saved: !!saved, revision, ...(inventory ? { inventory } : {}) } });
     } catch (err) { return json({ ok: false, error: (err as Error).message }); }
   }
   if (body?.type === "task-select" && (typeof body.chat === "string" || (body.task && typeof body.task === "object"))) {

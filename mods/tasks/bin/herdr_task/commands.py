@@ -892,7 +892,9 @@ def selection_of(s, t, space):
     rev = hashlib_digest({"agent": t.get("agent"), "deployment": t.get("deployment"), "model": t.get("model"), "effort": t.get("effort"),
                           "saves": t.get("select_rev") or 0, "agents": len(t.get("agents") or []),
                           "routing": {k: selection_revision(binding, k) for k in KINDS}})
-    return {"id": t["id"], "ref": s.ref(t), "state": t["state"], "locked": locked, "route": shown["route"],
+    # What the task follows without a choice of its own: Settings' Workers CLI here (Claude Code when unset).
+    inherit = {"agent": (settings_for(s, space).get("worker") or {}).get("agent") or "claude"}
+    return {"id": t["id"], "ref": s.ref(t), "state": t["state"], "locked": locked, "route": shown["route"], "inherit": inherit,
             "selection": {"agent": t.get("agent"), "deployment": t.get("deployment"), "model": t.get("model"), "effort": t.get("effort")},
             "clis": shown["clis"], "revision": rev}
 
@@ -934,13 +936,15 @@ def cmd_select(args):
                     t.pop(k, None)
             else:
                 agent = args.agent if args.agent is not None else t.get("agent")
-                if agent not in ("claude", "codex"):
+                # An effort alone can follow the configured CLI; a deployment or model belongs to one CLI.
+                if agent not in ("claude", "codex") and (agent is not None or args.deployment or args.model):
                     raise Fail("Choose the CLI it starts on: --agent claude or --agent codex.")
                 if args.agent is not None and args.agent != t.get("agent"):
                     # Another CLI: the previous CLI's deployment, model and effort don't carry over.
                     for k in ("deployment", "model", "effort"):
                         t.pop(k, None)
-                t["agent"] = agent
+                if agent:
+                    t["agent"] = agent
                 if args.deployment is not None:
                     dep = clean(f"{agent}_deployment", args.deployment)
                     if dep and cur["route"] != "azure-foundry":
@@ -969,8 +973,9 @@ def cmd_select(args):
                         raise Fail(f"effort is one of {', '.join(sorted(EFFORTS))} (or default).")
                     else:
                         t["effort"] = e
-                # Bound to the routing it was chosen under: under another one its start refuses (launch_admission).
-                if t.get("deployment"):
+                # A deployment or a model is bound to the routing it was chosen under: under another one its start
+                # refuses (launch_admission), never reinterpreted.
+                if agent and (t.get("deployment") or t.get("model")):
                     t["selection_routing"] = selection_revision(binding_for(s, space), agent)
                 else:
                     t.pop("selection_routing", None)

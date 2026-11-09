@@ -126,16 +126,21 @@ drops it once used.
 - The credential check runs after the terminal exists. There is no presence check before effects,
   because herdr-task's environment is not the terminal's.
 - Selection and settings revisions are content digests plus a task's save counter. Settings
-  changed away and back read as unchanged, as in L1. A window chat's pick made under Personal
-  carries no revision.
+  changed away and back read as unchanged, as in L1.
 - Source-inspected only, with no test of their own: the window's Provider rows
   (`provider-section.js`), the window chat's Assistant pick and its fork's and lost session's route
   check, the window's task selector (`mods/tasks`, `mods/tasks-menu`), the web's `select.tsx`,
   `DeploymentValue` and new-start model menu (`restart.tsx`), and the service's `assistant-pick` and
   `model-menu` handlers in `service/main.ts`. Their owners' rules are tested through `herdr-task` and
   the service.
-- A window chat's revision is the one read when the chat loaded its choices: settings changed after
-  that refuse its pick until the chat is opened again.
+- A window chat's revision is the one read when the chat loaded its choices, and a kept pick keeps
+  the revision it was made under: after a routing change its start refuses until the chat is
+  reopened and the pick made again.
+- The web's Assistant pick is dropped only by the web's first-message start: a start from the window
+  leaves it for a later web first message. `assistant.picks` is keyed by this service's space ids
+  and is not relocated by a Serve-from move.
+- The window's task selector keeps the CLI, model or deployment and effort; Fast and permissions in
+  its menu are not part of a task's choice and follow Settings. The web's has no Fast or permissions.
 - Inventory and an effort list don't prove account, inference, tool or effort support.
 
 ## Regressions

@@ -560,11 +560,15 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
       ? ["--label", `herdr.chat=${rec.pane}`, "--label", `herdr.chat.slot=${slot}`, "--label", `herdr.chat.origin=slot:${slot}`, "--label", "herdr.role=coordinator",
         "--label", `herdr.coordinator.space=${bare}`, ...(rec.tab ? ["--label", `herdr.coordinator.tab=${String(rec.tab).split("/").pop()}`] : [])]
       : ["--label", "herdr.role=coordinator", "--label", `herdr.coordinator.space=${bare}`, "--label", `herdr.space=${bare}`];
-    const tpl = await execTemplate(hub, "assistant", sp.machine ?? null);
-    // the web's save-only pick for this space's first start (service/main.ts assistant-pick): its agent, and on Azure its
-    // deployment, with the revision it was made under, so a changed route refuses it instead of reinterpreting it
+    // the web's save-only pick for this space's first start (service/main.ts assistant-pick): its agent, model or (on Azure)
+    // deployment, effort, speed and permissions, with the revision it was made under, so a changed route refuses it
+    // instead of reinterpreting it. On Personal it runs as the template's one-off command (the window chat's way); on
+    // Azure launch admission plans it from --argv.
     const picks: Record<string, any> = compat.shared?.value("assistant.picks") ?? {}, pick = picks[sp.id];
-    const chose = pick ? ["--argv", JSON.stringify(argvFor(pick, { agent: null, argv: [] }).argv),
+    const picked: string[] | null = pick ? argvFor(pick, { agent: null, argv: [] }).argv : null;
+    const word = (a: string) => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${String(a).replace(/'/g, "'\\''")}'`);
+    const tpl = await execTemplate(hub, "assistant", sp.machine ?? null, picked ? picked.map(word).join(" ") : undefined);
+    const chose = pick ? ["--argv", JSON.stringify(picked),
       ...(pick.deployment ? ["--deployment", pick.deployment] : []), ...(pick.revision ? ["--revision", pick.revision] : [])] : [];
     // through launch admission (herdr-task launch run): a new start planned for its provider (--new-start: the template
     // word it runs; on Azure Foundry the owner's own one-off takes its place), claimed, rechecked and recorded as sent,

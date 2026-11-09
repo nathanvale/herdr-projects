@@ -65,12 +65,14 @@ export async function newSpaceInfo(hub: Hub, machine: string | null, at: string 
  *  markers the holder may carry (SHEP-86, core/clean-env.js), then execs it: hc runs a template's command under sh -c,
  *  and where sh is dash (Debian, Ubuntu) the shell would stay the terminal's program, so no chat would know its CLI.
  *  words: the template's own words (its first message), when read. Unreadable: the template itself. */
-export async function execTemplate(hub: Hub, name: string, machine: string | null): Promise<{ name: string; words: string; done: () => void }> {
+export async function execTemplate(hub: Hub, name: string, machine: string | null, command?: string): Promise<{ name: string; words: string; done: () => void }> {
   const plain = { name, words: "", done: () => {} };
   const DIR = 'dir="$HOME/.config/herdr-core/templates"; ';
   const src = (await exec(hub, ["sh", "-c", DIR + 'cat "$dir/$1.md"', "x", name], machine).catch(() => null))?.stdout ?? "";
   const head = /^---\n([\s\S]*?)\n---\n?/.exec(src);
-  const cmd = /^command:[ \t]*(.+)$/m.exec(head?.[1] ?? "")?.[1]?.trim();
+  // command: a chosen agent's words (the web's saved pick for a space's first start, A2), as the window's chat writes its
+  // one-off with the chosen settings; else the template's own
+  const cmd = command?.trim() || /^command:[ \t]*(.+)$/m.exec(head?.[1] ?? "")?.[1]?.trim();
   if (!head || !cmd) return plain;
   const one = `herdr-${name}-${Date.now().toString(36)}`;
   const file = `---\nname: ${one}\ndescription: A one-off ${name} start that execs its command (Shepherdr's service), removed after use.\ncommand: ${cleanCommand(cmd)}\n---\n${src.slice(head[0].length)}`;

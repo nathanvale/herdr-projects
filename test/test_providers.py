@@ -658,6 +658,12 @@ class TaskSelection(unittest.TestCase):
         self.assertEqual(agent[agent.index("-m") + 1], "gpt-pick")
         self.assertIn('model_reasoning_effort="high"', agent)
         f.settle(tid=tid)
+        # A model that can't be an id or alias is refused and never repeated.
+        again = f.add("--here")
+        shown = f.ok("select", str(again), "--folder", f.repo)
+        self.assertIn("A model is its id or alias", f.refused("select", str(again), "--folder", f.repo, "--agent", "claude", "--model",
+                                                              INLINE + " x", "--revision", shown["revision"]))
+        self.assertNotIn(INLINE, f.seen + f.store_text())
         # On Azure the deployment is the model: --model refuses there.
         g = Fixture(self)
         g.provider({"route": "azure-foundry", **CODEX})
@@ -665,6 +671,26 @@ class TaskSelection(unittest.TestCase):
         shown = g.ok("select", str(other), "--folder", g.repo)
         self.assertIn("the deployment is the model", g.refused("select", str(other), "--folder", g.repo, "--agent", "codex", "--model", "gpt-pick",
                                                                 "--revision", shown["revision"]))
+
+    def test_a_personal_model_choice_refuses_under_azure_and_an_effort_alone_follows_the_cli(self):
+        f = Fixture(self)
+        tid = f.add("--here")
+        shown = f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1")
+        f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1", "--agent", "claude", "--model", "sonnet", "--revision", shown["revision"])
+        f.provider({"route": "azure-foundry", **CLAUDE})
+        before = f.snapshot()
+        self.assertIn("changed since this start was chosen", f.refused("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now"))
+        f.nothing_started(before)
+        # An effort alone is no CLI's: it needs no --agent and binds no routing, so the task still follows Settings' CLI.
+        other = f.add("--here")
+        shown = f.ok("select", str(other), "--folder", f.repo, "--space", "sp1")
+        saved = f.ok("select", str(other), "--folder", f.repo, "--space", "sp1", "--effort", "high", "--revision", shown["revision"])
+        self.assertEqual(saved["selection"], {"agent": None, "deployment": None, "model": None, "effort": "high"})
+        self.assertNotIn("selection_routing", f.task(other))
+        f.ok("start", str(other), "--folder", f.repo, "--space", "sp1", "--now")
+        _, agent = f.agent_words(f.launches()[-1])
+        self.assertEqual((agent[agent.index("--model") + 1], agent[agent.index("--effort") + 1]), ("claude-deployment", "high"))
+        f.settle(tid=other)
 
     def test_a_deployment_that_cant_be_one_is_refused_and_never_repeated(self):
         f = Fixture(self)

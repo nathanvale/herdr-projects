@@ -58,9 +58,10 @@ function rowSections(p) {
   }
   // A task not started yet: its save-only new-start choice (A2), in the model menu the Tasks panel opens (mods/tasks).
   if (["todo", "queued", "scheduled"].includes(p.status))
-    out.push({ title: null, checks: false, current: null, pick: () => setShared("tasks.selectreq", { ref: p.ref, folder: p.folder,
-      machine: p.machine ?? null, space: p.space ?? null, at: Date.now() }),
-    items: [{ key: "select", label: "Model for its start…", id: "select", icon: "mods/workspace-chrome/arrow-left-right.svg" }] });
+    out.push({ title: null, checks: false, current: null, pick: (key) => setShared("tasks.selectreq", { ref: p.ref, folder: p.folder,
+      machine: p.machine ?? null, space: p.space ?? null, ...(key === "reset" ? { reset: true } : {}), at: Date.now() }),
+    items: [{ key: "select", label: "Model for its start…", id: "select", icon: "mods/workspace-chrome/arrow-left-right.svg" },
+      { key: "reset", label: "Use configured defaults", id: "reset", icon: "mods/workspace-chrome/rotate-ccw.svg" }] });
   return out.filter((s) => s.items.length);
 }
 

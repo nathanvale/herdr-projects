@@ -930,7 +930,7 @@ export default class Tasks extends View {
       first = false;
     }
     // A task not started yet: Model for its start… under a line (tasks-menu), its save-only choice (A2).
-    if (["todo", "queued", "scheduled"].includes(pin.status)) height += 4 + 32;
+    if (["todo", "queued", "scheduled"].includes(pin.status)) height += 4 + 2 * 32;
     openOverlay({ mod: "tasks-menu", kind: "popup", at: "pointer", width: 220, height, props: { menu: "row", key: pin.key, on: pin.on,
       status: pin.status, machine: pin.machine, folder: pin.folder, ref: pin.ref, sub: pin.sub, space: pin.space } });
   }
@@ -957,15 +957,24 @@ export default class Tasks extends View {
         const task = { ref: req.ref, folder: req.folder, machine: req.machine ?? null, space: req.space ?? null };
         const v = await this.askService({ type: "task-select", task });
         if (v.locked) throw new Error(`${req.ref} has a recorded conversation, so its choice is locked: resuming keeps what it started on.`);
+        // Use configured defaults (the row menu's own item): the task's choice goes, with the revision just shown.
+        if (req.reset) {
+          await this.askService({ type: "task-select", task, change: { default: true, revision: v.revision } });
+          toast({ title: `${req.ref} follows Settings again`, body: "Its first start takes the configured CLI, model and effort." });
+          return;
+        }
         const azure = v.route === "azure-foundry", menus = v.menus ?? {};
-        const agent = v.selection?.agent && menus[v.selection.agent] ? v.selection.agent : Object.keys(menus)[0] ?? "claude";
+        // What it would start on now: its own choice where it has one, else what Settings give (inherited, not chosen:
+        // only what the person changes here is saved, so the rest keeps following Settings).
+        const agent = v.selection?.agent && menus[v.selection.agent] ? v.selection.agent : v.inherit?.agent && menus[v.inherit.agent] ? v.inherit.agent : Object.keys(menus)[0] ?? "claude";
         const model = azure ? v.selection?.deployment ?? v.clis?.[agent]?.deployment ?? null : v.selection?.model ?? null;
+        const shown = { agent, model, effort: v.selection?.effort ?? null, own: Boolean(v.selection?.agent) };
         const key = `taskpick:${Date.now().toString(36)}`;
-        this.taskPick = { key, task, revision: v.revision, route: v.route, at: shared("newspace.pick")?.at ?? null };
+        this.taskPick = { key, task, revision: v.revision, route: v.route, shown, saving: Promise.resolve(), at: shared("newspace.pick")?.at ?? null };
         const W = 340, H = 2 + 10 + 34 + 36 + 8 * 31 + 9 + 26 + 34 + 31 + 31;
         openOverlay({ mod: "chat-models", kind: "popup", frame: "none", width: W, height: H, at: "pointer",
           props: { mode: "settings", key, width: W, height: H, remote: null, select: null,
-            current: { agent, model, effort: v.selection?.effort ?? null, fast: false, perm: null }, menus, icons: {}, permDefault: v.permDefault ?? {} } });
+            current: { agent, model, effort: shown.effort, fast: false, perm: null }, menus, icons: {}, permDefault: v.permDefault ?? {} } });
       } catch (e) {
         toast({ level: "error", title: `Couldn't choose ${req.ref}'s model`, body: String(e?.message ?? e) });
       }
@@ -973,19 +982,27 @@ export default class Tasks extends View {
     });
   }
 
+  // One change from the model menu: only what differs from what was shown is saved (a CLI, a deployment or model, an
+  // effort), one save after another so each quotes the revision the last one gave. Fast and permissions aren't part of
+  // a task's choice (they follow Settings).
   saveSelect(value, cx) {
     const pick = this.taskPick;
-    cx.spawn(async (cx) => {
+    pick.saving = pick.saving.then(async () => {
+      const was = pick.shown, change = {};
+      if (value.agent !== was.agent || was.own) change.agent = value.agent;
+      if (value.agent !== was.agent || (value.model ?? null) !== was.model)
+        Object.assign(change, pick.route === "azure-foundry" ? { deployment: value.model ?? "" } : { model: value.model ?? "default" });
+      if ((value.effort ?? null) !== was.effort) change.effort = value.effort ?? "default";
+      if (!Object.keys(change).length) return;
       try {
-        const out = await this.askService({ type: "task-select", task: pick.task, change: { agent: value.agent,
-          ...(pick.route === "azure-foundry" ? { deployment: value.model ?? "" } : { model: value.model ?? "default" }),
-          effort: value.effort ?? "default", revision: pick.revision } });
+        const out = await this.askService({ type: "task-select", task: pick.task, change: { ...change, revision: pick.revision } });
         pick.revision = out.revision;
+        pick.shown = { agent: value.agent, model: value.model ?? null, effort: value.effort ?? null, own: Boolean(change.agent) || was.own };
       } catch (e) {
         toast({ level: "error", title: `${pick.task.ref}'s model wasn't saved`, body: String(e?.message ?? e) });
       }
-      cx.notify();
     });
+    cx.notify();
   }
 
   // Ready = "looks done, your call": Review (opens the Accept card) is the person's one action here, at the row's end. It merges first when there is something to merge (herdr-task accept follows the merge

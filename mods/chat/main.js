@@ -1796,7 +1796,9 @@ export default class Chat extends View {
           data.menus = Object.fromEntries(Object.entries(az.menus).filter(([k]) => data.menus[k]));
           data.azure = { revision: data.revision };
         }
-        const fits = st?.agent && data.menus[st.agent] && (!az || data.menus[st.agent].models.some((m) => m.id === st.model));
+        // A kept pick fits only on the list in force now (a deployment kept from Azure isn't a Personal model, nor the
+        // other way round); one that doesn't is dropped for the defaults.
+        const fits = st?.agent && data.menus[st.agent] && (!st.model || data.menus[st.agent].models.some((m) => m.id === st.model));
         const first = Object.keys(data.menus)[0];
         const sel = fits ? { perm: data.permDefault[st.agent], effort: null, fast: false, ...st }
           // shown as what it would start on; not a pick (auto), so the Assistant's own deployment still decides
@@ -4002,7 +4004,8 @@ export default class Chat extends View {
     if (sel && !sel.auto && this.choice.autoModel !== undefined && sel.agent === this.choice.autoAgent && sel.model === this.choice.autoModel) sel.auto = true;
     if (sel && !sel.auto && !sel.revision && this.choice.data?.revision?.[sel.agent]) sel.revision = this.choice.data.revision[sel.agent];
     const now = JSON.stringify(this.choice.sel);
-    if (this.choice.saved !== undefined && now !== this.choice.saved && this.slot) try { localStorage.setItem(`choice:${this.slot}`, now); } catch {}
+    // Only the person's own pick is kept for this slot: a shown default isn't (it would outlive a route change).
+    if (this.choice.saved !== undefined && now !== this.choice.saved && this.slot && !sel?.auto) try { localStorage.setItem(`choice:${this.slot}`, now); } catch {}
     this.choice.saved = now;
     return choices.modelButton(t, this.choice, {}, cx);
   }

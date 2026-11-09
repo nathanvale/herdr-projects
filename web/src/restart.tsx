@@ -229,7 +229,9 @@ export type AgentMenu = { name: string; models: MenuModel[]; perms?: { id: strin
 type MenuPick = { agent: string; model: string | null; effort: string | null; fast: boolean; perm: string | null }
 /** newStart: a space whose Assistant hasn't started (A2): the menu saves a pick for its first start (saved: one is kept)
  *  instead of restarting anything; on Azure Foundry its list is the deployments */
-type MenuData = { current: MenuPick; menus: Record<string, AgentMenu>; permDefault: Record<string, string>; picks?: Picks; remote: string | null; newStart?: boolean; saved?: boolean }
+type MenuData = { current: MenuPick; menus: Record<string, AgentMenu>; permDefault: Record<string, string>; picks?: Picks; remote: string | null; newStart?: boolean; saved?: boolean
+  /** newStart: each CLI's routing revision and (on Azure) its list's, as shown: a save carries them back */
+  revision?: Record<string, string>; inventory?: Record<string, string> }
 /** a stretch of the model list (core/agents.js modelSections): Pinned, Recent, All models, or an agent's matches */
 type Picks = { pinned: string[]; recent: string[] }
 type Section = { key: string; title: string | null; agent: string; rows: (MenuModel & { agent: string; pinned: boolean; typed?: boolean })[]; more: number }
@@ -414,7 +416,9 @@ function ModelMenu({ chat, typed }: { chat: string; typed?: string }) {
   const keep = async (pick: MenuPick | null) => {
     setBusy(true)
     setError(null)
-    const r = await act({ type: 'assistant-pick', chat, pick: pick && { ...pick, effort: level(pick) } } as never).catch((e: Error) => ({ ok: false, error: e.message }))
+    const r = await act({ type: 'assistant-pick', chat, pick: pick && { ...pick, effort: level(pick) },
+      ...(pick ? { revision: data?.revision?.[pick.agent] ?? '', ...(data?.inventory ? { inventory: data.inventory[pick.agent] ?? '' } : {}) } : {}) } as never)
+      .catch((e: Error) => ({ ok: false, error: e.message }))
     setBusy(false)
     if ((r as { ok?: boolean }).ok === false) return setError((r as { error?: string }).error || "It wasn't saved.")
     close()
