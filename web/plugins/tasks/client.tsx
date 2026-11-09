@@ -52,6 +52,7 @@ import {
   type TaskGroup,
 } from '@client/kernel.ts'
 import { keysMoved } from '@client/focus.ts'
+import { TaskSelect, WORDS as SELECT } from './select.tsx'
 import {
   ArchivedIcon,
   BackIcon,
@@ -69,6 +70,7 @@ import {
   MenuLabel,
   MenuSeparator,
   Meta,
+  ModelIcon,
   MoreIcon,
   NextIcon,
   PinTaskIcon,
@@ -228,6 +230,9 @@ function TaskActions({ task: t, close }: { task: Task; close: () => void }) {
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // a task not started yet: its save-only new-start choice (select.tsx), opened in the menu
+  const [selecting, setSelecting] = useState(false)
+  const unstarted = !t.archived && (t.status === 'todo' || t.status === 'queued' || t.status === 'scheduled')
   const go = async (when: Parameters<typeof scheduleTask>[1]) => {
     setBusy(true)
     setError(null)
@@ -268,6 +273,12 @@ function TaskActions({ task: t, close }: { task: Task; close: () => void }) {
         )
       })}
       {error && !typing ? <p role="alert" className="w-0 min-w-full px-2 pt-1 pb-1.5 text-[0.75rem]/4 text-need-fg phone:px-3 phone:text-[0.8125rem]/5">{error}</p> : null}
+      {unstarted ? (selecting ? <TaskSelect task={t} done={close} /> : (
+        <>
+          <MenuSeparator />
+          <MenuItem icon={<ModelIcon className={ic} />} onClick={() => setSelecting(true)}>{SELECT.item}</MenuItem>
+        </>
+      )) : null}
     </>
   )
 }

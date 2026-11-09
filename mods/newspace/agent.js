@@ -9,7 +9,7 @@
 
 import { exec, hc, appHome } from "herdr";
 // The rules (names, menus, argv) are core/agents.js, shared with the web app.
-import { DEFAULTS, parseDefaults } from "./core/agents.js";
+import { DEFAULTS, parseDefaults, providerRefusal } from "./core/agents.js";
 export * from "./core/agents.js";
 
 export async function defaults(kind, machine) {
@@ -20,10 +20,14 @@ export async function defaults(kind, machine) {
 // Restarts the agent `t` (hc get's record) with `argv`, parked behind chat pane `pane`.
 // Resolves with the new agent's address.
 export async function restart(t, built, pane) {
+  // A restart can't carry an Azure Foundry binding yet (L2): one that started there is refused (core/agents.js), and
+  // herdr-task switch --restart refuses a non-Personal route for what it would start.
+  const held = providerRefusal(t);
+  if (held) throw new Error(held);
   const task = t.labels?.["herdr.task"];
   if (task) {
     // herdr-task resumes its own session when the agent stays the same.
-    const r = await exec("herdr-task", ["switch", task, "--folder", t.foreground?.cwd ?? t.cwd, "--argv", JSON.stringify(built.base), "--json"]);
+    const r = await exec("herdr-task", ["switch", task, "--folder", t.foreground?.cwd ?? t.cwd, "--argv", JSON.stringify(built.base), "--restart", "--json"]);
     let out = {};
     try { out = JSON.parse(r.stdout || "{}"); } catch {}
     if (r.code !== 0 || !out.terminal) throw new Error((r.stderr || r.stdout).trim() || "herdr-task switch failed");

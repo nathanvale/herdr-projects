@@ -258,3 +258,43 @@ export function untilShort(ms, now = Date.now()) {
 }
 // A scheduled row's second line: "Starts Today 18:00"; "Starts now" once due.
 export const startsLine = (ms, now = Date.now()) => (typeof ms !== "number" ? "Scheduled" : ms <= now ? "Starts now" : `Starts ${startsAt(ms, now)}`);
+
+// A task's new-start choice from the window's model menu (A2, mods/tasks saveSelect): what one change saves with
+// `herdr-task select`, from what the menu showed ({ agent, model, effort }) and what it sends back ({ agent, model,
+// effort }) on route ("azure-foundry" or "personal"). Only what changed is saved, so the rest keeps following Settings.
+// A model (Personal) or a deployment (Azure) belongs to one CLI, so its CLI goes with it; an effort alone sends no CLI
+// (the task's own, if any, stays, and so does the routing its choice is bound to). Another CLI drops the old CLI's
+// fields (herdr-task select), so the effort the menu kept goes with it. Nothing changed: null.
+export function selectChange(shown, value, route) {
+  const change = {};
+  if (value.agent !== shown.agent || (value.model ?? null) !== (shown.model ?? null))
+    Object.assign(change, route === "azure-foundry" ? { deployment: value.model ?? "" } : { model: value.model ?? "default" });
+  if (value.agent !== shown.agent || (value.effort ?? null) !== (shown.effort ?? null)) change.effort = value.effort ?? "default";
+  if (value.agent !== shown.agent || "model" in change || "deployment" in change) change.agent = value.agent;
+  return Object.keys(change).length ? change : null;
+}
+
+// What the web's task selector saves (web/plugins/tasks/select.tsx), from what `herdr-task select` showed (shown: its
+// selection, inherit, clis, listed and inventory) and the form now ({ agent, dep, effort, fromList }) on Azure or not:
+// - its effort levels come from the chosen deployment, else the one it inherits, so an effort can stay without a deployment;
+// - another CLI drops the old CLI's fields (herdr-task select), so on Azure its deployment goes with the CLI change;
+// - a deployment picked from Refresh's list carries that list's revision; one typed by hand doesn't;
+// - the effort goes when it changed or the CLI did, so one kept from before isn't cleared where no levels are known.
+export function webSelectSave(shown, form, azure) {
+  const was = shown.selection ?? {};
+  const newAgent = form.agent !== (was.agent ?? shown.inherit?.agent ?? "claude");
+  const newDep = azure && (newAgent || form.dep !== (was.deployment ?? ""));
+  const listed = newDep && form.fromList && form.dep && (shown.listed?.[form.agent] ?? []).includes(form.dep);
+  return {
+    ...(newAgent || newDep ? { agent: form.agent } : {}),
+    ...(newDep ? { deployment: form.dep } : {}),
+    ...(listed ? { inventory: shown.inventory?.[form.agent] ?? "" } : {}),
+    // (with a CLI change too: herdr-task select drops the old CLI's effort, so the one shown here must be sent)
+    ...(newAgent || form.effort !== (was.effort ?? "") ? { effort: form.levels.includes(form.effort) ? form.effort : "default" } : {}),
+  };
+}
+// The levels a web task selector offers: the chosen deployment's model's, else the inherited deployment's (Azure).
+export const webSelectLevels = (menus, clis, agent, dep) => {
+  const effective = dep || clis?.[agent]?.deployment || "";
+  return menus?.[agent]?.models?.find((m) => m.id === effective)?.efforts ?? [];
+};

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { place, queueReason, reportOf, estimated, order, ago, autoPrefix, refOf, taskKey, matches, busyAgain, secondLine, leftOf, ORDER, STATUS, WORKING_AGAIN, fromLine, autoWhere, inSpace } from "./tasks.js";
+import { place, queueReason, reportOf, estimated, order, ago, autoPrefix, refOf, taskKey, matches, busyAgain, secondLine, leftOf, ORDER, STATUS, WORKING_AGAIN, fromLine, autoWhere, inSpace, selectChange, webSelectSave, webSelectLevels } from "./tasks.js";
 import { REASONS, fit } from "./needs.js";
 
 const NOW = 1_800_000_000_000;
@@ -177,4 +177,39 @@ describe("This space (inSpace)", () => {
   test("no space: nothing is in it", () => {
     expect(inSpace(null, { machine: null, folder: "/work/shop" })).toBe(false);
   });
+});
+
+// A2: the window's task selector saves only what changed, and a model or deployment always with its CLI (a task with no
+// choice of its own has no CLI for herdr-task select to take it from).
+test("a task's new-start change carries its CLI with a model or deployment, and none with an effort alone", () => {
+  const shown = { agent: "codex", model: null, effort: null };
+  expect(selectChange(shown, { agent: "codex", model: "gpt-pick", effort: null }, "personal")).toEqual({ model: "gpt-pick", agent: "codex" });
+  expect(selectChange(shown, { agent: "codex", model: "dep-1", effort: null }, "azure-foundry")).toEqual({ deployment: "dep-1", agent: "codex" });
+  expect(selectChange(shown, { agent: "codex", model: null, effort: "high" }, "personal")).toEqual({ effort: "high" });
+  expect(selectChange(shown, { agent: "claude", model: null, effort: null }, "personal")).toEqual({ model: "default", effort: "default", agent: "claude" });
+  // another CLI: the effort the menu kept is sent too (herdr-task drops the old CLI's), so what is saved is what it shows
+  expect(selectChange({ agent: "codex", model: "gpt-pick", effort: "high" }, { agent: "claude", model: "opus", effort: "high" }, "personal"))
+    .toEqual({ model: "opus", effort: "high", agent: "claude" });
+  expect(selectChange(shown, { agent: "codex", model: null, effort: null }, "personal")).toBe(null);
+  expect(selectChange({ agent: "claude", model: "opus", effort: "high" }, { agent: "claude", model: "opus", effort: null }, "personal")).toEqual({ effort: "default" });
+});
+
+// A2: the web's task selector saves only what changed.
+test("the web selector keeps an effort with an inherited deployment, and a CLI change sends its deployment on Azure", () => {
+  const menus = { claude: { models: [{ id: "role-dep", efforts: ["low", "high"] }, { id: "picked", efforts: ["low"] }] } };
+  const clis = { claude: { deployment: "role-dep" }, codex: { deployment: "" } };
+  // inherited deployment: its levels, so a kept effort shows and isn't cleared on Save
+  expect(webSelectLevels(menus, clis, "claude", "")).toEqual(["low", "high"]);
+  const kept = { selection: { agent: null, deployment: null, effort: "high" }, inherit: { agent: "claude" }, listed: { claude: ["picked"] }, inventory: { claude: "7" } };
+  expect(webSelectSave(kept, { agent: "claude", dep: "", effort: "high", fromList: false, levels: [] }, true)).toEqual({});
+  // a CLI change on Azure sends the deployment shown, even the same name the old CLI had
+  const own = { selection: { agent: "codex", deployment: "same", effort: null }, inherit: { agent: "claude" }, listed: {}, inventory: {} };
+  expect(webSelectSave(own, { agent: "claude", dep: "same", effort: "", fromList: false, levels: [] }, true)).toEqual({ agent: "claude", deployment: "same", effort: "default" });
+  // a CLI change sends the effort chosen for the new CLI, on Personal too (herdr-task drops the old CLI's effort)
+  const codex = { selection: { agent: "codex", deployment: null, effort: "high" }, inherit: { agent: "claude" }, listed: {}, inventory: {} };
+  expect(webSelectSave(codex, { agent: "claude", dep: "", effort: "high", fromList: false, levels: ["low", "high"] }, false)).toEqual({ agent: "claude", effort: "high" });
+  // a listed pick carries its list's revision; a typed one doesn't
+  const base = { selection: { agent: "claude", deployment: null, effort: null }, listed: { claude: ["picked"] }, inventory: { claude: "7" } };
+  expect(webSelectSave(base, { agent: "claude", dep: "picked", effort: "", fromList: true, levels: [] }, true)).toEqual({ agent: "claude", deployment: "picked", inventory: "7" });
+  expect(webSelectSave(base, { agent: "claude", dep: "typed", effort: "", fromList: false, levels: [] }, true)).toEqual({ agent: "claude", deployment: "typed" });
 });

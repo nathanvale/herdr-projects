@@ -636,6 +636,7 @@ function Control({ row, phone, set, edit, level }: { row: SettingRow; phone: boo
   const only = !row.num && !row.text && !row.multi && !action && !onOff && options.length <= 1 && (options[0] ?? row.value) === row.value
   if (row.fixed || !row.key || only) return <span className="text-right text-pretty text-fg2 [overflow-wrap:anywhere]">{shown(row.value)}</span>
   if (row.num) return <NumberValue label={row.label} value={row.value} num={row.num} onEdit={edit} onSave={set} />
+  if (row.discovery) return <DeploymentValue row={row} level={level ?? 'all'} set={set} edit={edit} />
   if (row.text) return <TextValue label={row.label} value={row.value} placeholder={row.placeholder} onEdit={edit} onSave={set} />
   if (row.multi) {
     // chips that each turn on or off (3.0's Autopilot events)
@@ -661,6 +662,37 @@ function Control({ row, phone, set, edit, level }: { row: SettingRow; phone: boo
   }
   if (SEGMENTS.has(row.key)) return <Segments label={row.label} value={row.value} options={options} onPick={set} fill={phone} />
   return <Pick label={row.label} plain={phone} value={row.value} options={options} onPick={set} />
+}
+
+/** an Azure deployment row (Settings › Agents › Provider): its name typed by hand, and Refresh, which reads this level's
+ *  deployments with this machine's Azure CLI login (it selects nothing); one picked from what Refresh found carries the
+ *  inventory's revision, so a list read under another resource, endpoint or subscription is refused, never saved */
+function DeploymentValue({ row, level, set, edit }: { row: SettingRow; level: string; set: (value: string) => void; edit: () => void }) {
+  const d = row.discovery!
+  const [said, setSaid] = useState('')
+  const refresh = async () => {
+    setSaid('')
+    const r = (await act({ type: 'azure-refresh', kind: d.kind, place: level } as never).catch((e: Error) => ({ ok: false, error: e.message }))) as { ok?: boolean; error?: string }
+    if (r?.ok === false && r.error) setSaid(r.error)
+  }
+  const pick = async (label: string) => {
+    const o = d.options.find((x) => x.label === label)
+    if (!o) return
+    setSaid('')
+    const r = (await act({ type: 'setting', key: row.key, value: o.value, place: level, inventory: d.revision } as never).catch((e: Error) => ({ ok: false, error: e.message }))) as { ok?: boolean; error?: string }
+    if (r?.ok === false) setSaid(r.error ?? 'Refused.')
+  }
+  return (
+    <span className="flex max-w-full flex-col items-end gap-1">
+      <span className="flex max-w-full flex-wrap items-center justify-end gap-1.5">
+        <TextValue label={row.label} value={row.value} placeholder={row.placeholder} onEdit={edit} onSave={set} />
+        {d.options.length ? <Pick label={ST.PROVIDER.found} value={d.options.find((o) => o.value === row.value)?.label ?? ''} options={d.options.map((o) => o.label)} onPick={(v) => void pick(v)} /> : null}
+        <Ghost disabled={d.busy} onClick={() => void refresh()}>{d.busy ? ST.PROVIDER.refreshing : ST.PROVIDER.refresh}</Ghost>
+      </span>
+      <Small className="text-right text-pretty">{d.hint}</Small>
+      {d.warn || said ? <Small className="text-right text-pretty text-need-fg!">{said || d.warn}</Small> : null}
+    </span>
+  )
 }
 
 /** a row's extra button (Make home space): its own key, set at once */

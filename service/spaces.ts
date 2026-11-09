@@ -65,12 +65,14 @@ export async function newSpaceInfo(hub: Hub, machine: string | null, at: string 
  *  markers the holder may carry (SHEP-86, core/clean-env.js), then execs it: hc runs a template's command under sh -c,
  *  and where sh is dash (Debian, Ubuntu) the shell would stay the terminal's program, so no chat would know its CLI.
  *  words: the template's own words (its first message), when read. Unreadable: the template itself. */
-export async function execTemplate(hub: Hub, name: string, machine: string | null): Promise<{ name: string; words: string; done: () => void }> {
+export async function execTemplate(hub: Hub, name: string, machine: string | null, command?: string): Promise<{ name: string; words: string; done: () => void }> {
   const plain = { name, words: "", done: () => {} };
   const DIR = 'dir="$HOME/.config/herdr-core/templates"; ';
   const src = (await exec(hub, ["sh", "-c", DIR + 'cat "$dir/$1.md"', "x", name], machine).catch(() => null))?.stdout ?? "";
   const head = /^---\n([\s\S]*?)\n---\n?/.exec(src);
-  const cmd = /^command:[ \t]*(.+)$/m.exec(head?.[1] ?? "")?.[1]?.trim();
+  // command: a chosen agent's words (the web's saved pick for a space's first start, A2), as the window's chat writes its
+  // one-off with the chosen settings; else the template's own
+  const cmd = command?.trim() || /^command:[ \t]*(.+)$/m.exec(head?.[1] ?? "")?.[1]?.trim();
   if (!head || !cmd) return plain;
   const one = `herdr-${name}-${Date.now().toString(36)}`;
   const file = `---\nname: ${one}\ndescription: A one-off ${name} start that execs its command (Shepherdr's service), removed after use.\ncommand: ${cleanCommand(cmd)}\n---\n${src.slice(head[0].length)}`;
@@ -136,10 +138,13 @@ export async function newSpace(hub: Hub, opts: { machine: string | null; path: s
   // Settings › Window › Assistant in new spaces off: it opens without one
   if (opts.store.value("coordinator.auto") === false) return machine ? `${machine}/${id}` : id;
   const t = await execTemplate(hub, "assistant", machine);
-  // through launch admission (herdr-task launch run): Personal only, claimed, rechecked and recorded as sent, then hc
-  // run. A refused or failed start keeps the space, without its Assistant, and says why (opts.refused, and the log).
-  // SHEPHERDR_HERDR_TASK: a test's stand-in (as SHEPHERDR_HC for hc); unset, herdr-task on PATH as before.
-  const r = await run([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", "launch", "run", "--role", "coordinator", "--space", id, "--json", "--",
+  // through launch admission (herdr-task launch run): a new start (--new-start: the template word it runs), planned for
+  // its provider (on Azure Foundry the owner puts its own one-off template in that word's place), claimed, rechecked
+  // and recorded as sent, then hc run. A refused or failed start keeps the space, without its Assistant, and says why
+  // (opts.refused, and the log). SHEPHERDR_HERDR_TASK: a test's stand-in (as SHEPHERDR_HC for hc); unset, herdr-task
+  // on PATH as before.
+  const r = await run([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", "launch", "run", "--role", "coordinator", "--space", id,
+    "--new-start", t.name, "--source", "assistant", "--json", "--",
     "--bg", "--keep", "--no-parent", ...(machine ? ["--on", machine] : []), "--cwd", abs,
     "--label", "herdr.role=coordinator", "--label", `herdr.coordinator.space=${id}`, "--label", `herdr.space=${id}`, t.name]);
   t.done();

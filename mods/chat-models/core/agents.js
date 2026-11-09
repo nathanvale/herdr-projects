@@ -162,6 +162,29 @@ export function menuFor(agent, dflt, current = null) {
   return { name: NAMES.codex, perms: PERMS.codex, models: all };
 }
 
+// An Azure Foundry new-start selector's list for one CLI, in menuFor's shape so the model menu draws it: each deployment
+// Refresh found (service/azure-deployments.ts: its id is what is kept; its label says the model and version apart), and
+// the saved ones (keep) first when Refresh didn't find them. A deployment is never a model alias: effort levels come
+// only where its model is one this CLI's own catalogue knows (matched by the deployment's id or the model inventory
+// reports); an unknown one gets Default only. Fast isn't offered: what a deployment supports isn't known here.
+export function azureMenu(kind, options, keep, dflt) {
+  const base = menuFor(kind, dflt);
+  const known = (id) => (id ? base.models.find((m) => m.id === id || (kind === "claude" && CLAUDE_MODELS.find((c) => c.id === m.id)?.match.includes(id))) : null);
+  const row = (id, name, model) => ({ id, name, efforts: (known(id) ?? known(model))?.efforts ?? [], defaultEffort: null, fast: false, deployment: true });
+  const rows = (options ?? []).map((o) => row(o.value, o.label ?? o.value, o.model));
+  for (const id of [...(keep ?? [])].reverse()) if (id && !rows.some((r) => r.id === id)) rows.unshift(row(id, id, null));
+  return { name: NAMES[kind], perms: PERMS[kind], models: rows, azure: true };
+}
+
+// Whether a kept pick for an Assistant's new start ({ agent, model, azure }) still fits what the window chat offers now
+// (A2): its CLI must be offered; on Personal any model does, as before A2 (a model typed by id, or one the CLI no longer
+// lists, is kept and started on), except a pick made on Azure (marked azure: its model is a deployment); on Azure only a
+// deployment on the list. One that doesn't fit gives way to the defaults.
+export function pickFits(pick, menus, azure) {
+  if (!pick?.agent || !menus?.[pick.agent]) return false;
+  return azure ? menus[pick.agent].models.some((m) => m.id === pick.model) : !pick.azure;
+}
+
 // The levels a model typed by id gets: its agent's usual ones.
 export function typedModel(agent, id) {
   return { id, name: agent === "claude" ? modelName(id) : id, efforts: agent === "claude" ? CLAUDE_EFFORTS : ["low", "medium", "high", "xhigh"], defaultEffort: null, fast: false, typed: true };
@@ -383,6 +406,34 @@ export async function lostRefusal(kind, t, read, path = null) {
   if (inOtherFolder(kind, path) || argv.slice(0, agentAt(argv) + 1).some((a) => String(a).startsWith("CLAUDE_CONFIG_DIR="))) return OTHER_FOLDER;
   const pid = t?.state === "live" ? t.foreground?.pid : null;
   return pid && folderWord(await read(pid)) === "other" ? OTHER_FOLDER : null;
+}
+
+// An agent whose start recorded Azure Foundry (its terminal's herdr.provider label, set by herdr-task's launch owner):
+// a restart, a fork, a lost session's new start and revival can't carry its provider binding yet (the migration's L2),
+// so each refuses it rather than move its conversation to the CLI's own sign-in. Personal (no label) refuses nothing.
+export const PROVIDER_HELD = "It started on Azure Foundry, and restarting it here can't carry that yet, so its conversation would move to another provider. Nothing was restarted. Resume or switch a task's agent with herdr-task.";
+export function providerRefusal(t) {
+  const route = t?.labels?.["herdr.provider"];
+  return route && route !== "personal" ? PROVIDER_HELD : null;
+}
+
+// The same sites under a route that isn't Personal: they can't carry a plan (L2), so a new start there would run on the
+// CLI's own sign-in, the silent Personal fallback the contract forbids. `shown` is herdr-task's `provider show --json`
+// for the agent's role and space (its provider owner's answer); none (it couldn't say) refuses too.
+export const ROUTE_HELD = "Provider is Azure Foundry here, and starting it again here can't carry a launch plan yet, so it would start on the CLI's own sign-in. Nothing was started. Resume or switch a task's agent with herdr-task, or start a new Assistant chat.";
+export const ROUTE_UNKNOWN = "Which provider this space's settings set can't be read now, so it wasn't started again here. Nothing was started.";
+export function routeRefusal(shown) {
+  if (!shown || typeof shown.route !== "string") return ROUTE_UNKNOWN;
+  return shown.route === "personal" ? null : ROUTE_HELD;
+}
+// The words that ask herdr-task for that answer (`provider show`): an agent's role and space, from its labels, and the
+// folder it works in; on another machine (machine), that machine's herdr-task.
+export function routeArgs(t, machine = null) {
+  const l = t?.labels ?? {};
+  const space = l["herdr.task.space"] ?? l["herdr.space"] ?? l["herdr.coordinator.space"] ?? null;
+  const folder = t?.foreground?.cwd ?? t?.cwd ?? null;
+  return [...(machine ? ["--on", machine] : []), "provider", "show", "--role", l["herdr.task"] ? "worker" : "coordinator",
+    ...(space ? ["--space", String(space).split("/").pop()] : []), ...(folder ? ["--folder", folder] : []), "--json"];
 }
 
 // The conversation's id, from its log's file name; none for one nothing may continue (inOtherFolder).

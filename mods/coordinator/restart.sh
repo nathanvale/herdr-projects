@@ -23,12 +23,15 @@ cwd=$(get .cwd) app=$(get .status.app) pid=$(get .foreground.pid) created=$(get 
 [ -n "$tab" ] || tab=$(get '.labels["herdr.coordinator.tab"]')
 [ -n "$space" ] && [ -n "$tab" ] || [ -n "${HERDR_RESTART_CHAT:-}" ] || [ -n "$(get '.labels["herdr.chat"]')" ] || exit 1
 
-# Every start goes through launch admission (mods/tasks/bin/herdr_task/launch_admission.py): Personal only, an
-# earlier start of the same Assistant or tab still open refuses, and it is claimed, rechecked and recorded as sent
+# Every start goes through launch admission (mods/tasks/bin/herdr_task/launch_admission.py): Personal only (a
+# restart is L2's: it carries no Azure Foundry binding), an earlier start of the same Assistant or tab still open refuses, and it is claimed, rechecked and recorded as sent
 # before hc runs. Checked here first, before this script changes anything (the old agent's workers, its handoff).
 owner="$(cd "$(dirname "$0")/../tasks/bin" && pwd)/herdr-task"
 aspace=${space:-$(get '.labels["herdr.coordinator.space"]')}
 aspace=${aspace:-unplaced}
+# The route the old agent started on (herdr.provider, set by launch admission for a start that isn't Personal): a
+# restart can't carry a provider binding yet (L2), so launch admission refuses to replace one that started on Azure.
+oldroute=$(get '.labels["herdr.provider"]')
 if [ "$role" = coordinator ]; then
   admit=(--role coordinator --space "$aspace")
 else
@@ -37,6 +40,7 @@ else
   aslot=${aslot:-$tab}
   admit=(--role agent --space "$aspace" --slot "$aslot")
 fi
+[ -n "$oldroute" ] && admit+=(--replaced-route "$oldroute")
 # A Claude Code agent's own folder (its CLAUDE_CONFIG_DIR, read from its process as C1's rule reads it): where its
 # session log is, and carried into the agent this starts so a restart keeps its profile. Unreadable refuses here,
 # before any change. A start of another CLI (an argv naming it) carries none.

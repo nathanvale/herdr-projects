@@ -39,7 +39,8 @@ import { voiceCall, pageWhere, type ChatView } from "./voice.ts";
 import { voiceTool, type VoiceIO, type Where } from "./voice-tools.ts";
 import { Artifacts } from "./artifacts.ts";
 import { TaskLogs } from "./task-logs.ts";
-import { Settings, onWritten, PUSH, pushBody } from "./settings.ts";
+import { Settings, onWritten, PUSH, pushBody, STALE_INVENTORY } from "./settings.ts";
+import { assistantChoices, pickRevision, taskSelection, withPick } from "./selections.ts";
 import { Secrets, SecretsHome } from "./secrets.ts";
 import { Agents } from "./agents.ts";
 import { Machines } from "./machines.ts";
@@ -267,7 +268,9 @@ const jobs = new Jobs(hub, host);
 jobs.watched = () => live.watched();
 jobs.start();
 model.doc = () => store.doc.value;
-compat.shared = { value: (k) => model.value(k), set: (k, v) => store.set(k, v) };
+compat.shared = { value: (k) => model.value(k), set: (k, v) => store.set(k, v),
+  // one key changed inside the store's version-retried update: each retry gets the current document (A2's picks)
+  update: (k, change) => store.update((v) => { const n = change(v[k]); if (n === undefined) delete v[k]; else v[k] = n; return v; }) };
 store.on(() => model.rebuild());
 void store.load().catch(() => {});
 const snapshotOf = (b: Parameters<NonNullable<typeof model.onBuild>>[0]) => live.setSnapshot(alertNewAnd(compat.snapshot({
@@ -483,6 +486,93 @@ async function doAction(body: any): Promise<Response> {
     try { await setWindow(body.key, typeof body.value === "string" ? body.value : null, (k, v) => store.set(k, v)); return json({ ok: true }); }
     catch (err) { return json({ ok: false, error: (err as Error).message }); }
   }
+  if (body?.type === "azure-refresh" && (body.kind === "claude" || body.kind === "codex")) {
+    // Settings › Agents › Provider's Refresh: one CLI's deployments at a level, read with this machine's Azure CLI login
+    // (service/azure-deployments.ts). It selects and saves nothing; the rows show what it found, or a fixed repair line.
+    try {
+      const level = typeof body.place === "string" ? body.place : "all";
+      const sp = level !== "all" ? model.spaceById(level) : null;
+      if (level !== "all" && !sp) throw new Error("That space isn't here any more.");
+      const view = await settings.refreshDeployments(body.kind, level, sp ? { id: sp.id, name: sp.name, machine: sp.machine ?? null } : null);
+      model.rebuild();
+      return json({ ok: !view.warn, ...(view.warn ? { error: view.warn } : {}), view });
+    } catch (err) { return json({ ok: false, error: (err as Error).message }); }
+  }
+  if (body?.type === "azure-choices") {
+    // an Assistant's new start in a space (the window's chat; the web has no Assistant pick): what it can pick on Azure Foundry, and the
+    // revision a pick is bound to (herdr-task provider show)
+    try {
+      const sp = typeof body.place === "string" && body.place !== "all" ? model.spaceById(body.place) : null;
+      return json(await assistantChoices(settings, sp ? { id: sp.id, folder: sp.folder ?? null } : null, await compat.agents!.ownDefaults()));
+    } catch (err) { return json({ ok: false, error: (err as Error).message }); }
+  }
+  if ((body?.type === "model-menu" || body?.type === "assistant-pick") && typeof body.chat === "string" && body.chat.startsWith("p:")
+      && !compat.addrOf(body.chat)) {
+    // a space whose Assistant hasn't started (the web's model line): its new-start pick, save-only (A2). The menu lists
+    // each CLI's deployments on Azure Foundry (service/selections.ts), else its models; a save keeps the pick for this
+    // space with the revision of the routing it was made under (herdr-task provider show), which its first-message start
+    // carries (service/actions.ts) so a changed route refuses rather than reinterpret it. Nothing starts here.
+    try {
+      const space = body.chat.slice(2).replace(":", "/"), sp: any = (compat as any).spaceOf?.(space);
+      if (!sp) throw new Error("That space isn't here any more.");
+      if (!settings.choices) await readDefaults();
+      const view: any = await assistantChoices(settings, { id: sp.id, folder: sp.folder ?? null }, await compat.agents!.ownDefaults());
+      const azure = view.route === "azure-foundry";
+      const menus = azure ? view.menus : settings.choices?.menus ?? {};
+      const picks = model.value("assistant.picks") ?? {};
+      if (body.type === "assistant-pick") {
+        let rec: Record<string, unknown> | null = null;
+        if (body.pick !== null) {
+          const k = body.pick?.agent, word = (v: unknown) => (typeof v === "string" && /^[\w.\[\]-]{1,128}$/.test(v) ? v : null);
+          if (k !== "claude" && k !== "codex") throw new Error("Pick Claude Code or Codex.");
+          const chosen = word(body.pick.model);
+          if (azure && !chosen) throw new Error("Pick a deployment, or type its name.");
+          // what the menu showed must still hold: the routing its pick is bound to, and on Azure the list it came from
+          if (body.revision !== (view.clis?.[k]?.revision ?? "")) throw new Error("The provider settings changed since this menu was opened. Nothing was saved; open it again.");
+          if (azure && typeof body.inventory === "string" && body.inventory !== settings.discoveryFor(sp.id, k).revision) throw new Error(STALE_INVENTORY);
+          rec = { agent: k, model: chosen, effort: word(body.pick.effort), fast: !!body.pick.fast, perm: word(body.pick.perm),
+            ...(azure ? { deployment: SC.providerValue(`${k}_deployment`, chosen) } : {}), revision: view.clis?.[k]?.revision ?? "" };
+        }
+        // only this space's pick changes (save or reset), and only from the pick the menu showed (its pickRevision),
+        // inside the store's update so a concurrent save for another space or a newer one for this space isn't lost
+        const expected = typeof body.pickRevision === "string" ? body.pickRevision : "";
+        await store.update((v) => { v["assistant.picks"] = withPick(v["assistant.picks"] as any, sp.id, rec, expected); return v; });
+        return json({ ok: true });
+      }
+      const saved = picks[sp.id];
+      const first = Object.keys(menus)[0] ?? "claude";
+      const current = saved ? { agent: saved.agent, model: saved.model, effort: saved.effort, fast: !!saved.fast, perm: saved.perm }
+        : azure ? { agent: first, model: view.clis?.[first]?.deployment || null, effort: null, fast: false, perm: settings.choices?.permDefault?.[first] ?? null }
+        : settings.choices?.defaults ?? { agent: first, model: null, effort: null, fast: false, perm: null };
+      // each CLI's routing revision and (on Azure) its list's: a save sends them back, and a changed one is refused
+      const revision = Object.fromEntries(Object.entries(view.clis ?? {}).map(([k, c]: [string, any]) => [k, c.revision]));
+      const inventory = azure ? Object.fromEntries(["claude", "codex"].map((k) => [k, settings.discoveryFor(sp.id, k as "claude" | "codex").revision])) : null;
+      return json({ ok: true, menu: { current, menus, permDefault: settings.choices?.permDefault ?? {}, picks: (compat.agents as any).picks(), remote: null,
+        newStart: true, saved: !!saved, revision, pickRevision: pickRevision(saved), ...(inventory ? { inventory } : {}) } });
+    } catch (err) { return json({ ok: false, error: (err as Error).message }); }
+  }
+  if (body?.type === "task-select" && (typeof body.chat === "string" || (body.task && typeof body.task === "object"))) {
+    // a task's Model for its start (the web's row menu, by its chat; the window's Tasks panel, by its ref and folder):
+    // its save-only choice (herdr-task select), shown or saved with the revision it was shown at; saving starts nothing
+    // and keeps its holds
+    try {
+      const w = typeof body.chat === "string" ? compat.taskOf(body.chat.split("/")[0]) : null;
+      const b = body.task ?? {};
+      const t = w ?? (typeof b.ref === "string" && typeof b.folder === "string"
+        ? { ref: b.ref, folder: b.folder, machine: typeof b.machine === "string" && b.machine ? b.machine : null, space: typeof b.space === "string" && b.space ? b.space : null } : null);
+      if (!t) throw new Error("That task isn't here any more.");
+      const c = body.change && typeof body.change === "object" ? body.change : null;
+      const change = c ? { ...(c.default ? { default: true } : {}), ...(typeof c.agent === "string" ? { agent: c.agent } : {}),
+        ...(typeof c.deployment === "string" ? { deployment: c.deployment } : {}), ...(typeof c.model === "string" ? { model: c.model } : {}),
+        ...(typeof c.effort === "string" ? { effort: c.effort } : {}), ...(typeof c.inventory === "string" ? { inventory: c.inventory } : {}),
+        revision: typeof c.revision === "string" ? c.revision : "" } : null;
+      if (!settings.choices) await readDefaults();
+      const v: any = await taskSelection(settings, { ref: t.ref, folder: t.folder, machine: t.machine ?? null, space: t.space }, change,
+        await compat.agents!.ownDefaults());
+      // Personal: each CLI's own models (the window's model menu shows them); Azure: its deployments
+      return json({ ...v, menus: v.menus ?? settings.choices?.menus ?? {}, permDefault: settings.choices?.permDefault ?? {} });
+    } catch (err) { return json({ ok: false, error: (err as Error).message }); }
+  }
   if (body?.type === "setting" && typeof body.key === "string") {
     try {
       // a space's own: its name, machine and repo folder go with it (herdr-task finds a space's settings by folder)
@@ -503,7 +593,8 @@ async function doAction(body: any): Promise<Response> {
           exec(hub, ["git", "-C", folder || sp.folder || "~", "show-ref", "--verify", "--quiet", ref], sp.machine ?? null).catch(() => null)))).some((r) => r?.code === 0);
         if (!there) return json({ ok: false, error: SC.BASE.missing(want) });
       }
-      settings.set(body.key, value, level, sp ? { id: sp.id, name: sp.name, machine: sp.machine ?? null, folder } : null);
+      settings.set(body.key, value, level, sp ? { id: sp.id, name: sp.name, machine: sp.machine ?? null, folder } : null,
+        typeof body.inventory === "string" ? body.inventory : undefined);
       if (body.key.startsWith("autopilot.")) { await model.readAutopilot(); model.rebuild(); }
       return json({ ok: true });
     } catch (err) { return json({ ok: false, error: (err as Error).message }); }

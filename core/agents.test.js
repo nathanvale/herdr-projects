@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
-import { argvFor, current, line, menuFor, modelSections, parseDefaults, parsePicks, pickKey, withPin, withRecent } from "./agents.js";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { argvFor, azureMenu, pickFits, current, line, menuFor, modelSections, parseDefaults, parsePicks, pickKey, providerRefusal, ROUTE_HELD, ROUTE_UNKNOWN, routeArgs, routeRefusal, withPin, withRecent } from "./agents.js";
 
 const codex = { models: Array.from({ length: 250 }, (_, i) => ({ id: `gpt-${i}`, label: `GPT ${i}`, efforts: ["low", "high"] })) };
 const menus = { claude: menuFor("claude", {}), codex: menuFor("codex", codex) };
@@ -68,4 +70,66 @@ test("every agent with a fast mode shows the Fast switch, and turning it off sti
   expect(current("codex", on, {}, dflt).fast).toBe(true);
   const claudeOff = argvFor({ agent: "claude", model: "opus", fast: false }, { agent: "claude", argv: ["claude"] }).argv;
   expect(current("claude", claudeOff, {}, { fast: true }).fast).toBe(false);
+});
+
+// A2: the L2 sites' refusals and the words they ask herdr-task's provider owner with.
+test("restart, fork, a lost session and revival refuse anything but Personal", () => {
+  expect(routeRefusal({ route: "personal" })).toBe(null);
+  expect(routeRefusal({ route: "azure-foundry" })).toBe(ROUTE_HELD);
+  for (const shown of [null, {}, { route: 7 }]) expect(routeRefusal(shown)).toBe(ROUTE_UNKNOWN);
+  expect(providerRefusal({ labels: {} })).toBe(null);
+  expect(providerRefusal({ labels: { "herdr.provider": "personal" } })).toBe(null);
+  expect(providerRefusal({ labels: { "herdr.provider": "azure-foundry" } })).toContain("started on Azure Foundry");
+});
+
+test("the route is asked for the agent's role, space and folder, on its own machine", () => {
+  const task = { labels: { "herdr.task": "repo#4", "herdr.task.space": "sp1" }, cwd: "/w", foreground: { cwd: "/w/sub" } };
+  expect(routeArgs(task)).toEqual(["provider", "show", "--role", "worker", "--space", "sp1", "--folder", "/w/sub", "--json"]);
+  const assistant = { labels: { "herdr.coordinator.space": "vm1/sp2" }, cwd: "/r" };
+  expect(routeArgs(assistant, "vm1")).toEqual(["--on", "vm1", "provider", "show", "--role", "coordinator", "--space", "sp2", "--folder", "/r", "--json"]);
+  expect(routeArgs(null)).toEqual(["provider", "show", "--role", "coordinator", "--json"]);
+});
+
+test("an Azure list offers each deployment as found, the saved ones first, efforts only for a known model", () => {
+  const m = azureMenu("claude", [{ value: "opus-dep", label: "opus-dep · claude-opus-5-5 (1)", model: "claude-opus-5-5" },
+    { value: "house", label: "house · house-model", model: "house-model" }], ["saved", "opus-dep"], {});
+  expect(m.models.map((x) => x.id)).toEqual(["saved", "opus-dep", "house"]);
+  expect(m.models.find((x) => x.id === "opus-dep").efforts.length).toBeGreaterThan(0);
+  expect(m.models.find((x) => x.id === "house").efforts).toEqual([]);
+  expect(m.models.every((x) => x.fast === false && x.deployment === true)).toBe(true);
+  expect(m.azure).toBe(true);
+});
+
+// A2 must not change Personal: a kept or chosen Assistant pick keeps its model, typed by id or no longer listed.
+test("a Personal pick keeps any model; only one made on Azure, or off the Azure list, gives way", () => {
+  const personal = { claude: menuFor("claude", {}) };
+  expect(pickFits({ agent: "claude", model: "claude-opus-4-1" }, personal, false)).toBe(true);
+  expect(pickFits({ agent: "claude", model: "opus", effort: "high" }, personal, false)).toBe(true);
+  expect(pickFits({ agent: "claude", model: null }, personal, false)).toBe(true);
+  expect(pickFits({ agent: "codex", model: "gpt-5" }, personal, false)).toBe(false);
+  expect(pickFits({ agent: "claude", model: "opus-dep", azure: true }, personal, false)).toBe(false);
+  const az = { claude: azureMenu("claude", [{ value: "opus-dep", label: "opus-dep", model: "claude-opus-5-5" }], [], {}) };
+  expect(pickFits({ agent: "claude", model: "opus-dep", azure: true }, az, true)).toBe(true);
+  expect(pickFits({ agent: "claude", model: "opus" }, az, true)).toBe(false);
+});
+
+// A2: the window's Provider rows (mods/shepherdr-settings/provider-section.js, run only inside the window, so read as
+// source as the chat's checks are): a write is bound to the level it was entered at, and a pick from Refresh's list is
+// checked again against the reloaded file inside the write.
+test("the window's Provider write keeps its level and rechecks a listed pick inside the write", () => {
+  const src = readFileSync(join(import.meta.dir, "..", "mods", "shepherdr-settings", "provider-section.js"), "utf8");
+  const save = src.slice(src.indexOf("function save("), src.indexOf("// Refresh: this machine's service"));
+  expect(save.indexOf("const scope = view.scope ?? null")).toBeGreaterThan(-1);
+  expect(save.indexOf("const scope = view.scope ?? null")).toBeLessThan(save.indexOf("view.change("));
+  expect(save).toContain("view.target(next, scope)");
+  expect(save).toContain("view.layerOf(next, scope)");
+  expect(save).not.toContain("view.set(");
+  expect(save.indexOf("configOf(view, scope) !== expect")).toBeGreaterThan(save.indexOf("view.change("));
+  expect(src).toContain("save(view, p, row.field, value, cx, f.config)");
+  // a refused stale pick changes nothing: its edit says so, and the window's apply then writes and pushes nothing
+  expect(save).toContain("p.err[field] = STALE; return false;");
+  const main = readFileSync(join(import.meta.dir, "..", "mods", "shepherdr-settings", "main.js"), "utf8");
+  const apply = main.slice(main.indexOf("  async apply(edit) {"), main.indexOf("  // The object a scope writes to"));
+  expect(apply.indexOf("if (edit(next) === false) return true;")).toBeGreaterThan(-1);
+  expect(apply.indexOf("if (edit(next) === false) return true;")).toBeLessThan(apply.indexOf("writeTextFile("));
 });

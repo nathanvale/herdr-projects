@@ -1853,10 +1853,11 @@ class CleanEnv(unittest.TestCase):
 
         real_admit = LA.admit_launch
 
-        def admit(s, argv, space=None, d=None):
+        def admit(s, argv, space=None, d=None, *rest, **kw):
             # The fork's provider gate (A1) runs first, for real, from launch admission (L1): with no settings, Personal passes.
+            # (A2 adds the start's role, chosen deployment, recorded binding and name: passed on as they come.)
             admitted.append((argv, space))
-            return real_admit(s, argv, space, d)
+            return real_admit(s, argv, space, d, *rest, **kw)
         none = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, none, True)
         # loc: the folder A1's gate reads its settings for (a store always has one).
@@ -1867,7 +1868,7 @@ class CleanEnv(unittest.TestCase):
                 mock.patch.object(LA, "STORE", none), mock.patch.object(L, "folder_for", lambda s, t: "/tmp"), \
                 mock.patch.object(L, "agent_name", lambda *a: "dev-6-fake"), mock.patch.object(L, "track", lambda *a: None), \
                 mock.patch.object(L, "coordinator_tab", lambda a: None), mock.patch.object(L, "own_argv", lambda a: a), \
-                mock.patch.object(L, "in_shell", lambda a, config_dir=None: a), mock.patch.object(L, "low_priority", lambda a, n: a), \
+                mock.patch.object(L, "in_shell", lambda a, config_dir=None, env=None, need=None: a), mock.patch.object(L, "low_priority", lambda a, n: a), \
                 mock.patch.object(LA, "admit_launch", admit), \
                 mock.patch.object(settings, "SETTINGS", os.path.join(none, "shepherdr.json")):
             L.launch(s, task, ["env"], "sp1")

@@ -877,6 +877,131 @@ def cmd_edit(args):
     say(args, {**v, "rename": left}, f"{s.ref(t)} saved" + (f": {v['why']}." if v["status"] == "scheduled" else "."))
 
 
+# ---- a task's save-only new-start selection (A2) -------------------------------------------------
+# The CLI, Azure deployment and effort a task's first agent starts on, saved before it starts. Saving starts nothing,
+# sends no prompt and changes no hold, queue place, schedule, dependency or state. Once the task has a recorded agent
+# (a running, waiting or stopped conversation) its selection is locked: that conversation keeps its binding.
+
+def selection_of(s, t, space):
+    """What `select` shows for task t: its own choice, whether it can still change, the route its CLIs would run on,
+    and the revision a save must quote (its choice, a save counter, its recorded agents and the routing in force)."""
+    from .providers import binding_for, KINDS, selection_revision, selection_view
+    binding = binding_for(s, space)
+    shown = selection_view(binding, "worker")
+    locked = bool(t.get("agents") or t.get("reviewers")) or t["state"] not in ("todo", "queued", "scheduled")
+    rev = hashlib_digest({"agent": t.get("agent"), "deployment": t.get("deployment"), "model": t.get("model"), "effort": t.get("effort"),
+                          "saves": t.get("select_rev") or 0, "agents": len(t.get("agents") or []),
+                          "routing": {k: selection_revision(binding, k) for k in KINDS}})
+    # What the task follows without a choice of its own: Settings' Workers CLI here (Claude Code when unset).
+    inherit = {"agent": (settings_for(s, space).get("worker") or {}).get("agent") or "claude"}
+    return {"id": t["id"], "ref": s.ref(t), "state": t["state"], "locked": locked, "route": shown["route"], "inherit": inherit,
+            "selection": {"agent": t.get("agent"), "deployment": t.get("deployment"), "model": t.get("model"), "effort": t.get("effort")},
+            "clis": shown["clis"], "revision": rev}
+
+
+def hashlib_digest(parts):
+    import hashlib
+    return hashlib.sha256(json.dumps(parts, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
+
+
+SELECT_LOCKED = ("{} has a recorded conversation (or has started), so its choice is locked: resuming it keeps the "
+                 "provider, deployment and effort it started on. Nothing was changed. Start a new conversation with "
+                 "`herdr-task switch {} --fresh` to use another.")
+SELECT_STALE = ("{}'s choice or its provider settings changed since this selector was opened (revision {}), so this "
+                "save would replace something you didn't see. Nothing was changed; open it again.")
+
+
+def cmd_select(args):
+    """`select`: show or save a task's new-start choice. Without a change it only shows (inspect). A change needs the
+    revision shown (--revision), and saves only the choice itself."""
+    from .launch_admission import open_start, task_identity
+    from .providers import binding_for, clean, selection_revision
+    from .settings import EFFORTS
+    change = args.default or any(v is not None for v in (args.agent, args.deployment, args.model, args.effort))
+    with open_store(args) as s:
+        t = s.find(args.id)
+        # Its space's settings when it has one (a queued or scheduled task keeps it in its plan, where its start reads
+        # it), else the folder's own layers: an inspect and a save need no terminal.
+        space = bare(args.space) if args.space else (t.get("space") or (t.get("queue") or {}).get("space") or None)
+        cur = selection_of(s, t, space)
+        if not change:
+            v = cur
+        else:
+            if args.revision != cur["revision"]:
+                raise Fail(SELECT_STALE.format(s.ref(t), args.revision or "none"))
+            if cur["locked"]:
+                raise Fail(SELECT_LOCKED.format(s.ref(t), s.ref(t)))
+            # A start of it that is still open (claimed or maybe sent) is a conversation in the making: locked too.
+            open_start(task_identity(s, t), s.ref(t), t)
+            if args.default:
+                for k in ("agent", "deployment", "model", "effort", "selection_routing"):
+                    t.pop(k, None)
+            else:
+                agent = args.agent if args.agent is not None else t.get("agent")
+                # An effort alone can follow the configured CLI; a deployment or model belongs to one CLI.
+                if agent not in ("claude", "codex") and (agent is not None or args.deployment or args.model):
+                    raise Fail("Choose the CLI it starts on: --agent claude or --agent codex.")
+                if args.agent is not None and t.get("agent") and args.agent != t["agent"]:
+                    # Another CLI than the task's own: that CLI's deployment, model and effort don't carry over. (A task
+                    # with no CLI of its own keeps an effort saved alone.)
+                    for k in ("deployment", "model", "effort"):
+                        t.pop(k, None)
+                if agent:
+                    t["agent"] = agent
+                if args.deployment is not None:
+                    dep = clean(f"{agent}_deployment", args.deployment)
+                    if dep and cur["route"] != "azure-foundry":
+                        # A deployment means nothing on Personal: kept, it would be ignored now and refused later.
+                        raise Fail("A deployment is chosen on Azure Foundry only, and Provider is Personal here. Nothing was "
+                                   "changed; choose the CLI and effort, or set Provider to Azure Foundry first.")
+                    if dep:
+                        t["deployment"] = dep
+                    else:
+                        t.pop("deployment", None)
+                if args.model is not None:
+                    m = args.model.strip()
+                    if m and m.lower() != "default" and cur["route"] == "azure-foundry":
+                        raise Fail("On Azure Foundry the deployment is the model: choose --deployment instead. Nothing was changed.")
+                    if not m or m.lower() == "default":
+                        t.pop("model", None)
+                    elif not re.fullmatch(r"[\w.\[\]:-]{1,128}", m):
+                        raise Fail("A model is its id or alias (letters, digits, dots, dashes, underscores and brackets).")
+                    else:
+                        t["model"] = m
+                if args.effort is not None:
+                    e = args.effort.strip().lower()
+                    if e in ("", "default"):
+                        t.pop("effort", None)
+                    elif e not in EFFORTS:
+                        raise Fail(f"effort is one of {', '.join(sorted(EFFORTS))} (or default).")
+                    else:
+                        t["effort"] = e
+                # A deployment or a model is bound to the routing it was chosen under: under another one its start
+                # refuses (launch_admission), never reinterpreted. Only a save that chooses one (its CLI, deployment or
+                # model) binds anew; one that changes the effort alone keeps the older binding, so it still refuses.
+                if not (agent and (t.get("deployment") or t.get("model"))):
+                    t.pop("selection_routing", None)
+                elif args.agent is not None or args.deployment is not None or args.model is not None or "selection_routing" not in t:
+                    t["selection_routing"] = selection_revision(binding_for(s, space), agent)
+            t["select_rev"] = (t.get("select_rev") or 0) + 1
+            t["pick_at"] = now()
+            q = t.get("queue") or {}
+            if q.get("argv") and not q.get("custom"):
+                # Its place in the queue stays; only what it starts with follows the choice.
+                q["argv"] = worker_argv(s, t, q.get("space"))
+            s.dirty = True
+            v = selection_of(s, t, space)
+    sel = v["selection"]
+    words = (f"{v['ref']}: " + ("locked, its recorded conversation keeps its binding. " if v["locked"] else "")
+             + (f"{sel['agent']}" if sel["agent"] else "the configured defaults")
+             + (f", deployment {sel['deployment']}" if sel.get("deployment") else "")
+             + (f", model {sel['model']}" if sel.get("model") else "")
+             + (f", effort {sel['effort']}" if sel.get("effort") else "")
+             + (". Saved for its first start; nothing was started." if change else ".")
+             + f" Revision {v['revision']}.")
+    say(args, v, words)
+
+
 def cmd_config(args):
     with open_store(args) as s:
         cfg = s.data.setdefault("config", {})
@@ -915,23 +1040,36 @@ def last_agent(t):
     return t["agents"][-1] if t["agents"] else None
 
 
-def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None):
+def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None, fresh=False, restart=False):
     """Starts an agent for the task: the last agent's own session when it's the same kind of agent
-    and the session is known; else a fresh one with a handoff. `message` goes after either."""
+    and the session is known (unless fresh: a new conversation with a handoff); else a fresh one
+    with a handoff. `message` goes after either. A resumed session keeps the provider binding its
+    conversation recorded (providers.plan_of_record): today's defaults never reroute it, and
+    changed routing refuses here, before anything changes. restart: a model menu's Restart or
+    Switch agent (the window's or the web's), which can't carry a binding yet (L2): only Personal,
+    for the agent it replaces and for what it starts."""
+    from .providers import PERSONAL, PERSONAL_RECORD, RESTART_HELD
     prev = last_agent(t)
+    if restart and ((prev or {}).get("provider") or PERSONAL_RECORD)["route"] != PERSONAL:
+        raise Fail(RESTART_HELD.format("this task's agent started on Azure Foundry: restarting it Personal would move its "
+                                       "conversation to another provider"))
     # The last agent's argv again, unless the task's agent, model or effort changed since (edit).
     keep = prev and prev.get("argv") and (t.get("pick_at") or 0) <= (prev.get("at") or 0)
     argv = agent_argv(None, argv_json) if argv_json else worker_argv(s, t, space, key) if key else \
         (prev["argv"] if keep else worker_argv(s, t, space))
     fixed = bool(argv_json) or (not key and bool(keep))
-    # Before anything changes: launch admission (its provider route, an open earlier start, its
-    # Assistant) refuses here.
+    same = prev and agent_key(argv) == prev.get("agent")
+    resuming = bool(same and prev.get("session") and not fresh)
+    # Before anything changes: launch admission (its plan, from the recorded binding when it resumes; an open earlier
+    # start; its Assistant) refuses here.
     adm = admit_task(s, t, argv, space, parent or (prev or {}).get("parent"),
-                     select=None if fixed else (lambda: worker_argv(s, t, space, key)), prev=prev)
+                     select=None if fixed else (lambda: worker_argv(s, t, space, key)), prev=prev,
+                     bound=(prev.get("provider") or PERSONAL_RECORD) if resuming else None)
+    if restart and adm.plan["route"] != PERSONAL:
+        raise Fail(RESTART_HELD.format("Provider is Azure Foundry here"))
     unarchive(s, t)
     parent = adm.parent
-    same = prev and agent_key(argv) == prev.get("agent")
-    res = resume_argv(argv, prev["session"]) if same and prev.get("session") else None
+    res = resume_argv(argv, prev["session"]) if resuming else None
     with adm.claimed():
         if res:
             return launch(s, t, argv, space, message, parent=parent, resume=res, admission=adm), True
@@ -952,7 +1090,7 @@ def cmd_resume(args):
         if t["state"] == "done":
             t["state"] = "running"
         back_to_work(s, t, "resumed")
-        a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent)
+        a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=getattr(args, "fresh", False))
         v = view(s, t)
     say(args, {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed},
         f"{s.ref(t)} {'resumed its session' if resumed else 'started with a handoff'}: {a['address']}")
@@ -972,7 +1110,8 @@ def cmd_switch(args):
             t.setdefault("started", now())
             t.pop("queue", None)
             t.pop("scheduled_for", None)
-        a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent)
+        a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=getattr(args, "fresh", False),
+                                 restart=getattr(args, "restart", False))
         v = view(s, t)
     ended = []
     if old and not args.keep:

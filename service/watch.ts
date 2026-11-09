@@ -18,11 +18,21 @@ import { sh } from "./model.ts";
 
 const { ScreenWatch, starting, cliOf, readScreen, screenText, pressKeys, SCREEN } = SC as any;
 const { LOST, lostMessage, shellWord, WORDS, sessionStarted, sessionFailed } = CV as any;
-const { freshArgv, lostRefusal } = AG as any;
+const { freshArgv, lostRefusal, providerRefusal, routeRefusal, routeArgs } = AG as any;
 const APP = process.env.HERDR_APP_HOME || join(HOME, ".config", "herdr-app");
 type Run = (args: string[]) => Promise<{ code: number; stdout: string; stderr?: string }>;
 /** an agent to watch: its address, and its task's id when it is a task's worker */
 export type Watched = { addr: string; ref?: string | null };
+
+/** herdr-task's provider owner on the route an agent's role and space have now (`provider show --json`), or null when it
+ *  can't say. SHEPHERDR_HERDR_TASK: a test's stand-in, as service/spaces.ts. */
+async function routeOf(args: string[]) {
+  try {
+    const p = Bun.spawn([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", ...args], { stdout: "pipe", stderr: "ignore", stdin: "ignore" });
+    const [out, code] = await Promise.all([new Response(p.stdout).text(), p.exited]);
+    return code === 0 ? JSON.parse(out) : null;
+  } catch { return null; }
+}
 
 export class AgentWatch {
   /** the service's own start-screen cards, by agent */
@@ -99,10 +109,16 @@ export class AgentWatch {
     if (done() || (now?.state === "live" && cliOf(now))) return;
     this.note(addr, WORDS.sessionGone);
     try {
-      // fresh drops what its launch set, and a new start carries no CLAUDE_CONFIG_DIR (core/agents.js)
+      // an agent that started on Azure Foundry, or a route here that isn't Personal: a new start here can't carry a
+      // binding or a plan (L2, core/agents.js), so it is refused, asked of herdr-task's provider owner
+      const held = providerRefusal(t);
+      if (held) throw new Error(held);
       const machine = addr.includes("/") ? addr.split("/")[0] : null;
+      // fresh drops what its launch set, and a new start carries no CLAUDE_CONFIG_DIR (core/agents.js)
       const why = await lostRefusal(kind, t, (pid: number) => sh(this.hub, FOLDER, ["folder", String(pid)], machine).then((r: any) => r.stdout, () => ""));
       if (why) throw new Error(why);
+      const off = routeRefusal(await routeOf(routeArgs(t, machine)));
+      if (off) throw new Error(off);
       const named = /^([a-z][a-z0-9]*)-(\d+)(?:-|$)/.exec(t.name ?? "");
       const ref = w.ref ?? (t.labels?.["herdr.task"] && named ? `${named[1].toUpperCase()}-${named[2]}` : null);
       const tplFile = join(HOME, ".config", "herdr-core", "templates", "assistant.md");

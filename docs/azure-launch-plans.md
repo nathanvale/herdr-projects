@@ -12,37 +12,32 @@ historical document.
 
 ## What works now, and what is held
 
-| Behavior | State in A1 |
+Since A2 ([Azure selectors and bound starts](azure-selectors.md)) a valid plan is dispatched where its
+start records it. This table says where each start stands now.
+
+| Behavior | State |
 | --- | --- |
 | Personal (the default) | Unchanged. No provider setting, or `route: personal`, adds nothing to a launch. |
-| `herdr-task provider plan` | Shows the plan for one CLI. Reads no credential, starts nothing, runs no `hc`. |
-| Start, queue, resume, switch or backup under an Azure binding | Refused before any worktree, task state or terminal effect. |
-| The scheduler's tick, for a task queued earlier | Not started. The task stays queued and says "Couldn't start" with the reason. |
-| An automation's run | Its task is added, as for any automation start that fails, and says "Couldn't start". It is not queued or started. |
-| A valid Azure plan | Held: `dispatch: "held"`. Launch admission (L1) checks it before every start; bound resume (A2, L2) is pending. |
-| Discovery | A module with regressions. No Settings control calls it yet (A2). |
-| Assistants (coordinators) | Since L1, refused before any effect unless Personal ([launch admission](launch-admission.md)). |
+| `herdr-task provider plan` / `provider show` | Show the plan for one CLI, or what a selector shows. Read no credential, start nothing, run no `hc`. |
+| A task's start, queue, the tick's queue, an automation's run, a backup | Planned on today's settings (the task's own choice wins for its CLI) and its binding recorded (A2). |
+| Resume or switch of a recorded conversation | Planned from its recorded binding; changed routing refuses before any effect (A2). |
+| An Assistant's new start (window chat, New space, first message) | Planned through `launch run --new-start` with an owner-written one-off template (A2). |
+| Restart, Switch agent, fork, a lost session's new start, revival | Personal only (L2). Each refuses an Azure route or an Azure-started agent with its reason. |
+| An unsupported or incomplete Azure plan | Refused before any worktree, task state or terminal effect. |
+| Discovery | Settings' Refresh for both CLIs (A2), through the service. |
 
-Azure dispatch stays off on purpose. A launch record does not yet carry its binding, so a resume
-would follow today's settings and could reroute an existing conversation.
+### A2 prerequisite: coordinator launch sites (met)
 
-### A2 prerequisite: coordinator launches
-
-Assistant (coordinator) starts and restarts do not go through `herdr-task`'s launch owner. They
+Assistant (coordinator) starts and restarts do not go through `herdr-task`'s task launch owner. They
 start from `service/actions.ts`, `service/spaces.ts`, `service/agents.ts`, `mods/chat/main.js` and
-`mods/coordinator/restart.sh`, and none of them reads the provider binding. With a hand-written
-Azure route they would start on the CLI's own sign-in, which the contract forbids as a silent
-Personal fallback.
+`mods/coordinator/restart.sh`. A1 recorded that no Settings control may set an Azure route until each
+of those refuses or plans through the provider owner.
 
-A1 gives no supported way to set the route, so this is recorded and not widened here. It is a hard
-prerequisite for A2: no Settings control, command or selector may set an Azure route until every
-one of those launch sites refuses or plans through the provider owner, with public proof.
-
-L1 makes the refusing half true in source: all five sites now start through `herdr-task launch
-run`, which admits only Personal for an Assistant or a tab agent (here or on another machine), and
-refuses a settings file it can't read. Planning an Assistant's Azure start through the provider
-owner stays A2's. The process proof is in `test/test_launch_admission.py` and
-`service/launch-sites.test.ts`; the chat mod's own start is source-inspected only.
+L1 made all five start through `herdr-task launch run`. Since A2 its three new-start sites plan
+through the provider owner (`--new-start`), and the restart sites (`restart.sh`, reached from the
+window, `service/actions.ts`, `service/agents.ts` and `service/watch.ts`) admit Personal only. The
+process proof is in `test/test_launch_admission.py` and `service/launch-sites.test.ts`; the chat
+mod's own start is source-inspected only.
 
 ## The binding
 
@@ -69,13 +64,14 @@ holds on every route, Personal included, because settings are copied between mac
 Azure setup under `route: personal` is fine: field values are checked only when a plan needs them.
 
 `herdr-task` has no command that writes this section: provider connection stays a human Settings
-control (A2 adds the controls).
+control (Settings › Agents › Provider, since A2). A2 adds four role deployments
+(`worker_claude_deployment`, `worker_codex_deployment`, `coordinator_claude_deployment`,
+`coordinator_codex_deployment`), each following its CLI's deployment when left out or empty.
 
 A copy that the settings window or the service pushed to another machine (marked `pushed_from`)
 refuses an Azure route.
 That is not a full local-only guard. Serve-from sync writes the host machine's file as its own,
-without that mark, so the same route would read as local there. Nothing dispatches in A1, so
-there is no effect yet. Since L1 every start records its execution machine, and an Assistant's
+without that mark, so the same route would read as local there. Since L1 every start records its execution machine, and an Assistant's
 start on another machine (`hc run --on`) refuses any route but Personal, and a Serve-from client's
 copy refuses Azure too: its herdr-core node record says another machine serves
 ([launch admission](launch-admission.md)).
@@ -167,9 +163,10 @@ planner adds no value to argv, settings, labels, task records or output. An argv
 plan's credential variable itself is refused (above); an inactive credential variable written
 there is blanked. The planner does not scan a person's own argv for other secrets.
 
-The environment-presence preflight from 2.x is not ported. L1's admission holds every Azure start
-before it could matter, so it moves with the first Azure dispatch (A2, L2). Presence would not prove
-sign-in anyway.
+The environment-presence preflight from 2.x moved with the first Azure dispatch (A2): the agent's
+own shell checks that the plan's credential variable is set and not empty before the CLI starts,
+and names it when it isn't. That runs after the terminal exists, because herdr-task's environment
+is not the terminal's. Presence does not prove sign-in.
 
 ## Discovery
 
@@ -194,20 +191,14 @@ An inventory does not prove account identity, inference access, tool support or 
 
 ## Still pending
 
-- A2: coordinator launch sites gated first (the prerequisite above), then Settings controls,
-  per-role deployments, new-start selectors, and wiring discovery to Refresh and to
-  configuration changes.
-- L1 (source, CI pending): one dispatch authority, the execution machine recorded, and durable
-  uncertainty ([launch admission](launch-admission.md)). Credential-presence preflight moves with
-  the first Azure dispatch.
-- A2 and L2: recording a launch's binding and enforcing it on resume and revive.
+- L2: native revive, watch and manual restart carrying a recorded binding (they refuse Azure now).
 - Q: CI on the exact candidate, native qualification of each sign-in route, and public-process
-  proof of the backup's gate (in-module only today).
+  proof of the backup's gate beyond its in-module case.
 
 Known limits of this slice:
 
 - The `fable` alias is not pinned for Claude Code.
-- Revive retypes a recorded argv without consulting the binding. No Azure agent can exist yet.
+- Revive holds an agent whose start recorded Azure (its `herdr.provider` label) instead of retyping it (A2).
 - Discovery assumes the service's computer is the local execution host. The `az` it runs is the
   one on the service's `PATH`; there is no setting or variable that chooses another.
 - Since L1, one start is preflighted once and rechecked when it is claimed and when it is sent

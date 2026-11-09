@@ -216,6 +216,13 @@ def worker_pick(s, task, space=None, agent=None):
     return pick
 
 
+def task_deployment(task, kind):
+    """The Azure deployment a task's own save-only selection chose for its first start (herdr-task select), when the
+    start's CLI is the one chosen with it; else None (the role's deployment applies)."""
+    dep = task.get("deployment")
+    return dep if dep and task.get("agent") == kind else None
+
+
 def worker_argv(s, task, space=None, agent=None):
     """A task's agent when nobody gave an argv: worker_pick's."""
     pick = worker_pick(s, task, space, agent)

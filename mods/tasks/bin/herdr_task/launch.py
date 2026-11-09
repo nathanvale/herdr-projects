@@ -212,23 +212,50 @@ def clean_env(argv):
     return ["sh", "-c", CLEAN_ENV + ' exec "$@"', "herdr-clean", *argv]
 
 
-def in_shell(argv, config_dir=None):
+# An Azure plan's credential variable must be in the agent's own environment before its CLI starts: otherwise the CLI
+# would sign in another way (Claude Code's Foundry route falls to the Azure SDK chain, Codex to its own sign-in). Only
+# whether it is there and not empty is looked at, in the agent's shell, never its value; that isn't a sign-in check.
+NO_CREDENTIAL = ("Azure Foundry needs {} in this machine's environment for this agent, and it isn't set here, so the "
+                 "agent wasn't started. Set it where this machine's terminals get their environment, then resume the task.")
+
+
+def provider_words(env=None, need=None):
+    """(before, after) POSIX shell words around the agent's command: before exports a plan's nonsecret variables
+    (names fixed by the planner, values "" or plain) and, with its credential variable `need`, runs the command only
+    when that is set and not empty (else says so); after closes that."""
+    out = "".join(f"export {k}={shlex.quote(v)}; " for k, v in (env or {}).items() if re.fullmatch(r"[A-Z][A-Z0-9_]*", k))
+    if need and re.fullmatch(r"[A-Z][A-Z0-9_]*", need):
+        return out + f'if [ -z "${{{need}:-}}" ]; then printf "%s\\n" {shlex.quote(NO_CREDENTIAL.format(need))} >&2; else ', "fi; "
+    return out, ""
+
+
+def in_shell(argv, config_dir=None, env=None, need=None):
     """Runs the agent in the person's interactive shell, as Herdr does: their functions and
     aliases apply (claude() adding flags), and the shell stays when the agent exits. config_dir:
     a Claude Code folder exported in that shell after its startup files, so they can't change it
-    and a claude() function still runs (launch_admission.config_dir_for)."""
+    and a claude() function still runs (launch_admission.config_dir_for). env, need: an Azure
+    plan's nonsecret variables, exported there the same way, and the credential variable that must
+    be set for the agent to start (provider_words): missing, it says so and the shell stays."""
     sh = os.environ.get("SHELL") or "/bin/sh"
     name = os.path.basename(sh)
     flag = "-lic" if sys.platform == "darwin" else "-ic"
+    words, tail = provider_words(env, need)
     if name in ("bash", "zsh", "sh", "ksh", "dash"):
         if config_dir:
-            return [sh, flag, 'export CLAUDE_CONFIG_DIR="$1"; shift; "$@"; exec "$0" -i', sh, config_dir] + argv
-        return [sh, flag, '"$@"; exec "$0" -i', sh] + argv
+            return [sh, flag, f'export CLAUDE_CONFIG_DIR="$1"; shift; {words}"$@"; {tail}exec "$0" -i', sh, config_dir] + argv
+        return [sh, flag, f'{words}"$@"; {tail}exec "$0" -i', sh] + argv
     if name == "fish":
         own = f"set -gx CLAUDE_CONFIG_DIR {shlex.quote(config_dir)}; " if config_dir else ""
-        return [sh, flag, own + " ".join(shlex.quote(a) for a in argv) + "; exec fish -i"]
-    # Another shell isn't run: no function to keep, so env sets it.
-    return ["env", f"CLAUDE_CONFIG_DIR={config_dir}", *argv] if config_dir else argv
+        own += "".join(f"set -gx {k} {shlex.quote(v)}; " for k, v in (env or {}).items() if re.fullmatch(r"[A-Z][A-Z0-9_]*", k))
+        run_it = " ".join(shlex.quote(a) for a in argv)
+        if need and re.fullmatch(r"[A-Z][A-Z0-9_]*", need):
+            run_it = f'if test -n "${need}"; {run_it}; else; echo {shlex.quote(NO_CREDENTIAL.format(need))} >&2; end'
+        return [sh, flag, own + run_it + "; exec fish -i"]
+    # Another shell isn't run: no function to keep, so env sets it (and sh checks the credential).
+    pre = ["env", *([f"CLAUDE_CONFIG_DIR={config_dir}"] if config_dir else []), *[f"{k}={v}" for k, v in (env or {}).items()]]
+    if words:
+        return ["sh", "-c", f'{words}exec "$@"; {tail}exit 1', "herdr-azure", *(pre if len(pre) > 1 else []), *argv]
+    return [*pre, *argv] if len(pre) > 1 else argv
 
 
 # ---- workers run at low priority (HERD-61) ---------------------------------------------------
@@ -595,14 +622,24 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
         adm = admit_task(s, task, argv, space, parent, role=role, resolve_parent=False)
         with adm.claimed():
             return launch(s, task, argv, space, message, parent, resume, role, adm)
+    from .providers import compose, PERSONAL, recorded
     key = s.key(task)
     cmd = list(resume or argv)
     if not role:
         cmd = own_argv(cmd)
+    # The admitted plan (providers.py): Personal adds nothing; Azure Foundry routes the argv and names the nonsecret
+    # variables its shell exports. A resume's plan is its recorded binding's, never today's defaults.
+    plan = getattr(admission, "plan", None) or {"route": PERSONAL}
+    penv = {}
+    if plan["route"] != PERSONAL:
+        cmd, penv = compose(plan, cmd)
     if message:
         cmd = cmd + [message]
     labels = ["--label", f"herdr.task={key}", "--label", f"herdr.task.space={bare(space)}",
               "--label", f"herdr.agent={agent_key(argv)}"]
+    if plan["route"] != PERSONAL:
+        # Nonsecret: which route it started on, so a restart or revival that can't carry it (L2) refuses it.
+        labels += ["--label", f"herdr.provider={plan['route']}"]
     ctab = coordinator_tab(parent)
     if ctab:
         labels += ["--label", f"herdr.coordinator={ctab}"]
@@ -619,13 +656,16 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
         a["parent"] = parent
     if admission.config_dir:
         a["config_dir"] = admission.config_dir
+    if plan["route"] != PERSONAL:
+        # What its conversation is bound to: a resume plans from this, never from today's defaults (providers.py).
+        a["provider"] = recorded(plan)
     # The journal keeps this record too: a reconcile after a lost reply or a crash puts it on the task.
     # made: what this start set up before sending (worktree, branch, base, start commit, mode), which a
     # reconcile restores when the start's own task list was never saved.
     made = {k: task[k] for k in ("mode", "worktree", "branch", "base", "start") if task.get(k) not in (None, "")}
     job = {"folder": s.loc["folder"], "id": task["id"], "space": bare(space), "role": role, "agent": dict(a), "made": made}
     out = admission.submit(["run", "--bg", "--json", "--keep", "--cwd", folder, "--name", name, *labels, *rel, "--",
-                            *low_priority(clean_env(["env", f"HERDR_BROWSER_TASK={key}", *in_shell(cmd, admission.config_dir)]), name)],
+                            *low_priority(clean_env(["env", f"HERDR_BROWSER_TASK={key}", *in_shell(cmd, admission.config_dir, penv, plan.get("credential"))]), name)],
                            parent_live=live_parent, record={"task": job})
     a = {"address": out["address"], **a, "launch": out["launch"]}
     s.dirty = True

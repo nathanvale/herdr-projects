@@ -227,7 +227,13 @@ function SpeedWords({ speed }: { speed: Worn }) {
 export type MenuModel = { id: string; name: string; efforts: string[]; defaultEffort?: string | null; fast?: boolean }
 export type AgentMenu = { name: string; models: MenuModel[]; perms?: { id: string; label: string }[] }
 type MenuPick = { agent: string; model: string | null; effort: string | null; fast: boolean; perm: string | null }
-type MenuData = { current: MenuPick; menus: Record<string, AgentMenu>; permDefault: Record<string, string>; picks?: Picks; remote: string | null }
+/** newStart: a space whose Assistant hasn't started (A2): the menu saves a pick for its first start (saved: one is kept)
+ *  instead of restarting anything; on Azure Foundry its list is the deployments */
+type MenuData = { current: MenuPick; menus: Record<string, AgentMenu>; permDefault: Record<string, string>; picks?: Picks; remote: string | null; newStart?: boolean; saved?: boolean
+  /** newStart: each CLI's routing revision and (on Azure) its list's, as shown: a save carries them back */
+  revision?: Record<string, string>; inventory?: Record<string, string>
+  /** newStart: the space's saved pick's own revision, as shown: a save or a reset carries it, so a newer pick isn't overwritten */
+  pickRevision?: string }
 /** a stretch of the model list (core/agents.js modelSections): Pinned, Recent, All models, or an agent's matches */
 type Picks = { pinned: string[]; recent: string[] }
 type Section = { key: string; title: string | null; agent: string; rows: (MenuModel & { agent: string; pinned: boolean; typed?: boolean })[]; more: number }
@@ -407,6 +413,18 @@ function ModelMenu({ chat, typed }: { chat: string; typed?: string }) {
     if ((r as { ok?: boolean }).ok === false) return setError((r as { error?: string }).error || "The agent didn't restart.")
     close()
   }
+  // a space's Assistant not started yet: Save for new start keeps the pick (null: back to the configured defaults); it
+  // starts nothing and sends nothing
+  const keep = async (pick: MenuPick | null) => {
+    setBusy(true)
+    setError(null)
+    const r = await act({ type: 'assistant-pick', chat, pick: pick && { ...pick, effort: level(pick) }, pickRevision: data?.pickRevision ?? '',
+      ...(pick ? { revision: data?.revision?.[pick.agent] ?? '', ...(data?.inventory ? { inventory: data.inventory[pick.agent] ?? '' } : {}) } : {}) } as never)
+      .catch((e: Error) => ({ ok: false, error: e.message }))
+    setBusy(false)
+    if ((r as { ok?: boolean }).ok === false) return setError((r as { error?: string }).error || "It wasn't saved.")
+    close()
+  }
   const pick = (row: MenuModel & { agent: string; typed?: boolean }) => {
     if (!data || !sel) return
     // a model typed by id joins its agent's list, so its levels and the Restart button know it
@@ -489,7 +507,19 @@ function ModelMenu({ chat, typed }: { chat: string; typed?: string }) {
                 </div>
               ) : null}
               {error ? <p className="px-[9px] pt-1 text-[0.75rem] text-need-fg">{error}</p> : null}
-              {ch.length ? (
+              {data.newStart ? (
+                <div className="flex flex-col gap-1 pt-[5px]">
+                  <p className="px-[9px] text-pretty text-[0.71875rem] text-fg3 coarse:text-[0.8125rem] phone:text-[0.8125rem]">
+                    For its Assistant's first start: nothing starts or is sent now.
+                  </p>
+                  <button type="button" disabled={busy} onClick={() => void keep(sel)} className="press-dim min-h-7 w-full rounded-[7px] bg-fg px-2.5 py-1 text-balance text-[0.78125rem] font-medium text-bg disabled:opacity-60 coarse:min-h-11 phone:min-h-11 coarse:text-[0.9375rem] phone:text-[0.9375rem]">
+                    {busy ? 'Saving…' : 'Save for new start'}
+                  </button>
+                  {data.saved ? (
+                    <button type="button" disabled={busy} onClick={() => void keep(null)} className={clsx(row, 'justify-center text-fg2')}>Use configured defaults</button>
+                  ) : null}
+                </div>
+              ) : ch.length ? (
                 <div className="flex flex-col gap-1 pt-[5px]">
                   {/* another agent can't carry this conversation on: said before the press, not after */}
                   {sel.agent !== data.current.agent ? (
@@ -541,8 +571,12 @@ const agentPick = 'flex h-[34px] min-w-0 items-center gap-1 rounded-full pr-2 pl
 /** what it runs on, before the chat has heard it from the agent's log */
 function OldAgentLine({ chatKey, cli }: { chatKey: string; cli: string }) {
   const agent = useStore((s) => s.chats[chatKey]?.agent)
+  const open = useMenuOpen()
   const { model, effort, speed } = runsOn(agent)
   const plan = agent?.planned
+  // a space's chat with no Assistant running (no agent read for it): its model menu chooses what it starts on
+  // (save-only, A2), not a restart; the service answers with the usual menu when an Assistant is there after all
+  const fresh = !agent && chatKey.startsWith('p:')
   const planned = plan && `${plan.model ? model!.text : `${cli} default`}${plan.effort ? ` · ${effort!.text}` : ''}, from Settings`
   // Normal that runs is left out: only a speed out of the ordinary earns its place on the line
   // Shepherdr 3: labels start with a capital ("Opus 5.5 · 1M · High")
@@ -558,16 +592,21 @@ function OldAgentLine({ chatKey, cli }: { chatKey: string; cli: string }) {
     </span>
   )
   return (
-    <button
-      type="button"
-      data-agent-line
-      aria-label={`Runs on: ${words}. Change it`}
-      onClick={() => openRestart(chatKey, taskChatId(chatKey) ?? 'this space', true)}
-      className={agentPick}
-    >
-      {planned ? <span className="min-w-0 truncate italic">{planned}</span> : bits.length ? [...seen, ...requested].map(part) : <span className="min-w-0 truncate">{`${cli} · Not known yet`}</span>}
-      <DownIcon className="size-3 shrink-0" />
-    </button>
+    <>
+      <button
+        type="button"
+        data-agent-line
+        aria-label={`Runs on: ${words}. Change it`}
+        aria-haspopup={fresh ? 'menu' : undefined}
+        aria-expanded={fresh ? open?.chat === chatKey : undefined}
+        onClick={() => (fresh ? setMenuOpen(open?.chat === chatKey ? null : { chat: chatKey }) : openRestart(chatKey, taskChatId(chatKey) ?? 'this space', true))}
+        className={agentPick}
+      >
+        {planned ? <span className="min-w-0 truncate italic">{planned}</span> : bits.length ? [...seen, ...requested].map(part) : <span className="min-w-0 truncate">{`${cli} · Not known yet`}</span>}
+        <DownIcon className="size-3 shrink-0" />
+      </button>
+      {fresh && open?.chat === chatKey ? <ModelMenu key={chatKey} chat={chatKey} /> : null}
+    </>
   )
 }
 

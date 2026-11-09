@@ -956,6 +956,9 @@ export interface SettingRow {
   warn?: string
   /** pick list values */
   options?: string[]
+  /** an Azure deployment row (Settings › Agents › Provider): Refresh's inventory for its CLI at this level, typed entry
+   *  still possible; revision: when the shown list was read, carried back with a pick from it */
+  discovery?: { kind: 'claude' | 'codex'; busy: boolean; options: { value: string; label: string; model: string }[]; hint: string; warn?: string; revision: string }
   /** a role's agent (Settings › Agents): its button opens the agent picker; pick: what is set, null for the default */
   agent?: RoleAgent
   /** on Everywhere: the spaces that set their own (3.0's "2 spaces use their own", each opening its settings) */

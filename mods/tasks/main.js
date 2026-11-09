@@ -28,9 +28,10 @@ import { taskDot, ownProgress } from "./dot.js";
 import { taskMenu } from "./core/menus.js";
 // The rules for a task's status, order and words: shared with the web app (core/tasks.js).
 import { RANK, STATUS, RANK_OF, ORDER, GROUP_BY, groupBy, machineOf, machineName, refOf, taskKey, autoPrefix, place,
-  queueReason, reportOf as report, secondLine, leftOf, order, matches, day, ago, capital, short, autoWhere, fromLine, inSpace } from "./core/tasks.js";
+  queueReason, reportOf as report, secondLine, leftOf, order, matches, day, ago, capital, short, autoWhere, fromLine, inSpace, selectChange } from "./core/tasks.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
-import { TEXT, H, RADIUS, red, amber } from "./ui.js";
+import { TEXT, H, RADIUS, red, amber, toast } from "./ui.js";
+import { localService, localToken } from "./local.js";
 
 const CLI = () => `${appHome()}/mods/tasks/bin/herdr-task`;
 const DONE_SHOWN = 5; // Done rows a group shows before "Show N more"
@@ -102,6 +103,7 @@ export default class Tasks extends View {
     // This space: on or off, remembered (off at first: every space's, as before).
     try { this.here = localStorage.getItem("here") === "1"; } catch { this.here = false; }
     this.filterAt = shared("tasks.filterreq")?.at ?? 0;
+    this.selectAt = shared("tasks.selectreq")?.at ?? 0;
     this.searchAt = shared("tasks.searchreq")?.at ?? 0;
     if (shared("tasks.menuopen")) setShared("tasks.menuopen", null); // left over if the app quit with More open
     this.allDone = saved("alldone");
@@ -276,6 +278,14 @@ export default class Tasks extends View {
     // A pick from the filter row's More (mods/tasks-menu).
     const fq = shared("tasks.filterreq");
     if (fq?.at && fq.at !== this.filterAt) { this.filterAt = fq.at; this.pickFilter(fq.key); }
+    // A task's Model for its start… (tasks-menu), and each change made in its model menu (openSelect, saveSelect).
+    const tq = shared("tasks.selectreq");
+    if (tq?.at && tq.at !== this.selectAt) { this.selectAt = tq.at; this.openSelect(tq, cx); }
+    const tp = shared("newspace.pick");
+    if (this.taskPick && tp?.key === this.taskPick.key && tp.field === "settings" && tp.value?.agent && tp.at !== this.taskPick.at) {
+      this.taskPick.at = tp.at;
+      this.saveSelect(tp.value, cx);
+    }
     // Ctrl+K's jump (mods/jump) to a task with no chat to open: the list, searched for it, all statuses.
     const sq = shared("tasks.searchreq");
     if (sq?.at && sq.at !== this.searchAt) { this.searchAt = sq.at; this.pickFilter("all"); this.archivedOpen = false; this.query.set_value(String(sq.q ?? "")); this.jumpQ = String(sq.q ?? ""); }
@@ -885,7 +895,7 @@ export default class Tasks extends View {
       dim: section === "done", selected: focused, where: bare ? null : this.whereOf(list.machine, placeName(list)),
       action: section === "ready" ? this.acceptButton(p, t) : null,
       pin: this.shelved(p) ? null : { key, on: this.pins().has(key), status: section, machine: list.machine ?? null, folder: list.folder,
-        ref: refOf(list, task), sub: section === "scheduled" ? sub : null },
+        ref: refOf(list, task), sub: section === "scheduled" ? sub : null, space: task.space ?? null },
     }, t);
   }
 
@@ -919,8 +929,79 @@ export default class Tasks extends View {
       height += x.sep ? 0 : x.heading ? 28 : 32;
       first = false;
     }
+    // A task not started yet: Model for its start… under a line (tasks-menu), its save-only choice (A2).
+    if (["todo", "queued", "scheduled"].includes(pin.status)) height += 4 + 2 * 32;
     openOverlay({ mod: "tasks-menu", kind: "popup", at: "pointer", width: 220, height, props: { menu: "row", key: pin.key, on: pin.on,
-      status: pin.status, machine: pin.machine, folder: pin.folder, ref: pin.ref, sub: pin.sub } });
+      status: pin.status, machine: pin.machine, folder: pin.folder, ref: pin.ref, sub: pin.sub, space: pin.space } });
+  }
+
+  // A task's new-start choice (A2), from its row's Model for its start… (tasks-menu, shared "tasks.selectreq"): what
+  // herdr-task keeps for it and each CLI's list (on Azure Foundry its deployments), from this machine's Shepherdr service
+  // (service/selections.ts), shown in the model menu (mods/chat-models, settings mode). Each change there is saved at
+  // once with the revision it was shown at (herdr-task select): it starts nothing and keeps the task's holds; a task with
+  // a recorded conversation is locked, and a stale revision is refused, said in a toast.
+  async askService(body) {
+    const token = await localToken();
+    const svc = token ? await localService().catch(() => null) : null;
+    if (!svc) throw new Error("Choosing a task's model for its start needs Shepherdr's service running here (or herdr-task select).");
+    const r = await fetch(`${svc.base}/api/action`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(body) });
+    const j = await r.json().catch(() => null);
+    if (!j || j.ok === false) throw new Error(j?.error ?? "Shepherdr's service didn't answer.");
+    return j;
+  }
+
+  openSelect(req, cx) {
+    cx.spawn(async (cx) => {
+      try {
+        const task = { ref: req.ref, folder: req.folder, machine: req.machine ?? null, space: req.space ?? null };
+        const v = await this.askService({ type: "task-select", task });
+        if (v.locked) throw new Error(`${req.ref} has a recorded conversation, so its choice is locked: resuming keeps what it started on.`);
+        // Use configured defaults (the row menu's own item): the task's choice goes, with the revision just shown.
+        if (req.reset) {
+          await this.askService({ type: "task-select", task, change: { default: true, revision: v.revision } });
+          toast({ title: `${req.ref} follows Settings again`, body: "Its first start takes the configured CLI, model and effort." });
+          return;
+        }
+        const azure = v.route === "azure-foundry", menus = v.menus ?? {};
+        // What it would start on now: its own choice where it has one, else what Settings give (inherited, not chosen:
+        // only what the person changes here is saved, so the rest keeps following Settings).
+        const agent = v.selection?.agent && menus[v.selection.agent] ? v.selection.agent : v.inherit?.agent && menus[v.inherit.agent] ? v.inherit.agent : Object.keys(menus)[0] ?? "claude";
+        const model = azure ? v.selection?.deployment ?? v.clis?.[agent]?.deployment ?? null : v.selection?.model ?? null;
+        const shown = { agent, model, effort: v.selection?.effort ?? null };
+        const key = `taskpick:${Date.now().toString(36)}`;
+        this.taskPick = { key, task, revision: v.revision, route: v.route, shown, inventory: v.inventory ?? null, listed: v.listed ?? null,
+          saving: Promise.resolve(), at: shared("newspace.pick")?.at ?? null };
+        const W = 340, H = 2 + 10 + 34 + 36 + 8 * 31 + 9 + 26 + 34 + 31 + 31;
+        openOverlay({ mod: "chat-models", kind: "popup", frame: "none", width: W, height: H, at: "pointer",
+          props: { mode: "settings", key, width: W, height: H, remote: null, select: null,
+            current: { agent, model, effort: shown.effort, fast: false, perm: null }, menus, icons: {}, permDefault: v.permDefault ?? {} } });
+      } catch (e) {
+        toast({ level: "error", title: `Couldn't choose ${req.ref}'s model`, body: String(e?.message ?? e) });
+      }
+      cx.notify();
+    });
+  }
+
+  // One change from the model menu: only what differs from what was shown is saved (a CLI, a deployment or model, an
+  // effort), one save after another so each quotes the revision the last one gave. Fast and permissions aren't part of
+  // a task's choice (they follow Settings).
+  saveSelect(value, cx) {
+    const pick = this.taskPick;
+    pick.saving = pick.saving.then(async () => {
+      const was = pick.shown, change = selectChange(was, value, pick.route);
+      if (!change) return;
+      // a deployment from Refresh's list carries that list's revision, so one read under another configuration is refused
+      if (change.deployment && pick.listed?.[value.agent]?.includes(change.deployment)) change.inventory = pick.inventory?.[value.agent] ?? "";
+      try {
+        const out = await this.askService({ type: "task-select", task: pick.task, change: { ...change, revision: pick.revision } });
+        pick.revision = out.revision;
+        pick.shown = { agent: value.agent, model: value.model ?? null, effort: value.effort ?? null };
+      } catch (e) {
+        toast({ level: "error", title: `${pick.task.ref}'s model wasn't saved`, body: String(e?.message ?? e) });
+      }
+    });
+    cx.notify();
   }
 
   // Ready = "looks done, your call": Review (opens the Accept card) is the person's one action here, at the row's end. It merges first when there is something to merge (herdr-task accept follows the merge

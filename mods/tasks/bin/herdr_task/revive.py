@@ -218,6 +218,26 @@ def template_of(name="assistant"):
     return cmd, text
 
 
+def personal_here(labels):
+    """Whether the route at a terminal's space (its labels) is Personal, as launch admission reads it (strictly): True or
+    False; None when the settings file can't be read now (it may be mid-write: the next tick looks again); or, when its
+    provider section can be read but is wrong (a field this version doesn't know, say), the reason why."""
+    from .base import Fail
+    from .launch_admission import space_scope
+    from .providers import binding_for, PERSONAL, read_strict
+    space = labels.get("herdr.task.space") or labels.get("herdr.space") or labels.get("herdr.coordinator.space")
+    space = str(space).split("/")[-1] if space else ""
+    # One read, used for both answers: a second read landing mid-write could never be told from a lasting fault.
+    try:
+        d = read_strict()
+    except Fail:
+        return None
+    try:
+        return binding_for(space_scope(space, d), space, d)["route"] == PERSONAL
+    except Fail as e:
+        return str(e) or "its provider settings can't be read as one"
+
+
 def restarted(k):
     """A terminal the core gave a new process (a plain shell) since its agent ran there, and where
     no agent runs now."""
@@ -248,6 +268,11 @@ def plan(k, rec, running):
         if not LOST.search("\n".join(screen.split("\n")[-30:])):
             return None
         rec = dict(rec, session=None)
+    # An agent whose start recorded Azure Foundry (herdr.provider): revival types its flags back without its launch
+    # plan's environment or binding (the migration's L2), so it is held, said once (its record then marks it
+    # handled), and left for its task's resume.
+    if labels.get("herdr.provider") not in (None, "", "personal"):
+        return ("held", None, False)
     if not rec:
         # From before records (or lost before the first one): only a terminal the core plainly gave a shell.
         if not bare_shell(k):
@@ -255,6 +280,15 @@ def plan(k, rec, running):
         rec = task_record(k, task) if task else None
     if rec and rec.get("session") and rec["session"] in running:
         return ("running", None, False)
+    # A route at its space that isn't Personal: revival can't carry a plan (L2), so typing the agent back would start
+    # it on the CLI's own sign-in. Held, as for an Azure-started agent; settings that can't be read hold it too.
+    here = personal_here(labels)
+    if here is None:
+        return None  # its settings can't be read now (a write in flight, say): nothing typed, looked at again next tick
+    if here is not True:
+        # Held, said once: the route isn't Personal (False), or the provider section will stay wrong until someone fixes
+        # it (its reason, a string). For "held" the second place is that reason, not an argv.
+        return ("held", here or None, False)
     if rec and rec.get("session") and rec.get("log") and os.path.isfile(rec["log"]):
         return ("resume", resume_argv(rec["kind"], rec["argv"], rec["session"], CUT if rec.get("working") else None), not rec.get("shell"))
     # Its session is gone: a new one, with the handover (and an Assistant's role, its template's words).
@@ -289,6 +323,14 @@ def revive_pass(report):
             continue
         how, argv, direct = step
         rec = dict(rec or {}, pid=k.get("pid"), how=how, sent=now())
+        if how == "held":
+            write_record(k, rec)
+            why = argv if isinstance(argv, str) else (
+                "its provider isn't Personal (it started on Azure Foundry, or its space routes there): revival can't carry "
+                "that yet (L2). A task's agent: herdr-task resume (--fresh for a new conversation on today's settings); an "
+                "Assistant: a new chat")
+            report.setdefault("revive_held", []).append({"terminal": k["address"], "why": why})
+            continue
         if argv:
             shell = (k.get("argv") or [""])[0]
             r = run(["hc", "send", k["address"], shell_line(shell, rec.get("cwd") or k.get("cwd"), env_of(k), argv, direct)])

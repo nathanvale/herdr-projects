@@ -18,8 +18,10 @@ mkdirSync(join(HOME_DIR, ".config", "herdr-core", "templates"), { recursive: tru
 mkdirSync(FOLDER);
 // the assistant template, as the machine's sync puts it there
 writeFileSync(join(HOME_DIR, ".config", "herdr-core", "templates", "assistant.md"), "---\nname: assistant\ncommand: claude\n---\nYou are the Assistant.\n");
-// herdr-task: one JSON line of its words; its reply is REPLY's, its exit code REPLY.code's
-writeFileSync(join(BIN, "herdr-task"), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${TASK_CALLS}"\ncat "${REPLY}"\nexit "$(cat "${REPLY}.code" 2>/dev/null || echo 0)"\n`, { mode: 0o755 });
+// herdr-task: one JSON line of its words, and the one-off templates there when it runs (TEMPLATES_SEEN: their words, as
+// the start found them; the site removes them after); its reply is REPLY's, its exit code REPLY.code's
+const TEMPLATES_SEEN = join(APP, "templates.seen");
+writeFileSync(join(BIN, "herdr-task"), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${TASK_CALLS}"\ncat "${HOME_DIR}/.config/herdr-core/templates/"herdr-*.md >> "${TEMPLATES_SEEN}" 2>/dev/null\ncat "${REPLY}"\nexit "$(cat "${REPLY}.code" 2>/dev/null || echo 0)"\n`, { mode: 0o755 });
 writeFileSync(join(BIN, "hc"), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${HC_CALLS}"\nexit 1\n`, { mode: 0o755 });
 
 let SP: typeof import("./spaces.ts");
@@ -39,7 +41,7 @@ afterAll(() => {
   rmSync(APP, { recursive: true, force: true });
 });
 beforeEach(() => {
-  for (const p of [TASK_CALLS, HC_CALLS, `${REPLY}.code`]) if (existsSync(p)) rmSync(p);
+  for (const p of [TASK_CALLS, HC_CALLS, `${REPLY}.code`, TEMPLATES_SEEN]) if (existsSync(p)) rmSync(p);
   writeFileSync(REPLY, JSON.stringify({ address: "t7", launch: "6f1c2d3e-4a5b-4c6d-8e7f-001122334455", state: "confirmed" }));
 });
 
@@ -53,7 +55,12 @@ const hub: any = {
     return { code: await proc.exited, stdout: Buffer.from(o).toString("base64"), stderr: Buffer.from(e).toString("base64") };
   },
 };
-const store = () => { const d: Record<string, any> = {}; return { d, value: (k: string) => d[k], set: async (k: string, v: unknown) => { d[k] = v; } }; };
+const store = () => {
+  const d: Record<string, any> = {};
+  return { d, value: (k: string) => d[k], set: async (k: string, v: unknown) => { d[k] = v; },
+    // as compat.shared.update: one key changed from the current document
+    update: async (k: string, change: (v: any) => any) => { const n = change(d[k]); if (n === undefined) delete d[k]; else d[k] = n; } };
+};
 const read = (p: string) => (existsSync(p) ? readFileSync(p, "utf8").trim().split("\n").filter(Boolean) : []);
 const compat = (folder: string): any => ({
   addrOf: () => null,
@@ -67,13 +74,16 @@ test("a web-only new space starts its Assistant through launch admission", async
   const id = s.d.spaces[0].id;
   expect(place).toBe(id);
   const [call] = read(TASK_CALLS);
-  expect(call.startsWith(`launch run --role coordinator --space ${id} --json -- --bg --keep --no-parent --cwd `)).toBe(true);
-  expect(call).toContain(`--label herdr.role=coordinator --label herdr.coordinator.space=${id} --label herdr.space=${id} herdr-assistant-`);
+  // a new start (A2): the template word it runs, for launch admission to plan for its provider
+  const word = /--new-start (herdr-assistant-\S+) --source assistant --json -- /.exec(call)?.[1];
+  expect(word).toBeTruthy();
+  expect(call.startsWith(`launch run --role coordinator --space ${id} --new-start ${word} --source assistant --json -- --bg --keep --no-parent --cwd `)).toBe(true);
+  expect(call).toContain(`--label herdr.role=coordinator --label herdr.coordinator.space=${id} --label herdr.space=${id} ${word}`);
   expect(read(HC_CALLS)).toEqual([]);
 });
 
 test("a web-only new space whose Assistant start is refused is still made, and says why", async () => {
-  const why = "Provider is Azure Foundry here, but an Assistant's start can't carry a launch plan yet (pending: settings and selectors): it would start on the CLI's own sign-in. Nothing was started.";
+  const why = "Set an explicit Azure deployment name for Claude Code (letters, digits, dots, dashes and underscores).";
   writeFileSync(REPLY, JSON.stringify({ error: why }));
   writeFileSync(`${REPLY}.code`, "1");
   const s = store(), said: string[] = [];
@@ -100,17 +110,40 @@ test("a space's first message starts its Assistant through launch admission", as
   const r: any = await A.act(hub, { type: "send", chat: "p:sp1", text: "Plan the week" }, compat(FOLDER));
   expect(r).toMatchObject({ ok: true, started: true });
   const [call] = read(TASK_CALLS);
-  expect(call.startsWith(`launch run --role coordinator --space sp1 --json -- --bg --json --no-parent --keep --cwd ${FOLDER} `)).toBe(true);
-  expect(call).toContain("--label herdr.role=coordinator --label herdr.coordinator.space=sp1 --label herdr.space=sp1 herdr-assistant-");
+  const word = /--new-start (herdr-assistant-\S+) --source assistant --json -- /.exec(call)?.[1];
+  expect(word).toBeTruthy();
+  expect(call.startsWith(`launch run --role coordinator --space sp1 --new-start ${word} --source assistant --json -- --bg --json --no-parent --keep --cwd ${FOLDER} `)).toBe(true);
+  expect(call).toContain(`--label herdr.role=coordinator --label herdr.coordinator.space=sp1 --label herdr.space=sp1 ${word}`);
   expect(call.endsWith(" Plan the week")).toBe(true);
+  // no pick: the one-off runs the template's own command, as before A2
+  expect(readFileSync(TEMPLATES_SEEN, "utf8")).toMatch(/^command: .* exec claude$/m);
   expect(read(HC_CALLS)).toEqual([]);
 });
 
 test("a refused first-message start says the owner's words and starts nothing", async () => {
-  const why = "Provider is Azure Foundry here, but an Assistant's start can't carry a launch plan yet (pending: settings and selectors): it would start on the CLI's own sign-in. Nothing was started.";
+  const why = "Set an explicit Azure deployment name for Claude Code (letters, digits, dots, dashes and underscores).";
   writeFileSync(REPLY, JSON.stringify({ error: why }));
   writeFileSync(`${REPLY}.code`, "1");
   await expect(A.act(hub, { type: "send", chat: "p:sp1", text: "Plan the week" }, compat(FOLDER))).rejects.toThrow(why);
   expect(read(TASK_CALLS)).toHaveLength(1);
+  expect(read(HC_CALLS)).toEqual([]);
+});
+
+test("a space's first message carries the web's saved pick for its Assistant, bound to its revision, then drops it (A2)", async () => {
+  const s = store();
+  await s.set("assistant.picks", { sp1: { agent: "claude", model: "picked-deployment", effort: "high", fast: false, perm: null,
+    deployment: "picked-deployment", revision: "0123abcd0123abcd" }, sp2: { agent: "codex", model: null, revision: "r2" } });
+  const c = { ...compat(FOLDER), shared: s };
+  const r: any = await A.act(hub, { type: "send", chat: "p:sp1", text: "Plan the week" }, c);
+  expect(r).toMatchObject({ ok: true, started: true });
+  const [call] = read(TASK_CALLS);
+  expect(call).toContain(` --argv ["claude","--model","picked-deployment","--effort","high","--settings","{\\"fastMode\\":false}"] `);
+  expect(call).toContain(" --deployment picked-deployment --revision 0123abcd0123abcd --json -- ");
+  // on Personal the one-off it runs is the pick's own command (on Azure launch admission plans it from --argv instead)
+  const seen = readFileSync(TEMPLATES_SEEN, "utf8");
+  expect(seen).toContain(`exec claude --model picked-deployment --effort high --settings '{"fastMode":false}'`);
+  expect(seen).toContain("You are the Assistant.");
+  // used for this first start only: another space's pick stays
+  expect(s.d["assistant.picks"]).toEqual({ sp2: { agent: "codex", model: null, revision: "r2" } });
   expect(read(HC_CALLS)).toEqual([]);
 });

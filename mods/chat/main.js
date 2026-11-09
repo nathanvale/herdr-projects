@@ -51,6 +51,7 @@ import * as mentions from "./core/mentions.js";
 import * as agent from "./agent.js";
 import { cleanCommand } from "./core/clean-env.js";
 import * as choices from "./settings.js";
+import { localService, localToken } from "./local.js";
 import { Dictation, BUN_PATH, warmAudio } from "./dictate.js";
 
 // Writing down after Done this long says it's taking longer than usual (SHEP-63).
@@ -199,6 +200,23 @@ function parts(text) {
 }
 
 let bound = false;
+
+// An Assistant's new-start choices at a space ("all": Everywhere), from this machine's service (service/selections.ts:
+// herdr-task provider show, and on Azure Foundry what Settings' Refresh found): the route, each CLI's revision a pick is
+// bound to, and on Azure each CLI's deployments; null when the service can't say (the window then offers its usual list
+// unbound, and launch admission plans the Assistant's own deployment).
+async function providerChoices(place, cx) {
+  try {
+    const token = await localToken();
+    // bounded, as localService's own look: a slow service never keeps the model button from showing (null: unbound)
+    const svc = token ? await localService(cx).catch(() => null) : null;
+    if (!svc) return null;
+    const ask = fetch(`${svc.base}/api/action`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ type: "azure-choices", place }) }).then((r) => r.json()).catch(() => null);
+    const j = await Promise.race([ask, cx.sleep(3000).then(() => null)]);
+    return j?.ok && typeof j.route === "string" ? j : null;
+  } catch { return null; }
+}
 
 export default class Chat extends View {
   init(_props, cx) {
@@ -1003,9 +1021,17 @@ export default class Chat extends View {
     const mine = t.address === this.addr;
     if (mine) { this.note = { id: `note-${Date.now()}`, text: WORDS.sessionGone }; cx.notify(); }
     try {
+      // An agent that started on Azure Foundry, or a route here that isn't Personal: a new start here can't carry a
+      // binding or a plan (L2, core/agents.js), so it is refused, asked of herdr-task's provider owner.
+      const held = agent.providerRefusal(t);
+      if (held) throw new Error(held);
       // fresh drops what its launch set, and a new start carries no CLAUDE_CONFIG_DIR (core/agents.js).
       const why = await agent.lostRefusal(kind, t, this.folderReader(t.address), mine ? this.path : null);
       if (why) throw new Error(why);
+      const shown = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, agent.routeArgs(t, t.address.includes("/") ? t.address.split("/")[0] : null))
+        .then((r) => (r.code === 0 ? JSON.parse(r.stdout || "null") : null), () => null).catch(() => null);
+      const off = agent.routeRefusal(shown);
+      if (off) throw new Error(off);
       if (t.state === "live") {
         // hc send pastes the line into the shell and presses Enter.
         const r = await hc(["send", t.address, [...fresh, msg].map(shellWord).join(" ")]);
@@ -1636,7 +1662,15 @@ export default class Chat extends View {
       // template's command under sh -c, and where sh is dash (Debian, Ubuntu) the shell would stay
       // the terminal's program, so the chat wouldn't know its CLI.
       let launch = template, oneOff = null, words = "";
-      const st = this.choice?.sel ?? props()?.settings;
+      // On Azure Foundry the pick's model is a deployment: it goes to launch admission as one, with the revision its
+      // list was read under (a deployment typed by hand gets Default effort: what it supports isn't known).
+      const pick = this.choice?.sel ?? props()?.settings;
+      const az = this.choice?.data?.azure;
+      const known = az && this.choice.data.menus?.[pick?.agent]?.models?.find((m) => m.id === pick?.model);
+      // A choice the person made (not the shown default, marked auto) goes as the deployment on Azure, with the revision
+      // of the routing it was made under (Personal too): a changed route refuses it.
+      const mine = Boolean(pick?.agent) && !pick.auto;
+      const st = az && mine ? { ...pick, deployment: pick.model, effort: known?.efforts?.includes(pick.effort) ? pick.effort : null } : pick;
       const on = machine ? { on: machine } : {};
       const there = !machine || !st?.agent ? true : (await knownAgents(on).catch(() => []))
         .some((a) => (a.key === st.agent || (a.run ?? [])[0] === st.agent) && a.installed !== false);
@@ -1661,12 +1695,19 @@ export default class Chat extends View {
         ...(space ? ["--label", `herdr.coordinator.space=${String(space.id).split("/").pop()}`] : []),
         ...(rec?.tab ? ["--label", `herdr.coordinator.tab=${String(rec.tab).split("/").pop()}`] : []),
         launch, ...(task ? [task] : [])];
-      // Every start goes through launch admission (herdr-task launch run, launch_admission.py): Personal only,
-      // claimed, rechecked and recorded as sent, then this hc run; its reply is hc's own, or {error} when refused.
-      // A tab agent is named by its chat pane, as restart.sh names it (HERDR_RESTART_CHAT), so the two are one identity.
+      // Every start goes through launch admission (herdr-task launch run, launch_admission.py): claimed, rechecked
+      // and recorded as sent, then this hc run; its reply is hc's own, or {error} when refused. An Assistant's start
+      // here is a new start (--new-start: the template word it runs), planned for its provider: on Azure Foundry the
+      // owner puts its own one-off template in that word's place, with the chosen agent (--argv) and, from this chat's
+      // save-only Azure pick, its deployment and the revision it was chosen under (a changed one refuses). A tab
+      // agent is named by its chat pane, as restart.sh names it (HERDR_RESTART_CHAT), so the two are one identity.
       const role = this.role === "coordinator" ? ["--role", "coordinator"] : ["--role", "agent", "--slot", String(pane)];
       const where = ["--space", space ? String(space.id).split("/").pop() : "unplaced"];
-      const r = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, ["launch", "run", ...role, ...where, "--json", "--", ...args.slice(1)])
+      const plan = this.role !== "coordinator" ? [] : ["--new-start", launch, "--source", template,
+        ...(st?.agent && there ? ["--argv", JSON.stringify(agent.argvFor(st, { agent: null, argv: [] }).argv)] : []),
+        ...(st?.deployment ? ["--deployment", String(st.deployment)] : []),
+        ...(mine && st?.agent && there && st.revision ? ["--revision", String(st.revision)] : [])];
+      const r = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, ["launch", "run", ...role, ...where, ...plan, "--json", "--", ...args.slice(1)])
         .catch((e) => ({ code: 1, stderr: String(e?.message ?? e), stdout: "" }));
       if (oneOff) exec("sh", ["-c", TEMPLATE + 'rm -f "$dir/$1.md"', "x", oneOff], on);
       let out = {};
@@ -1745,8 +1786,26 @@ export default class Chat extends View {
         let kept = null;
         try { kept = JSON.parse(localStorage.getItem(`choice:${this.slot}`) ?? "null"); } catch {}
         const st = kept?.agent ? kept : props()?.settings;
-        const sel = st?.agent && data.menus[st.agent] ? { perm: data.permDefault[st.agent], effort: null, fast: false, ...st } : { ...data.defaults };
-        this.choice = { sel, data, key: this.choice.key };
+        // An Assistant's new start on Azure Foundry (here only): its list is each CLI's deployments (what Settings'
+        // Refresh found, the saved ones), and the pick is bound to the routing it was made under (providerChoices).
+        const shown = this.role === "coordinator" && !space?.machine ? await providerChoices(space?.id ?? "all", cx) : null;
+        // Each CLI's revision of the routing in force now: a pick made here carries it (freshPick), Personal too, so a
+        // route changed before its start refuses it instead of reinterpreting it.
+        if (shown) data.revision = Object.fromEntries(Object.entries(shown.clis ?? {}).map(([k, c]) => [k, c.revision]));
+        const az = shown?.route === "azure-foundry" && shown.menus ? shown : null;
+        if (az) {
+          data.menus = Object.fromEntries(Object.entries(az.menus).filter(([k]) => data.menus[k]));
+          data.azure = { revision: data.revision };
+        }
+        // A kept pick that no longer fits what is offered gives way to the defaults (core/agents.js pickFits: on Personal
+        // any model fits, as before A2).
+        const fits = agent.pickFits(st, data.menus, Boolean(az));
+        const first = Object.keys(data.menus)[0];
+        const sel = fits ? { perm: data.permDefault[st.agent], effort: null, fast: false, ...st }
+          // shown as what it would start on; not a pick (auto), so the Assistant's own deployment still decides
+          : az && first ? { agent: first, model: az.clis?.[first]?.deployment || null, effort: null, fast: false, perm: data.permDefault[first], auto: true }
+          : { ...data.defaults };
+        this.choice = { sel, data, key: this.choice.key, ...(sel.auto ? { autoAgent: sel.agent, autoModel: sel.model } : {}) };
       } catch { this.choice = null; }
       cx.notify();
     });
@@ -2234,10 +2293,21 @@ export default class Chat extends View {
   fork(cx) {
     const session = agent.sessionOf(this.kind, this.path);
     if (!session) { toast({ title: "Can't fork", body: agent.inOtherFolder(this.kind, this.path) ? agent.OTHER_FOLDER : "This conversation has no saved session.", level: "info" }); return; }
+    // A fork copies its flags but no Azure Foundry binding or plan (L2): an Azure-started agent, or a route at its space
+    // that isn't Personal (herdr-task's provider owner says), is refused rather than run on the CLI's own sign-in.
+    const held = agent.providerRefusal(this.t);
+    if (held) { toast({ title: "Can't fork", body: held, level: "info" }); return; }
     const tab = panes().find((p) => p.pane === this.myPane())?.tab;
     const space = spaces().find((s) => s.tabs.some((x) => x.id === tab));
     const folder = this.t?.foreground?.cwd ?? this.t?.cwd ?? undefined;
-    run("tab.new", { space: space?.id, folder, argv: agent.forkArgv(this.kind, this.argv, session) });
+    const argv = agent.forkArgv(this.kind, this.argv, session), t = this.t;
+    cx.spawn(async () => {
+      const shown = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, agent.routeArgs(t, this.machine))
+        .then((r) => (r.code === 0 ? JSON.parse(r.stdout || "null") : null), () => null).catch(() => null);
+      const off = agent.routeRefusal(shown);
+      if (off) { toast({ title: "Can't fork", body: off, level: "info" }); return; }
+      run("tab.new", { space: space?.id, folder, argv });
+    });
   }
 
   // ---- dictation ----------------------------------------------------------------------------
@@ -2651,6 +2721,9 @@ export default class Chat extends View {
     cx.spawn(async (cx) => {
       try {
         const t = JSON.parse((await hc(["get", this.addr, "--json"])).stdout);
+        // Restart can't carry an Azure Foundry binding yet (L2): one that started there is refused (core/agents.js).
+        const held = agent.providerRefusal(t);
+        if (held) throw new Error(held);
         const why = await agent.restartRefusal(this.kind, t.foreground?.pid, this.folderReader(this.addr));
         if (why) throw new Error(why);
         const built = agent.argvFor(pick, { agent: this.kind, argv: t.foreground?.argv ?? [], session: agent.sessionOf(this.kind, this.path) });
@@ -2679,6 +2752,9 @@ export default class Chat extends View {
     cx.spawn(async (cx) => {
       try {
         const t = JSON.parse((await hc(["get", this.addr, "--json"])).stdout);
+        // Restart can't carry an Azure Foundry binding yet (L2): one that started there is refused (core/agents.js).
+        const held = agent.providerRefusal(t);
+        if (held) throw new Error(held);
         const why = await agent.restartRefusal(this.kind, t.foreground?.pid, this.folderReader(this.addr));
         if (why) throw new Error(why);
         const k = this.taskKey;
@@ -2689,7 +2765,7 @@ export default class Chat extends View {
         const on = k?.machine ?? this.machine;
         this.swapping = true;
         const r = await exec(`${appHome()}/mods/tasks/bin/herdr-task`, [...(on ? ["--on", on] : []), "switch", ref, "--folder", folder,
-          "--argv", JSON.stringify(built.base), "--json"]);
+          "--argv", JSON.stringify(built.base), "--restart", "--json"]);
         let out = null;
         try { out = JSON.parse(r.stdout || "null"); } catch {}
         if (r.code !== 0 || !out?.terminal) throw new Error(out?.error || r.stderr?.trim().split("\n").pop() || "Its agent didn't start.");
@@ -3922,9 +3998,19 @@ export default class Chat extends View {
   // The model button before the first message (loadChoice): the same menu, choosing what it starts on.
   freshPick(t, cx) {
     // A pick lands in this.choice.sel just after a render (settings.js applyReply), which then
-    // redraws: a changed one is kept per slot here.
+    // redraws: a changed one is kept per slot here. The menu sends a whole new pick: one still on the
+    // shown default's agent and model stays that default (auto), only its effort or speed changed; any
+    // other is the person's own, bound to the revision of the routing it was made under (A2).
+    const sel = this.choice.sel;
+    if (sel && !sel.auto && this.choice.autoModel !== undefined && sel.agent === this.choice.autoAgent && sel.model === this.choice.autoModel) sel.auto = true;
+    if (sel && !sel.auto && !sel.revision && this.choice.data?.revision?.[sel.agent]) sel.revision = this.choice.data.revision[sel.agent];
+    if (sel && !sel.auto && this.choice.data?.azure) sel.azure = true;
     const now = JSON.stringify(this.choice.sel);
-    if (this.choice.saved !== undefined && now !== this.choice.saved && this.slot) try { localStorage.setItem(`choice:${this.slot}`, now); } catch {}
+    // Only the person's own pick is kept for this slot: back on the shown default, the kept one goes too (it would
+    // otherwise come back on a reload).
+    if (this.choice.saved !== undefined && now !== this.choice.saved && this.slot) try {
+      if (sel?.auto) localStorage.removeItem(`choice:${this.slot}`); else localStorage.setItem(`choice:${this.slot}`, now);
+    } catch {}
     this.choice.saved = now;
     return choices.modelButton(t, this.choice, {}, cx);
   }

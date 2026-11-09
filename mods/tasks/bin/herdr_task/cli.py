@@ -13,7 +13,7 @@ from .agents import LINE_MAX, SUMMARY_MAX
 from .launch import cmd_allow, name_tabs
 from .commands import (
     cmd_accept, cmd_add, cmd_adopt, cmd_alert, cmd_config, cmd_edit, cmd_fix, cmd_list, cmd_merge, cmd_ready,
-    cmd_resume, cmd_review, cmd_review_more, cmd_reviewed, cmd_rm, cmd_show, cmd_start, cmd_state, cmd_status,
+    cmd_resume, cmd_review, cmd_review_more, cmd_reviewed, cmd_rm, cmd_select, cmd_show, cmd_start, cmd_state, cmd_status,
     cmd_switch, cmd_unarchive, cmd_where,
 )
 from .tick import cmd_tick
@@ -446,20 +446,39 @@ def main():
     c.add_argument("--agent", help="the CLI: claude or codex")
     c.add_argument("--argv", help="how it would be started, as a JSON list (default from --agent)")
     c.add_argument("--space", help="the space whose settings apply (default: the folder's)")
+    c.add_argument("--role", choices=["worker", "coordinator"], help="whose deployment a new start takes (default: worker)")
+    c.add_argument("--deployment", help="a deployment chosen for this start itself (a selector's), instead of the role's")
+    c.add_argument("--folder", help="the task folder (default: here)")
+    c.add_argument("--json", action="store_true")
+    c.set_defaults(fn=cmd_provider)
+    show_help = ("what a new-start selector shows for a role: the route, each CLI's routing, the deployment a new start "
+                 "takes and the revision a choice made now is bound to. Reads no credential, starts nothing")
+    c = pr.add_parser("show", help=show_help, description=show_help)
+    c.add_argument("--role", choices=["worker", "coordinator"], help="whose new starts (default: worker)")
+    c.add_argument("--space", help="the space whose settings apply (default: the folder's)")
     c.add_argument("--folder", help="the task folder (default: here)")
     c.add_argument("--json", action="store_true")
     c.set_defaults(fn=cmd_provider)
     la = sub.add_parser("launch", help="the launch journal: every agent start here, claimed before it is sent "
                                        "(never submitted, submission uncertain, confirmed, cancelled)").add_subparsers(dest="launch")
-    run_help = ("start an Assistant (--role coordinator) or a tab agent (--role agent) through launch admission: Personal "
-                "only, claimed, rechecked, recorded as sent, then the hc run words after \"--\" (given its herdr.launch "
-                "label and --json); prints hc's reply")
+    run_help = ("start an Assistant (--role coordinator) or a tab agent (--role agent) through launch admission: a new "
+                "start planned for its provider (--new-start), any other Personal only; claimed, rechecked, recorded as "
+                "sent, then the hc run words after \"--\" (given its herdr.launch label and --json); prints hc's reply")
     c = la.add_parser("run", help=run_help, description=run_help)
     c.add_argument("--role", required=True, help="coordinator or agent")
     c.add_argument("--space", required=True, help="the space it starts in (its id)")
     c.add_argument("--slot", help="a tab agent's tab (--role agent)")
     c.add_argument("--check", action="store_true", help="only its preflight, before the start site changes anything: nothing is claimed or run")
     c.add_argument("--config-dir", help="the Claude Code folder (an absolute path) its start carries, recorded with it")
+    c.add_argument("--new-start", metavar="WORD", help="an Assistant's new start (--role coordinator) whose hc run words "
+                                                       "name template WORD: planned for its provider; on Azure Foundry "
+                                                       "the owner puts its own one-off template in WORD's place")
+    c.add_argument("--source", help="--new-start: the template whose words and command it starts with (default: assistant)")
+    c.add_argument("--argv", help="--new-start: the agent's argv as a JSON list (default: --source's command)")
+    c.add_argument("--deployment", help="--new-start: a chat's chosen Azure deployment, instead of the Assistant's")
+    c.add_argument("--revision", help="--new-start: the revision that choice was made under (provider show); changed refuses")
+    c.add_argument("--replaced-route", help="a restart: the route the agent it replaces started on (its herdr.provider "
+                                            "label); restarts are Personal only (L2)")
     c.add_argument("--json", action="store_true")
     c.add_argument("hc_args", nargs=argparse.REMAINDER, help="-- then its hc run words")
     c.set_defaults(fn=cmd_launch)
@@ -498,11 +517,26 @@ def main():
     agent_opts(c)
     c.add_argument("--space")
     c.add_argument("--parent")
+    c.add_argument("--fresh", action="store_true", help="a new conversation with a handoff, not its recorded one "
+                                                        "(it then takes today's provider settings)")
     c = cmd("switch", cmd_switch, "replace the task's agent (no --agent: restart it)")
     agent_opts(c)
     c.add_argument("--space")
     c.add_argument("--parent")
     c.add_argument("--keep", action="store_true", help="add the agent beside the old one")
+    c.add_argument("--fresh", action="store_true", help="a new conversation with a handoff, not its recorded one "
+                                                        "(it then takes today's provider settings)")
+    c.add_argument("--restart", action="store_true", help=argparse.SUPPRESS)  # a model menu's Restart (L2): Personal only
+    c = cmd("select", cmd_select, "show or save the CLI, Azure deployment and effort a task's first agent starts on: "
+                                  "save-only, before it starts (starts nothing, keeps its holds)")
+    c.add_argument("--agent", choices=["claude", "codex"], help="the CLI it starts on (needed with --deployment or --model "
+                                                                 "unless the task has its own CLI; an --effort alone follows it)")
+    c.add_argument("--deployment", help="its Azure Foundry deployment, on Azure (\"\": the role's)")
+    c.add_argument("--model", help="its model on Personal, an id or alias (\"default\": the role's)")
+    c.add_argument("--effort", help="its effort (\"default\": the role's)")
+    c.add_argument("--default", action="store_true", help="clear its choice: the configured defaults again")
+    c.add_argument("--revision", help="the revision `select` showed; a save refuses when it changed since")
+    c.add_argument("--space", help="the space whose settings apply (default: its own)")
     c = sub.add_parser("_allow")  # Codex's PermissionRequest hook (own_argv)
     c.add_argument("--command", required=True)
     c.set_defaults(fn=cmd_allow, json=False)
