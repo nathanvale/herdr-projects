@@ -714,7 +714,12 @@ class TaskSelection(unittest.TestCase):
         rev = f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1", "--agent", "claude", "--deployment", "dep-a",
                    "--revision", shown["revision"])["revision"]
         f.provider({"route": "azure-foundry", **CLAUDE, "claude_resource": "other"})
+        # The selector's revision covers the routing, so the old one is stale now; reopened, it quotes today's.
+        self.assertIn("changed since this selector was opened",
+                      f.refused("select", str(tid), "--folder", f.repo, "--space", "sp1", "--effort", "high", "--revision", rev))
+        rev = f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1")["revision"]
         f.ok("select", str(tid), "--folder", f.repo, "--space", "sp1", "--effort", "high", "--revision", rev)
+        self.assertEqual((f.task(tid)["deployment"], f.task(tid)["effort"]), ("dep-a", "high"))
         before = f.snapshot()
         self.assertIn("Save its choice again", f.refused("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now"))
         f.nothing_started(before)
@@ -1130,6 +1135,12 @@ class Binding(unittest.TestCase):
         with open(self.file, "w") as f:
             f.write("{")
         self.assertIsNone(revive.plan(k, dict(rec), set()))
+        # A provider section that will stay wrong (a field this version doesn't know): held, with that reason.
+        with open(self.file, "w") as f:
+            json.dump({"everywhere": {"provider": {"route": "personal", "newer_field": "x"}}}, f)
+        step = revive.plan(k, dict(rec), set())
+        self.assertEqual(step[0], "held")
+        self.assertIn("settings' provider section", step[1])
 
     def test_the_credential_check_runs_the_agent_only_when_its_variable_is_set(self):
         """The guard in_shell() puts in the agent's own shell, run by a real POSIX shell: missing or empty, it names

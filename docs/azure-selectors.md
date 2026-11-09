@@ -64,8 +64,11 @@ saved by `herdr-task select`:
   the next step: save the choice again, or use the configured defaults. It never falls back to
   Personal. A save that changes the effort alone keeps the older binding; an effort alone needs no
   CLI and follows Settings' Workers CLI.
-- The choice is for the task's first start. Once its conversation is recorded, resume plans from
-  the record, and `--fresh` (or another CLI) starts a new conversation on today's settings.
+- A chosen deployment, and the check of the routing a choice was made under, are for the task's first
+  start only. The task's model and effort stay its own fields, as `herdr-task edit` sets them, so
+  `worker_pick` keeps applying them. Once its conversation is recorded, resume plans from the
+  record, and `--fresh` (or another CLI) starts a new conversation on today's settings and role
+  deployment, with the task's model and effort.
 - Efforts on offer: a deployment whose model this CLI's own catalogue knows (by its id or the
   model the inventory reports) gets that model's levels; any other gets Default only. `herdr-task`
   checks an effort's shape; the selectors offer only those levels.
@@ -82,7 +85,8 @@ drops it once used.
 
 | Start | Plan |
 | --- | --- |
-| A task's start, the tick's queue, an automation's run, a backup | Today's settings for the worker role (the task's own choice wins for its CLI). |
+| A task's start, the tick's queue, an automation's run | Today's settings for the worker role (the task's own choice wins for its CLI on its first start). |
+| A backup | Today's settings for the worker role, in the other CLI (a new conversation; the task's choice doesn't apply). |
 | Resume or switch of a recorded conversation (same CLI, known session) | Its recorded binding, rebuilt by the same planner. |
 | Resume or switch with `--fresh`, or to another CLI | A new conversation with a handoff, on today's settings. |
 | An Assistant's new start (window chat, New space, first message) | Today's settings for the Assistant's role, or the chat's pick. |
@@ -119,7 +123,8 @@ drops it once used.
   Personal too, fork and lost-session recovery for an agent on a machine whose herdr-task has no
   `provider show` refuse ("can't be read now") until that machine is updated.
 - Revival with a settings file that can't be read at that moment types nothing and tries again on
-  the next tick.
+  the next tick. A provider section that will stay wrong (a field this version doesn't know, say)
+  holds the agent and reports why, once.
 - A tab agent (a chat of another role) starts Personal only, with its own reason.
 - `herdr-task select` gains `--model` (Personal), and its `--json` gives `inherit` (Settings' Workers
   CLI); `provider show --space` reads a space the settings file holds by its own folder, as launch

@@ -104,7 +104,7 @@
       "phase": "A2",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "5ecdd9d818ee6319aebd11f28fc21c314937a43db14a0c9b868bec887bc1191d"
+      "sha256": "439f42634c8ba4962dbe2890201dc4ac25dfda61ef50f2d2d3bfaed0ebb0aa6d"
     },
     {
       "phase": "A2",
@@ -446,7 +446,7 @@
       "phase": "A2",
       "path": "mods/tasks/bin/herdr_task/revive.py",
       "upstream_blob": "1ed629e083e5ede0f620e0be32c2ccc08bffb0c3",
-      "sha256": "826561417c62daee1cbc8d4e6a12049cfd62e2ed35bb56cf26226f2e7947e205"
+      "sha256": "563524e20bc3cdf2176d5b95b407aa7e9746eccef77818e7a8c1911cce33c03a"
     },
     {
       "phase": "A2",
@@ -542,31 +542,31 @@
       "phase": "A2",
       "path": "core/tasks.js",
       "upstream_blob": "e5dfe39ceadc5def209d37b562279c3f3df2fb07",
-      "sha256": "fb26458d36bd86500ab224b55cb3c5b8b6d702f302f83c0d7e664349a952b430"
+      "sha256": "2e5e191fb640ab2b25370cb09c429bf92deeb150b3ba9a9e40c58fe1136de694"
     },
     {
       "phase": "A2",
       "path": "core/tasks.test.js",
       "upstream_blob": "e49c07835e3b2324681b10b4fb61f3d72e1356db",
-      "sha256": "4e572f6daef71c327f332bf0cee03adb25a67f90979a9b4723aa19e792dc13be"
+      "sha256": "376e3cc9f755a4bbda4e02506e509bdb789eaf9bf8904c3d9d8539d72728b321"
     },
     {
       "phase": "A2",
       "path": "mods/chat/core/tasks.js",
       "upstream_blob": "e5dfe39ceadc5def209d37b562279c3f3df2fb07",
-      "sha256": "fb26458d36bd86500ab224b55cb3c5b8b6d702f302f83c0d7e664349a952b430"
+      "sha256": "2e5e191fb640ab2b25370cb09c429bf92deeb150b3ba9a9e40c58fe1136de694"
     },
     {
       "phase": "A2",
       "path": "mods/jump/core/tasks.js",
       "upstream_blob": "e5dfe39ceadc5def209d37b562279c3f3df2fb07",
-      "sha256": "fb26458d36bd86500ab224b55cb3c5b8b6d702f302f83c0d7e664349a952b430"
+      "sha256": "2e5e191fb640ab2b25370cb09c429bf92deeb150b3ba9a9e40c58fe1136de694"
     },
     {
       "phase": "A2",
       "path": "mods/tasks/core/tasks.js",
       "upstream_blob": "e5dfe39ceadc5def209d37b562279c3f3df2fb07",
-      "sha256": "fb26458d36bd86500ab224b55cb3c5b8b6d702f302f83c0d7e664349a952b430"
+      "sha256": "2e5e191fb640ab2b25370cb09c429bf92deeb150b3ba9a9e40c58fe1136de694"
     }
   ],
   "requirements": [

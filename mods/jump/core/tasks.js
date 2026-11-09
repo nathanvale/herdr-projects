@@ -263,12 +263,13 @@ export const startsLine = (ms, now = Date.now()) => (typeof ms !== "number" ? "S
 // `herdr-task select`, from what the menu showed ({ agent, model, effort }) and what it sends back ({ agent, model,
 // effort }) on route ("azure-foundry" or "personal"). Only what changed is saved, so the rest keeps following Settings.
 // A model (Personal) or a deployment (Azure) belongs to one CLI, so its CLI goes with it; an effort alone sends no CLI
-// (the task's own, if any, stays, and so does the routing its choice is bound to). Nothing changed: null.
+// (the task's own, if any, stays, and so does the routing its choice is bound to). Another CLI drops the old CLI's
+// fields (herdr-task select), so the effort the menu kept goes with it. Nothing changed: null.
 export function selectChange(shown, value, route) {
   const change = {};
   if (value.agent !== shown.agent || (value.model ?? null) !== (shown.model ?? null))
     Object.assign(change, route === "azure-foundry" ? { deployment: value.model ?? "" } : { model: value.model ?? "default" });
-  if ((value.effort ?? null) !== (shown.effort ?? null)) change.effort = value.effort ?? "default";
+  if (value.agent !== shown.agent || (value.effort ?? null) !== (shown.effort ?? null)) change.effort = value.effort ?? "default";
   if (value.agent !== shown.agent || "model" in change || "deployment" in change) change.agent = value.agent;
   return Object.keys(change).length ? change : null;
 }

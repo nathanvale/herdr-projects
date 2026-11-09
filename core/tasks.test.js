@@ -186,7 +186,10 @@ test("a task's new-start change carries its CLI with a model or deployment, and 
   expect(selectChange(shown, { agent: "codex", model: "gpt-pick", effort: null }, "personal")).toEqual({ model: "gpt-pick", agent: "codex" });
   expect(selectChange(shown, { agent: "codex", model: "dep-1", effort: null }, "azure-foundry")).toEqual({ deployment: "dep-1", agent: "codex" });
   expect(selectChange(shown, { agent: "codex", model: null, effort: "high" }, "personal")).toEqual({ effort: "high" });
-  expect(selectChange(shown, { agent: "claude", model: null, effort: null }, "personal")).toEqual({ model: "default", agent: "claude" });
+  expect(selectChange(shown, { agent: "claude", model: null, effort: null }, "personal")).toEqual({ model: "default", effort: "default", agent: "claude" });
+  // another CLI: the effort the menu kept is sent too (herdr-task drops the old CLI's), so what is saved is what it shows
+  expect(selectChange({ agent: "codex", model: "gpt-pick", effort: "high" }, { agent: "claude", model: "opus", effort: "high" }, "personal"))
+    .toEqual({ model: "opus", effort: "high", agent: "claude" });
   expect(selectChange(shown, { agent: "codex", model: null, effort: null }, "personal")).toBe(null);
   expect(selectChange({ agent: "claude", model: "opus", effort: "high" }, { agent: "claude", model: "opus", effort: null }, "personal")).toEqual({ effort: "default" });
 });

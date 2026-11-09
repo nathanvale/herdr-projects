@@ -219,16 +219,21 @@ def template_of(name="assistant"):
 
 
 def personal_here(labels):
-    """Whether the route at a terminal's space (its labels) is Personal, as launch admission reads it (strictly); None
-    when the settings can't be read now."""
+    """Whether the route at a terminal's space (its labels) is Personal, as launch admission reads it (strictly): True or
+    False; None when the settings file can't be read now (it may be mid-write: the next tick looks again); or, when its
+    provider section can be read but is wrong (a field this version doesn't know, say), the reason why."""
     from .base import Fail
     from .launch_admission import space_binding
-    from .providers import PERSONAL
+    from .providers import PERSONAL, read_strict
     space = labels.get("herdr.task.space") or labels.get("herdr.space") or labels.get("herdr.coordinator.space")
     try:
-        return space_binding(str(space).split("/")[-1] if space else "")["route"] == PERSONAL
+        read_strict()
     except Fail:
         return None
+    try:
+        return space_binding(str(space).split("/")[-1] if space else "")["route"] == PERSONAL
+    except Fail as e:
+        return str(e) or "its provider settings can't be read as one"
 
 
 def restarted(k):
@@ -278,8 +283,10 @@ def plan(k, rec, running):
     here = personal_here(labels)
     if here is None:
         return None  # its settings can't be read now (a write in flight, say): nothing typed, looked at again next tick
-    if not here:
-        return ("held", None, False)
+    if here is not True:
+        # Held, said once: the route isn't Personal (False), or the provider section will stay wrong until someone fixes
+        # it (its reason, a string). For "held" the second place is that reason, not an argv.
+        return ("held", here or None, False)
     if rec and rec.get("session") and rec.get("log") and os.path.isfile(rec["log"]):
         return ("resume", resume_argv(rec["kind"], rec["argv"], rec["session"], CUT if rec.get("working") else None), not rec.get("shell"))
     # Its session is gone: a new one, with the handover (and an Assistant's role, its template's words).
@@ -316,10 +323,11 @@ def revive_pass(report):
         rec = dict(rec or {}, pid=k.get("pid"), how=how, sent=now())
         if how == "held":
             write_record(k, rec)
-            report.setdefault("revive_held", []).append({"terminal": k["address"], "why": "its provider isn't Personal (it started "
-                                                         "on Azure Foundry, or its space routes there): revival can't carry "
-                                                         "that yet (L2). A task's agent: herdr-task resume (--fresh for a "
-                                                         "new conversation on today's settings); an Assistant: a new chat"})
+            why = argv if isinstance(argv, str) else (
+                "its provider isn't Personal (it started on Azure Foundry, or its space routes there): revival can't carry "
+                "that yet (L2). A task's agent: herdr-task resume (--fresh for a new conversation on today's settings); an "
+                "Assistant: a new chat")
+            report.setdefault("revive_held", []).append({"terminal": k["address"], "why": why})
             continue
         if argv:
             shell = (k.get("argv") or [""])[0]
