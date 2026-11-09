@@ -1565,8 +1565,13 @@ export default class Chat extends View {
       this.startAgent({ ...first, text: [first, ...rest].map((m) => m.text).join("\n\n"), files: [first, ...rest].flatMap((m) => m.files) }, cx);
       return;
     }
-    const a = this.slotAgent();
+    // After this chat's own start was left uncertain, only its own terminal (by launch id), never another in the slot.
+    const lid = this.uncertainLaunch;
+    const a = lid
+      ? terminals().find((k) => k.state === "live" && k.labels?.["herdr.chat.slot"] === this.slot && k.labels?.["herdr.launch"] === lid)?.address ?? null
+      : this.slotAgent();
     if (!a) return;
+    this.uncertainLaunch = null;
     this.addr = a;
     this.machine = a.includes("/") ? a.split("/")[0] : null;
     this.path = null;
@@ -1620,6 +1625,7 @@ export default class Chat extends View {
       return;
     }
     this.phase = "starting";
+    this.uncertainLaunch = null;
     cx.notify();
     cx.spawn(async (cx) => {
       // Chosen settings (the New space dialog, props.settings): the template's words with that
@@ -1675,13 +1681,16 @@ export default class Chat extends View {
       // Only a terminal carrying this start's own launch id (herdr.launch) is taken: a slot label alone
       // could be another start's agent.
       const lid = out.launch?.launch;
-      const slotted = !refused && lid && (r.code !== 0 || !out.address) ? this.slotAgent() : null;
-      const late = slotted && terminals().find((k) => k.address === slotted)?.labels?.["herdr.launch"] === lid ? slotted : null;
+      const late = !refused && lid && (r.code !== 0 || !out.address)
+        ? terminals().find((k) => k.state === "live" && k.labels?.["herdr.chat.slot"] === this.slot && k.labels?.["herdr.launch"] === lid)?.address ?? null
+        : null;
       if (late) out = { address: late, first_message: { sent: false } };
       if (out.address && out.first_message?.sent === false && words) this.firstSend = [words, task].filter(Boolean).join("\n\n");
       if (r.code !== 0 && !late || !out.address) {
         p.failed = (out.error || r.stderr || r.stdout || "It didn't start.").trim();
         if (!msg) toast({ title: `The ${this.role === "coordinator" ? "Assistant" : this.role} didn't start`, body: p.failed, level: "error" });
+        // A start that may run (submission uncertain): adoptSlot follows only the terminal carrying its launch id.
+        this.uncertainLaunch = out.launch?.state === "submission-uncertain" ? out.launch.launch : null;
         this.phase = "fresh";
         cx.notify();
         return;

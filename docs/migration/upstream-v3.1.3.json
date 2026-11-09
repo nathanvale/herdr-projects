@@ -140,7 +140,7 @@
       "phase": "L1",
       "path": "mods/chat/main.js",
       "upstream_blob": "4cdd115719ff5ea07827776304cd093aec0f11b3",
-      "sha256": "975e5a3889ab923561e45c7991dcda1fbd1e71e1ee0e9c30e11f6915e2890388"
+      "sha256": "187eccc068dab8a49324987e3235904099bdda83436507ce9a1d69d084f465bc"
     },
     {
       "phase": "C1",
@@ -344,7 +344,7 @@
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/launch_admission.py",
       "upstream_blob": null,
-      "sha256": "734e20830f8e7ff619db0a9ffaf4e786a13894f88c88e3e23b87395b9c4b753c"
+      "sha256": "75c89a956b4882a5e4f10fa4623ab314f4b08203f5570e0437ce18f06cf452ca"
     },
     {
       "phase": "L1",
@@ -368,7 +368,7 @@
       "phase": "L1",
       "path": "test/test_launch_admission.py",
       "upstream_blob": null,
-      "sha256": "a160143564ce4d4bf3c9a0d6cef1cdd4fe2594c88d9fc65bace759847a065922"
+      "sha256": "3c58aeb72b2a25dd4462c049b92c511417fb0e63440323e8ac6797d087fbad8e"
     }
   ],
   "requirements": [

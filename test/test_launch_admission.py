@@ -15,6 +15,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import io
 import tarfile
 import tempfile
 import time
@@ -695,9 +696,14 @@ class WorktreeReconcile(unittest.TestCase):
         """mods/tasks/bin as it was at BEFORE_G1, from this repository's history (CI fetches it whole)."""
         where = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, where, True)
+        # After a squash merge the pre-repair commit leaves the integration branch's history: the control then
+        # can't run and says why. It proved G1's loss on PR 29's own CI, where the commit was reachable.
+        if subprocess.run(["git", "-C", ROOT, "cat-file", "-e", BEFORE_G1 + "^{commit}"], capture_output=True).returncode:
+            self.skipTest(f"{BEFORE_G1[:8]} isn't in this checkout's history (a squash merge drops it): the negative "
+                          "control ran on PR 29's own CI")
         tar = subprocess.run(["git", "-C", ROOT, "archive", "--format=tar", BEFORE_G1, "mods/tasks/bin"],
                              check=True, capture_output=True).stdout
-        with tarfile.open(fileobj=__import__("io").BytesIO(tar)) as t:
+        with tarfile.open(fileobj=io.BytesIO(tar)) as t:
             t.extractall(where, filter="data")
         return os.path.join(where, "mods", "tasks", "bin")
 
@@ -729,11 +735,14 @@ class WorktreeReconcile(unittest.TestCase):
         recorded = (os.path.realpath(t["worktree"]) if t.get("worktree") else None, t.get("branch"), t.get("start"))
         return recorded, (worktree, branch, start), t.get("base")
 
-    def test_a_reconciled_worktree_start_records_its_worktree_branch_base_and_start(self):
-        # (a) Before the repair: the agent is recorded, its worktree, branch and start commit are lost.
+    def test_before_the_repair_a_reconciled_worktree_start_loses_its_worktree(self):
+        """(a) The negative control: herdr-task at BEFORE_G1 records the agent but loses its worktree, branch and
+        start commit (skipped, with why, where that commit isn't in history)."""
         recorded, made, _ = self.lost_reply_then_reconcile(self.old_bin())
         self.assertEqual(recorded, (None, None, None), "the negative control no longer shows G1's loss")
-        # (b) This tree: the same scenario records them, with the base it branched from.
+
+    def test_a_reconciled_worktree_start_records_its_worktree_branch_base_and_start(self):
+        """(b) This tree: the same scenario records them, with the base it branched from."""
         recorded, made, base = self.lost_reply_then_reconcile(BIN)
         self.assertEqual((recorded, base), (made, "main"))
 

@@ -494,7 +494,8 @@ def admit_assistant_start(role, space, hc_args, slot=None, config_dir=None):
     open refuses."""
     machine = on_machine(hc_args)
     if machine is not None and not WORD.fullmatch(machine):
-        raise Fail("`hc run --on` names a machine as a single word (letters, digits, dots, dashes). Nothing was started.")
+        raise Fail("`hc run --on` names a machine as a single word (letters, digits, dots, underscores, @ and dashes). "
+                   "Nothing was started.")
 
     def revise():
         d = read_strict()
