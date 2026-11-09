@@ -126,4 +126,10 @@ test("the window's Provider write keeps its level and rechecks a listed pick ins
   expect(save).not.toContain("view.set(");
   expect(save.indexOf("configOf(view, scope) !== expect")).toBeGreaterThan(save.indexOf("view.change("));
   expect(src).toContain("save(view, p, row.field, value, cx, f.config)");
+  // a refused stale pick changes nothing: its edit says so, and the window's apply then writes and pushes nothing
+  expect(save).toContain("p.err[field] = STALE; return false;");
+  const main = readFileSync(join(import.meta.dir, "..", "mods", "shepherdr-settings", "main.js"), "utf8");
+  const apply = main.slice(main.indexOf("  async apply(edit) {"), main.indexOf("  // The object a scope writes to"));
+  expect(apply.indexOf("if (edit(next) === false) return true;")).toBeGreaterThan(-1);
+  expect(apply.indexOf("if (edit(next) === false) return true;")).toBeLessThan(apply.indexOf("writeTextFile("));
 });

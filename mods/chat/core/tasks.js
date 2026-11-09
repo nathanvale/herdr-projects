@@ -279,7 +279,7 @@ export function selectChange(shown, value, route) {
 // - its effort levels come from the chosen deployment, else the one it inherits, so an effort can stay without a deployment;
 // - another CLI drops the old CLI's fields (herdr-task select), so on Azure its deployment goes with the CLI change;
 // - a deployment picked from Refresh's list carries that list's revision; one typed by hand doesn't;
-// - the effort goes only when it changed, so one kept from before isn't cleared where no levels are known.
+// - the effort goes when it changed or the CLI did, so one kept from before isn't cleared where no levels are known.
 export function webSelectSave(shown, form, azure) {
   const was = shown.selection ?? {};
   const newAgent = form.agent !== (was.agent ?? shown.inherit?.agent ?? "claude");
@@ -289,7 +289,8 @@ export function webSelectSave(shown, form, azure) {
     ...(newAgent || newDep ? { agent: form.agent } : {}),
     ...(newDep ? { deployment: form.dep } : {}),
     ...(listed ? { inventory: shown.inventory?.[form.agent] ?? "" } : {}),
-    ...(form.effort !== (was.effort ?? "") ? { effort: form.levels.includes(form.effort) ? form.effort : "default" } : {}),
+    // (with a CLI change too: herdr-task select drops the old CLI's effort, so the one shown here must be sent)
+    ...(newAgent || form.effort !== (was.effort ?? "") ? { effort: form.levels.includes(form.effort) ? form.effort : "default" } : {}),
   };
 }
 // The levels a web task selector offers: the chosen deployment's model's, else the inherited deployment's (Azure).

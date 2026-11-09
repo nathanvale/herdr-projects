@@ -204,7 +204,10 @@ test("the web selector keeps an effort with an inherited deployment, and a CLI c
   expect(webSelectSave(kept, { agent: "claude", dep: "", effort: "high", fromList: false, levels: [] }, true)).toEqual({});
   // a CLI change on Azure sends the deployment shown, even the same name the old CLI had
   const own = { selection: { agent: "codex", deployment: "same", effort: null }, inherit: { agent: "claude" }, listed: {}, inventory: {} };
-  expect(webSelectSave(own, { agent: "claude", dep: "same", effort: "", fromList: false, levels: [] }, true)).toEqual({ agent: "claude", deployment: "same" });
+  expect(webSelectSave(own, { agent: "claude", dep: "same", effort: "", fromList: false, levels: [] }, true)).toEqual({ agent: "claude", deployment: "same", effort: "default" });
+  // a CLI change sends the effort chosen for the new CLI, on Personal too (herdr-task drops the old CLI's effort)
+  const codex = { selection: { agent: "codex", deployment: null, effort: "high" }, inherit: { agent: "claude" }, listed: {}, inventory: {} };
+  expect(webSelectSave(codex, { agent: "claude", dep: "", effort: "high", fromList: false, levels: ["low", "high"] }, false)).toEqual({ agent: "claude", effort: "high" });
   // a listed pick carries its list's revision; a typed one doesn't
   const base = { selection: { agent: "claude", deployment: null, effort: null }, listed: { claude: ["picked"] }, inventory: { claude: "7" } };
   expect(webSelectSave(base, { agent: "claude", dep: "picked", effort: "", fromList: true, levels: [] }, true)).toEqual({ agent: "claude", deployment: "picked", inventory: "7" });

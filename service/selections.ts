@@ -43,9 +43,17 @@ export const STALE_LIST = "Those deployments were found under another resource, 
 /** A space's web Assistant pick changed (saved, cleared or used) since its menu showed it. */
 export const STALE_PICK = "This space's Assistant pick changed since this menu was opened. Nothing was saved; open it again.";
 
+/** A value as JSON with every object's keys sorted: herdr-core returns a document's keys sorted, while the service's own
+ *  copy keeps the order it wrote them in, so a comparison must not depend on key order. */
+export function canonical(value: unknown): string {
+  const sort = (v: unknown): unknown => (Array.isArray(v) ? v.map(sort) : v && typeof v === "object"
+    ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, sort((v as Record<string, unknown>)[k])])) : v);
+  return JSON.stringify(sort(value ?? null));
+}
+
 /** A web Assistant pick's own revision: what a save or a reset must quote, so an older menu can't overwrite a newer pick. */
 export function pickRevision(pick: unknown) {
-  return new Bun.CryptoHasher("sha256").update(JSON.stringify(pick ?? null)).digest("hex").slice(0, 16);
+  return new Bun.CryptoHasher("sha256").update(canonical(pick)).digest("hex").slice(0, 16);
 }
 
 /** assistant.picks with only this space's pick changed (null: cleared), refused when it isn't the one the menu showed
@@ -61,7 +69,7 @@ export function withPick(picks: Record<string, unknown> | undefined, space: stri
  *  saved meanwhile stays), every other space's kept. */
 export function withoutUsedPick(picks: Record<string, unknown> | undefined, space: string, used: unknown) {
   const cur = { ...(picks ?? {}) };
-  if (JSON.stringify(cur[space]) === JSON.stringify(used)) delete cur[space];
+  if (canonical(cur[space]) === canonical(used)) delete cur[space];
   return cur;
 }
 

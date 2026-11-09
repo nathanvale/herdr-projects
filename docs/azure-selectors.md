@@ -153,6 +153,8 @@ drops it once used.
 - The web's Assistant pick is dropped only by the web's first-message start: a start from the window
   leaves it for a later web first message. `assistant.picks` is keyed by this service's space ids
   and is not relocated by a Serve-from move.
+- The window's task selector can't tell a typed deployment from a listed one of the same name (its menu returns only
+  the name), so such a typed name gets the list check too; a stale list then refuses it with "refresh".
 - The window's task selector keeps the CLI, model or deployment and effort; Fast and permissions in
   its menu are not part of a task's choice and follow Settings. The web's has no Fast or permissions.
 - Inventory and an effort list don't prove account, inference, tool or effort support.

@@ -48,7 +48,7 @@ function save(view, p, field, word, cx, expect = null) {
   if (v === valueOf(view, field, scope)) return cx.notify();
   p.err[field] = "";
   view.change((next) => {
-    if (expect !== null && configOf(view, scope) !== expect) { p.err[field] = STALE; return; }
+    if (expect !== null && configOf(view, scope) !== expect) { p.err[field] = STALE; return false; }
     const inherited = view.chain("provider", field, scope).slice(1).find((x) => x.value !== undefined)?.value ?? null;
     if (JSON.stringify(v) === JSON.stringify(inherited)) return view.drop(view.layerOf(next, scope), "provider", field);
     const tg = view.target(next, scope);

@@ -174,7 +174,8 @@ export default class ShepherdrSettings extends View {
       await this.load();
       const next = JSON.parse(JSON.stringify(this.cfg));
       next.version = 1;
-      edit(next);
+      // An edit that returns false found nothing to change on the reloaded file (a refused stale pick): no write, no push.
+      if (edit(next) === false) return true;
       try {
         await writeTextFile(SHEPHERDR_FILE(), JSON.stringify(next, null, 2) + "\n", this.raw);
         this.cfg = next;

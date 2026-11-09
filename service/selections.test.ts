@@ -97,6 +97,14 @@ test("two spaces' picks saved from the same snapshot both stay; an older menu ca
   expect(withPick(doc, "sp1", null, pickRevision(doc.sp1))).toEqual({ sp2: { agent: "codex", model: "b" } });
 });
 
+test("pick comparisons don't depend on key order: herdr-core returns a document's keys sorted", () => {
+  const shown = { agent: "claude", model: "a", effort: "high", fast: false, perm: null, revision: "r" };
+  const stored = { effort: "high", fast: false, model: "a", perm: null, revision: "r", agent: "claude" };
+  expect(pickRevision(stored)).toBe(pickRevision(shown));
+  expect(withPick({ sp1: stored }, "sp1", null, pickRevision(shown))).toEqual({});
+  expect(withoutUsedPick({ sp1: stored }, "sp1", shown)).toEqual({});
+});
+
 test("a start drops only the pick it used: a newer pick for its space, and other spaces' picks, stay", () => {
   const used = { agent: "claude", model: "a" };
   expect(withoutUsedPick({ sp1: used, sp2: { agent: "codex" } }, "sp1", { ...used })).toEqual({ sp2: { agent: "codex" } });
