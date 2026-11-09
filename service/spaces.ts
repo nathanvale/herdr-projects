@@ -128,8 +128,9 @@ export async function newSpace(hub: Hub, opts: { machine: string | null; path: s
   if (opts.store.value("coordinator.auto") === false) return machine ? `${machine}/${id}` : id;
   const t = await execTemplate(hub, "assistant", machine);
   // through launch admission (herdr-task launch run): Personal only, claimed, rechecked and recorded as sent, then hc
-  // run. A refused start leaves the space without its Assistant, as a failed one always has.
-  await run(["herdr-task", "launch", "run", "--role", "coordinator", "--space", id, "--json", "--",
+  // run. A refused start leaves the space without its Assistant, as a failed one always has. SHEPHERDR_HERDR_TASK: a
+  // test's stand-in (as SHEPHERDR_HC for hc); unset, herdr-task on PATH as before.
+  await run([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", "launch", "run", "--role", "coordinator", "--space", id, "--json", "--",
     "--bg", "--keep", "--no-parent", ...(machine ? ["--on", machine] : []), "--cwd", abs,
     "--label", "herdr.role=coordinator", "--label", `herdr.coordinator.space=${id}`, "--label", `herdr.space=${id}`, t.name]);
   t.done();

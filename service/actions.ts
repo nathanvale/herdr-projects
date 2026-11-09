@@ -554,7 +554,7 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
       : ["--label", "herdr.role=coordinator", "--label", `herdr.coordinator.space=${bare}`, "--label", `herdr.space=${bare}`];
     const tpl = await execTemplate(hub, "assistant", sp.machine ?? null);
     // through launch admission (herdr-task launch run): Personal only, claimed, rechecked and recorded as sent, then hc run
-    const r = await run(["herdr-task", "launch", "run", "--role", "coordinator", "--space", bare, "--json", "--",
+    const r = await run([process.env.SHEPHERDR_HERDR_TASK || "herdr-task", "launch", "run", "--role", "coordinator", "--space", bare, "--json", "--",
       "--bg", "--json", "--no-parent", "--keep", ...(sp.machine ? ["--on", sp.machine] : []), ...(sp.folder ? ["--cwd", sp.folder] : []), ...labels, tpl.name, task]);
     tpl.done();
     let out: any = {};

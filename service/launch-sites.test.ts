@@ -5,8 +5,10 @@ import { join } from "node:path";
 
 // The service's two Assistant start sites (L1): a web-only New space (spaces.ts newSpace) and a space's first message
 // with no Assistant yet (actions.ts send to "p:<space>") start it through launch admission, `herdr-task launch run`,
-// never with an hc run of their own, and a refusal's words reach the page. herdr-task and hc are stand-ins first on
-// PATH that record their words: no agent, terminal or settings file of the person's is touched. The owner itself
+// never with an hc run of their own, and a refusal's words reach the page. herdr-task and hc are stand-ins that record
+// their words, given as SHEPHERDR_HERDR_TASK and SHEPHERDR_HC (Bun.spawn finds a bare name on the PATH the test
+// process started with, so a PATH set here wouldn't reach it): no agent, terminal or settings file of the person's is
+// touched. The owner itself
 // (claims, revalidation, uncertainty) is proved across its own command line in test/test_launch_admission.py.
 const APP = mkdtempSync(join(tmpdir(), "shep-launch-sites-"));
 const BIN = join(APP, "bin"), TASK_CALLS = join(APP, "herdr-task.calls"), HC_CALLS = join(APP, "hc.calls"), REPLY = join(APP, "reply");
@@ -22,16 +24,16 @@ writeFileSync(join(BIN, "hc"), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${HC_CALLS}"\
 
 let SP: typeof import("./spaces.ts");
 let A: typeof import("./actions.ts");
-const was = { app: process.env.HERDR_APP_HOME, path: process.env.PATH, hc: process.env.SHEPHERDR_HC };
+const was = { app: process.env.HERDR_APP_HOME, task: process.env.SHEPHERDR_HERDR_TASK, hc: process.env.SHEPHERDR_HC };
 beforeAll(async () => {
   process.env.HERDR_APP_HOME = APP; // no mods/spaces-chat: the service's own spaces, no window
-  process.env.PATH = `${BIN}:${process.env.PATH}`;
+  process.env.SHEPHERDR_HERDR_TASK = join(BIN, "herdr-task");
   process.env.SHEPHERDR_HC = join(BIN, "hc");
   SP = await import("./spaces.ts");
   A = await import("./actions.ts");
 });
 afterAll(() => {
-  for (const [k, v] of [["HERDR_APP_HOME", was.app], ["PATH", was.path], ["SHEPHERDR_HC", was.hc]] as const) {
+  for (const [k, v] of [["HERDR_APP_HOME", was.app], ["SHEPHERDR_HERDR_TASK", was.task], ["SHEPHERDR_HC", was.hc]] as const) {
     if (v === undefined) delete process.env[k]; else process.env[k] = v;
   }
   rmSync(APP, { recursive: true, force: true });
