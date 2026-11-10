@@ -586,7 +586,9 @@ BAD = {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP
 PENDING = {"QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED", "EXPECTED"}
 
 
-VIEW = "state,mergeable,headRefOid,baseRefName,mergeCommit,url,reviewDecision,mergeStateStatus"
+# The view's fields, in the order the fork asks for them; VIEW leaves out statusCheckRollup for SHEP-179's second read.
+FIELDS = "state,mergeable,headRefOid,baseRefName,statusCheckRollup,mergeCommit,url,reviewDecision,mergeStateStatus"
+VIEW = FIELDS.replace("statusCheckRollup,", "")
 # SHEP-179: a token that may read a pull request but not its checks (a fine-grained one without Checks: read, as
 # the exe.dev GitHub integration's) gets GitHub's "Resource not accessible" for them: a permission, never a blip.
 DENIED = ("resource not accessible", "http 403", "must have", "not have permission", "insufficient scope")
@@ -605,7 +607,7 @@ def pr_read(task):
     a pass."""
     pr = task["pr"]
     view = lambda fields: gh("pr", "view", str(pr["number"]), "--repo", pr["repo"], "--json", fields)
-    ok, out, err = view(VIEW + ",statusCheckRollup")
+    ok, out, err = view(FIELDS)
     rest = not ok and denied(err)
     if rest:
         ok, out, err = view(VIEW)

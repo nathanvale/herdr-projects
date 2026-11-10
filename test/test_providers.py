@@ -506,8 +506,10 @@ class AzureStartsBound(unittest.TestCase):
         self.assertEqual(agent[1:3], ["-c", f'model_provider="{ident}"'])
         self.assertEqual(agent[agent.index("-m") + 1], "code-deployment")
         self.assertLess(agent.index("-m"), at)
-        self.assertEqual(agent[at:], ["resume", "--no-daemon", "-c", 'model_reasoning_effort="high"', "-c", 'service_tier="fast"',
-                                      "22222222-3333-4444-8555-666666666666"])
+        # Last, SHEP-189's nudge: the resumed session's first message (commands.RESUME_NUDGE).
+        self.assertEqual(agent[at:-1], ["resume", "--no-daemon", "-c", 'model_reasoning_effort="high"', "-c", 'service_tier="fast"',
+                                        "22222222-3333-4444-8555-666666666666"])
+        self.assertIn("Shepherdr resumed your session", agent[-1])
         self.assertNotIn("new-default", json.dumps(agent))
         f.settle(2, tid=tid)
         f.no_secret()

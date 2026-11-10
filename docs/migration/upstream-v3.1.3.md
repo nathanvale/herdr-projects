@@ -133,7 +133,8 @@ Qualification is unchanged: nothing here is native, Azure or R evidence.
 squashed or rebased. Git's merge base is v3.1.29 (`e41ea9d2`). U now names v3.1.31: every U path
 outside the phase table and the overrides is byte-identical to it, and each row's `upstream_blob`
 and `sha256` are re-pinned to v3.1.31 and the merged content. `AFTER_Q` names the merge's source
-paths (`MERGE-v3.1.31`), so Q's ledger keeps describing `c9bc734f`. The gate's checks are unchanged.
+paths (`MERGE-v3.1.31`), so Q's ledger keeps describing its candidate `d53e014b`. The gate's checks are
+unchanged.
 
 Where the two sides met:
 

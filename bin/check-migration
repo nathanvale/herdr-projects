@@ -264,7 +264,7 @@ PROSE = frozenset('AGENTS.md CHANGELOG.md CLAUDE.md CODING_STANDARDS.md GLOSSARY
 # ({'MIG-10': 'path other/path'}). Its evidence is its own Check; Q's ledger keeps describing its candidate only.
 AFTER_Q = {
     # Upstream v3.1.31 merged into the fork (upstream 6b8caac9, lightweight tag v3.1.31; fork base 9b7ec505): every
-    # tracked source path it changes. Its evidence is its own Check; Q's ledger keeps describing c9bc734f.
+    # tracked source path it changes. Its evidence is its own Check; Q's ledger keeps describing its candidate d53e014b.
     'MERGE-v3.1.31': (
         'bin/herdr-browser bin/shepherdr core/agents.js core/chat-log.js core/chat-log.test.js '
         'core/live-switch.js core/live-switch.test.js core/mentions.js core/mentions.test.js core/settings.js '
