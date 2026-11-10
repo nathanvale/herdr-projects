@@ -247,7 +247,11 @@ class PersonalPassThrough(unittest.TestCase):
         agent = cmd[6:]
         self.assertEqual(agent[:2], ["claude", "--settings"])
         settings = json.loads(agent[2])
-        self.assertEqual((settings["fastMode"], sorted(settings)), (False, ["fastMode", "permissions"]))
+        # Upstream's own worker additions only (SHEP-139: the chat card's PermissionRequest hook, herdr-task _allow).
+        self.assertEqual((settings["fastMode"], sorted(settings)), (False, ["fastMode", "hooks", "permissions"]))
+        self.assertEqual(list(settings["hooks"]), ["PermissionRequest"])
+        [entry] = settings["hooks"]["PermissionRequest"]
+        self.assertEqual([" _allow --command " in h["command"] for h in entry["hooks"]], [True])
         self.assertEqual(len(agent), 4)  # and its brief
         for word in ("--model", "-c"):
             self.assertNotIn(word, agent[:3])

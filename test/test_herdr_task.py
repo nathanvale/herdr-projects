@@ -4982,9 +4982,11 @@ class CycleTwo(unittest.TestCase):
                 f.git(f.repo, "checkout", "-q", "-B", "main", rewritten)
                 if verb == "accept":
                     f.seed(state="ready", ready_at=1)
-                    self.assertEqual(f.ok("accept", "1", "--folder", f.repo)["accepted"], "done")
                 else:
+                    # SHEP-96: ready with nothing to merge waits in Ready; Accept is where it finishes and keeps both.
                     f.ready()
+                    self.assertEqual((f.task()["state"], f.task().get("nothing_to_merge")), ("ready", True))
+                self.assertEqual(f.ok("accept", "1", "--folder", f.repo)["accepted"], "done")
                 self.kept(f, f"task/1 at {f.start[:7]} isn't in main")
 
     # 6: the saved no is asked again through merge and ready's auto-merge too.

@@ -58,8 +58,9 @@ def unasked(f):
 
 
 def core(pr):
-    """A saved pull request as written: its legacy fields, and nothing qualifying it."""
-    return {k: v for k, v in pr.items() if k not in ("checked", "watch")}
+    """A saved pull request as written: its legacy fields, and nothing qualifying it. wait: what a Ready one
+    still waits on (SHEP-175), the tick's bookkeeping as checked and watch are."""
+    return {k: v for k, v in pr.items() if k not in ("checked", "watch", "wait")}
 
 
 @publication.ON_CI
@@ -126,6 +127,7 @@ class PublishThroughTheForge(unittest.TestCase):
         f.ready()
         t = f.task()
         self.assertEqual((t["state"], core(t["pr"])), ("ready", LEGACY))
+        self.assertEqual(t["pr"].get("wait"), "Checks running")  # SHEP-175: Working until its checks pass (GitHub's)
         self.assertEqual(f.remote_tip("task/1"), f.tip)
         self.assertEqual((f.calls("pr", "comment"), f.calls("pr", "create")), ([COMMENT], []))
 
