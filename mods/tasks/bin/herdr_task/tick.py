@@ -8,12 +8,16 @@ import secrets
 import subprocess
 import time
 
-from .base import Fail, guard, hc_json, now, PR_EVERY, run, SHELLS, STORE
+from .base import Fail, git, guard, hc_json, now, PR_EVERY, run, SHELLS, STORE
 from .settings import machine_name, worker_argv
-from .agents import agent_log, agent_running, busy_again, detail, held_ask, live_agents, status_word, task_status
+from .agents import (
+    agent_log, agent_running, busy_again, detail, held_ask, last_question, live_agents, own_work, ready_turns, status_word,
+    task_status,
+)
 from .provider import NUDGE, provider_cut, provider_error, PROVIDER_WAITS
 from .sessions import find_lost_logs, refresh_sessions, session_of
-from .github import GhFailed, finish, merged_here, watch_main
+from .github import (BEHIND, drop_branch, finish, GhFailed, merged_here, needs_approval, pr_wait, queue_entry, tidy_done,
+                     tidy_due, update_main, watch_main)
 from .forge import already_merged, merge_reach, pr_merged, pr_pending, pr_problem, pr_view, provider_of, reach, repository
 from .launch import default_space, track
 from .store import locate, read_list, Store, store_files
@@ -29,16 +33,48 @@ from .scheduler import SCHEDULER
 from .revive import revive_pass
 
 
+PR_WAIT_EVERY = 20000  # how often a pull request whose checks still run is read again (ms)
+
+
 def at_work(s, t):
     """Its agent is mid-turn (working, or asking): a task is never marked merged under it (SHEP-23);
     a later tick looks again."""
     return any(status_word(k) in ("working", "blocked") for k in live_agents(s.key(t)))
 
 
+def holds_open(s, t):
+    """A merge GitHub reports never closes the task under it (#802, #844): reopened after its pull
+    request merged (until its agent says ready), or Working with its agent still there (its brief
+    may go on after the merge: it says ready, or ends, and is done then)."""
+    return bool(t.get("kept_open")) or (t["state"] == "running" and any(agent_running(k) for k in live_agents(s.key(t))))
+
+
+QUEUE_GRACE = 2 * 60000  # a pull request just queued may take a moment to show in GitHub's queue
+
+
+def queue_pass(s, t, v, report):
+    """A pull request Herdr put in GitHub's merge queue that is still open: still in the queue (or set
+    to join it), it stays Merging; the queue removed it (a check failed there, a conflict), it
+    needs attention, with the queue's reason (#742, #802)."""
+    if v.get("state") != "OPEN":
+        t.pop("merge_queued", None)
+        return
+    if now() - t["merge_queued"] < QUEUE_GRACE:
+        return
+    q = queue_entry(t)
+    if not q or q["in"] or q["auto"] or q.get("state") == "MERGED":
+        return
+    t.pop("merge_queued")
+    why = (q.get("reason") or "").strip().rstrip(".")
+    t["attention"], t["attention_at"] = "GitHub's merge queue removed it" + (f": {why}." if why else "."), now()
+    report["attention"].append(t["id"])
+
+
 def facts(s, t, report):
-    """A worktree task whose own work merged anywhere is done (once its agent is between turns),
-    but for an adopted pull request merged off the task's base, which waits for the person
-    (merged_elsewhere()) and is reported once; a pull request's problems need the person."""
+    """A worktree task whose own work merged anywhere is done (once its agent is between turns, and
+    a Working one once its agent is gone or says ready), but for an adopted pull request merged off
+    the task's base, which waits for the person (merged_elsewhere()) and is reported once; a pull
+    request's problems need the person."""
     if t.get("pr"):
         pr = t["pr"]
         if now() - pr.get("checked", 0) < PR_EVERY:
@@ -62,10 +98,15 @@ def facts(s, t, report):
                     t["attention"] = held
                     report["attention"].append(t["id"])
                 return
-            if at_work(s, t):
+            if at_work(s, t) or holds_open(s, t):
                 return
             t["merged"] = True
             watch_main(s, t, (v.get("mergeCommit") or {}).get("oid"))
+            if t.get("merge_queued"):
+                # Herdr queued it: its base here catches up and its branch on GitHub goes, as a merge
+                # Herdr made itself would (merge_now()).
+                update_main(s, t)
+                drop_branch(s, t)
             if provider_of(pr) != "github" and isinstance(v.get("headRefOid"), str):
                 # What merged, as this very read says (finish() never asks gh about another forge's).
                 t["merged_head"] = v["headRefOid"]
@@ -77,7 +118,24 @@ def facts(s, t, report):
         # (upstream), and a moved-head note already there stays while the head is still moved.
         issue, moved = pr_problem(v), adopted_moved(s, t, v)
         problem = issue or (moved if t["state"] == "ready" else None)
-        t["_pr_fresh"] = not (issue or moved) and not pr_pending(v)
+        if t.get("merge_queued"):
+            queue_pass(s, t, v, report)
+        if needs_approval(v):
+            pr["needs_approval"] = True
+        else:
+            pr.pop("needs_approval", None)
+        t["_pr_fresh"] = not (issue or moved) and not pr_pending(v) and not needs_approval(v)
+        # Ready only once its checks are done and GitHub knows it can merge (SHEP-175): Working till then.
+        if t["state"] == "ready":
+            # GitHub's own wait (mergeable, its checks): another forge's pull request is Ready on its own terms.
+            wait = pr_wait(v, t.get("ready_at")) if provider_of(pr) == "github" else None
+            if wait != pr.get("wait"):
+                if wait:
+                    pr["wait"] = wait
+                else:
+                    pr.pop("wait", None)
+            if wait:
+                pr["checked"] = now() - PR_EVERY + PR_WAIT_EVERY
         try:
             # GitHub news asks GitHub: never for another forge's pull request (its name would be read
             # there as GitHub's). Bitbucket feedback is outside B1.
@@ -90,15 +148,16 @@ def facts(s, t, report):
         if t["state"] in ("ready", "running") and problem != t.get("attention"):
             if problem:
                 t["attention"], t["attention_at"] = problem, now()
+                t.pop("merge_queued", None)
                 report["attention"].append(t["id"])
-            elif t.get("attention", "").startswith(("Checks failing", "It conflicts", "The pull request was closed", MERGE_FAILED, MOVED)) \
+            elif t.get("attention", "").startswith(("Checks failing", "It conflicts", "The pull request was closed", MERGE_FAILED, BEHIND, MOVED)) \
                     and not (t["state"] == "running" and moved and t["attention"].startswith(MOVED)):
                 t.pop("attention")
     elif merged_here(s, t) and not at_work(s, t):
         t["merged"] = True
         finish(s, t)
         report["done"].append(t["id"])
-    elif t.get("own") and not at_work(s, t) and now() - t.get("gh_checked", 0) >= PR_EVERY:
+    elif t.get("own") and not at_work(s, t) and not holds_open(s, t) and now() - t.get("gh_checked", 0) >= PR_EVERY:
         # SHEP-59: its pull request squash-merged without the task knowing (opened by its agent), or a
         # Ready one whose work is already in its base: done, as ready would.
         t["gh_checked"] = now()
@@ -139,8 +198,38 @@ def back_pass(s, t, report):
     live = live_agents(s.key(t))
     # Cheap while nothing works: hc ls alone; its records in full (roles) only then.
     if any(status_word(k) == "working" for k in live) and busy_again(t, [detail(k) for k in live]):
-        back_to_work(s, t, "its agent is at work again")
+        back_to_work(s, t, "its agent is at work again", auto=True)
         report.setdefault("working_again", []).append(s.ref(t))
+
+
+def settle_back(s, t, report):
+    """A Ready task its agent's own turn took back to work (back_pass(): a message in its chat,
+    a background job's notice waking it) is Ready again once that turn ended with nothing new: its
+    branch where it said ready, nothing uncommitted, no question asked, no work of its own left
+    running (SHEP-133). Else it stays Working, and Needs you once its agent stays quiet."""
+    b = t.get("back") or {}
+    if t["state"] != "running" or not b.get("auto") or t.get("attention") or t.get("retry"):
+        return False
+    wt = t.get("worktree") if t.get("mode") == "worktree" else None
+    if not wt or not t.get("head") or not os.path.isdir(wt):
+        return False
+    live = [k for k in map(detail, live_agents(s.key(t))) if agent_running(k)]
+    if not live or any(status_word(k) not in ("idle", "done") for k in live):
+        return False
+    ok, head, _ = git(wt, "rev-parse", "HEAD")
+    if not ok or head != t["head"] or git(wt, "status", "--porcelain", "--untracked-files=no")[1]:
+        return False
+    if any(last_question(t, k.get("address")) for k in live) or own_work(t, live):
+        return False
+    t["state"], t["ready_turns"] = "ready", ready_turns(live)
+    if b.get("progress"):
+        t["progress"] = b["progress"]
+    else:
+        t.pop("progress", None)
+    t.pop("back", None)
+    s.dirty = True
+    report.setdefault("ready_again", []).append(s.ref(t))
+    return True
 
 
 def due_pass(s, report):
@@ -161,6 +250,8 @@ def tick_store(s, report):
     for t in s.data["tasks"]:
         if t["state"] == "ready":
             back_pass(s, t, report)
+        elif t["state"] == "running" and (t.get("back") or {}).get("auto"):
+            settle_back(s, t, report)
         if t.get("worktree") and t["state"] in ("running", "ready"):
             facts(s, t, report)
             if t["state"] == "ready" and (t.get("pr") or {}).get("news"):
@@ -281,19 +372,25 @@ def end_done(s, t, report, pressed=False):
 
 
 def end_done_pass(report, folder=None, pressed=False):
-    """Every Done task here with agents left ends them (end_done()). Cheap when nothing's left:
-    a task is looked at once after each time it became Done."""
+    """Every Done task here with agents left ends them (end_done()), and once none is left its
+    worktree goes (tidy_done(), SHEP-161). Cheap when nothing's left: a task is looked at once after
+    each time it became Done, and again only while its worktree is still on disk."""
+    ending = lambda t: t.get("state") == "done" and (t.get("ended_at") or 0) <= (t.get("done_at") or 1)
     ended = []
     for p in store_files(folder):
         d = read_list(p)
         tasks = (d or {}).get("tasks") or []
-        if not d or not os.path.isdir(d.get("folder") or "") or not any(
-                t.get("state") == "done" and (t.get("ended_at") or 0) <= (t.get("done_at") or 1) for t in tasks):
+        if not d or not os.path.isdir(d.get("folder") or "") or not any(ending(t) or tidy_due(t) for t in tasks):
             continue
         with Store(locate(d["folder"])) as s:
             for t in s.data["tasks"]:
-                if t.get("state") == "done" and (t.get("ended_at") or 0) <= (t.get("done_at") or 1):
+                if ending(t):
                     ended += end_done(s, t, report, pressed)
+                if not ending(t) and tidy_due(t):
+                    try:
+                        tidy_done(s, t, report)
+                    except Exception as e:  # never stops ending the others
+                        report.setdefault("tidy_error", []).append(f"{s.ref(t)}: {e}")
     if ended:
         # Ended terminals leave hc's list too (a moment after: hc rm takes finished ones only).
         time.sleep(1)

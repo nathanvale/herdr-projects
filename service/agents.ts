@@ -5,14 +5,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { join } from "node:path";
 import type { Hub } from "./hub.ts";
-import { HOME } from "./paths.ts";
+import { HOME, appHome, where, writable } from "./paths.ts";
 import { sh } from "./model.ts";
 import * as AG from "../core/agents.js";
+import { chatLabel } from "../core/spaces.js";
 import { kindOf } from "../core/chat-reader.js";
 import { FOLDER } from "../core/chat-log.js";
 
 const { DEFAULTS, parseDefaults, current, menuFor, rowFor, argvFor, sessionOf, inOtherFolder, OTHER_FOLDER, restartRefusal, lostRefusal, NAMES, line, PICKS_FILE, parsePicks, pickKey, withPin, withRecent } = AG as any;
-const APP = process.env.HERDR_APP_HOME || join(HOME, ".config", "herdr-app");
 
 async function run(cmd: string[]) {
   const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
@@ -24,12 +24,12 @@ export class Agents {
   constructor(private hub: Hub) {}
 
   /** The person's pinned and recent models (core/agents.js PICKS_FILE), as the window's model menu keeps them here */
-  private picksPath = join(HOME, PICKS_FILE);
+  private picksPath = where()["model-picks"];
   picks() {
     try { return parsePicks(readFileSync(this.picksPath, "utf8")); } catch { return parsePicks(""); }
   }
   private savePicks(p: unknown) {
-    mkdirSync(dirname(this.picksPath), { recursive: true });
+    mkdirSync(dirname(writable(this.picksPath)), { recursive: true });
     writeFileSync(this.picksPath, JSON.stringify(p, null, 2));
   }
   /** the star on a model's row: pinned to the top of its agent's list, or not any more */
@@ -57,8 +57,8 @@ export class Agents {
   }
 
   /** The window's model menu (mods/chat openPicker → mods/chat-models) for the agent at addr: what it runs on, each
-   *  installed CLI's models, levels, Fast and permission modes, the person's pinned and recent ones; remote: the
-   *  machine another machine's Assistant runs on, which only it restarts */
+   *  installed CLI's models, levels, Fast and permission modes, the person's pinned and recent ones; offline: the
+   *  machine it runs on when that machine can't be reached now (a restart there waits for it) */
   async menu(addr: string, reader: any) {
     const t: any = this.hub.terminals.get(addr);
     if (!t) throw new Error("That agent isn't here any more.");
@@ -74,7 +74,13 @@ export class Agents {
     const row = rowFor(kind, c);
     const menus = Object.fromEntries(["claude", "codex"].filter((k) => k === kind || !have || have.has(k)).map((k) => [k, menuFor(k, dflts[k], k === kind ? row : null)]));
     return { current: { agent: kind, model: row, effort: c.effort ?? null, fast: !!c.fast, perm: c.perm ?? null }, menus,
-      permDefault: { claude: claude?.mode ?? "manual", codex: "auto" }, picks: this.picks(), remote: machine && !t.labels?.["herdr.task"] ? machine : null };
+      permDefault: { claude: claude?.mode ?? "manual", codex: "auto" }, picks: this.picks(), offline: machine && !(await this.reachable(machine)) ? machine : null };
+  }
+
+  /** whether another machine answers now (hc machine ls: connected) */
+  private async reachable(machine: string) {
+    const r = await run([process.env.SHEPHERDR_HC || "hc", "machine", "ls", "--json"]).catch(() => null);
+    try { return (JSON.parse(r?.out ?? "{}").machines ?? []).some((m: any) => m.name === machine.split("/")[0] && m.state === "connected"); } catch { return true; }
   }
 
   /** Each CLI's own settings here (Settings › Agents' model menu: core/settings.js choicesFrom). */
@@ -157,12 +163,12 @@ export class Agents {
       let out: any = {};
       try { out = JSON.parse(r.out || "{}"); } catch {}
       if (r.code !== 0 || !out.terminal) throw new Error((r.err || r.out).trim() || "herdr-task switch failed");
-      if (pane) await run(["hc", "label", out.terminal, `herdr.chat=${pane}`, `herdr.chat.origin=${t.labels?.["herdr.chat.origin"] || addr}`]);
+      if (pane) await run([process.env.SHEPHERDR_HC || "hc", "label", out.terminal, `herdr.chat=${chatLabel(pane)}`, `herdr.chat.origin=${t.labels?.["herdr.chat.origin"] || addr}`]);
       await run(["herdr-app", "do", "terminal.park", "--terminal", out.terminal]);
       this.used(pick);
       return out.terminal as string;
     }
-    const script = join(APP, "mods", "coordinator", "restart.sh");
+    const script = join(appHome(), "mods", "coordinator", "restart.sh");
     if (!existsSync(script)) throw new Error("Restarting an Assistant needs Shepherdr's window layout installed.");
     const p = Bun.spawn(["bash", script, addr, JSON.stringify(built.argv)], { stdout: "pipe", stderr: "pipe", stdin: "ignore",
       env: { ...process.env, HERDR_RESTART_CHAT: pane, ...(built.resume ? { HERDR_RESTART_RESUME: "1" } : {}) } });

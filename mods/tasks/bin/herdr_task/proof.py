@@ -7,10 +7,10 @@ import json
 import os
 import re
 
-from .base import Fail, HOME, git
+from .base import Fail, HOME, git, WHERE
 from .forge import BITBUCKET, pr_checks, pr_read, pr_view, provider_of
 
-ARTIFACTS = os.path.join(HOME, ".herdr", "artifacts")
+ARTIFACTS = WHERE.path("artifacts")
 # Files named on the card, and commits.
 FEW = 3
 
@@ -51,6 +51,14 @@ def find_proof(s, t, given=None):
         raise Fail(f"Your proof {a['id']} is a custom panel, which the person can't open on their phone. Make it a recipe "
                    f"(recipe.json; `herdr-artifact guide`, A task's proof), `herdr-artifact update {a['id']} <dir>`, then run ready again.")
     return {"id": a["id"], "title": a.get("title") or a["id"]}
+
+
+def task_artifacts(s, t, proof=None):
+    """The other artifacts its agent published for it since it started (a research task's report),
+    newest first, [{id, title}]: linked on its Accept card beside its proof (SHEP-96)."""
+    ref, since, skip = s.ref(t).upper(), t.get("started") or 0, (proof or {}).get("id")
+    return [{"id": a["id"], "title": a.get("title") or a["id"]} for a in artifacts_of(s.loc["folder"])
+            if a.get("id") and a["id"] != skip and (a.get("task") or "").upper() == ref and (a.get("at") or 0) >= since]
 
 
 def numstat(out, files):
@@ -117,8 +125,9 @@ def checks_of(t, tip=None):
 
 def evidence(s, t):
     """What an Accept card shows: {summary, details, commits: {count, list}, diff: {files, added, removed,
-    list} or None, git (False: not a git folder), scope, checks, proof}."""
+    list} or None, git (False: not a git folder), scope, checks, proof, artifacts (its others)}."""
     main, out = s.loc["folder"], {"summary": t.get("summary"), "details": t.get("details"), "proof": t.get("proof") or find_proof(s, t)}
+    out["artifacts"] = task_artifacts(s, t, out["proof"])
     commits, files = [], {}
     fmt = "--format=%h%x09%s"
     if s.loc["kind"] != "repo":

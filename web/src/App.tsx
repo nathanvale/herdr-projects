@@ -1,5 +1,4 @@
 import { attentionCounts } from './attention.ts'
-import { StatusBar } from './status.tsx'
 // The layout: places | coordinator chat | tasks or artifacts on a desktop (sidebars resize, places hides), and an open
 // task's side panel after them (focus hides places and the chat, for the task); chat | tasks or artifacts with places in a drawer on a tablet; one column with a
 // Chat | Tasks | Artifacts switch on a phone, where a task's panel items open as sheets. Every part inside comes from a
@@ -108,8 +107,6 @@ export default function App() {
         ))}
         {search && registry.views.search ? <registry.views.search onClose={() => setUI({ search: false })} /> : null}
       </div>
-      {/* the window's status bar: machine, branch, Needs you (status.tsx) */}
-      {device !== 'phone' ? <StatusBar /> : null}
     </div>
   )
 }
@@ -152,14 +149,15 @@ function useKeyboard() {
 
 /* ---------- pieces of the frame ---------- */
 
-/** the sidebar's top row, as the window's (workspace-chrome-shepherdr): the mark and name, a search button (Jump,
- *  Ctrl+K) and the sidebar toggle */
+/** the sidebar's top row, as the window's (workspace-chrome-shepherdr): the mark and name, plugins' buttons (the voice
+ *  call, SHEP-135), a search button (Jump, Ctrl+K) and the sidebar toggle */
 export function Brand() {
   const snap = useSnap()!
   return (
     <div className="flex items-center gap-1 px-3.5 pt-3 pb-0.5 text-[0.9375rem] font-semibold desktop:pr-2.5 phone:px-5 phone:pt-3 phone:pb-1 phone:text-[1.125rem]">
-      <CrookIcon className="mr-1 size-6" />
+      <CrookIcon className="mr-0.5 size-6" />
       <span className="min-w-0 flex-1 truncate">{snap.name}</span>
+      {registry.sideHead.map((View, i) => <View key={i} />)}
       <SearchButton />
       <PlacesToggle when="open" />
     </div>
@@ -175,6 +173,11 @@ function SearchButton() {
   )
 }
 
+/** what plugins put at the top of the spaces list, above Spaces (the voice call's card) */
+function SideTop() {
+  return registry.sideTop.map((View, i) => <View key={i} />)
+}
+
 function SideFoot({ drawer }: { drawer?: boolean }) {
   // a phone opens its list of sections; a wider screen the first, beside that list
   const phone = useUI((u) => u.device === 'phone')
@@ -184,7 +187,7 @@ function SideFoot({ drawer }: { drawer?: boolean }) {
   return (
     <div
       className={clsx(
-        'sticky bottom-0 z-2 mt-auto flex border-t border-line bg-well px-1.5 pt-1.5 phone:px-2 phone:pt-2',
+        '@container sticky bottom-0 z-2 mt-auto flex border-t border-line bg-well px-1.5 pt-1.5 phone:px-2 phone:pt-2',
         drawer ? 'pb-2 phone:pb-[max(env(safe-area-inset-bottom),--spacing(2))]' : 'pb-1.5',
       )}
     >
@@ -192,7 +195,7 @@ function SideFoot({ drawer }: { drawer?: boolean }) {
           with the crook, but here it only opens settings */}
       <FootButton onClick={settings} className="flex-1">
         <CogIcon className="size-4 shrink-0 text-fg3 coarse:text-fg2 phone:size-5 phone:text-fg2" />
-        Settings
+        <span className="truncate">Settings</span>
       </FootButton>
       {registry.sideFoot.map(({ View }, i) => (
         <View key={i} />
@@ -206,6 +209,7 @@ function Sidebar() {
   return (
     <PlacesColumn>
       <Brand />
+      <SideTop />
       {P ? <P /> : null}
       <SideFoot />
     </PlacesColumn>
@@ -228,6 +232,7 @@ function Drawer() {
       panel={phone ? 'w-[84%] pt-[env(safe-area-inset-top)] [[data-topbar]~*_&]:pt-0' : 'w-[320px]'}
     >
       <Brand />
+      <SideTop />
       {P ? <P /> : null}
       <SideFoot drawer />
     </SlideDrawer>
@@ -296,6 +301,10 @@ function PlaceMarks({ place }: { place: Place }) {
 
 /** The coordinator chat in the middle; a container (named place) so its header can fit what it shows to its width */
 function PlaceColumn({ place, pane }: { place: Place; pane?: number }) {
+  return place.id ? <SpaceColumn place={place} pane={pane} /> : <NoSpaces />
+}
+
+function SpaceColumn({ place, pane }: { place: Place; pane?: number }) {
   const snap = useSnap()!
   const Chat = registry.views.chat
   const term = useUI((u) => u.term)
@@ -329,6 +338,16 @@ function PlaceColumn({ place, pane }: { place: Place; pane?: number }) {
       {Chat ? (
         tabChat ? <Chat key={tabChat} chatKey={tabChat} placeholder={`Message ${tab?.prog ?? 'the agent'}`} /> : <Chat chatKey={place.chat} placeholder="Message the Assistant" unreachable={unreachable(place, snap)} />
       ) : null}
+    </section>
+  )
+}
+
+/** No space left (the last one closed, #747): says so, and New space as the window's empty sidebar offers it */
+function NoSpaces() {
+  return (
+    <section data-drawer-from className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+      <p className="text-fg2">No spaces yet</p>
+      <Primary onClick={() => setUI({ adding: true, drawer: false, menu: false, plus: null, search: false })}>New space</Primary>
     </section>
   )
 }
@@ -514,25 +533,30 @@ function TaskPage({ task, middle, pane }: { task: Task; middle?: boolean; pane?:
       className={clsx('@container/task flex min-h-0 min-w-0 flex-1 flex-col border-line', !focus && !middle && 'border-l')}
     >
       <Head conversation>
-        {middle ? (
-          <>
-            <MenuButton />
-            <PlacesToggle when="closed" />
-          </>
-        ) : null}
-        {/* in a narrow column (the side's) Back is its arrow alone, so the title keeps the room */}
-        <button type="button" onClick={back} aria-label="Tasks" className="press-dim relative inline-flex h-7 shrink-0 items-center gap-0.5 rounded-full px-1.5 text-[0.8125rem] text-fg2 after:absolute after:-inset-y-2 after:inset-x-0 hover:bg-hover hover:text-fg @lg/task:pr-2.5">
-          <BackIcon className={ic} />
-          <span aria-hidden className="hidden @lg/task:inline">Tasks</span>
-        </button>
-        <Dot s={task.status} p={task.report?.progress} halo />
-        <Who name={task.name} kind={sub} />
-        {/* its buttons close together, as a toolbar's, so the name keeps the room */}
-        <div className="flex shrink-0 items-center gap-1">
-          {tools}
+        {/* one row, as the Assistant's header, in the chat's reading column: Back, its status and title on the left, its
+            views (Chat, Terminal, …) on the right. Without room for both, the views wrap under the title, on Back's left
+            edge; Back, status, title and its buttons keep at least 20rem before they do */}
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1.5 py-2">
+          <div className="flex min-w-0 flex-[1_1_20rem] items-center gap-2.5">
+            {middle ? (
+              <>
+                <MenuButton />
+                <PlacesToggle when="closed" />
+              </>
+            ) : null}
+            {/* in a narrow column (the side's) Back is its arrow alone, so the title keeps the room */}
+            <button type="button" onClick={back} aria-label="Tasks" className="press-dim relative inline-flex h-7 shrink-0 items-center gap-0.5 rounded-full px-1.5 text-[0.8125rem] text-fg2 after:absolute after:-inset-y-2 after:inset-x-0 hover:bg-hover hover:text-fg @lg/task:pr-2.5">
+              <BackIcon className={ic} />
+              <span aria-hidden className="hidden @lg/task:inline">Tasks</span>
+            </button>
+            <Dot s={task.status} p={task.report?.progress} halo />
+            <Who name={task.name} kind={sub} />
+            {/* its buttons close together, as a toolbar's, so the name keeps the room */}
+            {tools ? <div className="flex shrink-0 items-center gap-1">{tools}</div> : null}
+          </div>
+          <TaskTabs task={task} head />
         </div>
       </Head>
-      <TaskTabs task={task} />
       <Scroll chat><TabBody task={task} chatKey={g?.chat ?? ''}>{body}</TabBody></Scroll>
     </section>
   )
@@ -545,7 +569,8 @@ function TaskTop({ back, task, sub, tools }: { back: () => void; task: Task; sub
   return (
     // under a bar at the top (offline, a call) the notch is already kept clear
     <div data-kb data-chrome className="relative flex shrink-0 items-center gap-2 border-b border-line px-3 pt-[calc(env(safe-area-inset-top)+6px)] pb-1.5 [[data-topbar]~*_&]:pt-1.5">
-      <RoundButton label="Tasks" onClick={back}>
+      {/* in line with the tabs and messages below (16px in); its status and title stay put */}
+      <RoundButton label="Tasks" onClick={back} className="ml-1 -mr-1">
         <BackIcon className={ic} />
       </RoundButton>
       <Dot s={task.status} p={task.report?.progress} halo />
@@ -573,7 +598,7 @@ function Middle({ snap }: { snap: Snapshot }) {
     <ChatColumn>
       {/* 3.0's tab bar over it: the shown space's tabs, its + and the side panels' buttons */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {TabBar ? <TabBar place={place} /> : null}
+        {TabBar && place.id ? <TabBar place={place} /> : null}
         {panes.length ? <Split snap={snap} panes={panes} /> : task ? <TaskPage key={task.id} task={task} middle /> : <PlaceColumn place={place} />}
       </div>
     </ChatColumn>
@@ -847,11 +872,11 @@ function PhoneHome({ snap }: { snap: Snapshot }) {
         left={<MenuButton />}
         // as 3.0's panels: the chat names its space; Tasks and Artifacts are their panels, everything in them
         name={tab === 'tasks' ? 'Tasks' : tab === 'artifacts' ? 'Artifacts' : place.name}
-        icon={tab === 'chat' ? <PlaceIcon level={2} className="text-fg2" /> : undefined}
-        kind={tab === 'chat' ? placeKind(snap, place) : undefined}
-        mark={tab === 'chat' ? <PlaceMarks place={place} /> : undefined}
+        icon={tab === 'chat' && place.id ? <PlaceIcon level={2} className="text-fg2" /> : undefined}
+        kind={tab === 'chat' && place.id ? placeKind(snap, place) : undefined}
+        mark={tab === 'chat' && place.id ? <PlaceMarks place={place} /> : undefined}
         right={
-          tab === 'chat' ? (
+          tab === 'chat' && !place.id ? null : tab === 'chat' ? (
             <>
               {registry.placeHeader.map(({ View }, i) => (
                 <View key={i} place={place} />
@@ -863,7 +888,9 @@ function PhoneHome({ snap }: { snap: Snapshot }) {
           )
         }
       />
-      {tab === 'chat' ? (
+      {tab === 'chat' && !place.id ? (
+        <NoSpaces />
+      ) : tab === 'chat' ? (
         <div className="flex min-h-0 flex-1 flex-col">
           {Chat ? (
             tabChat ? <Chat key={tabChat} chatKey={tabChat} placeholder={`Message ${place.tabs?.find((t) => t.term === tabChat)?.prog ?? 'the agent'}`} /> : <Chat chatKey={place.chat} placeholder="Message the Assistant" unreachable={unreachable(place, snap)} />
@@ -873,17 +900,19 @@ function PhoneHome({ snap }: { snap: Snapshot }) {
         <div className="min-h-0 flex-1 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain">{tab === 'needs' && registry.views.needs ? <registry.views.needs /> : tab === 'artifacts' && Artifacts ? <Artifacts placeId={place.id} /> : Tasks ? <Tasks placeId={place.id} /> : null}</div>
       )}
       {/* the keyboard is up: the message box sits right on it, so more of the chat shows */}
+      {keyboard ? null : registry.phoneAbove.map((View, i) => <View key={i} />)}
       {keyboard ? null : <PhoneBar />}
       <Drawer />
     </div>
   )
 }
 
-/** Chat | Tasks | Artifacts and Search at the bottom of the phone (3.0 has no Needs you view: it is Tasks' first section) */
+/** Chat | Tasks | Artifacts at the bottom of the phone, then what plugins add (the voice call's button). Search is the
+ *  magnifier at the top of the ☰ drawer (SHEP-108). 3.0 has no Needs you view: it is Tasks' first section */
 function PhoneBar() {
   const tab = useUI((u) => u.tab)
   return (
-    <div className="flex shrink-0 items-center gap-2 px-4 pt-1 pb-[max(env(safe-area-inset-bottom),--spacing(4))] max-[359px]:gap-1">
+    <div className="flex shrink-0 items-center gap-2 px-4 pt-1 pb-[max(env(safe-area-inset-bottom),--spacing(4))] max-[359px]:gap-1 max-[359px]:px-2">
       {/* each tab as wide as its words and the rest shared out, so Tasks with its count gets the room it needs and the
           count never crowds the next tab */}
       <div role="group" aria-label="View" className="flex flex-1 rounded-full bg-bubble p-1">
@@ -900,18 +929,18 @@ function PhoneBar() {
             type="button"
             aria-pressed={tab === k}
             onClick={() => setUI({ tab: k, pick: null, plus: null, menu: false })}
-            className="relative flex h-12 min-w-0 flex-auto items-center justify-center gap-1.5 rounded-full text-[0.875rem] whitespace-nowrap text-fg2 aria-pressed:bg-seg-on aria-pressed:text-fg aria-pressed:shadow-seg max-[359px]:gap-1"
+            className="relative flex h-12 min-w-0 flex-auto items-center justify-center gap-1.5 rounded-full text-[0.875rem] whitespace-nowrap text-fg2 aria-pressed:bg-seg-on aria-pressed:text-fg aria-pressed:shadow-seg max-[359px]:gap-1 max-[359px]:px-1.5 max-[359px]:text-[0.8125rem]"
           >
-            {/* four tabs and Search: most phones have room for the words only, a phone in Display Zoom (320px) for fewer */}
+            {/* the tabs and the voice button: most phones have room for the words only, a phone in Display Zoom (320px) for fewer */}
             <Icon className={clsx(ic, 'max-[479px]:hidden')} />
             {k === 'needs' ? <>Needs<span className="max-[359px]:hidden"> you</span></> : l}
             {k === 'tasks' ? <TaskAttention /> : k === 'needs' ? <NeedsAttention /> : null}
           </button>
         ))}
       </div>
-      <RoundButton label="Search" className="size-14 max-[359px]:size-12" onClick={() => setUI({ search: true, searchScope: undefined })}>
-        <SearchIcon className={ic} />
-      </RoundButton>
+      {registry.phoneBar.map((View, i) => (
+        <View key={i} />
+      ))}
     </div>
   )
 }

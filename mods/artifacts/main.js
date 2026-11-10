@@ -13,9 +13,11 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, agents, readTextFile, watchFolder, home, theme, closeOverlay, props, shared, setShared } from "herdr";
+import { note } from "./usage.js";
 import { showInSidebar, backToList } from "./sidebar.js";
 import { artifactCli as cli, showViewer } from "./artview.js";
 import { toast, plainError, TEXT, RADIUS } from "./ui.js";
+import { dirs } from "./dirs.js";
 
 const ICON = "mods/artifacts/artifacts.svg";
 const modOf = (machine, id) => (machine ? `art-${machine.replace(/[^A-Za-z0-9_-]+/g, "-")}-${id}` : `art-${id}`);
@@ -77,7 +79,7 @@ export default class Artifacts extends View {
     });
   }
 
-  // ~/.herdr/artifacts here changes: read again. One watch for the panel's life.
+  // This computer's artifacts folder changes: read again. One watch for the panel's life.
   watch(cx) {
     if (this.watching) return;
     this.watching = true;
@@ -86,7 +88,7 @@ export default class Artifacts extends View {
         let w = null;
         for (;;) {
           // At most 5 s per wait, so a reload's old build ends at its next cx use.
-          w ??= watchFolder(`${home()}/.herdr/artifacts`).then(() => true);
+          w ??= watchFolder(dirs().artifacts).then(() => true);
           if (!(await Promise.race([w, cx.sleep(5000)]))) continue;
           w = null;
           if (!this.ctx?.machine) await this.load(cx);
@@ -132,6 +134,7 @@ export default class Artifacts extends View {
     const machine = this.store?.machine ?? null;
     let mod = modOf(machine, a.id);
     this.opening = a.id;
+    note("view", { view: "artifact", artifact: a.id });
     cx.notify();
     cx.spawn(async (cx) => {
       try {

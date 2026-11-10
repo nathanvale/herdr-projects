@@ -11,11 +11,12 @@ import { anchorOf, keyOf, partsOf, placesOf, priorOf, reasonOf, SEND_TIMEOUT, ty
 import { dropFiles, keepFile, keptFile, postFile, retrying, sweepFiles } from '@client/uploads.ts'
 import { AlertIcon, BackIcon, CameraIcon, CheckIcon, CopyIcon, Count, DeleteIcon, dimmed, Dot, DownIcon, DownloadIcon, Empty, field, FileIcon, ic, IconButton, KeyIcon, LinkButton, LiveWave, MachineIcon, Menu, MenuItem, MenuSeparator, MenuSetting, MicIcon, ModeIcon, MoreIcon, NextIcon, PageIcon, PlanIcon, PlusIcon, Primary, QuestionIcon, ReplyIcon, RestartIcon, roundBtn, SearchIcon, SecretField, Sent, SmileIcon, Tab, Tabs, TextBox, UpIcon, useElapsed, XIcon } from '@client/ui.tsx'
 import { canDictate, dictate, dictSample, type Dictation } from '@client/dictation.ts'
-import { extOf, isImage } from '@shared/files.ts'
-import { modelCommand, modeName, taskChatId, type CardAsk, type Chat, type MergeEvidence, type Message, type Place, type Question, type ReplyQuote, type SecretAsk, type UpdateCard } from '@shared/types.ts'
+import { extOf, isImage, isVideo } from '@shared/files.ts'
+import { modelCommand, modeName, taskChatId, type CardAsk, type Chat, type Choice, type MergeEvidence, type Message, type Place, type Question, type ReplyQuote, type SecretAsk, type UpdateCard } from '@shared/types.ts'
 import { sendsOnTap } from '@shared/alerts.ts'
 import { buzz, ForkIcon, mine, openBar, openPicker, quick, react, RewindIcon } from '@plugins/reactions/client.tsx'
 import { EDGE } from '@client/gestures.ts'
+import { enterHint, sendsNow } from '@client/enter.ts'
 import { still, useArrive } from '@client/motion.ts'
 import { draggingFiles, dropped, named, pasted } from './paste.ts'
 import { dayLabel } from './days.ts'
@@ -98,7 +99,7 @@ function Bubble({ msg, chat, from, out, last, pics, images, writing }: { msg: Me
   const [width, setWidth] = useState(0)
   const shots = pics?.length ? (
     <Thumbs
-      files={pics.map((m) => ({ name: m.file!.name, path: m.file!.path, url: fileUrl(chat.key, m.file!.path) }))}
+      files={pics.map((m) => ({ name: m.file!.alt || m.file!.name, path: m.file!.path, url: fileUrl(chat.key, m.file!.path, false, 'thumb'), caption: caption(m) }))}
       chat={chat.key} you={you} faded={!!out && out.state === 'sending'} width={width}
       open={(i) => setUI({ photo: out ? { chat: chat.key, file: pics[i].file } : { chat: chat.key, msg: pics[i].id } })}
     />
@@ -205,7 +206,9 @@ function Bubble({ msg, chat, from, out, last, pics, images, writing }: { msg: Me
         {msg.file
           ? unit(
               <div data-anchor {...hold} className={clsx('relative max-w-full select-none [-webkit-touch-callout:none]', (canReact || pending) && pressable, touchFor(replies), you ? 'self-end' : 'self-start')}>
-                <FileTile name={msg.file.name} chat={chat.key} path={msg.file.path} tucked={!body && !!quote} />
+                {isVideo(msg.file.name)
+                  ? <VideoTile name={msg.file.name} alt={msg.file.alt} chat={chat.key} path={msg.file.path} tucked={!body && !!quote} />
+                  : <FileTile name={msg.file.name} chat={chat.key} path={msg.file.path} tucked={!body && !!quote} />}
               </div>,
               !body,
             )
@@ -604,11 +607,42 @@ const tucks = 'shadow-[0_0_0_2px_var(--bg)]'
 const previews = new Map<string, string>()
 const baseName = (path: string) => path.split('/').pop() ?? path
 
-export const fileUrl = (chat: string, path: string, download = false) =>
-  (!download && previews.get(baseName(path))) || `api/file?chat=${encodeURIComponent(chat)}&path=${encodeURIComponent(path)}${download ? '&download=1' : ''}`
+/** a file a chat shows, from the service; `small`: a big picture's thumbnail or a video's still (the service makes
+ *  them once, service/media.ts; a picture small enough comes as it is) */
+export const fileUrl = (chat: string, path: string, download = false, small?: 'thumb' | 'poster') =>
+  (!download && small !== 'poster' && previews.get(baseName(path))) ||
+  `api/file?chat=${encodeURIComponent(chat)}&path=${encodeURIComponent(path)}${download ? '&download=1' : ''}${small ? `&${small}=1` : ''}`
+
+/** an agent's words for its picture ("Before"), shown under it: none when they only repeat its file's name */
+const caption = (m: Message) => {
+  const alt = m.file?.alt?.trim()
+  return alt && m.who === 'agent' && alt !== m.file!.name && alt !== m.file!.name.replace(/\.[^.]+$/, '') ? alt : undefined
+}
 
 /** a picture on its own, with no words: it shows as a tile, and the viewer pages through every one in the chat */
 export const isPicture = (m: Message) => !!m.file && !m.text && !m.answered && isImage(m.file.name)
+
+/** a video an agent showed: a player in place, its still first, only what it plays loaded (a part at a time); one
+ *  that can't play here (another machine's too big to bring, a kind the browser lacks) is a file tile to download */
+function VideoTile({ name, alt, chat, path, tucked }: { name: string; alt?: string; chat: string; path: string; tucked?: boolean }) {
+  const [broken, setBroken] = useState(false)
+  if (broken) return <FileTile name={name} chat={chat} path={path} tucked={tucked} />
+  return (
+    <figure className={clsx('flex w-[min(100%,420px)] flex-col gap-1', tucked && tucks)}>
+      <video
+        controls
+        playsInline
+        preload="metadata"
+        poster={fileUrl(chat, path, false, 'poster')}
+        src={fileUrl(chat, path)}
+        aria-label={alt || name}
+        onError={() => setBroken(true)}
+        className="block max-h-[360px] w-full rounded-[8px] bg-black outline-1 -outline-offset-1 outline-fg/10"
+      />
+      <figcaption className="truncate px-0.5 text-[0.75rem] text-fg3 phone:text-[0.8125rem]">{alt || name}</figcaption>
+    </figure>
+  )
+}
 
 function FileTile({ name, chat, path, tucked }: { name: string; chat: string; path: string; tucked?: boolean }) {
   const ext = extOf(name)
@@ -655,7 +689,7 @@ function Album({ msgs, chat, from, out, last: lastPart }: { msgs: Message[]; cha
       {msgs[0].newSession ? <SessionLine /> : null}
       {msgs[0].reply ? <ReplyLine q={msgs[0].reply} chat={chat.key} you={you} /> : null}
       <Thumbs
-        files={msgs.map((m) => ({ name: m.file!.name, path: m.file!.path, url: fileUrl(chat.key, m.file!.path) }))}
+        files={msgs.map((m) => ({ name: m.file!.alt || m.file!.name, path: m.file!.path, url: fileUrl(chat.key, m.file!.path, false, 'thumb'), caption: caption(m) }))}
         chat={chat.key} you={you} width={width}
         open={(i) => setUI({ photo: out ? { chat: chat.key, file: msgs[i].file } : { chat: chat.key, msg: msgs[i].id } })}
       />
@@ -1128,7 +1162,8 @@ export function ReplyOnCard({ ask, reply, task, source }: { ask: CardAsk; reply:
         </Sent>
       ) : ask.open ? (
         <>
-          <TextBox name="reply" data-kept label={`Reply to ${task}`} className={noteBox} placeholder="Type something…" value={text} onChange={setText} />
+          <TextBox name="reply" data-kept label={`Reply to ${task}`} className={noteBox} placeholder="Type something…" value={text} onChange={setText} enterKeyHint={enterHint()}
+            onKeyDown={(e) => { if (sendsNow(e, getState().ui.keyboard)) { e.preventDefault(); if (!busy && text.trim()) void send() } }} />
           <div className="flex items-center justify-end gap-2">
             {err ? <span role="alert" className="mr-auto text-[0.75rem] text-need phone:text-[0.8125rem]">{err}</span> : null}
             <Primary soft disabled={busy || !text.trim()} onClick={send}>
@@ -1409,6 +1444,19 @@ const optionLook = 'group press relative flex min-h-10 w-full items-center gap-2
 
 /** several questions on one card, as 3.0's: a step for each (its header), its options, Other…, then a step to check
  *  the answers, each opening its question again, and one Submit */
+/** the preview of the option picked (else the first that has one), as Claude's prompt shows the one in focus: a
+ *  mockup or code in its own fixed-width well, scrolling inside itself (SHEP-139) */
+function OptionPreview({ choices, picked }: { choices: Choice[]; picked: number[] }) {
+  const at = picked.length === 1 && choices[picked[0]]?.preview ? picked[0] : choices.findIndex((c) => c.preview)
+  if (at < 0) return null
+  return (
+    <figure className="flex min-w-0 flex-col gap-1">
+      <figcaption className="text-[0.75rem] text-fg2 phone:text-[0.8125rem]">Preview · {choices[at].label}</figcaption>
+      <pre className="max-h-72 overflow-auto rounded-row bg-well p-3 font-mono text-[0.75rem]/5 text-fg shadow-[inset_0_0_0_1px_var(--line2)] phone:text-[0.8125rem]/5">{choices[at].preview}</pre>
+    </figure>
+  )
+}
+
 function StepsCard({ q, chat, source, steady }: { q: Question & { parts: NonNullable<Question['parts']> }; chat: Chat; source?: CardSource; steady?: boolean }) {
   const n = q.parts.length
   const [step, setStep] = useState(0)
@@ -1430,8 +1478,8 @@ function StepsCard({ q, chat, source, steady }: { q: Question & { parts: NonNull
     setPicks((p) => p.map((x, j) => (j !== i ? x : multi ? (x.includes(k) ? x.filter((y) => y !== k) : [...x, k].sort((a, b) => a - b)) : [k])))
     if (!multi) {
       setOthers((o) => o.map((x, j) => (j === i ? null : x)))
-      // one pick moves on: to the next question, or to the answers
-      setStep(i < n - 1 ? i + 1 : n)
+      // one pick moves on: to the next question, or to the answers; with previews it stays to show the one picked
+      if (!q.parts[i].choices.some((c) => c.preview)) setStep(i < n - 1 ? i + 1 : n)
     }
   }
   const submit = async () => {
@@ -1466,6 +1514,7 @@ function StepsCard({ q, chat, source, steady }: { q: Question & { parts: NonNull
               </span>
             </button>
           ))}
+          {part.multi ? null : <OptionPreview choices={part.choices} picked={picks[step]} />}
           <button type="button" aria-pressed={others[step] !== null} disabled={busy} className={optionLook}
             onClick={() => { setOthers((o) => o.map((x, j) => (j === step ? (x === null ? '' : null) : x))); if (!part.multi) setPicks((p) => p.map((x, j) => (j === step ? [] : x))) }}>
             <span aria-hidden="true" className={clsx('size-4 shrink-0 shadow-[inset_0_0_0_1.5px_var(--fg3)] group-aria-pressed:shadow-[inset_0_0_0_5px_var(--fg)]', part.multi ? 'rounded-[4px]' : 'rounded-full')} />
@@ -1474,9 +1523,9 @@ function StepsCard({ q, chat, source, steady }: { q: Question & { parts: NonNull
           {others[step] !== null ? (
             <input autoFocus aria-label="Your answer" placeholder="Your answer" className={noteBox} value={others[step]!}
               onChange={(e) => setOthers((o) => o.map((x, j) => (j === step ? e.target.value : x)))}
-              onKeyDown={(e) => e.key === 'Enter' && others[step]!.trim() && setStep(step + 1)} />
+              enterKeyHint="next" onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229 && others[step]!.trim() && setStep(step + 1)} />
           ) : null}
-          {step < n - 1 || part.multi || others[step] !== null ? (
+          {step < n - 1 || part.multi || others[step] !== null || part.choices.some((c) => c.preview) ? (
             <div className="flex justify-end"><button type="button" className="min-h-9 px-2 text-accent" onClick={() => setStep(step + 1)}>Next</button></div>
           ) : null}
         </>
@@ -1610,6 +1659,7 @@ function OneQuestionCard({ q, chat, msg, from, source, steady }: { q: Question; 
           </button>
         )
       })}
+      {sent || q.multi ? null : <OptionPreview choices={q.choices} picked={sel} />}
       {q.other && !sent ? (
         <input
           name="other"
@@ -1644,7 +1694,7 @@ function OneQuestionCard({ q, chat, msg, from, source, steady }: { q: Question; 
           {immediate && !q.noNote ? (
             <button type="button" disabled={busy} className="min-h-11 text-left text-accent" onClick={() => setComposing(true)}>Add a note</button>
           ) : null}
-          {(!q.other || tap) && !q.noNote && !immediate ? (
+          {(!q.other || tap || q.choices.some((c) => c.preview)) && !q.noNote && !immediate ? (
             <TextBox
               ref={noteRef}
               name="note"
@@ -1655,6 +1705,8 @@ function OneQuestionCard({ q, chat, msg, from, source, steady }: { q: Question; 
               placeholder={needNote ? 'Your note for the agent (needed to send it back)' : 'Add a note (optional)'}
               value={note}
               onChange={setNote}
+              enterKeyHint={enterHint()}
+              onKeyDown={(e) => { if (sendsNow(e, getState().ui.keyboard)) { e.preventDefault(); if (!busy && picked) void send() } }}
             />
           ) : null}
           {/* in Needs you, its room is kept: Sending… must not push the cards below under a thumb */}
@@ -1855,7 +1907,7 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
   const plus = useUI((u) => u.plus === chatKey)
   const ref = useRef<HTMLTextAreaElement>(null)
   const live = useUI((u) => registry.composerLive.find((l) => l.when(u, chatKey)))
-  const Idle = registry.composerIdle
+  const sendable = !!(text.trim() || files.length)
   const Mic = registry.composerMic
   useEffect(() => {
     if (focused && device === 'desktop') ref.current?.focus()
@@ -1984,7 +2036,7 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
       <SlashList chatKey={chatKey} text={text} pick={(name) => { setText(`/${name} `); ref.current?.focus() }} />
       <MentionList items={mentions} sel={msel} from={reach?.from ?? null} pick={takeMention} />
       {/* the window's box: the words across its full width, then a row in it of attach on the left and on the right
-          what the agent runs on (the model menu), the mic and Send (or Call); nothing under it. Its corners are half a
+          what the agent runs on (the model menu), the mic and Send; nothing under it. Its corners are half a
           round button and the padding, so the buttons sit in the bottom ones with the same curve round them */}
       <div data-composer className="relative round-box bg-bg p-1.5 shadow-box has-[textarea:focus]:shadow-box-focus">
         {/* what it replies to: one quiet line inside the box, over the words (like WhatsApp and Telegram) */}
@@ -2006,6 +2058,7 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
                 rows={1}
                 value={text}
                 placeholder=""
+                enterKeyHint={enterHint()}
                 onChange={(e) => setText(e.target.value)}
                 onPaste={(e) => {
                   // a screenshot or a copied file attaches, as + does; text pastes as text
@@ -2027,7 +2080,7 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
                   if (choosable.length && !e.nativeEvent.isComposing) {
                     const n = choosable.length, at = Math.min(msel, n - 1)
                     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); return setMsel((at + (e.key === 'ArrowDown' ? 1 : n - 1)) % n) }
-                    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && device === 'desktop')) { e.preventDefault(); return takeMention(choosable[at]) }
+                    if (e.key === 'Tab' || sendsNow(e, getState().ui.keyboard)) { e.preventDefault(); return takeMention(choosable[at]) }
                     if (e.key === 'Escape') { e.preventDefault(); return setMclosed(text) }
                   }
                   // as the window's: Up in an empty box (or one showing a recalled message) brings back your earlier
@@ -2046,7 +2099,7 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
                       }
                     }
                   }
-                  if (e.key === 'Enter' && !e.shiftKey && device === 'desktop' && !e.nativeEvent.isComposing) {
+                  if (sendsNow(e, getState().ui.keyboard)) {
                     e.preventDefault()
                     // Shepherdr 3: Ctrl+Enter holds it until the agent is free
                     send(e.ctrlKey || e.metaKey)
@@ -2090,28 +2143,27 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
               <div className="flex-1" />
               <AgentLineKept chatKey={chatKey} cli={cli} />
               {Mic ? <MicKept chatKey={chatKey} /> : null}
-              {text.trim() || files.length || !Idle ? (
-                <button
+              {/* always Send (SHEP-108): quiet while there is nothing to send, filled once there is. A call is with
+                  Shepherdr itself (the sidebar's top, a phone's bottom bar), never from a chat's box */}
+              <button
                   type="button"
-                  aria-label="Send"
-                  // Shepherdr 3 on a phone: a long press on Send holds it until the agent is free (the phone's Ctrl+Enter)
-                  onPointerDown={() => { held.current = false; holdTimer.current = setTimeout(() => { held.current = true; buzz(); send(true) }, 500) }}
-                  onPointerUp={() => clearTimeout(holdTimer.current)}
-                  onPointerLeave={() => clearTimeout(holdTimer.current)}
-                  onContextMenu={(e) => e.preventDefault()}
-                  onClick={() => {
-                    if (held.current) return
-                    // a light tap from the phone as it goes, like ChatGPT's
-                    if (matchMedia('(pointer: coarse)').matches) buzz()
-                    send()
-                  }}
-                  className="press-dim relative grid size-[34px] shrink-0 place-items-center rounded-full bg-fg text-bg after:absolute after:-inset-1.5 phone:size-11"
-                >
-                  <UpIcon className={ic} />
-                </button>
-              ) : (
-                <Idle chatKey={chatKey} />
-              )}
+                aria-label="Send"
+                disabled={!sendable}
+                // Shepherdr 3 on a phone: a long press on Send holds it until the agent is free (the phone's Ctrl+Enter)
+                onPointerDown={() => { held.current = false; holdTimer.current = setTimeout(() => { held.current = true; buzz(); send(true) }, 500) }}
+                onPointerUp={() => clearTimeout(holdTimer.current)}
+                onPointerLeave={() => clearTimeout(holdTimer.current)}
+                onContextMenu={(e) => e.preventDefault()}
+                onClick={() => {
+                  if (held.current) return
+                  // a light tap from the phone as it goes, like ChatGPT's
+                  if (matchMedia('(pointer: coarse)').matches) buzz()
+                  send()
+                }}
+                className="press-dim relative grid size-[34px] shrink-0 place-items-center rounded-full bg-fg text-bg after:absolute after:-inset-1.5 disabled:bg-bubble disabled:text-fg3 phone:size-11"
+              >
+                <UpIcon className={ic} />
+              </button>
             </div>
           </>
         )}

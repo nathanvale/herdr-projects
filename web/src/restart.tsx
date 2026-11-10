@@ -229,7 +229,7 @@ export type AgentMenu = { name: string; models: MenuModel[]; perms?: { id: strin
 type MenuPick = { agent: string; model: string | null; effort: string | null; fast: boolean; perm: string | null }
 /** newStart: a space whose Assistant hasn't started (A2): the menu saves a pick for its first start (saved: one is kept)
  *  instead of restarting anything; on Azure Foundry its list is the deployments */
-type MenuData = { current: MenuPick; menus: Record<string, AgentMenu>; permDefault: Record<string, string>; picks?: Picks; remote: string | null; newStart?: boolean; saved?: boolean
+type MenuData = { current: MenuPick; menus: Record<string, AgentMenu>; permDefault: Record<string, string>; picks?: Picks; offline?: string | null; newStart?: boolean; saved?: boolean
   /** newStart: each CLI's routing revision and (on Azure) its list's, as shown: a save carries them back */
   revision?: Record<string, string>; inventory?: Record<string, string>
   /** newStart: the space's saved pick's own revision, as shown: a save or a reset carries it, so a newer pick isn't overwritten */
@@ -373,9 +373,8 @@ function ModelMenu({ chat, typed }: { chat: string; typed?: string }) {
     if (next.effort && !m.efforts.includes(next.effort)) next.effort = null
     if (!m.fast) next.fast = false
     if (m.agent !== was.agent) {
-      // another agent: its own permission modes; full access stays full access
-      const full = was.perm === 'bypassPermissions' || was.perm === 'full'
-      next.perm = full ? (m.agent === 'claude' ? 'bypassPermissions' : 'full') : d.permDefault[m.agent] ?? null
+      // another agent: its own permission modes, the nearest to the one chosen
+      next.perm = AGc.permAcross(was.perm, m.agent, d.permDefault)
       next.fast = false
     }
     return next
@@ -395,7 +394,7 @@ function ModelMenu({ chat, typed }: { chat: string; typed?: string }) {
   const model = (s: MenuPick) => data?.menus[s.agent]?.models.find((m) => m.id === s.model) ?? null
   const level = (s: MenuPick) => s.effort ?? model(s)?.defaultEffort ?? null
   const changes = () => {
-    if (!data || !sel || data.remote) return []
+    if (!data || !sel) return []
     const w = data.current, out: string[] = []
     if (sel.agent !== w.agent) out.push(data.menus[sel.agent]?.name ?? sel.agent)
     if (sel.agent !== w.agent || sel.model !== w.model) out.push(model(sel)?.name ?? sel.model ?? '')
@@ -438,7 +437,7 @@ function ModelMenu({ chat, typed }: { chat: string; typed?: string }) {
     const r = await act({ type: 'model-pin', agent, model: id } as never).catch(() => null)
     if (r?.picks && data) setData({ ...data, picks: r.picks })
   }
-  const remote = data?.remote ?? null
+  const offline = data?.offline ?? null
   const menu = sel ? data?.menus[sel.agent] : undefined
   const m = sel ? model(sel) : null
   const on = sel ? level(sel) : null
@@ -457,19 +456,17 @@ function ModelMenu({ chat, typed }: { chat: string; typed?: string }) {
             <p className={clsx('px-[9px] py-2 text-fg3', error && 'text-need-fg')}>{error ?? 'Reading what it runs on…'}</p>
           ) : (
             <>
-              {/* another machine's Assistant: what runs is shown, and said once why it can't change here */}
-              {remote ? <p className="px-[9px] pt-1.5 pb-1 text-pretty text-[0.75rem] text-fg3 coarse:text-[0.875rem] phone:text-[0.875rem]">Runs on {remote}. Change its model there.</p> : null}
-              <ModelList menus={data.menus} agent={sel.agent} picks={data.picks} chosen={sel} disabled={!!remote} phone={phone} onPick={pick}
-                onPin={(agent, id) => void pin(agent, id)} autoFocus={!phone && !remote} />
+              <ModelList menus={data.menus} agent={sel.agent} picks={data.picks} chosen={sel} phone={phone} onPick={pick}
+                onPin={(agent, id) => void pin(agent, id)} autoFocus={!phone} />
               <div className="px-1 py-1"><div className="h-px bg-line" /></div>
               {m?.efforts?.length ? (
                 <>
                   {head('Reasoning')}
                   <div className="px-1 py-[3px]">
                     {/* each level as wide as its word, the room left shared out: Extra high reads whole even at a phone's 288px */}
-                    <div role="radiogroup" aria-label="Reasoning" className={clsx('flex h-7 gap-0.5 rounded-[7px] bg-sel p-0.5 coarse:h-10 phone:h-10', remote && 'opacity-50')}>
+                    <div role="radiogroup" aria-label="Reasoning" className={clsx('flex h-7 gap-0.5 rounded-[7px] bg-sel p-0.5 coarse:h-10 phone:h-10')}>
                       {m.efforts.map((e) => (
-                        <button key={e} type="button" role="radio" aria-checked={on === e} disabled={!!remote} onClick={() => setSel({ ...sel, effort: e })}
+                        <button key={e} type="button" role="radio" aria-checked={on === e} onClick={() => setSel({ ...sel, effort: e })}
                           className={clsx('min-w-0 flex-auto truncate rounded-[5px] px-1 text-[0.71875rem]', on === e ? 'bg-bg font-medium text-fg shadow-soft' : 'text-fg2 enabled:hover:text-fg')}>
                           {LEVEL[e] ?? e}
                         </button>
@@ -479,7 +476,7 @@ function ModelMenu({ chat, typed }: { chat: string; typed?: string }) {
                 </>
               ) : null}
               {m?.fast ? (
-                <button type="button" role="menuitemcheckbox" aria-checked={sel.fast} disabled={!!remote} className={row} onClick={() => setSel({ ...sel, fast: !sel.fast })}>
+                <button type="button" role="menuitemcheckbox" aria-checked={sel.fast} className={row} onClick={() => setSel({ ...sel, fast: !sel.fast })}>
                   <SpeedIcon className="size-3.5 shrink-0 text-fg3" />
                   <span className="flex-1">Fast</span>
                   {/* a switch as wide as two thumbs, a touch bigger for a finger */}
@@ -489,7 +486,7 @@ function ModelMenu({ chat, typed }: { chat: string; typed?: string }) {
                 </button>
               ) : null}
               {menu?.perms?.length ? (
-                <button type="button" aria-haspopup="menu" aria-expanded={perms} disabled={!!remote} className={clsx(row, perms && 'bg-hover')} onClick={() => setPerms(!perms)}>
+                <button type="button" aria-haspopup="menu" aria-expanded={perms} className={clsx(row, perms && 'bg-hover')} onClick={() => setPerms(!perms)}>
                   <ModeIcon className="size-3.5 shrink-0 text-fg3" />
                   <span className="flex-1">Permissions</span>
                   <span className="shrink-0 text-[0.75rem] text-fg3">{perm?.label ?? ''}</span>
@@ -525,6 +522,12 @@ function ModelMenu({ chat, typed }: { chat: string; typed?: string }) {
                   {sel.agent !== data.current.agent ? (
                     <p className="px-[9px] text-pretty text-[0.71875rem] text-fg3 coarse:text-[0.8125rem] phone:text-[0.8125rem]">
                       {data.menus[sel.agent]?.name} starts a new conversation. This one stays in {data.menus[data.current.agent]?.name ?? 'its old agent'}’s history.
+                    </p>
+                  ) : null}
+                  {/* another machine out of reach: said when a change is chosen, the button still tries */}
+                  {offline && !error ? (
+                    <p className="px-[9px] text-pretty text-[0.71875rem] text-need-fg coarse:text-[0.8125rem] phone:text-[0.8125rem]">
+                      {offline} is offline. Try again once it’s back.
                     </p>
                   ) : null}
                   <button type="button" disabled={busy} onClick={() => void restart()} className="press-dim min-h-7 w-full rounded-[7px] bg-fg px-2.5 py-1 text-balance text-[0.78125rem] font-medium text-bg disabled:opacity-60 coarse:min-h-11 phone:min-h-11 coarse:text-[0.9375rem] phone:text-[0.9375rem]">

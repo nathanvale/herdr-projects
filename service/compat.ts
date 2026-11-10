@@ -20,12 +20,11 @@ import { codexChoice } from "../core/asks.js";
 const { SCREEN } = SCc as any;
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-const APP_HOME = process.env.HERDR_APP_HOME || join(HOME, ".config", "herdr-app");
 const CLI_NAMES: Record<string, string> = { claude: "Claude Code", codex: "Codex" };
 import * as MNc from "../core/menus.js";
 import * as APc from "../core/autopilot.js";
 const { machineLabel } = MNc as any;
-import { HOME } from "./paths.ts";
+import { HOME, appHome } from "./paths.ts";
 const { spaceName } = SPc as any;
 import type { Where } from "./worktree.ts";
 import * as AGc from "../core/agents.js";
@@ -218,7 +217,7 @@ export class Compat {
   /** A space by its id: its folder and machine. */
   spaceOf(id: string) { const s = this.spaceList.find((x) => x.id === id); return s ? { id: s.id, folder: s.folder, machine: s.machine ?? null } : null; }
   /** Every space: its folder and machine (the worktree dialog's "open" marks). */
-  allSpaces() { return this.spaceList.map((s) => ({ id: s.id as string, folder: s.folder as string, machine: (s.machine ?? null) as string | null })); }
+  allSpaces() { return this.spaceList.map((s) => ({ id: s.id as string, folder: s.folder as string, machine: (s.machine ?? null) as string | null, ...((s as any).own ? { own: true } : {}) })); }
 
   /** The tasks a chat's messages can mention (#HAT-1): its folder's, on its machine, as the window's chat has them. */
   tasksFor(chatKey: string) {
@@ -267,7 +266,7 @@ export class Compat {
     const w = a.words;
     if (w.kind === "questions") {
       const q = w.questions[0];
-      const choices = (x: any) => x.options.map((o: any) => ({ label: o.name, ...(o.description ? { description: o.description } : {}), ...(o.recommended ? { recommended: true } : {}) }));
+      const choices = (x: any) => x.options.map((o: any) => ({ label: o.name, ...(o.description ? { description: o.description } : {}), ...(o.recommended ? { recommended: true } : {}), ...(o.preview ? { preview: o.preview } : {}) }));
       // several questions: one card with a step for each, then one to check the answers (3.0's card)
       if (w.questions.length > 1)
         return { id: a.id, title: `${w.questions.length} questions`, kind: "Question", to: key, choices: [], other: true,
@@ -491,7 +490,7 @@ export class Compat {
   private firsts = new Map<string, { at: number; text: string | null }>();
   firstTask(t: any, addr?: string | null) {
     const safe = (s: string) => String(s).replace(/[^\w.-]/g, "_");
-    const names = firstKeys({ labels: t?.labels, addr }).map((n: string) => join(APP_HOME, "data", "chat-first", `${safe(n)}.txt`));
+    const names = firstKeys({ labels: t?.labels, addr }).map((n: string) => join(appHome(), "data", "chat-first", `${safe(n)}.txt`));
     for (const f of names) {
       const was = this.firsts.get(f);
       if (was && Date.now() - was.at < 10_000) { if (was.text) return was.text; continue; }
@@ -598,7 +597,16 @@ export class Compat {
         const to = sentTo(x, (a: string) => sender(a, ""));
         messages.push({ id: x.id, who: "agent", at: x.at, text: unsigned(x.text), brief: { label: `Message to ${to}`, from: self, to } });
       }
-      else if (x.kind === "agent" && x.text) messages.push({ id: x.id, who: "agent", text: x.text, at: x.at, ...reactions });
+      else if (x.kind === "agent" && x.text) {
+        // the pictures and videos it put in its words (core/chat-view.js mediaIn), each right under them as a file of
+        // its own, as the person's are; only files a chat names are ever served (fileOf)
+        const md = (CV as any).mediaIn(x.text, { cwd: t?.foreground?.cwd ?? t?.cwd ?? null, home: machine ? null : HOME }) as { text: string; media: { path: string; name: string; alt: string }[] };
+        if (md.text || !md.media.length) messages.push({ id: x.id, who: "agent", text: md.text || x.text, at: x.at, ...reactions });
+        for (const [n, m] of md.media.entries()) {
+          (this.files.get(key) ?? this.files.set(key, new Set()).get(key)!).add(m.path);
+          messages.push({ id: `${x.id}:m${n}`, who: "agent", at: x.at, file: { name: m.name, path: m.path, ...(m.alt ? { alt: m.alt } : {}) }, ...(md.text || n ? {} : reactions) } as Message);
+        }
+      }
       else if (x.kind === "error" && x.text) messages.push({ id: x.id, who: "agent", text: x.text, at: x.at, error: true });
       // its own question asked now shows as its card (at the end), in place of its "Asked you" box, as the window's
       else if (x.kind === "ask" && !x.closed && (asking || x === codexCard)) continue;
