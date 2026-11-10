@@ -1180,8 +1180,11 @@ def cmd_resume(args):
         if t["state"] == "done":
             t["state"] = "running"
         back_to_work(s, t, "resumed")
-        a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=getattr(args, "fresh", False),
-                                 message=RESUME_NUDGE)
+        fresh = getattr(args, "fresh", False)
+        # The nudge says the session resumed: never on --fresh, a new conversation from the handoff (missing history is
+        # its own case, never called a resume).
+        a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=fresh,
+                                 message=None if fresh else RESUME_NUDGE)
         v = view(s, t)
     say(args, {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed},
         f"{s.ref(t)} {'resumed its session' if resumed else 'started with a handoff'}: {a['address']}")

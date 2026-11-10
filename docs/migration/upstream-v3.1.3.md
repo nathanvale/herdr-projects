@@ -23,7 +23,8 @@ pass. Imported installer/service code is source input, not authority to run it.
 | Input | Exact commit |
 | --- | --- |
 | F, reserved fork parent | `4f0236f03a88c5e9fa344475d90d3a20ef418481` |
-| U, upstream v3.1.29 parent (since its merge) | `e41ea9d2c0a273a5c7b6aebf51cf2e4d112a1d1e` |
+| U, upstream v3.1.31 parent (since its merge) | `6b8caac946a5c3fae0543624e93a0a5553d3b214` |
+| Upstream v3.1.29, U before the v3.1.31 merge (history) | `e41ea9d2c0a273a5c7b6aebf51cf2e4d112a1d1e` |
 | Upstream v3.1.16, U before the v3.1.29 merge (history) | `57302497117183a1772464b31751da12a1c03e4a` |
 | Upstream v3.1.3, S0's U (history) | `dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc` |
 | P, required Bitbucket contract source | `074dec5ea0bf0a057f520fa50497bf9e1b696ad9` |
@@ -142,12 +143,14 @@ Where the two sides met:
   a refused or Bitbucket one.
 - SHEP-188's `mid_turn()` joins `finish()` beside `kept_because()`: a folder stays while its agent
   or helper is mid-turn, and stays when the branch holds work that didn't merge.
-- SHEP-189's resume nudge goes through the fork's admitted `start_again()`, `--fresh` included.
+- SHEP-189's resume nudge goes through the fork's admitted `start_again()`; `--fresh` (a new conversation from
+  the handoff) gets none, as it is no resume.
 - SHEP-202's caller-free shell send goes through the one revival owner: `bring_back()` passes
   `without_caller()`'s environment to `Admission.type_into()`.
 - SHEP-181's live model and effort switch runs only for a Personal agent in its own config folder.
-  One with a recorded provider binding (`herdr.provider`, as `providerRefusal()` reads it) or
-  another `CLAUDE_CONFIG_DIR` goes to `restart()`, whose launch owner keeps the binding or refuses.
+  One with a recorded provider binding (`herdr.provider`, as `providerRefusal()` reads it), or
+  another `CLAUDE_CONFIG_DIR` by its page or its own process (`folderRefusal()`, as `restart()`
+  asks), goes to `restart()`, whose launch owner keeps the binding or refuses.
 - SHEP-191's cross-site page link (`pageLink()`) applies before the private listener's own checks.
   Writes, sockets and the API stay refused cross-site, and the private peer's owner and host rules
   are unchanged.

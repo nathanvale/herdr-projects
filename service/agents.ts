@@ -155,8 +155,10 @@ export class Agents {
     const kind = kindOf(t) ?? reader?.kind ?? "claude";
     // A live switch types into the running CLI and puts back ~/.claude or ~/.codex settings: it can carry neither a
     // recorded provider binding (Azure Foundry: its model is the deployment, A1/L2) nor another CLAUDE_CONFIG_DIR. Those
-    // go to restart(), whose launch owner keeps the binding or refuses in its own words.
-    if (providerRefusal(t) || inOtherFolder(kind, reader?.path ?? null)) return { terminal: await this.restart(addr, reader, pick) };
+    // go to restart(), whose launch owner keeps the binding or refuses in its own words. The agent's own process is
+    // asked too (folderRefusal), as restart() does: a page's reader may be gone or have no path yet.
+    if (providerRefusal(t) || inOtherFolder(kind, reader?.path ?? null) || await this.folderRefusal(addr, t))
+      return { terminal: await this.restart(addr, reader, pick) };
     const dflt = await this.defaults(kind, machine);
     let meta = reader?.conv?.meta ?? {};
     if (t.created_ms && meta.at && meta.at < t.created_ms) meta = { used: meta.used, window: meta.window };
