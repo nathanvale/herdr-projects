@@ -274,8 +274,9 @@ def pr_checks(v):
     return {"refused": v["refused"]} if v.get("refused") else view_adapter(v).pr_checks(v)
 
 
-def integrate(task, v):
-    """Merges the task's pull request on its forge at the head `v` read: (ok, why not)."""
+def integrate(task, v, queue=False):
+    """Merges the task's pull request on its forge at the head `v` read: (ok, why not). queue: its
+    base merges through GitHub's merge queue (#742, #801, #802), so the request only queues it."""
     if v.get("refused"):
         return False, v["refused"]
-    return adapter_of(task["pr"]).pr_merge(task["pr"], v)
+    return adapter_of(task["pr"]).pr_merge(task["pr"], v, **({"queue": True} if queue else {}))

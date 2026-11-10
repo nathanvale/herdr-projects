@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { place, queueReason, reportOf, estimated, order, ago, autoPrefix, refOf, taskKey, matches, busyAgain, secondLine, leftOf, ORDER, STATUS, WORKING_AGAIN, fromLine, autoWhere, inSpace, selectChange, webSelectSave, webSelectLevels } from "./tasks.js";
+import { place, queueReason, reportOf, estimated, order, ago, autoPrefix, refOf, taskKey, matches, busyAgain, secondLine, leftOf, ORDER, STATUS, WORKING_AGAIN, GRACE_MS, fromLine, autoWhere, inSpace, selectChange, webSelectSave, webSelectLevels } from "./tasks.js";
 import { REASONS, fit } from "./needs.js";
 
 const NOW = 1_800_000_000_000;
@@ -14,6 +14,13 @@ describe("a task's status (as herdr-task's task_status)", () => {
   test("an agent asking makes it need you, with herdr-task's words when it has them", () => {
     expect(at({ id: 1, state: "running" }, [{ address: "t1", status: "blocked" }])).toMatchObject({ section: "needs", needs: "asks", why: REASONS.question });
     expect(at({ id: 1, state: "running", waits: "Pick a colour" }, [{ address: "t1", status: "blocked" }]).why).toBe("Pick a colour");
+  });
+  test("Claude Code's folder-trust dialog needs you, not Working (#755)", () => {
+    const fresh = [{ address: "t1", status: null }];
+    expect(at({ id: 1, state: "running", started: NOW - 10_000 }, fresh).section).toBe("working");
+    expect(at({ id: 1, state: "running", started: NOW - 10_000, trust_ask: "t1" }, fresh)).toMatchObject({ section: "needs", needs: "asks", why: REASONS.trust });
+    // Answered: it reports a status, and the old mark is no ask.
+    expect(at({ id: 1, state: "running", started: NOW - 10_000, trust_ask: "t1" }, [{ address: "t1", status: "working" }]).section).toBe("working");
   });
   test("working while its agent works, or while just started", () => {
     expect(at({ id: 1, state: "running" }, [{ address: "t1", status: "working" }]).section).toBe("working");
@@ -32,10 +39,21 @@ describe("a task's status (as herdr-task's task_status)", () => {
   test("a machine still loading gives no verdict", () => {
     expect(at({ id: 1, state: "running", started: NOW - 600_000 }, [], false).section).toBe("working");
   });
-  test("ready, and merging once asked or merging by itself", () => {
+  test("ready; merging once asked or by itself is Working (SHEP-175)", () => {
     expect(at({ id: 1, state: "ready" }).section).toBe("ready");
-    expect(at({ id: 1, state: "ready", merge_requested: true }, [{ address: "t1", status: "working" }]).section).toBe("merging");
-    expect(at({ id: 1, state: "ready", auto_merge: true, pr: { number: 3 } })).toMatchObject({ section: "merging", why: "Merges once its checks pass" });
+    // #802: in GitHub's merge queue, Working (never done) until GitHub merged it; #743: waiting calmly for an approval.
+    expect(at({ id: 1, state: "ready", merge_queued: NOW, pr: { number: 3 } })).toMatchObject({ section: "working", why: "In GitHub's merge queue" });
+    expect(at({ id: 1, state: "ready", auto_merge: "checks", pr: { number: 3, needs_approval: true } })).toMatchObject({ section: "working", why: "Merges once it's approved" });
+    expect(at({ id: 1, state: "ready", merge_requested: true }, [{ address: "t1", status: "working" }])).toMatchObject({ section: "working", why: "Merging" });
+    expect(at({ id: 1, state: "ready", auto_merge: true, pr: { number: 3 } })).toMatchObject({ section: "working", why: "Merges once its checks pass" });
+  });
+  test("a pull request whose checks still run is Working, then Ready (SHEP-175)", () => {
+    const idle = [{ address: "t1", status: "idle", since: NOW - 600_000 }];
+    expect(at({ id: 1, state: "ready", pr: { number: 3, wait: "Checks running" } }, idle)).toMatchObject({ section: "working", needs: null, why: "Checks running" });
+    expect(at({ id: 1, state: "ready", pr: { number: 3 } }, idle).section).toBe("ready");
+    // A failing check found a moment ago: back to its agent, Working, never Ready first.
+    const failing = { id: 1, state: "ready", attention: "Checks failing: check.", attention_at: NOW - 5000, pr: { number: 3, wait: "Back to its agent to fix" } };
+    expect(at(failing, idle)).toMatchObject({ section: "working", why: "Back to its agent to fix" });
   });
   test("attention and provider retries", () => {
     expect(at({ id: 1, state: "running", attention: "Checks failed" })).toMatchObject({ section: "needs", why: "Checks failed" });
@@ -89,9 +107,9 @@ describe("a Ready task back at work (as herdr-task's busy_again)", () => {
     expect(p).toMatchObject({ section: "working", why: WORKING_AGAIN });
     expect(secondLine(p, null, null, back.now)).toBe(WORKING_AGAIN);
   });
-  test("still Ready while it ends the turn it said ready in, or once idle", () => {
+  test("Working, not Working again, while it ends the turn it said ready in; Ready once idle (SHEP-148)", () => {
     const task = { id: 7, state: "ready", ready_at: back.now - 5_000, ready_turns: { t1: 5 } };
-    expect(place(list([task]), task, { live: [{ address: "t1", status: "working", turn: 4 }], now: back.now }).section).toBe("ready");
+    expect(place(list([task]), task, { live: [{ address: "t1", status: "working", turn: 4 }], now: back.now })).toMatchObject({ section: "working", why: null });
     expect(place(list([task]), task, { live: [{ address: "t1", status: "idle", turn: 5 }], now: back.now }).section).toBe("ready");
   });
   test("asking the person while back at work needs them", () => {
@@ -103,6 +121,7 @@ describe("a Ready task back at work (as herdr-task's busy_again)", () => {
 // A task with a problem (failing checks) its agent is on: Working; nobody on it: Needs you (SHEP-8). The same
 // cases herdr-task's task_status() passes (test/test_herdr_task.py).
 const onIt = JSON.parse(readFileSync(new URL("./on-it.cases.json", import.meta.url), "utf8"));
+const grace = JSON.parse(readFileSync(new URL("./grace.cases.json", import.meta.url), "utf8"));
 
 describe("a problem someone is on (as herdr-task's on_it)", () => {
   for (const c of onIt.cases) test(c.name, () => {
@@ -110,6 +129,21 @@ describe("a problem someone is on (as herdr-task's on_it)", () => {
     const p = place(list([task]), task, { live: c.live, now: onIt.now });
     const why = c.expect.why === "QUESTION" ? REASONS.question : c.expect.why;
     expect({ section: p.section, needs: p.needs, why: p.why }).toEqual({ section: c.expect.status, needs: c.expect.needs, why });
+  });
+});
+
+// SHEP-133: a short grace before Needs you (core/grace.cases.json, which herdr-task's tests read too).
+describe("a short grace before Needs you (as herdr-task's GRACE_MS)", () => {
+  for (const c of grace.cases) test(c.name, () => {
+    const task = { id: 7, ...c.task };
+    const p = place(list([task]), task, { live: c.live, now: grace.now });
+    expect({ section: p.section, needs: p.needs }).toEqual({ section: c.expect.status, needs: c.expect.needs });
+    if (c.expect.settles) expect(p.settles).toBe(c.expect.settles);
+    else expect(p.settles).toBeUndefined();
+  });
+  test("the grace is the same on both sides", () => {
+    expect(GRACE_MS).toBe(20000);
+    expect(readFileSync(new URL("../mods/tasks/bin/herdr_task/agents.py", import.meta.url), "utf8")).toContain("GRACE_MS = 20_000");
   });
 });
 

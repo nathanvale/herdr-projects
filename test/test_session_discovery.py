@@ -3,6 +3,7 @@ session and log are read under that agent's own Claude Code folder. Each agent h
 that waits: on macOS a system binary's environment reads as empty, so it wouldn't do. session_of()
 runs in a process of its own, as HOME is read once at import. Linux runs these on CI; on macOS they
 take the other reader, and CI never does."""
+import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
 import json
 import os
 import shutil

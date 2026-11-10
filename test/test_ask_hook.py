@@ -1,6 +1,7 @@
 """mods/chat/ask-hook.sh, the PermissionRequest hook of Claude Code and Codex (SHEP-91): every ask waits for the chat's
 card, whether or not a chat shows the agent right now (a person on the web or a phone still gets it), and the terminal
 stays a way to answer. Runs the real script on a throwaway app home with a fake hc; never the real data/chat-asks."""
+import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
 import json
 import os
 import shutil
@@ -100,11 +101,40 @@ class AskHook(unittest.TestCase):
     def test_a_task_workers_codex_hands_it_over_through_its_own_hook(self):
         # Codex runs ~/.codex/hooks.json's copy beside the worker's `herdr-task _allow` and waits for both: this copy
         # steps aside, and the one _allow runs (HERDR_ASK_CHAINED) asks the card
-        self.term({"state": "live", "status": "working", "argv": ["codex", "-c", "hooks.PermissionRequest=[…_allow…]", "_allow"]})
+        # its real argv (#866: the hook is inside a -c value, never a word of its own, and both put up a card)
+        sys_path = os.path.join(ROOT, "mods", "tasks", "bin")
+        code = f"import sys; sys.path.insert(0, {sys_path!r}); from herdr_task.launch import own_argv; import json; print(json.dumps(own_argv(['codex', 'go'])))"
+        argv = json.loads(subprocess.run(["python3", "-c", code], capture_output=True, text=True, check=True).stdout)
+        self.assertNotIn("_allow", argv)
+        self.term({"state": "live", "status": "working", "argv": ["sh", "-c", "x", *argv]})
         out = self.out(self.start())
         self.assertEqual(out, b"")
         self.assertIsNone(self.waiting(0.2))
         p = self.start(HERDR_ASK_CHAINED="1")
+        self.assertIsNotNone(self.waiting())
+        p.kill()
+        p.wait()
+        p.stdout.close()
+
+    def test_a_task_workers_claude_hands_it_over_through_its_own_hook(self):
+        # SHEP-139: a Claude worker gets `herdr-task _allow` in its --settings (own_argv), so a machine without this hook in
+        # ~/.claude/settings.json still asks on the card; where both run, this copy steps aside for the chained one
+        sys_path = os.path.join(ROOT, "mods", "tasks", "bin")
+        code = f"import sys; sys.path.insert(0, {sys_path!r}); from herdr_task.launch import own_argv; import json; print(json.dumps(own_argv(['claude', 'go'])))"
+        argv = json.loads(subprocess.run(["python3", "-c", code], capture_output=True, text=True, check=True).stdout)
+        self.term({"state": "live", "status": "working", "argv": ["sh", "-c", "x", *argv]})
+        self.assertEqual(self.out(self.start()), b"")
+        self.assertIsNone(self.waiting(0.2))
+        p = self.start(HERDR_ASK_CHAINED="1")
+        self.assertIsNotNone(self.waiting())
+        p.kill()
+        p.wait()
+        p.stdout.close()
+
+    def test_a_brief_that_names_the_hook_is_no_worker_hook(self):
+        # only the --settings that follows the flag counts, not any argument that mentions it
+        self.term({"state": "live", "status": "working", "argv": ["claude", "fix ` _allow --command ` in launch.py"]})
+        p = self.start()
         self.assertIsNotNone(self.waiting())
         p.kill()
         p.wait()

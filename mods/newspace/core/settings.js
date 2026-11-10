@@ -1,9 +1,9 @@
-// Shepherdr settings' rows as data: each row's key in ~/.herdr/shepherdr.json, its words and its choices, and every
+// Shepherdr settings' rows as data: each row's key in ~/.config/shepherdr/settings.json, its words and its choices, and every
 // title, line and button word the window's Settings say (mods/shepherdr-settings), so the window, the service and the
 // web app's Settings say the same. herdr-task reads the file (herdr_task/settings.py: settings_for); its defaults are
 // DEFAULTS there and here.
 // Shared core: the source is core/settings.js; bin/sync-shared copies it into the mods in lib/COPIES.
-import { NAMES, levelName, current, rowFor, menuFor } from "./agents.js";
+import { NAMES, levelName, current, rowFor, menuFor, permAcross } from "./agents.js";
 import { SERVE } from "./host.js";
 
 // ---- the frame -------------------------------------------------------------------------------------------------
@@ -134,7 +134,7 @@ export function feedbackRepo(v) {
   return /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(s) ? s : null;
 }
 export const BACKUP = { title: "Backup agent", about: "The other CLI takes over a task once when its agent can't go on." };
-// The machines where the other CLI can't take over (herdr-task's check, ~/.herdr/cli-check.json's machines: this
+// The machines where the other CLI can't take over (herdr-task's check, ~/.local/state/shepherdr/cli-check.json's machines: this
 // computer is ""), in one line. m: the scope's machine ("local" or its name), null for Everywhere (every machine).
 export function backupProblem(checks, m, cli) {
   const here = Object.entries(checks ?? {}).filter(([k]) => m === null || k === (m === LOCAL ? "" : m));
@@ -170,7 +170,7 @@ export function roleSel(role, own, choices, worker) {
   return { sel: choices?.defaults ? { ...choices.defaults } : null, unset: true };
 }
 // A model picked in the menu: the effort and speed stay where it has them; another agent brings its own permission
-// modes (full access staying full access).
+// modes, the nearest to the one chosen (agents.js permAcross).
 export function chooseModel(menus, permDefault, sel, agent, id) {
   const m = menus?.[agent]?.models?.find((x) => x.id === id);
   if (!m) return sel;
@@ -178,8 +178,7 @@ export function chooseModel(menus, permDefault, sel, agent, id) {
   if (next.effort && !m.efforts.includes(next.effort)) next.effort = null;
   if (!m.fast) next.fast = false;
   if (agent !== sel.agent) {
-    const full = sel.perm === "bypassPermissions" || sel.perm === "full";
-    next.perm = full ? (agent === "claude" ? "bypassPermissions" : "full") : permDefault?.[agent] ?? null;
+    next.perm = permAcross(sel.perm, agent, permDefault);
     next.fast = false;
   }
   return next;
@@ -363,7 +362,7 @@ export const OLD_NAMES = { coordinator: "Assistant", worker: "Workers", reviewer
   automations: "Run automations", merge: "Merge", review_rounds: "Review", must_fix: "Must fix", proof: "Proof",
   max_running: "Tasks at once", archive_after: "Archive Done after", worktrees: "Worktrees",
   start_notes: "When a task starts", finish_notes: "When a task finishes", base: "Base branch", branch: "Branch names", agents: "Reactions" };
-// Home Assistant's line: on or off, and what herdr-task's home round last found there (~/.herdr/tasks/.home.json).
+// Home Assistant's line: on or off, and what herdr-task's home round last found there (~/.local/share/shepherdr/tasks/.home.json).
 export function homeAbout(on, st) {
   return !on ? "Off: nobody watches its disk, load and processes."
     : st?.assistant ? "Its home space's Assistant watches its disk, load and processes."
@@ -393,6 +392,14 @@ export const SWITCHES = [
     key: "coordinator.auto" },
 ];
 export const ADDONS = "Add-ons";
+// Usage insights' Delete, under its switch (the window's and the web's Settings > Window): every machine's log.
+export const INSIGHTS = {
+  title: "Delete usage data",
+  about: "Deletes the usage log on this computer and on your other machines. It starts again from now while the add-on is on.",
+  button: "Delete",
+  done: "Deleted.",
+  missed: (names) => `Deleted here. Not reached: ${names}. Try again when they're online.`,
+};
 // An add-on's line: its about, and what stops a flip (stop: the titles in the way).
 export function addonAbout(about, now, stop) {
   if (!stop.length) return about;
@@ -402,7 +409,7 @@ export function addonAbout(about, now, stop) {
 }
 
 // ---- Web -------------------------------------------------------------------------------------------------------
-export const WEB = { title: "Shepherdr on the web", link: "Link", copy: "Copy", phone: "Open it on your phone" };
+export const WEB = { title: "Shepherdr on the web", link: "Link", copy: "Copy", copied: "Copied", phone: "Open it on your phone" };
 // The Web page's state line: off (the Web add-on), not read yet, no service, or what the service last said (web.json).
 // Served from another machine (Serve from, core/host.js): says which; a move under way says that first.
 export const webState = (off, loaded, w) => (off ? "Off. Turn it on under Window › Add-ons." : !loaded ? "Reading…"

@@ -11,8 +11,9 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 INPUTS = {
     'F': '4f0236f03a88c5e9fa344475d90d3a20ef418481',
-    # U is the exact upstream parent the native foundation equals: v3.1.16 since its merge (S0 merged v3.1.3, dc018f2a).
-    'U': '57302497117183a1772464b31751da12a1c03e4a',
+    # U is the exact upstream parent the native foundation equals: v3.1.29 since its merge (v3.1.16 57302497 before;
+    # S0 merged v3.1.3, dc018f2a).
+    'U': 'e41ea9d2c0a273a5c7b6aebf51cf2e4d112a1d1e',
     'P': '074dec5ea0bf0a057f520fa50497bf9e1b696ad9',
     'B': 'de8e17957efb4aa016d7e4d652f397aaa95f0880',
 }
@@ -86,7 +87,7 @@ mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/task
 mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/revive.py
 mods/tasks/bin/herdr_task/settings.py mods/tasks-menu/main.js mods/tasks/core/tasks.js mods/tasks/local.js mods/tasks/main.js service/actions.ts service/agents.ts service/compat.ts service/launch-sites.test.ts
 service/main.ts service/selections.test.ts service/selections.ts service/settings.test.ts service/settings.ts
-service/spaces.ts service/watch.ts test/test_herdr_task.py test/test_launch_admission.py test/test_providers.py web/plugins/tasks/client.tsx
+service/spaces.ts service/voice-data.ts service/watch.ts test/test_herdr_task.py test/test_launch_admission.py test/test_restart.py test/test_providers.py web/plugins/tasks/client.tsx
 web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx web/src/restart.tsx'''.split()),
     # Native restart and revival: revival, a lost session at its shell and every restart go through launch admission on
     # the recorded binding (continued conversations) or today's settings (new ones, never onto another route), claimed
@@ -261,7 +262,145 @@ docs/migration/upstream-v3.1.3.json test/test_migration.py'''.split())
 PROSE = frozenset('AGENTS.md CHANGELOG.md CLAUDE.md CODING_STANDARDS.md GLOSSARY.md README.md RECIPE.md'.split())
 # A unit merged after Q that changes a tracked path outside Q's own and prose names it here, under the unit's name
 # ({'MIG-10': 'path other/path'}). Its evidence is its own Check; Q's ledger keeps describing its candidate only.
-AFTER_Q = {}
+AFTER_Q = {
+    # Upstream v3.1.29 merged into the fork (merge commit 2d612fdf, upstream e41ea9d2): every tracked source path
+    # it changes. Its evidence is its own Check; Q's ledger keeps describing c9bc734f.
+    'MERGE-v3.1.29': (
+        '.fallowrc.json NOTICE bin/herdr-browser bin/herdr-browser-view bin/herdr-secret bin/shepherdr '
+        'bin/sync-shared core/accept.js core/agents.js core/asks.js core/audio.js core/audio.test.js '
+        'core/autopilot.cases.json core/autopilot.js core/chat-media.test.js core/chat-view.js '
+        'core/chat-view.test.js core/clean-env.js core/clean-env.test.js core/grace.cases.json core/host.js '
+        'core/host.test.js core/machines.js core/mentions.js core/menus.js core/needs.js core/newspace.js '
+        'core/paths.js core/recipe.js core/screen.test.js core/secrets.js core/settings.js core/settings.test.js '
+        'core/spaces.js core/spaces.test.js core/tasklists.js core/tasks.js core/tasks.test.js core/usage.js '
+        'core/usage.test.js core/voice-key.test.js core/voice-spec.test.js core/voice-usage.test.js '
+        'core/voice.js core/worktree.js core/worktree.test.js layouts/shepherdr.json lib/COPIES lib/addons.js '
+        'lib/addons.json lib/agent.js lib/bridge.js lib/coordinator.js lib/dirs.js lib/features.json '
+        'lib/inbox.js lib/keyholder.js lib/local.js lib/machines.js lib/parked.js lib/secrets.js lib/settings.js '
+        'lib/taskwhere.js lib/unread.js lib/usage.js mods/accept-card/addons.js mods/accept-card/core/accept.js '
+        'mods/accept-card/core/paths.js mods/accept-card/core/usage.js mods/accept-card/dirs.js '
+        'mods/accept-card/main.js mods/accept-card/usage.js mods/artifacts/ARTIFACTS.md mods/artifacts/addons.js '
+        'mods/artifacts/bin/herdr-artifact mods/artifacts/core/paths.js mods/artifacts/core/recipe.js '
+        'mods/artifacts/core/usage.js mods/artifacts/dirs.js mods/artifacts/main.js mods/artifacts/markup.js '
+        'mods/artifacts/usage.js mods/chat-call/main.js mods/chat-models/core/agents.js '
+        'mods/chat-models/core/paths.js mods/chat-models/dirs.js mods/chat-models/main.js '
+        'mods/chat-react/main.js mods/chat/addons.js mods/chat/agent.js mods/chat/ask-hook.sh '
+        'mods/chat/attach.js mods/chat/audio.ts mods/chat/call-screen.js mods/chat/cards.js '
+        'mods/chat/core/agents.js mods/chat/core/asks.js mods/chat/core/audio.js mods/chat/core/chat-view.js '
+        'mods/chat/core/clean-env.js mods/chat/core/host.js mods/chat/core/mentions.js mods/chat/core/needs.js '
+        'mods/chat/core/paths.js mods/chat/core/recipe.js mods/chat/core/secrets.js mods/chat/core/settings.js '
+        'mods/chat/core/spaces.js mods/chat/core/tasks.js mods/chat/core/usage.js mods/chat/core/voice.js '
+        'mods/chat/dirs.js mods/chat/key.ts mods/chat/keyholder.js mods/chat/local.js mods/chat/mac-audio.swift '
+        'mods/chat/main.js mods/chat/panel.js mods/chat/parked.js mods/chat/phone-x.svg mods/chat/play.svg '
+        'mods/chat/secrets.js mods/chat/settings.js mods/chat/strips.js mods/chat/unread.js mods/chat/usage.js '
+        'mods/chat/voice.ts mods/coordinator/coordinator.js mods/coordinator/core/agents.js '
+        'mods/coordinator/core/host.js mods/coordinator/core/menus.js mods/coordinator/core/paths.js '
+        'mods/coordinator/core/settings.js mods/coordinator/core/spaces.js mods/coordinator/dirs.js '
+        'mods/coordinator/restart.sh mods/jump/addons.js mods/jump/core/asks.js mods/jump/core/needs.js '
+        'mods/jump/core/paths.js mods/jump/core/spaces.js mods/jump/core/tasklists.js mods/jump/core/tasks.js '
+        'mods/jump/core/usage.js mods/jump/dirs.js mods/jump/main.js mods/jump/usage.js '
+        'mods/menu-tasks/coordinator.js mods/menu-tasks/core/menus.js mods/menu-tasks/core/paths.js '
+        'mods/menu-tasks/core/spaces.js mods/menu-tasks/dirs.js mods/new-menu-tasks/coordinator.js '
+        'mods/new-menu-tasks/core/menus.js mods/new-menu-tasks/core/paths.js mods/new-menu-tasks/core/spaces.js '
+        'mods/new-menu-tasks/dirs.js mods/newspace/agent.js mods/newspace/coordinator.js '
+        'mods/newspace/core/agents.js mods/newspace/core/host.js mods/newspace/core/newspace.js '
+        'mods/newspace/core/paths.js mods/newspace/core/settings.js mods/newspace/core/spaces.js '
+        'mods/newspace/dirs.js mods/newspace/keyholder.js mods/newspace/main.js mods/newspace/settings.js '
+        'mods/pane-chat/addons.js mods/pane-chat/autopilot.js mods/pane-chat/core/autopilot.js '
+        'mods/pane-chat/core/menus.js mods/pane-chat/core/paths.js mods/pane-chat/core/spaces.js '
+        'mods/pane-chat/dirs.js mods/pane-chat/main.js mods/shepherdr-settings/addons.js '
+        'mods/shepherdr-settings/agent.js mods/shepherdr-settings/autopilot-section.js '
+        'mods/shepherdr-settings/coordinator.js mods/shepherdr-settings/core/agents.js '
+        'mods/shepherdr-settings/core/autopilot.js mods/shepherdr-settings/core/host.js '
+        'mods/shepherdr-settings/core/machines.js mods/shepherdr-settings/core/paths.js '
+        'mods/shepherdr-settings/core/secrets.js mods/shepherdr-settings/core/settings.js '
+        'mods/shepherdr-settings/core/spaces.js mods/shepherdr-settings/core/usage.js '
+        'mods/shepherdr-settings/dirs.js mods/shepherdr-settings/layout.js mods/shepherdr-settings/local.js '
+        'mods/shepherdr-settings/machines-section.js mods/shepherdr-settings/machines.js '
+        'mods/shepherdr-settings/main.js mods/shepherdr-settings/secrets.js mods/shepherdr-settings/settings.js '
+        'mods/shepherdr-settings/usage.js mods/shepherdr-settings/web-section.js mods/spaces-chat/addons.js '
+        'mods/spaces-chat/arrow-down.svg mods/spaces-chat/arrow-up.svg mods/spaces-chat/coordinator.js '
+        'mods/spaces-chat/core/asks.js mods/spaces-chat/core/machines.js mods/spaces-chat/core/menus.js '
+        'mods/spaces-chat/core/needs.js mods/spaces-chat/core/paths.js mods/spaces-chat/core/spaces.js '
+        'mods/spaces-chat/dirs.js mods/spaces-chat/icon.js mods/spaces-chat/inbox.js '
+        'mods/spaces-chat/machines.js mods/spaces-chat/main.js mods/spaces-chat/parked.js '
+        'mods/spaces-chat/popups.js mods/spaces-chat/unread.js mods/tabs-tasks/addons.js '
+        'mods/tabs-tasks/bridge.js mods/tabs-tasks/coordinator.js mods/tabs-tasks/core/asks.js '
+        'mods/tabs-tasks/core/menus.js mods/tabs-tasks/core/needs.js mods/tabs-tasks/core/paths.js '
+        'mods/tabs-tasks/core/secrets.js mods/tabs-tasks/core/spaces.js mods/tabs-tasks/core/usage.js '
+        'mods/tabs-tasks/dirs.js mods/tabs-tasks/inbox.js mods/tabs-tasks/local.js mods/tabs-tasks/main.js '
+        'mods/tabs-tasks/parked.js mods/tabs-tasks/secrets.js mods/tabs-tasks/tick.js mods/tabs-tasks/usage.js '
+        'mods/task-browser/core/paths.js mods/task-browser/dirs.js mods/task-browser/main.js '
+        'mods/task-browser/taskwhere.js mods/task-changes/core/worktree.js mods/task-changes/main.js '
+        'mods/task-changes/mod.json mods/task-changes/taskwhere.js mods/task-changes/ui.js '
+        'mods/task-files/chevron-down.svg mods/task-files/chevron-right.svg mods/task-files/file.svg '
+        'mods/task-files/folder.svg mods/task-files/main.js mods/task-files/mod.json '
+        'mods/task-files/taskwhere.js mods/task-files/ui.js mods/task-pr/core/worktree.js '
+        'mods/task-pr/taskwhere.js mods/tasks-menu/core/menus.js mods/tasks-menu/main.js '
+        'mods/tasks/bin/herdr-task mods/tasks/bin/herdr_task/__init__.py mods/tasks/bin/herdr_task/agents.py '
+        'mods/tasks/bin/herdr_task/automations.py mods/tasks/bin/herdr_task/autopilot.py '
+        'mods/tasks/bin/herdr_task/base.py mods/tasks/bin/herdr_task/browsers.py '
+        'mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py '
+        'mods/tasks/bin/herdr_task/forge.py mods/tasks/bin/herdr_task/ghnews.py '
+        'mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/home.py '
+        'mods/tasks/bin/herdr_task/launch.py mods/tasks/bin/herdr_task/layout.py '
+        'mods/tasks/bin/herdr_task/machines.py mods/tasks/bin/herdr_task/news.py '
+        'mods/tasks/bin/herdr_task/output.py mods/tasks/bin/herdr_task/proof.py '
+        'mods/tasks/bin/herdr_task/queues.py mods/tasks/bin/herdr_task/revive.py '
+        'mods/tasks/bin/herdr_task/settings.py mods/tasks/bin/herdr_task/star.py '
+        'mods/tasks/bin/herdr_task/store.py mods/tasks/bin/herdr_task/takeover.py '
+        'mods/tasks/bin/herdr_task/templates.py mods/tasks/bin/herdr_task/tick.py mods/tasks/coordinator.js '
+        'mods/tasks/core/asks.js mods/tasks/core/menus.js mods/tasks/core/needs.js mods/tasks/core/paths.js '
+        'mods/tasks/core/spaces.js mods/tasks/core/tasklists.js mods/tasks/core/tasks.js mods/tasks/dirs.js '
+        'mods/tasks/inbox.js mods/tasks/keyholder.js mods/tasks/local.js mods/tasks/main.js '
+        'mods/toasts/addons.js mods/toasts/core/asks.js mods/toasts/core/needs.js mods/toasts/core/paths.js '
+        'mods/toasts/core/usage.js mods/toasts/dirs.js mods/toasts/main.js mods/toasts/usage.js '
+        'mods/workspace-chrome-shepherdr/addons.js mods/workspace-chrome-shepherdr/audio-lines.svg '
+        'mods/workspace-chrome-shepherdr/main.js mods/workspace-chrome-shepherdr/mic-off.svg '
+        'mods/workspace-chrome-shepherdr/mic.svg mods/workspace-chrome-shepherdr/phone-x.svg '
+        'mods/workspace-status-chat/core/asks.js mods/workspace-status-chat/core/needs.js '
+        'mods/workspace-status-chat/core/paths.js mods/workspace-status-chat/core/spaces.js '
+        'mods/workspace-status-chat/dirs.js mods/workspace-status-chat/inbox.js '
+        'mods/workspace-status-chat/parked.js package.json service/actions.ts service/agents.ts '
+        'service/app-home-guard.test.ts service/artifacts.ts service/asks.test.ts service/asks.ts '
+        'service/attach.test.ts service/auth.test.ts service/auth.ts service/browser-session.test.ts '
+        'service/browser.ts service/chat-ended-task.test.ts service/chat-zoom.test.ts service/chats.test.ts '
+        'service/chats.ts service/compat.ts service/dictate.ts service/emoji-pick.test.ts service/fake-gpui.ts '
+        'service/fake-herdr.ts service/host.ts service/jobs.ts service/live.ts service/local.test.ts '
+        'service/machines.ts service/main.ts service/media.test.ts service/media.ts '
+        'service/model-menu-perms.test.ts service/model.ts service/newspace-folder-list.test.ts '
+        'service/newspace-keys.test.ts service/parked-sweep.test.ts service/paths.ts service/peer.ts '
+        'service/push.ts service/saved-spaces.test.ts service/saved-spaces.ts service/secrets-move.ts '
+        'service/secrets.ts service/serve-from.ts service/settings-guard.test.ts service/settings.ts '
+        'service/show.test.ts service/show.ts service/sock-path.test.ts service/spaces-sidebar.test.ts '
+        'service/sync.ts service/tailscale.test.ts service/tailscale.ts service/tasks-open-chat.test.ts '
+        'service/usage.test.ts service/usage.ts service/voice-call.test.ts service/voice-data.test.ts '
+        'service/voice-data.ts service/voice-hear.test.ts service/voice-hear.ts service/voice-tools.test.ts '
+        'service/voice-tools.ts service/voice.ts service/watch.ts service/window.ts service/worktrees.ts '
+        'templates/assistant.md templates/reviewer.md templates/worker.md test/fixtures/install-3.1.26.py '
+        'test/home_guard.py test/preload.ts test/test_ask_hook.py test/test_bitbucket.py '
+        'test/test_bitbucket_publication.py test/test_checkout_access.py test/test_fallow_config.py '
+        'test/test_forge.py test/test_herdr_artifact.py test/test_herdr_artifact_preview.py '
+        'test/test_herdr_artifact_publish.py test/test_herdr_artifact_show.py test/test_herdr_task.py '
+        'test/test_install.py test/test_launch_admission.py test/test_layout.py test/test_native_publication.py '
+        'test/test_native_restart.py test/test_providers.py test/test_repo.py test/test_restart.py '
+        'test/test_secret_main.py test/test_session_discovery.py test/test_sync_hold.py test/test_usage.py '
+        'tsconfig.json web/plugins/artifacts/client.tsx web/plugins/browser/client.tsx '
+        'web/plugins/chat/client.tsx web/plugins/chat/markdown.tsx web/plugins/chat/rows.tsx '
+        'web/plugins/places/client.tsx web/plugins/places/drag.ts web/plugins/reactions/client.tsx '
+        'web/plugins/reactions/leave.test.ts web/plugins/reactions/leave.ts web/plugins/tasks/client.tsx '
+        'web/plugins/terminal/client.tsx web/plugins/terminal/shown.test.ts web/plugins/terminal/shown.ts '
+        'web/plugins/voice/call.test.ts web/plugins/voice/call.ts web/plugins/voice/client.tsx '
+        'web/plugins/voice/screen.ts web/plugins/worktree/client.tsx web/shared/alerts.ts web/shared/files.ts '
+        'web/shared/types.ts web/src/App.tsx web/src/Frame.tsx web/src/Panel.tsx web/src/Settings.tsx '
+        'web/src/Stack.tsx web/src/copy.test.ts web/src/copy.ts web/src/dictation.ts web/src/enter.test.ts '
+        'web/src/enter.ts web/src/groups.test.ts web/src/groups.ts web/src/kernel.ts web/src/nav.items.test.ts '
+        'web/src/nav.ts web/src/no-spaces.test.ts web/src/restart.tsx web/src/rowmenu.tsx '
+        'web/src/screens/Accept.tsx web/src/screens/AddMachine.tsx web/src/sidebars.ts web/src/status.tsx '
+        'web/src/styles.css web/src/ui.tsx web/src/usage.test.ts web/src/usage.ts web/viewer/index.html '
+        'web/viewer/viewer.tsx web/vite.viewer.config.ts'
+    ),
+}
 TEST_DISPOSITIONS = frozenset({'covered', 'partial', 'held'})
 STEP_DISPOSITIONS = frozenset({'ported', 'suite', 'held'})
 WORKFLOWS = ('check.yml', 'core-rewrite.yml', 'foundry.yml')

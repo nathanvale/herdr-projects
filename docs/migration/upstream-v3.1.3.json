@@ -5,7 +5,7 @@
   "candidate_readiness": "blocked",
   "inputs": {
     "F": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
-    "U": "57302497117183a1772464b31751da12a1c03e4a",
+    "U": "e41ea9d2c0a273a5c7b6aebf51cf2e4d112a1d1e",
     "P": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
     "B": "de8e17957efb4aa016d7e4d652f397aaa95f0880"
   },
@@ -13,44 +13,44 @@
     {
       "phase": "N1",
       "path": "docs/install.md",
-      "upstream_blob": "55fa8c9cf74d63940d151e47328eacc601be6892",
-      "sha256": "fde3f8a8ca8de98d98b66621029b131b2387906c69283a3e5f3290d558527574"
+      "upstream_blob": "5c536356a6d45f98712bdd1dd153daf3277c5e35",
+      "sha256": "d998a01d8904db58fc23ca1d504b48c619c2d3375def0c24b46578723770ec89"
     },
     {
       "phase": "B2",
       "path": "mods/tasks/bin/herdr_task/__init__.py",
-      "upstream_blob": "3d166c20ba39b46df4d797acfabeaeac0e28aa21",
-      "sha256": "3ed07373a6189ed61f62ce6d121732fe6aea0453be33449f39bb71478ad8be27"
+      "upstream_blob": "49b1d3300b558cc0564113ee4efde32cf3e1c544",
+      "sha256": "05a3904adff1dbb1a93793cc503a11b1451f3fb4facc4159a72c0aeac02ae981"
     },
     {
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/automations.py",
-      "upstream_blob": "dbec2e28ee77282b3862dd07f537a9200942683e",
-      "sha256": "29a393ecd604f70bb599538463e18680d4668daf851c5a41148b518ceb22c69d"
+      "upstream_blob": "de36ae8c2c5f30f856dbb70677a8bf8336f4bc77",
+      "sha256": "5e0ff981c0caef349a2d017246cac38cc198ede54cc9558b06e1138138146365"
     },
     {
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/cli.py",
-      "upstream_blob": "af0c7d2ee16ea26fa1fa458020f6d9181d78774d",
-      "sha256": "7eab9b79e2e59d78d675a54ef02da2498be7e436f1a8dce4148ebc3678ff7800"
+      "upstream_blob": "edb0e16ba2cef61cee7770019e3f81ea3101241a",
+      "sha256": "146cdf99625a04d35a7190c6d2c4bf16694f96dfeb44b7bdaac60d37277b817c"
     },
     {
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/commands.py",
-      "upstream_blob": "d2463e1a37c0aeefaee51eec7480d3de3df1f40d",
-      "sha256": "cd90508ac0f59ff417090d83a910bd8ac8f925d568de4dce3da5d43fc37813ee"
+      "upstream_blob": "eaf04bed8c00ba4384021115cabf00f82cfe5758",
+      "sha256": "d4446a5a955ddb6564d1c7a1e9801b1f8c57351f7539e2a470138a63dfaf9222"
     },
     {
       "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/github.py",
-      "upstream_blob": "e28e2fe4f68da9e52fbbe8cbee1e293d5b22558c",
-      "sha256": "21259c10695409e45b50f3dc22a1d1664ed58e19f0060fb6192751fb9452f9cb"
+      "upstream_blob": "43fc4b1b5a7906143746d88b26642ffbea069cb7",
+      "sha256": "b15100554665e1696e70ddf1523b4f781b90f7fcf6db9f078e8ec63a1c748380"
     },
     {
       "phase": "A2",
       "path": "mods/tasks/bin/herdr_task/launch.py",
-      "upstream_blob": "a3b9182213360bd11294a57d57144747fce36fba",
-      "sha256": "c5de059ccaea714c67e1328eb84a88f786fa41396438fd3ce469ac753a0c39c4"
+      "upstream_blob": "de1cf79d0ff7fb843aea23bf12f1819f2a397c06",
+      "sha256": "fd583bfd419ab8ab5f684484680912311ae7915204a21f0aff06dc90f59a3e54"
     },
     {
       "phase": "L2",
@@ -61,14 +61,14 @@
     {
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/takeover.py",
-      "upstream_blob": "5af6c073493766adc3b052cb3677b75e71beb14b",
-      "sha256": "dff4f6f4117481a59ce9ff7bf498b5a019a4411fe3f7ead46b156bce913acbed"
+      "upstream_blob": "af46d968d98c967af68c6efb45e24cef404d1c21",
+      "sha256": "fd2a7a7338764b4f241984ef385b2d9086b4604385df2f6f2a016d21afb0b25f"
     },
     {
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/tick.py",
-      "upstream_blob": "079934ac912d084b2c4803e772007778d5791d71",
-      "sha256": "c7bca97b05f24d5cdbdac16cf5b731016a06e37bd2a607ae2adbcb055c5e4013"
+      "upstream_blob": "7551f73fdd414e73c974b5bdf40757dd023a8fee",
+      "sha256": "231bf8fdb1911aeb2f2c597398348947b2568c4704c286405abcfcaa45c36bf7"
     },
     {
       "phase": "A1",
@@ -91,26 +91,26 @@
     {
       "phase": "L2",
       "path": "test/test_herdr_task.py",
-      "upstream_blob": "82cfa36fd73760a95a88b6d07a09e9cc03dfa167",
-      "sha256": "b4b75ae2a65efdda7bde5d2a6b04827d68f9882bde4c4e8eae448fd1fe3fe24c"
+      "upstream_blob": "5a252f043641bc089baaa6a0385fbcbd4bc7f228",
+      "sha256": "1bda45ff63589edcab0d62c7ccd6220d1253d80957181e5a4960c7d67964a8f1"
     },
     {
       "phase": "B2",
       "path": "test/test_native_publication.py",
       "upstream_blob": null,
-      "sha256": "6029cb7c77a0b1c3db33ee76cd88fc264f56f63bf27f44320b3bf9785f851b4b"
+      "sha256": "95860ff86625b772d8c19d1ae78ac912540a3ce62eda48f1f8c47d9dc47cb0ac"
     },
     {
       "phase": "L2",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "ccfe53727eb8f5dc3b594cfeb59874513575fb2ec6ae135a0d1929652f3d0086"
+      "sha256": "cce18ef6052a8ec160c6d56de7fd7ea563481155490cc6c9620d6b6a20d2fafa"
     },
     {
       "phase": "A2",
       "path": "core/agents.js",
-      "upstream_blob": "572c3762eb072dc3e15215c46971aa88963a2fbe",
-      "sha256": "a56246e5d4271d1ba7a211db0e24d0943a2246fadf2a26a81b50812a0529720c"
+      "upstream_blob": "fa7724e967be996e1a6fccdd0da058824c4a386a",
+      "sha256": "03c5087ee83199c89dcee8b07257410e99c079f101bdb5b015bd9d04cd0b3541"
     },
     {
       "phase": "L2",
@@ -127,8 +127,8 @@
     {
       "phase": "A2",
       "path": "mods/chat/core/agents.js",
-      "upstream_blob": "572c3762eb072dc3e15215c46971aa88963a2fbe",
-      "sha256": "a56246e5d4271d1ba7a211db0e24d0943a2246fadf2a26a81b50812a0529720c"
+      "upstream_blob": "fa7724e967be996e1a6fccdd0da058824c4a386a",
+      "sha256": "03c5087ee83199c89dcee8b07257410e99c079f101bdb5b015bd9d04cd0b3541"
     },
     {
       "phase": "C1",
@@ -139,32 +139,32 @@
     {
       "phase": "L2",
       "path": "mods/chat/main.js",
-      "upstream_blob": "4cdd115719ff5ea07827776304cd093aec0f11b3",
-      "sha256": "1451fe32770fd64d6490953e8c441cd20df0cfba7d33ffc65041c56772980a10"
+      "upstream_blob": "0d7075bd7ab126502ebf0a50e5ca18f96d2c33a5",
+      "sha256": "4fb77a2c4f665f6eb7ad6b213913bf826e77017529b24be3ff0547b39d7c7a1e"
     },
     {
       "phase": "A2",
       "path": "mods/coordinator/core/agents.js",
-      "upstream_blob": "572c3762eb072dc3e15215c46971aa88963a2fbe",
-      "sha256": "a56246e5d4271d1ba7a211db0e24d0943a2246fadf2a26a81b50812a0529720c"
+      "upstream_blob": "fa7724e967be996e1a6fccdd0da058824c4a386a",
+      "sha256": "03c5087ee83199c89dcee8b07257410e99c079f101bdb5b015bd9d04cd0b3541"
     },
     {
       "phase": "A2",
       "path": "mods/newspace/core/agents.js",
-      "upstream_blob": "572c3762eb072dc3e15215c46971aa88963a2fbe",
-      "sha256": "a56246e5d4271d1ba7a211db0e24d0943a2246fadf2a26a81b50812a0529720c"
+      "upstream_blob": "fa7724e967be996e1a6fccdd0da058824c4a386a",
+      "sha256": "03c5087ee83199c89dcee8b07257410e99c079f101bdb5b015bd9d04cd0b3541"
     },
     {
       "phase": "A2",
       "path": "mods/shepherdr-settings/core/agents.js",
-      "upstream_blob": "572c3762eb072dc3e15215c46971aa88963a2fbe",
-      "sha256": "a56246e5d4271d1ba7a211db0e24d0943a2246fadf2a26a81b50812a0529720c"
+      "upstream_blob": "fa7724e967be996e1a6fccdd0da058824c4a386a",
+      "sha256": "03c5087ee83199c89dcee8b07257410e99c079f101bdb5b015bd9d04cd0b3541"
     },
     {
       "phase": "C1",
       "path": "mods/tasks/bin/herdr_task/news.py",
-      "upstream_blob": "c858c1a74c2e00c47a408703334b511a6f323dd2",
-      "sha256": "2652505827a2b6513294cb0beacae534a95f978da691adeda025189b28473604"
+      "upstream_blob": "8f7507d7e5ba72a772db28adee663d5720c73ecf",
+      "sha256": "3df0667ffdf9827b17805024b397289fbd92386d4d9e85bdfb06e1f4060ca72a"
     },
     {
       "phase": "C1",
@@ -175,26 +175,26 @@
     {
       "phase": "L2",
       "path": "service/actions.ts",
-      "upstream_blob": "3151c718fa60aa19e317cf3a61b6b11541573ef2",
-      "sha256": "f2af3d0d766e33da5be025bd0bce0a2db59364b844c75f549c307ae0477cd028"
+      "upstream_blob": "d9665be58feeef67dbb87272fda779947cef0fe9",
+      "sha256": "37589aac80b0bab57047376e92d3ebeb09233a7a52b63c79d6b7d8bced30d9eb"
     },
     {
       "phase": "L2",
       "path": "service/agents.ts",
-      "upstream_blob": "485c1f38b787d9c40f2a84fb87441f9e37e8cf8d",
-      "sha256": "78cc29b5624e592d72c2c2f59a4f7848f9ae89689385ffb33ace4f2c48ae02a7"
+      "upstream_blob": "70182f8f07610af070a2480287826d5822bb7c34",
+      "sha256": "4b516594e96e2901b02c09d14e1a870797650ef5750ae971cca8b928197c9a05"
     },
     {
       "phase": "L2",
       "path": "service/watch.ts",
-      "upstream_blob": "7e38406d2becbab5a05014de9afa229d7250f160",
-      "sha256": "b31f3e055b226ce572437228ef96f2a9b5976d7dde7e7e239fd4fd63b3a059bf"
+      "upstream_blob": "933e46ae172213e7557d51836b069b071b7d6dcf",
+      "sha256": "928db145ec3556a49c565bd2890b370ef0c9de017a6295a10c5726e042496df5"
     },
     {
       "phase": "L2",
       "path": "test/test_session_discovery.py",
       "upstream_blob": null,
-      "sha256": "878b6974f9cfe782a3c1ca6fe215c1563170e3c14b11e0e63216e267d4b0c9cf"
+      "sha256": "fba26d783147f9043d2430d711907b60ca3720a058a9cfc3deaeed6d098185f3"
     },
     {
       "phase": "W1",
@@ -205,8 +205,8 @@
     {
       "phase": "W1",
       "path": "service/jobs.ts",
-      "upstream_blob": "90151dddecaf6a1042cea8a4cb3c4028d18e9249",
-      "sha256": "ec82635942c8aadadddce7546b2c16c86691571850359e8c095a57b73e7f21e3"
+      "upstream_blob": "aa67ba15c56fb828e325a39347bfb59df73853d4",
+      "sha256": "c41fe54d5bae59698aadd33759bded5521e6627bb6d7c5c3769bff28fb706c77"
     },
     {
       "phase": "H1",
@@ -229,8 +229,8 @@
     {
       "phase": "H1",
       "path": "docs/web.md",
-      "upstream_blob": "6ef912696ca36f408b4c786b192652e6f00b9402",
-      "sha256": "0dd7636dbcc4a1183061681e0b71370ebab73776780994484e991fe4d6c28390"
+      "upstream_blob": "6acd17e0851f5294256794982ae98898174f9b71",
+      "sha256": "3d38f0b8a955e66ef025ef7cba373353ce14f9e8173bd62dac75bc77acacf2b3"
     },
     {
       "phase": "H1",
@@ -241,14 +241,14 @@
     {
       "phase": "H1",
       "path": "service/auth.ts",
-      "upstream_blob": "def9f4c9d6cb8dd1dc05f464cd0062b8abcaf07c",
-      "sha256": "576e9999953a45201bbc876ef6dbe60fa14c4772f6b136e04b2260a8122134b8"
+      "upstream_blob": "633cdfefaa0c22797579006e63cc5cfb7f9cb0e6",
+      "sha256": "94898c0e49148223c188cb41c4bc125a9d93d35a326dd2a0a48a673cb69c7543"
     },
     {
       "phase": "A2",
       "path": "service/main.ts",
-      "upstream_blob": "22e86c459746c8a3941db0a3ea3db6c5ce59ead4",
-      "sha256": "129fd66c5b4e4ab85a918910a541ef2ea3063dfaa7909d670777f5fbb30d3d40"
+      "upstream_blob": "2156f1923939737d7b95836a3527d8e1798d2ade",
+      "sha256": "431eb57c2287e53abf9aeb25e61bd1592464e9d85c7f749f9ad95499bc434c2c"
     },
     {
       "phase": "H1",
@@ -265,32 +265,32 @@
     {
       "phase": "A2",
       "path": "mods/chat-models/core/agents.js",
-      "upstream_blob": "572c3762eb072dc3e15215c46971aa88963a2fbe",
-      "sha256": "a56246e5d4271d1ba7a211db0e24d0943a2246fadf2a26a81b50812a0529720c"
+      "upstream_blob": "fa7724e967be996e1a6fccdd0da058824c4a386a",
+      "sha256": "03c5087ee83199c89dcee8b07257410e99c079f101bdb5b015bd9d04cd0b3541"
     },
     {
       "phase": "C1",
       "path": "service/chats.test.ts",
-      "upstream_blob": "5be56bf6be936ac354478a57dd62e1787aec4c88",
-      "sha256": "b64850658f22915955f13f7901bd5cdf5b00867d60afb77e2e12119528dfcce5"
+      "upstream_blob": "39fda0ce63c32d64f08e51c1b220299f358e3b99",
+      "sha256": "289344fdcb6f296c8fc360d2ed0dbc1efdf453e6d69c9ad6b06785605aeb3b06"
     },
     {
       "phase": "B2",
       "path": "mods/tasks/bin/herdr_task/forge.py",
       "upstream_blob": null,
-      "sha256": "145f35d3e159582892c81d071e0761a8b2fda19cee556feccdd15696b88204d2"
+      "sha256": "5e4a1c5ee06be6a212fac5d99eb15471d31f9a9441b0dcb732135970b3b61591"
     },
     {
       "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/proof.py",
-      "upstream_blob": "8937928917d15f089198e13a44a1bfe4ae6d1520",
-      "sha256": "b90cc74cde4dde53f1262cce7031f1c93da7ca24c0d77ce642f7fbd90d77433d"
+      "upstream_blob": "e0d11a308050a3da44c14087aa6c8841959d3c0a",
+      "sha256": "65c0f44b3accd3c27f9aa4a8fcbd04bb2fe3254ef1d762015a87bcd9be2c60fd"
     },
     {
       "phase": "S1",
       "path": "test/test_forge.py",
       "upstream_blob": null,
-      "sha256": "9934521733dde37ee0c0e899b06a2f9934db3f06f6379a3de6e575efcf4fc42c"
+      "sha256": "59c8fdfc469c8e4f129bb0059cb79f4afd73b9cd104f85aa20e241d10ab2e781"
     },
     {
       "phase": "B2",
@@ -320,7 +320,7 @@
       "phase": "B2",
       "path": "test/test_bitbucket.py",
       "upstream_blob": null,
-      "sha256": "b8247e480cea1179ef23691680a16e974189bc2381e5d15cafc3a9e8b13c905f"
+      "sha256": "93ec2d44318a2d93790ab5c6232f225c23288921449a9b2766581b4fe0fa41c8"
     },
     {
       "phase": "B2",
@@ -332,13 +332,13 @@
       "phase": "B2",
       "path": "test/test_bitbucket_publication.py",
       "upstream_blob": null,
-      "sha256": "e58611687e7c1eca2fbda340673e0d13db42bf2fd381a23b8692efcdb90b3240"
+      "sha256": "a299f25c8d49089397468a887ca369f24648a8147a3498a0d832efdf19201c30"
     },
     {
       "phase": "L2",
       "path": "mods/coordinator/restart.sh",
-      "upstream_blob": "3e19fcf877ae17eac7ae88e86b29279aa70fd2de",
-      "sha256": "cfd7e6c97e49cb893108a7e5d749b72e914c7f1ac7f080079305517f528ca7fe"
+      "upstream_blob": "cc52ef80536f18069eab401eb376da538adad5eb",
+      "sha256": "872c84e34b42c9d4b765f57f49185d52f14654f7562431b62518234a412c6cde"
     },
     {
       "phase": "L2",
@@ -349,8 +349,8 @@
     {
       "phase": "A2",
       "path": "mods/tasks/bin/herdr_task/settings.py",
-      "upstream_blob": "62075dff7688c21aaa7771034ac79d96e8f30473",
-      "sha256": "1a749fa8b795c7edeeb1954dd0cb9899aa10b4ded70dfd5cf1e74f24e26723a7"
+      "upstream_blob": "0155f2eeff84ed1dc034b5e8152dfa2b187106b5",
+      "sha256": "a4741d1662e9ebb0a979920ff95dd351f476a71e679629fb44c4c5a6ad93a3be"
     },
     {
       "phase": "A2",
@@ -368,7 +368,7 @@
       "phase": "L2",
       "path": "test/test_launch_admission.py",
       "upstream_blob": null,
-      "sha256": "b333cfebed5418de91925fbda21bd1f6875a258895b4b3d1baa3e67b37c735b9"
+      "sha256": "c462c97d2f8b65ad47b237993f41ba5430613574abf93bf3c47633f54f72419b"
     },
     {
       "phase": "L1",
@@ -379,62 +379,62 @@
     {
       "phase": "A2",
       "path": "core/settings.js",
-      "upstream_blob": "3462fae4bf004887f2b13a736d99735954cdbffc",
-      "sha256": "f824ed1493c56b3717777dd43ccb9b14a53363bbfd0a57447dedee78f2dc5039"
+      "upstream_blob": "426dc73e2e438de04d06e3bcb2ec4485064860ed",
+      "sha256": "74c81cf8da625e7b03e7f7aeead149cf5a2429dce781efe24c37839b8a9666ca"
     },
     {
       "phase": "L2",
       "path": "lib/agent.js",
-      "upstream_blob": "55fa97c8fda93efde489cb42efb7fbc49199b32f",
-      "sha256": "c5f3828f7ebafc71b7dd859927895b664379dca5c197a5ffd86f06f8b8c0fcbe"
+      "upstream_blob": "055f4b48918a95e9eee54b833f7c5140741206bf",
+      "sha256": "893836e9eaa3ac8117140b42365eea166ef1b19977f01300b9f638f2be1fcd71"
     },
     {
       "phase": "L2",
       "path": "mods/chat/agent.js",
-      "upstream_blob": "55fa97c8fda93efde489cb42efb7fbc49199b32f",
-      "sha256": "c5f3828f7ebafc71b7dd859927895b664379dca5c197a5ffd86f06f8b8c0fcbe"
+      "upstream_blob": "055f4b48918a95e9eee54b833f7c5140741206bf",
+      "sha256": "893836e9eaa3ac8117140b42365eea166ef1b19977f01300b9f638f2be1fcd71"
     },
     {
       "phase": "A2",
       "path": "mods/chat/core/settings.js",
-      "upstream_blob": "3462fae4bf004887f2b13a736d99735954cdbffc",
-      "sha256": "f824ed1493c56b3717777dd43ccb9b14a53363bbfd0a57447dedee78f2dc5039"
+      "upstream_blob": "426dc73e2e438de04d06e3bcb2ec4485064860ed",
+      "sha256": "74c81cf8da625e7b03e7f7aeead149cf5a2429dce781efe24c37839b8a9666ca"
     },
     {
       "phase": "A2",
       "path": "mods/coordinator/core/settings.js",
-      "upstream_blob": "3462fae4bf004887f2b13a736d99735954cdbffc",
-      "sha256": "f824ed1493c56b3717777dd43ccb9b14a53363bbfd0a57447dedee78f2dc5039"
+      "upstream_blob": "426dc73e2e438de04d06e3bcb2ec4485064860ed",
+      "sha256": "74c81cf8da625e7b03e7f7aeead149cf5a2429dce781efe24c37839b8a9666ca"
     },
     {
       "phase": "L2",
       "path": "mods/newspace/agent.js",
-      "upstream_blob": "55fa97c8fda93efde489cb42efb7fbc49199b32f",
-      "sha256": "c5f3828f7ebafc71b7dd859927895b664379dca5c197a5ffd86f06f8b8c0fcbe"
+      "upstream_blob": "055f4b48918a95e9eee54b833f7c5140741206bf",
+      "sha256": "893836e9eaa3ac8117140b42365eea166ef1b19977f01300b9f638f2be1fcd71"
     },
     {
       "phase": "A2",
       "path": "mods/newspace/core/settings.js",
-      "upstream_blob": "3462fae4bf004887f2b13a736d99735954cdbffc",
-      "sha256": "f824ed1493c56b3717777dd43ccb9b14a53363bbfd0a57447dedee78f2dc5039"
+      "upstream_blob": "426dc73e2e438de04d06e3bcb2ec4485064860ed",
+      "sha256": "74c81cf8da625e7b03e7f7aeead149cf5a2429dce781efe24c37839b8a9666ca"
     },
     {
       "phase": "L2",
       "path": "mods/shepherdr-settings/agent.js",
-      "upstream_blob": "55fa97c8fda93efde489cb42efb7fbc49199b32f",
-      "sha256": "c5f3828f7ebafc71b7dd859927895b664379dca5c197a5ffd86f06f8b8c0fcbe"
+      "upstream_blob": "055f4b48918a95e9eee54b833f7c5140741206bf",
+      "sha256": "893836e9eaa3ac8117140b42365eea166ef1b19977f01300b9f638f2be1fcd71"
     },
     {
       "phase": "A2",
       "path": "mods/shepherdr-settings/core/settings.js",
-      "upstream_blob": "3462fae4bf004887f2b13a736d99735954cdbffc",
-      "sha256": "f824ed1493c56b3717777dd43ccb9b14a53363bbfd0a57447dedee78f2dc5039"
+      "upstream_blob": "426dc73e2e438de04d06e3bcb2ec4485064860ed",
+      "sha256": "74c81cf8da625e7b03e7f7aeead149cf5a2429dce781efe24c37839b8a9666ca"
     },
     {
       "phase": "A2",
       "path": "mods/shepherdr-settings/main.js",
-      "upstream_blob": "e062ac4d804ceda0f9db227e28324b3d430076a9",
-      "sha256": "b68aaf8cc475836b513e72976f9d1f73974debceee700a389368a72791cde73c"
+      "upstream_blob": "bad708e2cb0353a553c1dcb68cf5efbf0da0d1d2",
+      "sha256": "90ce4c8bfbd959681cb1c30acd88aa69fc6be37ab312f14588e6cd305fc2054a"
     },
     {
       "phase": "A2",
@@ -445,20 +445,32 @@
     {
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/revive.py",
-      "upstream_blob": "1ed629e083e5ede0f620e0be32c2ccc08bffb0c3",
-      "sha256": "996c2a924483f787b1d30ca45f88c623ec958cc8965ef6d6dffa7e7502a9b412"
+      "upstream_blob": "86deaeb158a4aeb0ff13bc34cd2d10a1a6ba815b",
+      "sha256": "f7d355fd0e41f957433b3c4c3524c3571e82fe7c4a6565e86092b449c8db367b"
     },
     {
       "phase": "A2",
       "path": "service/compat.ts",
-      "upstream_blob": "a336a209c254ee5911139b8f4eddfe854f0e48a1",
-      "sha256": "790d03662a143b105ddc11b01097c814656ffc459f0ba7b8ecf1ce4c9a0b38cd"
+      "upstream_blob": "f6425e93e7683835b115c6a507ed043d9b9bfd45",
+      "sha256": "86bfc7ecc8f4ff644b4770cebdb81df71af1cdce69aa0543c0736811e4b4568d"
     },
     {
       "phase": "A2",
       "path": "service/selections.test.ts",
       "upstream_blob": null,
       "sha256": "bdf288bd3b72de5e6986b313484154db3072ae736e5a51d27e245f7a73712660"
+    },
+    {
+      "phase": "A2",
+      "path": "service/voice-data.ts",
+      "upstream_blob": "a1cfcb74f3637b723901bb6521296af498b6a9a9",
+      "sha256": "7a2bb46005d084a52c275e12164ba5e3f0e914f8c1463e1839aa954b391dd6ca"
+    },
+    {
+      "phase": "A2",
+      "path": "test/test_restart.py",
+      "upstream_blob": "7a261abf76880621dc16799278d926caaa030b9b",
+      "sha256": "8dbc3e410c9dba1f27b6b3a69978ab71696b2ebaaca58663174bebf7b3262c3f"
     },
     {
       "phase": "A2",
@@ -475,14 +487,14 @@
     {
       "phase": "A2",
       "path": "service/settings.ts",
-      "upstream_blob": "3d4d6ffc5c494c21504853b9eccbf0677de82538",
-      "sha256": "07555544bbc9a0734b9dd7b725efa4eaaa3c95531642dc0d89a55034c77ee9bf"
+      "upstream_blob": "f9fc670c174ea148a1ec2e78ef537a1dd61cbff4",
+      "sha256": "419ed57fe6c36569a3c5534883728583293f67464646f9d99d2f36de08381169"
     },
     {
       "phase": "A2",
       "path": "web/plugins/tasks/client.tsx",
-      "upstream_blob": "ea530b4150e977ceeb0cb868f378e03686b3496a",
-      "sha256": "f6c6f4065a2b2b9ccb07c5bd14613b05d2adaf88d186518c5dce9374e58ca184"
+      "upstream_blob": "c454f7fa3c7fa1ebd9943cdc9ecc0f66100d7c4a",
+      "sha256": "c57a46636299103762d151cac02d6ba82eae95514d213ec291ad60e1124543f1"
     },
     {
       "phase": "A2",
@@ -493,14 +505,14 @@
     {
       "phase": "A2",
       "path": "web/shared/types.ts",
-      "upstream_blob": "c5b1cd6fef2d8a21e71bbdf7a6af3676f1b91ce9",
-      "sha256": "04b5dcc17746352703dbb68233e29221daa7c1dbde8fcedd77b910a31f20375f"
+      "upstream_blob": "6adf8e6eb384f7a046e3b5e959b396d3f51dfc6b",
+      "sha256": "1fcef8346cb498a1127a49146d0719247b70181270f1eb019ebe872cff2ff8a4"
     },
     {
       "phase": "A2",
       "path": "web/src/Settings.tsx",
-      "upstream_blob": "71e14b83da06c2a3ca8af76d29eac1f2f81c98b6",
-      "sha256": "6adce6939677f008a460b5a55181680aebaa94c74b58bf44a2126c73c40244b3"
+      "upstream_blob": "139ecd3efa9517d4a1e94450cf4da1c4b7f4b19e",
+      "sha256": "fcca39569ef80b7b3857955347c0cd6dcbd788ad7496dea47da41ae37f639890"
     },
     {
       "phase": "A2",
@@ -511,68 +523,68 @@
     {
       "phase": "A2",
       "path": "lib/COPIES",
-      "upstream_blob": "48f6e16552d5444c0720bec1e72e249d81d72116",
-      "sha256": "e33895be33fad00eb3c08e2d7546c6124868a468742b3efc67099844e8857990"
+      "upstream_blob": "40820f9b2dd8b632498245ab5adf7e47640206e1",
+      "sha256": "ca3c5bd1c11d60ca6d544106385ffb2fad183b0c27fd654ab81ce0f9aa5b47df"
     },
     {
       "phase": "A2",
       "path": "mods/tasks-menu/main.js",
-      "upstream_blob": "cc5a95ba5badffb493fff0139454e4bf8ed655c2",
-      "sha256": "427f6653a5bb66dbc2d90bbd2abd55f81ee633970cd20480318ec3c8d3e86e2a"
+      "upstream_blob": "a96f9ae1a3a944dd0ac899c4afafc9872b6383cc",
+      "sha256": "45957e6db84ce6fb249b01d1c4df5eb8ccd5227a70c2aa5ce253e5317ab7a535"
     },
     {
       "phase": "A2",
       "path": "mods/tasks/local.js",
       "upstream_blob": null,
-      "sha256": "88108348cbab0e6a387077b4b75b810f6261450ad368285153b2f5d9e116bb1e"
+      "sha256": "cf9b493bbc509d232b37e52ce8e9425f75c22294f5c1737051a19330cc147f00"
     },
     {
       "phase": "A2",
       "path": "mods/tasks/main.js",
-      "upstream_blob": "9b3b68c34e4e5970bf53845d38297b5820d7f893",
-      "sha256": "bffeae2cce30b4ea1f6139ed1187efe11f74ca658af20d854bb39acd6d186aa8"
+      "upstream_blob": "548bf0176e9732e29bc09e215aee894dd252fcfe",
+      "sha256": "838196afb3abf549fc3ef1ff87cf798fbca8e82f3a7a4643442d357d51f16637"
     },
     {
       "phase": "A2",
       "path": "web/src/restart.tsx",
-      "upstream_blob": "88fa0fe20310b35831d829bbd6efbdb452c2159d",
-      "sha256": "1484a16ae64e850c3e0d1d85504307383714ab3bb7706bd8b3a3f2f0a4d3141b"
+      "upstream_blob": "06ce4c53eb77f1e3d4196982623221384b01445f",
+      "sha256": "ee9345fc3668c1c6de6f317b4a61172aeb92bfbffcd2e3c9f9ee419aab6fd541"
     },
     {
       "phase": "A2",
       "path": "core/tasks.js",
-      "upstream_blob": "e5dfe39ceadc5def209d37b562279c3f3df2fb07",
-      "sha256": "a3f733546b43133d115dc4d7ab790dc5e50323c4ae4c405c4438896ff0fe02b1"
+      "upstream_blob": "37f0a3733c3485f88a485731da62f00c47b21df1",
+      "sha256": "cfe5e13811376113460943b385c57261b24ba0b326fa32cc1774e598e0c96648"
     },
     {
       "phase": "A2",
       "path": "core/tasks.test.js",
-      "upstream_blob": "e49c07835e3b2324681b10b4fb61f3d72e1356db",
-      "sha256": "06259bf66bdcb1bb0c943d93c570dfbf26b05b22e3d7abf58358946f85499ca4"
+      "upstream_blob": "cc0e1451415f85c28c4091df065c64a6e5ea2f14",
+      "sha256": "89eb120de2735647aeec0c9aab827601a8b5fc4f0b68b577649f6b2ed4a8aac9"
     },
     {
       "phase": "A2",
       "path": "mods/chat/core/tasks.js",
-      "upstream_blob": "e5dfe39ceadc5def209d37b562279c3f3df2fb07",
-      "sha256": "a3f733546b43133d115dc4d7ab790dc5e50323c4ae4c405c4438896ff0fe02b1"
+      "upstream_blob": "37f0a3733c3485f88a485731da62f00c47b21df1",
+      "sha256": "cfe5e13811376113460943b385c57261b24ba0b326fa32cc1774e598e0c96648"
     },
     {
       "phase": "A2",
       "path": "mods/jump/core/tasks.js",
-      "upstream_blob": "e5dfe39ceadc5def209d37b562279c3f3df2fb07",
-      "sha256": "a3f733546b43133d115dc4d7ab790dc5e50323c4ae4c405c4438896ff0fe02b1"
+      "upstream_blob": "37f0a3733c3485f88a485731da62f00c47b21df1",
+      "sha256": "cfe5e13811376113460943b385c57261b24ba0b326fa32cc1774e598e0c96648"
     },
     {
       "phase": "A2",
       "path": "mods/tasks/core/tasks.js",
-      "upstream_blob": "e5dfe39ceadc5def209d37b562279c3f3df2fb07",
-      "sha256": "a3f733546b43133d115dc4d7ab790dc5e50323c4ae4c405c4438896ff0fe02b1"
+      "upstream_blob": "37f0a3733c3485f88a485731da62f00c47b21df1",
+      "sha256": "cfe5e13811376113460943b385c57261b24ba0b326fa32cc1774e598e0c96648"
     },
     {
       "phase": "L2",
       "path": "test/test_native_restart.py",
       "upstream_blob": null,
-      "sha256": "64988a938926f64566f666107bc6b2cd7e375d48b18750d6cba3948dace8f603"
+      "sha256": "1cffb9ba760df93f70220e4ff446db58bea94f257e986fe771ce7965390f2ba8"
     }
   ],
   "requirements": [

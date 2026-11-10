@@ -6,10 +6,11 @@ effect when its routing changed; a task's save-only selection is revision-bound 
 unsupported combinations refuse before anything is started or changed; `provider plan` shows the
 official plan for each supported sign-in, and no credential's value is ever read or written.
 
-The command-line tests run on CI only, as herdr-task's others: HOME stays the account's own, the
+The command-line tests run on CI only, as herdr-task's others: HOME is the run's throwaway one, the
 task lists, settings and templates are throwaway ones (herdr-task's own overrides), and `hc` is a
 recording stand-in first on PATH, so no agent, terminal or model request exists. They prove what
 herdr-task does with a binding; they don't prove Azure sign-in, inference or a real launch."""
+import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
 import json
 import os
 import shutil
@@ -18,6 +19,8 @@ import sys
 import tempfile
 import time
 import unittest
+
+from test_native_publication import stand_in_hc  # noqa: E402  (herdr-task's real-home refusal lifted for a stand-in hc)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(ROOT, "mods", "tasks", "bin")
@@ -104,6 +107,7 @@ class Fixture:
         self.env.update(SECRETS, PATH=fake + os.pathsep + os.environ.get("PATH", ""), SHELL="/bin/sh", FAKE_HC_LOG=self.log,
                         HERDR_TASK_STORE=os.path.join(self.tmp, "tasks"), HERDR_TASK_SETTINGS=self.settings,
                         HERDR_TASK_TEMPLATES=os.path.join(self.tmp, "templates"))
+        self.env = stand_in_hc(self.env, os.path.join(self.tmp, "lift"))
         self.seen = ""
 
     def run(self, *args):
@@ -243,7 +247,11 @@ class PersonalPassThrough(unittest.TestCase):
         agent = cmd[6:]
         self.assertEqual(agent[:2], ["claude", "--settings"])
         settings = json.loads(agent[2])
-        self.assertEqual((settings["fastMode"], sorted(settings)), (False, ["fastMode", "permissions"]))
+        # Upstream's own worker additions only (SHEP-139: the chat card's PermissionRequest hook, herdr-task _allow).
+        self.assertEqual((settings["fastMode"], sorted(settings)), (False, ["fastMode", "hooks", "permissions"]))
+        self.assertEqual(list(settings["hooks"]), ["PermissionRequest"])
+        [entry] = settings["hooks"]["PermissionRequest"]
+        self.assertEqual([" _allow --command " in h["command"] for h in entry["hooks"]], [True])
         self.assertEqual(len(agent), 4)  # and its brief
         for word in ("--model", "-c"):
             self.assertNotIn(word, agent[:3])

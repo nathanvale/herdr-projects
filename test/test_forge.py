@@ -12,6 +12,7 @@ They prove what herdr-task does with gh's answers, not GitHub's own answers or a
 
 Runs only on CI, as the publication tests: herdr-task's commands never run from a test on a
 person's machine."""
+import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
 import json
 import os
 import sys
@@ -27,7 +28,9 @@ BITBUCKET = {"provider": "bitbucket", "host": "bitbucket.org", "repo": "o/r", "n
              "url": "https://bitbucket.org/o/r/pull-requests/7"}
 OTHER_REPO = "https://github.com/o/fork/pull/7"
 OTHER_HOST = "https://github.example.com/o/r/pull/7"
-VIEW = ["pr", "view", "7", "--repo", "o/r", "--json", "state,mergeable,headRefOid,baseRefName,statusCheckRollup,mergeCommit,url"]
+# reviewDecision and mergeStateStatus since v3.1.29: an approval it waits for (#743) and a base it is behind.
+VIEW = ["pr", "view", "7", "--repo", "o/r", "--json",
+        "state,mergeable,headRefOid,baseRefName,statusCheckRollup,mergeCommit,url,reviewDecision,mergeStateStatus"]
 SUMMARY = "Sign-in works again"  # the Fixture's ready --summary
 COMMENT = ["pr", "comment", "7", "--repo", "o/r", "--body", SUMMARY]
 
@@ -55,8 +58,9 @@ def unasked(f):
 
 
 def core(pr):
-    """A saved pull request as written: its legacy fields, and nothing qualifying it."""
-    return {k: v for k, v in pr.items() if k not in ("checked", "watch")}
+    """A saved pull request as written: its legacy fields, and nothing qualifying it. wait: what a Ready one
+    still waits on (SHEP-175), the tick's bookkeeping as checked and watch are."""
+    return {k: v for k, v in pr.items() if k not in ("checked", "watch", "wait")}
 
 
 @publication.ON_CI
@@ -123,6 +127,7 @@ class PublishThroughTheForge(unittest.TestCase):
         f.ready()
         t = f.task()
         self.assertEqual((t["state"], core(t["pr"])), ("ready", LEGACY))
+        self.assertEqual(t["pr"].get("wait"), "Checks running")  # SHEP-175: Working until its checks pass (GitHub's)
         self.assertEqual(f.remote_tip("task/1"), f.tip)
         self.assertEqual((f.calls("pr", "comment"), f.calls("pr", "create")), ([COMMENT], []))
 

@@ -23,7 +23,8 @@ pass. Imported installer/service code is source input, not authority to run it.
 | Input | Exact commit |
 | --- | --- |
 | F, reserved fork parent | `4f0236f03a88c5e9fa344475d90d3a20ef418481` |
-| U, upstream v3.1.16 parent (since its merge) | `57302497117183a1772464b31751da12a1c03e4a` |
+| U, upstream v3.1.29 parent (since its merge) | `e41ea9d2c0a273a5c7b6aebf51cf2e4d112a1d1e` |
+| Upstream v3.1.16, U before the v3.1.29 merge (history) | `57302497117183a1772464b31751da12a1c03e4a` |
 | Upstream v3.1.3, S0's U (history) | `dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc` |
 | P, required Bitbucket contract source | `074dec5ea0bf0a057f520fa50497bf9e1b696ad9` |
 | B, actual common ancestor | `de8e17957efb4aa016d7e4d652f397aaa95f0880` |
@@ -94,6 +95,35 @@ Where the two sides met:
   SHEP-78's feedback issues (on by default, filed to upstream's repository on a yes) and
   SHEP-79's star card. SHEP-26's lost-log search reads only the default `~/.claude`.
 - Our `AGENTS.md` and `docs/develop.md` stay overrides.
+
+### Upstream v3.1.29 merge
+
+`merge/upstream-v3.1.29` merges upstream v3.1.29 (`e41ea9d2`, annotated tag `bc18af3f`) into
+`integrate/upstream-v3.1.3` at `c9bc734f` with a merge commit: both are parents, nothing is
+squashed or rebased. The fork took v3.1.16 as one squash commit (`38d2595b`), so git's merge
+base is v3.1.3; the content is the three-way merge with v3.1.16 (`57302497`) as base instead,
+which keeps upstream's removals after v3.1.16. U now names v3.1.29: every U path outside the
+phase table and the overrides is byte-identical to it, and each row's `upstream_blob` and
+`sha256` are re-pinned to v3.1.29 and the merged content. `AFTER_Q` names the merge's source
+paths, so Q's ledger keeps describing `c9bc734f`. The gate's checks are unchanged.
+
+Where the two sides met: the merge queue (#742, #801, #802) goes through `forge.integrate()` to
+the GitHub adapter only; SHEP-175's Ready wait applies to GitHub pull requests only, since a
+Bitbucket view has no `mergeable`; SHEP-96's nothing-to-merge task waits in Ready without
+publication; #828's continued pull request is pushed through the forge's `publish()`; #839
+puts a message back only when a start surely didn't happen; `restart.sh`'s Azure Foundry
+branch reads argv with `argv_cmd` (#736). Upstream's SHEP-110 guard files every web action as a
+read or a change, so A2 now owns `service/voice-data.ts`, where its three actions are changes;
+upstream's #748 chat test names a live stand-in process, as C1's exact-process rule needs.
+An artifact-only task with nothing to merge waits for Accept (SHEP-96), and Accept removes
+its worktree only as `kept_because()` allows: untracked files keep it, where upstream would
+remove it. Upstream's SHEP-147 runs every test on a throwaway HOME; the fork's command-line
+fixtures, whose `hc` is a stand-in, lift herdr-task's real-home refusal for the processes they
+start alone (`stand_in_hc`), and its production guards are unchanged. #828's continued pull
+request is recorded and commented on only when GitHub answered for it in this repository on
+gh's host (`answered_in()`); a forge-refused read keeps `merge_queued`; `tidy_done()` reads the
+base as a branch (`base_commit()`).
+Qualification is unchanged: nothing here is native, Azure or R evidence.
 
 ### A1 provider checkpoint
 

@@ -4,11 +4,12 @@ rechecked and recorded as sent before `hc run`, and confirmed only by hc's reply
 carrying its launch id. Each test reopens the journal and the task list as files, apart from the
 process that wrote them.
 
-These run on CI only, as herdr-task's other command-line tests: HOME stays the account's own, the
+These run on CI only, as herdr-task's other command-line tests: HOME is the run's throwaway one, the
 task lists, settings and templates are throwaway ones (herdr-task's own overrides), and `hc` is a
 stateful stand-in first on PATH that keeps its terminals in a file, so no agent, terminal or model
 request exists. They prove what herdr-task does with its journal; they don't prove herdr-core's
 own receipts (there are none), a real crash of a real host, or an agent's sign-in."""
+import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
 import json
 import os
 import shutil
@@ -22,6 +23,8 @@ import tempfile
 import time
 import unittest
 import uuid
+
+from test_native_publication import stand_in_hc  # noqa: E402  (herdr-task's real-home refusal lifted for a stand-in hc)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(ROOT, "mods", "tasks", "bin")
@@ -151,6 +154,7 @@ class Fixture:
                         FAKE_HC_STATE=self.state, FAKE_HC_GATE=self.gate, FAKE_HC_MODE_FILE=self.mode,
                         HERDR_TASK_STORE=self.store, HERDR_TASK_SETTINGS=self.settings,
                         HERDR_TASK_TEMPLATES=os.path.join(self.tmp, "templates"))
+        self.env = stand_in_hc(self.env, os.path.join(self.tmp, "lift"))
         if settings is not None:
             self.write_settings(settings)
         self.procs = []
@@ -695,9 +699,9 @@ class WorktreeReconcile(unittest.TestCase):
     BEFORE_G1 (extracted from git history) records the agent but loses the worktree, branch, base
     and start commit it runs in; this tree's records them. One run tells the two apart.
 
-    HOME can't be a throwaway here: herdr-task refuses every hc call when HOME isn't the account's
-    own (base.not_real), so a start would stop there. Each run's worktree goes under
-    ~/.herdr/worktrees/<its own unique repo name>, removed afterwards."""
+    HOME is the run's throwaway one, where the fixture's stand-in hc lifts herdr-task's real-home refusal
+    (stand_in_hc) for this tree's herdr-task and the older one alike. Each run's worktree goes under that
+    home, in herdr-task's worktrees folder for its own unique repo name, removed afterwards."""
 
     def git(self, *args):
         return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout.strip()
@@ -1144,7 +1148,7 @@ class RestartScript(unittest.TestCase):
         the new one there, recorded with its start."""
         f = Fixture(self)
         profile = os.path.join(f.tmp, "profile")
-        agent = subprocess.Popen(["sleep", "60"], env={"PATH": os.environ["PATH"], "CLAUDE_CONFIG_DIR": profile})
+        agent = subprocess.Popen(["sleep", "60"], env={"PATH": os.environ["PATH"], "HOME": os.environ["HOME"], "CLAUDE_CONFIG_DIR": profile})
         self.addCleanup(lambda: (agent.kill(), agent.wait()))
         f.seed(address="t900", state="live", keep=True, template="assistant", cwd=f.repo, status={"app": "claude-code"},
                foreground={"pid": agent.pid}, labels={"herdr.space": "sp1", "herdr.tab": "tb1", "herdr.role": "coordinator"})
@@ -1202,7 +1206,8 @@ class StartSites(unittest.TestCase):
                 self.assertNotIn(words, text)
                 self.assertIn("launch run", text)
         self.assertNotIn("hc run", self.read("service/agents.ts").replace("herdr-task", ""))
-        self.assertIn('join(APP, "mods", "coordinator", "restart.sh")', self.read("service/agents.ts"))
+        # Upstream's data folders (SHEP-141): the app's home is appHome(), no longer an APP constant.
+        self.assertIn('join(appHome(), "mods", "coordinator", "restart.sh")', self.read("service/agents.ts"))
 
 
 if __name__ == "__main__":

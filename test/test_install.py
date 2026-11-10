@@ -1,5 +1,6 @@
 """The installer against scratch roots (--root): install, run again, update with a changed file,
 clashes, --adopt, uninstall. Never touches the real home."""
+import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
 import re
 import json
 import os
@@ -29,11 +30,18 @@ def tree(top):
     out = {}
     for d, dirs, files in os.walk(top):
         dirs[:] = [x for x in dirs if x != ".shepherdr-backup"]
-        for f in files:
+        for f in files + [x for x in dirs if os.path.islink(os.path.join(d, x))]:
             p = os.path.join(d, f)
+            if os.path.islink(p):
+                out[os.path.relpath(p, top)] = b"-> " + os.readlink(p).encode()
+                continue
             with open(p, "rb") as fh:
                 out[os.path.relpath(p, top)] = fh.read()
     return out
+
+
+# Shepherdr's own data (layout.py): an install makes its folders and the old paths' links; uninstall leaves the data.
+DATA_PLACES = (".config/shepherdr/", ".local/share/shepherdr/", ".local/state/shepherdr/", ".cache/shepherdr/", ".herdr/")
 
 
 class Install(unittest.TestCase):
@@ -60,7 +68,7 @@ class Install(unittest.TestCase):
         out = run("install", "--root", self.root, "--yes").stdout
         self.assertRegex(out, r"files: \d+ new\n")
         rec = json.load(open(self.p(APP, "data/shepherdr/installed.json")))
-        self.assertEqual(rec["version"], "3.1.16")
+        self.assertEqual(rec["version"], "3.1.29")
         self.assertTrue(os.path.isfile(self.p(APP, "mods/tasks/bin/herdr-task")))
         self.assertTrue(os.path.isfile(self.p(APP, "layouts/shepherdr.json")))
         self.assertEqual(os.path.realpath(self.p(".local/bin/herdr-task")), os.path.realpath(self.p(APP, "mods/tasks/bin/herdr-task")))
@@ -86,37 +94,90 @@ class Install(unittest.TestCase):
         self.assertRegex(again, r"files: \d+ same\n", "a second run changes nothing")
         self.assertFalse(os.path.exists(self.p(".herdr/sync-hold")))
 
-        # A file the person changed is kept, the new one goes beside it.
+        # A file the person changed: a template is kept with the new one beside it; a mod file Shepherdr didn't
+        # change is kept as it is; one Shepherdr changed too is replaced (theirs could break the new mod, #766), theirs
+        # to the backup folder, said.
         mine = self.p(APP, "mods/toasts/main.js")
         with open(mine, "a") as f:
             f.write("// mine\n")
+        same = self.p(APP, "mods/toasts/ui.js")
+        with open(same, "a") as f:
+            f.write("// mine too\n")
+        tpl = self.p(".config/herdr-core/templates/worker.md")
+        with open(tpl, "a") as f:
+            f.write("mine\n")
         src = tempfile.mkdtemp(prefix="shepherdr-src-")
         try:
             shutil.copytree(ROOT, os.path.join(src, "s"), ignore=shutil.ignore_patterns(".git"))
             s = os.path.join(src, "s")
-            with open(os.path.join(s, "mods/toasts/main.js"), "a") as f:
-                f.write("// release\n")
-            with open(os.path.join(s, "mods/jump/main.js"), "a") as f:
-                f.write("// release\n")
+            for f_ in ("mods/toasts/main.js", "mods/jump/main.js"):
+                with open(os.path.join(s, f_), "a") as f:
+                    f.write("// release\n")
+            with open(os.path.join(s, "templates/worker.md"), "a") as f:
+                f.write("release\n")
             up = run("update", "--root", self.root, "--source", s).stdout
-            self.assertIn("1 keep", up)
-            self.assertTrue(open(mine).read().endswith("// mine\n"))
-            self.assertTrue(open(mine + ".new").read().endswith("// release\n"))
+            self.assertIn("1 replace", up)
+            self.assertTrue(open(mine).read().endswith("// release\n"), "Shepherdr's changed mod file goes in")
+            self.assertFalse(os.path.exists(mine + ".new"))
+            backup = re.search(r"yours is kept as (\S+)", up).group(1)
+            self.assertTrue(open(backup).read().endswith("// mine\n"), "the person's copy is in the backup")
+            self.assertIn("Shepherdr changed .config/herdr-app/mods/toasts/main.js since you edited it", up)
+            self.assertTrue(open(same).read().endswith("// mine too\n"), "a mod file Shepherdr didn't change stays the person's")
+            self.assertFalse(os.path.exists(same + ".new"))
+            self.assertTrue(open(tpl).read().endswith("mine\n"))
+            self.assertTrue(open(tpl + ".new").read().endswith("release\n"))
             self.assertTrue(open(self.p(APP, "mods/jump/main.js")).read().endswith("// release\n"))
+            d = run("doctor", "--root", self.root, ok=False).stdout
+            self.assertIn("worker.md.new: merge it in", d)
         finally:
             shutil.rmtree(src)
 
-        # Uninstall: everything back as it was, except the mod the person changed.
+        # Uninstall: everything back as it was, except the mod and the template the person changed.
         run("uninstall", "--root", self.root)
         after = tree(self.root)
         left = sorted(set(after) - set(self.before))
-        self.assertTrue(all(x.startswith(f"{APP}/mods/toasts/") for x in left), left)
+        self.assertTrue(all(x.startswith((f"{APP}/mods/toasts/", ".config/herdr-core/templates/worker.md")) or x.startswith(DATA_PLACES) for x in left), left)
         for k, v in self.before.items():
             if k.endswith(".json"):
                 self.assertEqual(json.loads(after[k]), json.loads(v), k)
             else:
                 self.assertEqual(after[k], v, k)
         self.assertFalse(os.path.lexists(self.p(".local/bin/herdr-task")))
+
+    def test_install_moves_the_data_into_shepherdrs_own_folders(self):
+        """SHEP-141: an install over a 3.1.26 home moves ~/.herdr's Shepherdr data into its own folders in one go, says
+        so in one line, leaves links at the old paths, and doctor and where say where it all is. Again: nothing more."""
+        h = self.p(".herdr")
+        os.makedirs(os.path.join(h, "tasks"))
+        with open(os.path.join(h, "tasks", "dev-shop.json"), "w") as f:
+            json.dump({"folder": "/x", "tasks": [], "prefix": "SHOP"}, f)
+        with open(os.path.join(h, "shepherdr.json"), "w") as f:
+            json.dump({"version": 1, "everywhere": {}}, f)
+        os.makedirs(os.path.join(h, "worktrees", "shop", "task-1"))
+        dry = run("install", "--root", self.root, "--yes", "--dry-run").stdout
+        self.assertIn("data: would move", dry)
+        self.assertFalse(os.path.exists(self.p(".local/share/shepherdr/tasks")))
+        out = run("install", "--root", self.root, "--yes").stdout
+        self.assertIn("Shepherdr's data moved to its own folders", out)
+        self.assertTrue(os.path.isfile(self.p(".local/share/shepherdr/tasks/dev-shop.json")))
+        self.assertTrue(os.path.isfile(self.p(".config/shepherdr/settings.json")))
+        self.assertTrue(os.path.islink(os.path.join(h, "tasks")))
+        self.assertTrue(os.path.isdir(os.path.join(h, "worktrees", "shop", "task-1")), "worktrees stay")
+        where = run("where", "--root", self.root).stdout
+        self.assertIn("layout 2", where)
+        self.assertIn(self.p(".local/share/shepherdr/tasks"), where)
+        doc = run("doctor", "--root", self.root, ok=False).stdout
+        self.assertIn("data: Shepherdr's own folders (layout 2)", doc)
+        self.assertIn("worktrees: 1 still in", doc)
+        self.assertNotIn("Shepherdr's data moved", run("update", "--root", self.root, "--yes").stdout)
+        # rollback, then the next update leaves it on ~/.herdr until `shepherdr migrate`
+        back = run("migrate", "--root", self.root, "--rollback").stdout
+        self.assertIn("back in ~/.herdr", back)
+        self.assertFalse(os.path.islink(os.path.join(h, "tasks")))
+        self.assertIn("rolled back", run("doctor", "--root", self.root, ok=False).stdout)
+        self.assertTrue(os.path.isdir(os.path.join(h, "tasks")) and not os.path.islink(os.path.join(h, "tasks")))
+        run("migrate", "--root", self.root)
+        self.assertTrue(os.path.islink(os.path.join(h, "tasks")))
 
     def test_service_unit_and_files(self):
         """The service and the shared core land in .local/share/shepherdr; a scratch root gets the unit file only
@@ -161,6 +222,50 @@ class Install(unittest.TestCase):
         p = run("install", "--root", self.root, "--yes", "--port", "80", ok=False)
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("1024", p.stdout + p.stderr)
+
+    def test_https_port(self):
+        """install --https-port (GitHub #778): kept in the service's folder, which updates leave alone; 443 puts the
+        default back; a port out of range is refused."""
+        from importlib.machinery import SourceFileLoader
+        sh = SourceFileLoader("shepherdr_cli", SHEPHERDR).load_module()
+        self.assertEqual(sh.https_port(self.root), 443, "an install that never set one stays on 443")
+        out = run("install", "--root", self.root, "--yes", "--https-port", "8443").stdout
+        if "needs bun" in out:
+            self.skipTest("bun isn't installed here")
+        f = sh.service_file(self.root, "https-port")
+        self.assertEqual(open(f).read().strip(), "8443")
+        self.assertEqual(sh.https_port(self.root), 8443)
+        run("update", "--root", self.root, "--yes", "--source", ROOT)
+        self.assertEqual(sh.https_port(self.root), 8443, "an update keeps the HTTPS port")
+        run("install", "--root", self.root, "--yes", "--https-port", "443")
+        self.assertFalse(os.path.exists(f))
+        p = run("install", "--root", self.root, "--yes", "--https-port", "70000", ok=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("65535", p.stdout + p.stderr)
+
+    def test_doctor_says_why_not_shared(self):
+        """doctor (GitHub #754): when tailscale serve refused the share, it's broken (not a note), in tailscale's own
+        words with another port to use; a custom port is named."""
+        from importlib.machinery import SourceFileLoader
+        sh = SourceFileLoader("shepherdr_cli", SHEPHERDR).load_module()
+        web = sh.service_file(self.root, "web.json")
+        os.makedirs(os.path.dirname(web), exist_ok=True)
+        why = "Port 443 on this machine's tailnet name is taken (a TCP forward to 127.0.0.1:9000). Pick another port: `shepherdr web https-port 8443`."
+        with open(web, "w") as f:
+            json.dump({"on": True, "link": "https://box.tailnet.example/shepherdr/", "why": why, "share_error": why, "https_port": 443,
+                       "serve": {"host": None, "reachable": True}}, f)
+        bad, notes = sh.serve_check(self.root)
+        self.assertEqual(len(bad), 1)
+        self.assertIn("TCP forward to 127.0.0.1:9000", bad[0])
+        self.assertIn("shepherdr web https-port 8443", bad[0])
+        self.assertFalse(any("taken" in n for n in notes), "said once, as broken")
+        with open(web, "w") as f:
+            json.dump({"on": True, "link": "https://box.tailnet.example:8443/shepherdr/", "why": None, "share_error": None, "https_port": 8443,
+                       "serve": {"host": None, "reachable": True}}, f)
+        bad, notes = sh.serve_check(self.root)
+        self.assertEqual(bad, [])
+        self.assertIn("https://box.tailnet.example:8443/shepherdr/", " ".join(notes))
+        self.assertIn("port 8443", " ".join(notes))
 
     def test_service_answers(self):
         """doctor and install trust only Shepherdr's own service on its port: the id it wrote in service.json, not
@@ -214,6 +319,11 @@ class Install(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(share, "mods/artifacts/recipe-view.js")))
             p = subprocess.run([sys.executable, os.path.join(share, "mods/tasks/bin/herdr-task"), "--help"], capture_output=True, text=True)
             self.assertEqual(p.returncode, 0, p.stderr)
+            # #735: the artifact guide comes along (agents on the machine serving the web app read it too)
+            p = subprocess.run([sys.executable, os.path.join(share, "mods/artifacts/bin/herdr-artifact"), "guide"], capture_output=True, text=True,
+                               env={**os.environ, "HOME": root})
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertIn("recipe", p.stdout)
             run("uninstall", "--root", root)
             self.assertFalse(os.path.exists(os.path.join(share, "service/main.ts")))
             self.assertFalse(os.path.lexists(os.path.join(root, ".local/bin/herdr-task")))
@@ -237,7 +347,8 @@ class Install(unittest.TestCase):
                 f.write("#!/bin/sh\necho the old one\n")
             run("install", "--web", "--root", root, "--source", src, "--yes", "--force")
             share = os.path.join(root, ".local/share/shepherdr")
-            for f in ("install.sh", "bin/shepherdr", "templates/worker.md", "web/dist/index.html", "service/serve-from.ts", "core/host.js"):
+            for f in ("install.sh", "bin/shepherdr", "templates/worker.md", "web/dist/index.html", "service/serve-from.ts", "core/host.js",
+                      "mods/artifacts/ARTIFACTS.md"):
                 self.assertTrue(os.path.isfile(os.path.join(share, f)), f)
             names = lambda b: sorted(tarfile.open(fileobj=io.BytesIO(b)).getnames())
             self.assertEqual(names(sh.pack(share)), names(sh.pack(ROOT)))
@@ -246,6 +357,40 @@ class Install(unittest.TestCase):
         finally:
             shutil.rmtree(root, ignore_errors=True)
             shutil.rmtree(src, ignore_errors=True)
+
+    def test_update_waits_for_a_voice_call(self):
+        """SHEP-173: ElevenLabs' records showed calls cut (1006) a minute after each release: the update restarted the
+        service under them. A call on: the unit stays, nothing restarts, and the service is told to start again once
+        the call ends (restart-when-free). No call: it restarts as before."""
+        from importlib.machinery import SourceFileLoader
+        sh = SourceFileLoader("shepherdr_cli", SHEPHERDR).load_module()
+        root = tempfile.mkdtemp(prefix="shepherdr-call-")
+        ran = []
+        saved = (sh.bun_path, sh.has_unit, sh.calls_on, sh.subprocess.run, sh.service_answers)
+        try:
+            sh.bun_path = lambda: "/usr/bin/bun"
+            sh.has_unit = lambda r: True
+            sh.service_answers = lambda r: (True, 7788)
+            sh.subprocess.run = lambda argv, **k: ran.append(argv) or subprocess.CompletedProcess(argv, 0, b"", b"")
+            r = sh.Run(root, False)
+            rel, text = sh.unit_text(root, "/usr/bin/bun", None)
+            os.makedirs(os.path.dirname(r.p(rel)), exist_ok=True)
+            with open(r.p(rel), "w") as f:
+                f.write(text)
+            marker = sh.service_file(root, "restart-when-free")
+            sh.calls_on = lambda r: 1
+            sh.install_service(r, {}, True)
+            self.assertEqual(ran, [])
+            self.assertTrue(os.path.isfile(marker))
+            self.assertTrue(any("voice call" in n for n in r.notes))
+            os.remove(marker)
+            sh.calls_on = lambda r: 0
+            sh.install_service(sh.Run(root, False), {}, True)
+            self.assertTrue(ran)
+            self.assertFalse(os.path.exists(marker))
+        finally:
+            sh.bun_path, sh.has_unit, sh.calls_on, sh.subprocess.run, sh.service_answers = saved
+            shutil.rmtree(root, ignore_errors=True)
 
     def test_update_web_only(self):
         """A web-only install updates web only (the record says so), and doctor says how; one whose source is gone says
@@ -447,6 +592,163 @@ class AudioTools(unittest.TestCase):
             for name in want:
                 self.assertIn(f"optional: {name} isn't on the PATH", notes)
             self.assertNotIn(not_want, notes)
+
+
+# A stand-in for agent-browser's release binary: says its version, has Chrome once `install` ran (unless told it fails)
+FAKE_RELEASE = """#!/bin/sh
+case "$1" in
+  --version) echo "agent-browser 0.41.1" ;;
+  doctor) if [ -f "$HOME/chrome" ]; then s=pass; else s=fail; fi; echo "{\\"checks\\":[{\\"id\\":\\"chrome.installed\\",\\"status\\":\\"$s\\"}]}" ;;
+  install) if [ -n "$FAKE_CHROME_FAILS" ]; then echo "Chrome CDN unreachable" >&2; exit 1; fi; : > "$HOME/chrome" ;;
+  *) echo "mine $*" ;;
+esac
+"""
+PLATFORMS = ("darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64", "linux-musl-arm64", "linux-musl-x64")
+
+
+class AgentBrowser(unittest.TestCase):
+    """herdr-browser finds a usable agent-browser (0.41.1 up to 0.41.x) or installs Shepherdr's own (SHEP-156): the
+    release's binary, checked against the pin's checksum, from a local folder standing in for GitHub."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="shepherdr-ab-")
+        self.home = os.path.join(self.tmp, "home")
+        self.rel = os.path.join(self.tmp, "release")
+        os.makedirs(self.home)
+        os.makedirs(self.rel)
+        for plat in PLATFORMS:
+            with open(os.path.join(self.rel, f"agent-browser-{plat}"), "w") as f:
+                f.write(FAKE_RELEASE)
+        import hashlib
+        self.sha = hashlib.sha256(FAKE_RELEASE.encode()).hexdigest()
+        self.mine = os.path.join(self.home, ".local/share/shepherdr/agent-browser/0.41.1/agent-browser")
+        self.hb = os.path.join(ROOT, "bin", "herdr-browser")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def on_path(self, version):
+        """A folder with an agent-browser of that version (None: none), for the PATH."""
+        d = os.path.join(self.tmp, f"path-{version}")
+        os.makedirs(d, exist_ok=True)
+        if version:
+            with open(os.path.join(d, "agent-browser"), "w") as f:
+                f.write(f'#!/bin/sh\n[ "$1" = --version ] && {{ echo "agent-browser {version}"; exit 0; }}\necho "path $*"\n')
+            os.chmod(os.path.join(d, "agent-browser"), 0o755)
+        return d
+
+    def hbr(self, *args, path=None, url=None, sha=None, **extra):
+        env = {"HOME": self.home, "PATH": f"{path or self.on_path(None)}:/usr/bin:/bin",
+               "HERDR_BROWSER_URL": url or "file://" + self.rel, "HERDR_BROWSER_SHA256": sha or self.sha, **extra}
+        return subprocess.run(["sh", self.hb, *args], capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL)
+
+    def status(self, **kw):
+        return json.loads(self.hbr("--status", **kw).stdout)
+
+    def test_missing_installs_its_own_on_first_use(self):
+        p = self.hbr("--task", "a#1", "open", "x")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("installing agent-browser 0.41.1", p.stderr)
+        self.assertIn("mine --session herdr-a-1", p.stdout)
+        self.assertTrue(os.access(self.mine, os.X_OK))
+        self.assertTrue(os.path.exists(os.path.join(self.home, "chrome")), "Chrome: agent-browser install ran")
+        st = self.status()
+        self.assertEqual((st["ok"], st["from"], st["version"]), (True, "shepherdr", "0.41.1"))
+        # next time: no install
+        p = self.hbr("--task", "a#1", "snapshot")
+        self.assertNotIn("installing", p.stderr)
+
+    def test_herdrs_own_views_never_install(self):
+        p = self.hbr("--own", "--task", "a#1", "session", "list")
+        self.assertEqual(p.returncode, 127)
+        self.assertIn("agent-browser isn't installed here", p.stderr)
+        self.assertIn("Fix it: ", p.stderr)
+        self.assertTrue(p.stderr.strip().endswith("--install"), p.stderr)
+        self.assertFalse(os.path.exists(self.mine))
+
+    def test_too_old_is_replaced_by_its_own(self):
+        old = self.on_path("0.34.0")
+        st = self.status(path=old)
+        self.assertFalse(st["ok"])
+        self.assertIn("this machine has 0.34.0", st["problem"])
+        p = self.hbr("--task", "a#1", "open", "x", path=old)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("mine ", p.stdout)
+        self.assertEqual(self.status(path=old)["from"], "shepherdr")
+
+    def test_compatible_newer_is_used_as_it_is(self):
+        for v, ok in (("0.41.1", True), ("0.41.2", True), ("0.41.12", True), ("0.41.3-beta.1", True), ("0.41.0", False),
+                      ("0.42.0", False), ("1.41.1", False), ("0.4.1", False), ("0.41", False)):
+            self.assertEqual(self.status(path=self.on_path(v))["ok"], ok, v)
+        newer = self.on_path("0.41.2")
+        p = self.hbr("--task", "a#1", "open", "x", path=newer)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("path --session herdr-a-1", p.stdout)
+        self.assertNotIn("installing", p.stderr)
+        self.assertFalse(os.path.exists(self.mine))
+        self.assertEqual(self.hbr("--bin", path=newer).stdout.strip(), os.path.join(newer, "agent-browser"))
+
+    def test_install_failing_says_why_and_the_fix(self):
+        # offline: nothing to download
+        p = self.hbr("--task", "a#1", "open", "x", url="file://" + os.path.join(self.tmp, "nowhere"))
+        self.assertEqual(p.returncode, 127)
+        self.assertIn("couldn't install it: couldn't download it", p.stderr)
+        self.assertIn("Fix it: ", p.stderr)
+        # not tried again for a while: the same message at once
+        p = self.hbr("--task", "a#1", "open", "x")
+        self.assertEqual(p.returncode, 127)
+        self.assertNotIn("installing", p.stderr)
+        self.assertIn("couldn't download it", p.stderr)
+        self.assertIn("couldn't download it", self.status()["failed"])
+        # a download that isn't the pinned release is never kept
+        p = self.hbr("--install", sha="0" * 64)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("its checksum differs", p.stderr)
+        self.assertFalse(os.path.exists(self.mine))
+        # --install tries again whenever asked, and clears the failure
+        p = self.hbr("--install")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("is ready", p.stdout)
+        self.assertEqual(self.status()["failed"], "")
+
+    def test_chrome_failing_says_so(self):
+        p = self.hbr("--install", FAKE_CHROME_FAILS="1")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("couldn't download Chrome (Chrome CDN unreachable)", p.stderr)
+
+    def test_a_new_pin_replaces_the_old_copy(self):
+        old = os.path.join(self.home, ".local/share/shepherdr/agent-browser/0.40.9")
+        os.makedirs(old)
+        with open(os.path.join(old, "agent-browser"), "w") as f:
+            f.write("#!/bin/sh\necho agent-browser 0.40.9\n")
+        self.assertEqual(self.hbr("--install").returncode, 0)
+        self.assertTrue(os.path.exists(self.mine))
+        self.assertFalse(os.path.exists(old))
+
+    def test_install_and_doctor(self):
+        """The installer makes sure of it (only on the real home, or when asked for a scratch root); doctor says how
+        it stands, with the fix when it can't."""
+        root = os.path.join(self.tmp, "root")
+        os.makedirs(os.path.join(root, APP))
+        # the PATH without this machine's own agent-browser
+        path = ":".join(d for d in os.environ["PATH"].split(":") if not os.path.exists(os.path.join(d, "agent-browser")))
+        env = {**os.environ, "PATH": path, "HERDR_BROWSER_URL": "file://" + self.rel,
+               "HERDR_BROWSER_SHA256": self.sha}
+        env.pop("SHEPHERDR_AGENT_BROWSER", None)
+        sh = lambda *a, **e: subprocess.run([sys.executable, SHEPHERDR, *a], capture_output=True, text=True,
+                                            stdin=subprocess.DEVNULL, env={**env, **e})
+        p = sh("install", "--root", root, "--yes", "--no-build")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        mine = os.path.join(root, ".local/share/shepherdr/agent-browser/0.41.1/agent-browser")
+        self.assertFalse(os.path.exists(mine), "a scratch root downloads nothing unless asked")
+        self.assertIn("the task browser: agent-browser isn't installed here. Fix it: ", sh("doctor", "--root", root).stdout)
+        p = sh("update", "--root", root, "--yes", "--no-build", SHEPHERDR_AGENT_BROWSER="1")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("agent-browser 0.41.1 is ready", p.stdout)
+        self.assertTrue(os.path.exists(mine))
+        self.assertIn("agent-browser 0.41.1 for the task browser (Shepherdr's own copy)", sh("doctor", "--root", root).stdout)
+        self.assertEqual(sh("uninstall", "--root", root).returncode, 0)
+        self.assertFalse(os.path.exists(os.path.dirname(mine)), "uninstall takes Shepherdr's agent-browser away")
 
 
 if __name__ == "__main__":

@@ -4,11 +4,12 @@ service's and the window's lost-session recovery), and restart.sh restarts an As
 with its recorded provider binding. Each test reopens the launch journal, the task list and the terminals' labels as
 files, apart from the process that wrote them.
 
-These run on CI only, as herdr-task's other command-line tests: HOME stays the account's own, the task lists,
+These run on CI only, as herdr-task's other command-line tests: HOME is the run's throwaway one, the task lists,
 settings and templates are throwaway ones, and `hc` is a stateful stand-in first on PATH that keeps its terminals
 (their labels, screens and what was typed into them) in a file, so no agent, terminal or model request exists. They
 prove what herdr-task does with its journal, its records and the line it types; they don't prove herdr-core's own
 receipts (there are none), a real crash or reboot, a real CLI resuming its session, or an agent's sign-in."""
+import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
 import json
 import os
 import re

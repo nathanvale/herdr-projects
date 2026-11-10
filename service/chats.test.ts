@@ -91,3 +91,25 @@ test("a followed task chat moves to its worker's new terminal by itself", async 
   expect(got.at(-1)).toEqual({ key: "DEMO-1/worker", state: "ready", path: log });
   expect(live.watched()).toEqual(["t1z"]);
 });
+
+// #748: herdr-core's live list can have no foreground for this machine's own terminals: hc get has it.
+// hc get names the idle stand-in above: FIND reads that process's own folder, so a pid no process has finds nothing.
+test("a local agent's chat is found when the live list lacks its foreground", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "chats-hc-"));
+  const fake = join(dir, "hc");
+  writeFileSync(fake, `#!/bin/sh\necho '{"foreground":{"name":"claude","pid":${pid},"argv":["claude"],"cwd":"/work/demo"}}'\n`, { mode: 0o755 });
+  const was = process.env.SHEPHERDR_HC;
+  process.env.SHEPHERDR_HC = fake;
+  try {
+    const h = hub();
+    feed(h, "restarted", "t5", { address: "t5", state: "live", argv: ["claude"], cwd: "/work/demo", labels: {}, foreground: null });
+    const chats = new Chats(h);
+    chats.watch("t5", () => {});
+    for (let i = 0; i < 30 && chats.reader("t5")!.state !== "ready"; i++) await Bun.sleep(100);
+    expect(chats.reader("t5")!.state).toBe("ready");
+    expect(chats.reader("t5")!.path).toBe(log);
+  } finally {
+    if (was === undefined) delete process.env.SHEPHERDR_HC; else process.env.SHEPHERDR_HC = was;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

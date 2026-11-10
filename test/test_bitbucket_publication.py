@@ -16,6 +16,7 @@ sends and keeps given Bitbucket's answers as its documentation shows them; Bitbu
 real credential helper, a real account and two real execution hosts are native qualification.
 
 Runs only on CI, as the other command-line tests."""
+import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
 import copy
 import json
 import os
