@@ -92,7 +92,7 @@
       "phase": "L2",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "5a252f043641bc089baaa6a0385fbcbd4bc7f228",
-      "sha256": "3e3109a72af31e1fa1557813d6bd78de8c2cdd170417a7e6d1599dd73bb21dce"
+      "sha256": "526a22ef9bea4788e28180994e45bf3d69c444dff0ae2a374f0a7978a4a673aa"
     },
     {
       "phase": "B2",
@@ -272,7 +272,7 @@
       "phase": "C1",
       "path": "service/chats.test.ts",
       "upstream_blob": "39fda0ce63c32d64f08e51c1b220299f358e3b99",
-      "sha256": "0c2210001b7d520679ce59841986402d06983a69d2d80f372109c9e4260e9512"
+      "sha256": "289344fdcb6f296c8fc360d2ed0dbc1efdf453e6d69c9ad6b06785605aeb3b06"
     },
     {
       "phase": "B2",
@@ -459,6 +459,12 @@
       "path": "service/selections.test.ts",
       "upstream_blob": null,
       "sha256": "bdf288bd3b72de5e6986b313484154db3072ae736e5a51d27e245f7a73712660"
+    },
+    {
+      "phase": "A2",
+      "path": "service/voice-data.ts",
+      "upstream_blob": "a1cfcb74f3637b723901bb6521296af498b6a9a9",
+      "sha256": "7a2bb46005d084a52c275e12164ba5e3f0e914f8c1463e1839aa954b391dd6ca"
     },
     {
       "phase": "A2",

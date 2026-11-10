@@ -4778,9 +4778,11 @@ class Cleanup(unittest.TestCase):
         self.gone(f)
 
     def test_ready_with_nothing_to_merge_removes_both(self):
+        """SHEP-96: ready with nothing to merge waits in Ready for the person's Accept, which removes both."""
         f = self.nothing_of_its_own()
         f.ready()
-        self.assertEqual((f.task()["state"], f.task().get("nothing_to_merge")), ("done", True))
+        self.assertEqual((f.task()["state"], f.task().get("nothing_to_merge")), ("ready", True))
+        self.assertEqual(f.ok("accept", "1", "--folder", f.repo)["accepted"], "done")
         self.gone(f)
 
     def test_the_tick_removes_work_merged_here(self):

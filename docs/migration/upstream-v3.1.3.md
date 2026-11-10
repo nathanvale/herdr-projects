@@ -112,8 +112,10 @@ the GitHub adapter only; SHEP-175's Ready wait applies to GitHub pull requests o
 Bitbucket view has no `mergeable`; SHEP-96's nothing-to-merge task waits in Ready without
 publication; #828's continued pull request is pushed through the forge's `publish()`; #839
 puts a message back only when a start surely didn't happen; `restart.sh`'s Azure Foundry
-branch reads argv with `argv_cmd` (#736). Qualification is unchanged: nothing here is native,
-Azure or R evidence.
+branch reads argv with `argv_cmd` (#736). Upstream's SHEP-110 guard files every web action as a
+read or a change, so A2 now owns `service/voice-data.ts`, where its three actions are changes;
+upstream's #748 chat test names a live stand-in process, as C1's exact-process rule needs.
+Qualification is unchanged: nothing here is native, Azure or R evidence.
 
 ### A1 provider checkpoint
 

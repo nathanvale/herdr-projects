@@ -93,10 +93,11 @@ test("a followed task chat moves to its worker's new terminal by itself", async 
 });
 
 // #748: herdr-core's live list can have no foreground for this machine's own terminals: hc get has it.
+// hc get names the idle stand-in above: FIND reads that process's own folder, so a pid no process has finds nothing.
 test("a local agent's chat is found when the live list lacks its foreground", async () => {
   const dir = mkdtempSync(join(tmpdir(), "chats-hc-"));
   const fake = join(dir, "hc");
-  writeFileSync(fake, `#!/bin/sh\necho '{"foreground":{"name":"claude","pid":4242,"argv":["claude"],"cwd":"/work/demo"}}'\n`, { mode: 0o755 });
+  writeFileSync(fake, `#!/bin/sh\necho '{"foreground":{"name":"claude","pid":${pid},"argv":["claude"],"cwd":"/work/demo"}}'\n`, { mode: 0o755 });
   const was = process.env.SHEPHERDR_HC;
   process.env.SHEPHERDR_HC = fake;
   try {
