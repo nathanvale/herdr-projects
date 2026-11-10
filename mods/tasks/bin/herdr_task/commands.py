@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 
-from .base import Fail, git, guard, now, run, STORE, VERSION
+from .base import Fail, git, guard, now, run, STORE, stop_note, VERSION
 from .settings import (
     agent_argv, agent_key, bare, merge_policy, review_limits, set_opts, settings_block, settings_for, space_base,
     task_settings, worker_argv, worktrees_on,
@@ -25,11 +25,11 @@ from .sessions import refresh_sessions
 from .launch_admission import admit_task
 from .github import (
     base_commit, drop_branch, finish, GH_ACCESS, GhFailed, local_base, merge_into_branch, merged_here, needs_approval, NO_ASK,
-    own_work, plain, remote_of, STAYS, update_main, watch_main,
+    note_checks, own_work, plain, remote_of, STAYS, update_main, watch_main,
 )
 from .github import CHECKS_RUNNING as PR_CHECKS_RUNNING
 from .forge import (
-    admit, adopt_existing, already_merged, integrate, merge_reach, name_of, no_local_merge, no_merge, pr_adopt,
+    GITHUB, admit, adopt_existing, already_merged, integrate, merge_reach, name_of, no_local_merge, no_merge, pr_adopt,
     pr_open, pr_pending, pr_problem, pr_read, pr_view, provider_of, publishing_repository, repair_of, repository,
 )
 from .publications import facts as publication_facts
@@ -63,7 +63,7 @@ def for_the_person(fn):
 
 def cmd_where(args):
     loc = locate(args.folder)
-    with Store(loc) as st:  # makes ~/.herdr/tasks and moves old lists in
+    with Store(loc, write="try") as st:  # makes ~/.herdr/tasks and moves old lists in, where it can (#900)
         pass
     slug, path = st.slug, st.path
     say(args, {**loc, "slug": slug, "store": path, "prefix": st.prefix, "version": VERSION}, f"{loc['folder']}\n{path}")
@@ -1162,6 +1162,12 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
         return launch(s, t, argv, space, text, parent=parent, admission=adm), False
 
 
+# SHEP-189: what a resumed agent hears first. Its session comes back with no message, so without this
+# it sat idle until someone wrote to it.
+RESUME_NUDGE = ("Shepherdr resumed your session because your agent had stopped. Carry on where you left off: check "
+                "what is already done with `herdr-task show`, then keep going with the task.")
+
+
 def cmd_resume(args):
     with open_store(args) as s:
         t = s.find(args.id)
@@ -1174,7 +1180,8 @@ def cmd_resume(args):
         if t["state"] == "done":
             t["state"] = "running"
         back_to_work(s, t, "resumed")
-        a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=getattr(args, "fresh", False))
+        a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=getattr(args, "fresh", False),
+                                 message=RESUME_NUDGE)
         v = view(s, t)
     say(args, {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed},
         f"{s.ref(t)} {'resumed its session' if resumed else 'started with a handoff'}: {a['address']}")
@@ -1201,6 +1208,7 @@ def cmd_switch(args):
     ended = []
     if old and not args.keep:
         # The new agent took over: end the old one (its terminal, shell and all).
+        stop_note("switch-kill", task=s.ref(t), terminal=old["address"], by="switch")
         run(["hc", "kill", old["address"]])
         ended.append(old["address"])
     say(args, {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed, "ended": ended},
@@ -1327,6 +1335,8 @@ def merge_now(s, t):
     if not v:
         return (f"{UNREACHED} #{n} on {name_of(t['pr'])} ({plain(why or 'no answer')}). Nothing merged. "
                 f"{repair_of(t['pr'], why)}")
+    if provider_of(t["pr"]) == GITHUB and not v.get("refused"):
+        note_checks(s, t, v)  # SHEP-179: GitHub's checks read or not, for doctor and the Accept card
     queue = False
     if v.get("state") != "MERGED":
         problem = pr_problem(v) or adopted_moved(s, t, v)

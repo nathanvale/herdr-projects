@@ -124,6 +124,13 @@ def lost_message(ref=None, template=None):
 LINE_SHELLS = ("bash", "zsh", "sh", "dash", "ksh", "fish")
 
 
+def without_caller():
+    """The environment for hc send into a shell: no HC_TERMINAL_ID, so hc names no caller. A caller that is an
+    agent makes hc wrap the text in <hc from=…> when the shell reports its status too (herdr-core's tagged()),
+    and bash or zsh then fails to run the line (SHEP-202, GitHub #925). The line is the person's, not an agent's."""
+    return {k: v for k, v in os.environ.items() if k != "HC_TERMINAL_ID"}
+
+
 def shell_line(shell, cwd, env, argv, direct=False, need=None):
     """The line typed into the recovered shell: into the agent's folder, then the agent. POSIX shells
     and fish (3.1+) take `&&` and VAR=value before a command; others get the agent alone (plan()
@@ -448,7 +455,9 @@ def bring_back(k, rec, step, report):
         adm.task, adm.config_dir = task, carry.get("config_dir")
         with adm.claimed():
             unchanged()
-            out = adm.type_into(k["address"], line, facts, run, lambda lid: write_record(k, dict(rec, launch=lid)))
+            # SHEP-202: typed with no caller named (without_caller()), so hc never wraps the person's line for the shell.
+            out = adm.type_into(k["address"], line, facts, lambda a: run(a, env=without_caller()),
+                                lambda lid: write_record(k, dict(rec, launch=lid)))
     except Fail as e:
         launch = getattr(e, "launch", None)
         if launch:

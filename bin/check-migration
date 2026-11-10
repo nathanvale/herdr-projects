@@ -11,9 +11,9 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 INPUTS = {
     'F': '4f0236f03a88c5e9fa344475d90d3a20ef418481',
-    # U is the exact upstream parent the native foundation equals: v3.1.29 since its merge (v3.1.16 57302497 before;
-    # S0 merged v3.1.3, dc018f2a).
-    'U': 'e41ea9d2c0a273a5c7b6aebf51cf2e4d112a1d1e',
+    # U is the exact upstream parent the native foundation equals: v3.1.31 since its merge (v3.1.29 e41ea9d2 before,
+    # v3.1.16 57302497 before that; S0 merged v3.1.3, dc018f2a).
+    'U': '6b8caac946a5c3fae0543624e93a0a5553d3b214',
     'P': '074dec5ea0bf0a057f520fa50497bf9e1b696ad9',
     'B': 'de8e17957efb4aa016d7e4d652f397aaa95f0880',
 }
@@ -263,6 +263,38 @@ PROSE = frozenset('AGENTS.md CHANGELOG.md CLAUDE.md CODING_STANDARDS.md GLOSSARY
 # A unit merged after Q that changes a tracked path outside Q's own and prose names it here, under the unit's name
 # ({'MIG-10': 'path other/path'}). Its evidence is its own Check; Q's ledger keeps describing its candidate only.
 AFTER_Q = {
+    # Upstream v3.1.31 merged into the fork (upstream 6b8caac9, lightweight tag v3.1.31; fork base 9b7ec505): every
+    # tracked source path it changes. Its evidence is its own Check; Q's ledger keeps describing c9bc734f.
+    'MERGE-v3.1.31': (
+        'bin/herdr-browser bin/shepherdr core/agents.js core/chat-log.js core/chat-log.test.js '
+        'core/live-switch.js core/live-switch.test.js core/mentions.js core/mentions.test.js core/settings.js '
+        'core/settings.test.js core/tasks.js core/tasks.test.js layouts/shepherdr.json lib/addons.json '
+        'lib/coordinator.js lib/features.json mods/artifacts/bin/herdr-artifact mods/chat-models/core/agents.js '
+        'mods/chat/attach.js mods/chat/core/agents.js mods/chat/core/chat-log.js mods/chat/core/mentions.js '
+        'mods/chat/core/settings.js mods/chat/core/tasks.js mods/chat/main.js mods/coordinator/coordinator.js '
+        'mods/coordinator/core/agents.js mods/coordinator/core/settings.js mods/jump/core/tasks.js '
+        'mods/menu-tasks/coordinator.js mods/new-menu-tasks/coordinator.js mods/newspace/coordinator.js '
+        'mods/newspace/core/agents.js mods/newspace/core/settings.js mods/newspace/main.js '
+        'mods/shepherdr-settings/coordinator.js mods/shepherdr-settings/core/agents.js '
+        'mods/shepherdr-settings/core/settings.js mods/spaces-chat/coordinator.js mods/tabs-tasks/coordinator.js '
+        'mods/tasks/bin/herdr_task/agents.py mods/tasks/bin/herdr_task/assistant_settings.py '
+        'mods/tasks/bin/herdr_task/autopilot.py mods/tasks/bin/herdr_task/base.py '
+        'mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/github.py '
+        'mods/tasks/bin/herdr_task/machine.py mods/tasks/bin/herdr_task/machines.py '
+        'mods/tasks/bin/herdr_task/proof.py mods/tasks/bin/herdr_task/revive.py '
+        'mods/tasks/bin/herdr_task/settings.py mods/tasks/bin/herdr_task/takeover.py '
+        'mods/tasks/bin/herdr_task/templates.py mods/tasks/bin/herdr_task/tick.py mods/tasks/coordinator.js '
+        'mods/tasks/core/tasks.js mods/tasks/main.js package.json service/actions.ts service/agents.ts '
+        'service/auth.test.ts service/auth.ts service/compat.ts service/layout-scripts.ts service/main.ts '
+        'service/newspace-folder-list.test.ts service/settings.test.ts service/settings.ts '
+        'service/terminal.test.ts service/terminal.ts service/watch.ts templates/assistant.md '
+        'templates/worker.md test/fixtures/codex-code-mode/rollout-items.jsonl test/test_chat_refocus.py '
+        'test/test_chat_view_size.py test/test_herdr_artifact_publish.py test/test_herdr_browser_libs.py '
+        'test/test_herdr_task.py test/test_install.py test/test_repo.py web/plugins/chat/client.tsx '
+        'web/plugins/chat/suggest.test.ts web/plugins/chat/suggest.ts web/plugins/tasks/client.tsx '
+        'web/plugins/voice/client.tsx web/shared/types.ts web/src/App.tsx web/src/groups.test.ts '
+        'web/src/groups.ts web/src/kernel.ts web/src/restart.tsx web/src/ui.tsx'
+    ),
     # Upstream v3.1.29 merged into the fork (merge commit 2d612fdf, upstream e41ea9d2): every tracked source path
     # it changes. Its evidence is its own Check; Q's ledger keeps describing c9bc734f.
     'MERGE-v3.1.29': (

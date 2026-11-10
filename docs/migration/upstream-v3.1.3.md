@@ -125,6 +125,40 @@ gh's host (`answered_in()`); a forge-refused read keeps `merge_queued`; `tidy_do
 base as a branch (`base_commit()`).
 Qualification is unchanged: nothing here is native, Azure or R evidence.
 
+### Upstream v3.1.31 merge
+
+`codex/upstream-v3.1.31-intake` merges upstream v3.1.31 (`6b8caac9`, a lightweight tag) into
+`integrate/upstream-v3.1.3` at `9b7ec505` with a merge commit: both are parents, nothing is
+squashed or rebased. Git's merge base is v3.1.29 (`e41ea9d2`). U now names v3.1.31: every U path
+outside the phase table and the overrides is byte-identical to it, and each row's `upstream_blob`
+and `sha256` are re-pinned to v3.1.31 and the merged content. `AFTER_Q` names the merge's source
+paths (`MERGE-v3.1.31`), so Q's ledger keeps describing `c9bc734f`. The gate's checks are unchanged.
+
+Where the two sides met:
+
+- SHEP-179's unreadable-checks read joins the fork's `github.pr_read()`, which keeps `baseRefName`,
+  `url` and gh's reason for identity admission. Checks it can't read are `checks_unknown`, shown
+  as unknown on the Accept card, never as passed. `note_checks()` runs for GitHub views only, never
+  a refused or Bitbucket one.
+- SHEP-188's `mid_turn()` joins `finish()` beside `kept_because()`: a folder stays while its agent
+  or helper is mid-turn, and stays when the branch holds work that didn't merge.
+- SHEP-189's resume nudge goes through the fork's admitted `start_again()`, `--fresh` included.
+- SHEP-202's caller-free shell send goes through the one revival owner: `bring_back()` passes
+  `without_caller()`'s environment to `Admission.type_into()`.
+- SHEP-181's live model and effort switch runs only for a Personal agent in its own config folder.
+  One with a recorded provider binding (`herdr.provider`, as `providerRefusal()` reads it) or
+  another `CLAUDE_CONFIG_DIR` goes to `restart()`, whose launch owner keeps the binding or refuses.
+- SHEP-191's cross-site page link (`pageLink()`) applies before the private listener's own checks.
+  Writes, sockets and the API stay refused cross-site, and the private peer's owner and host rules
+  are unchanged.
+- SHEP-198's pull request title and body sit beside the fork's `open_prs()` and `no_other_base()`;
+  publication custody is unchanged.
+- `AGENTS.md` stays the fork's override; upstream's new notes there are not imported.
+
+Ordinary Task Accept still squash-merges (`pr_merge()`); this integration lands by merge commit.
+The four accepted PR 59 review minors and the PR 58 sensitivity-gate gap stay open and unchanged.
+Qualification is unchanged: nothing here is native, Azure or R evidence.
+
 ### A1 provider checkpoint
 
 `bin/check-migration` names each phase's admitted owner paths; the manifest's
