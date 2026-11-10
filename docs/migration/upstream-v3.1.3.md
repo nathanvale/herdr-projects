@@ -141,7 +141,9 @@ Where the two sides met:
 - SHEP-179's unreadable-checks read joins the fork's `github.pr_read()`, which keeps `baseRefName`,
   `url` and gh's reason for identity admission. Checks it can't read are `checks_unknown`, shown
   as unknown on the Accept card, never as passed. `note_checks()` runs for GitHub views only, never
-  a refused or Bitbucket one.
+  a refused or Bitbucket one. The REST fallback (`check_rows()`) is whole only when GitHub's
+  `total_count` fits the one page it reads and no check name came back with different outcomes
+  (its rows name the app, not the workflow); otherwise it is unknown (C0).
 - SHEP-188's `mid_turn()` joins `finish()` beside `kept_because()`: a folder stays while its agent
   or helper is mid-turn, and stays when the branch holds work that didn't merge.
 - SHEP-189's resume nudge goes through the fork's admitted `start_again()`; `--fresh` (a new conversation from

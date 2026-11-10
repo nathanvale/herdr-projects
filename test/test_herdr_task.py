@@ -2623,20 +2623,21 @@ class ChecksUnreadable(PrLooks):
                 "elif a[:2] == ['pr', 'view']:\n    print(file('view.json'))\n"
                 "elif a[:2] == ['pr', 'merge']:\n"
                 f"    open(os.path.join({d!r}, 'view.json'), 'w').write(json.dumps({{'state': 'MERGED', 'mergeCommit': {{'oid': 'f00'}}, 'headRefOid': 'abc', 'url': 'https://github.com/o/r/pull/41'}}))\n"
-                "elif a[0] == 'api' and a[1].endswith('/status'):\n"
-                "    print(file('status.json') or json.dumps({'state': 'pending', 'statuses': []}))\n"
+                "elif a[0] == 'api' and a[1].split('?')[0].endswith('/status'):\n"
+                "    print(file('status.json') or json.dumps({'state': 'pending', 'statuses': [], 'total_count': 0}))\n"
                 "elif a[0] == 'api' and '/check-runs' in a[1] and file('runs.json'):\n    print(file('runs.json'))\n"
                 "elif a[0] == 'api':\n"
                 f"    print({self.DENIED!r}); sys.stderr.write('gh: Resource not accessible by personal access token (HTTP 403)'); sys.exit(1)\n")
 
-    def github_says(self, merge_state="CLEAN", mergeable="MERGEABLE", runs=None):
+    def github_says(self, merge_state="CLEAN", mergeable="MERGEABLE", runs=None, total=None):
         with open(os.path.join(self.dir, "view.json"), "w") as f:
             # url: the fork's forge reads nothing as this task's pull request without it (PrLooks.github_says).
             json.dump({"state": "OPEN", "mergeable": mergeable, "headRefOid": "abc", "mergeStateStatus": merge_state,
                        "reviewDecision": "", "url": "https://github.com/o/r/pull/41"}, f)
         if runs is not None:
             with open(os.path.join(self.dir, "runs.json"), "w") as f:
-                json.dump({"check_runs": runs}, f)
+                # total_count: what GitHub has for the commit, as the REST answer always says (more than one page: total)
+                json.dump({"check_runs": runs, "total_count": len(runs) if total is None else total}, f)
 
     def test_the_view_reads_the_rest_and_says_checks_are_unknown(self):
         import herdr_task.github as github
@@ -2675,6 +2676,36 @@ class ChecksUnreadable(PrLooks):
         self.github_says("BLOCKED", runs=[{"name": "test", "status": "completed", "conclusion": "failure"}])
         self.assertEqual(self.look(t, after=1000)[:2], ("working", "Back to its agent to fix"))
         self.assertEqual(t["attention"], "Checks failing: test.")
+
+    def test_more_checks_than_one_page_are_unknown_never_passed(self):
+        """C0: the REST fallback reads one page; GitHub saying it has more (total_count) means checks went unseen."""
+        import herdr_task.github as github
+        import herdr_task.proof as proof
+        t = self.said_ready()
+        self.github_says("CLEAN", runs=[{"name": "test", "status": "completed", "conclusion": "success"}], total=150)
+        self.assertTrue(github.pr_view(t)["checks_unknown"])
+        self.assertEqual(proof.checks_of(t)["state"], "unknown")
+
+    def test_same_named_jobs_of_two_workflows_never_hide_a_failure(self):
+        """C0: REST rows name the app, not the workflow: a failing "test" in one workflow and a newer passing "test" in
+        another would collapse to the pass (latest_checks), so the read is unknown, never passed."""
+        import herdr_task.github as github
+        import herdr_task.proof as proof
+        t = self.said_ready()
+        app = {"slug": "github-actions"}
+        self.github_says("CLEAN", runs=[
+            {"name": "test", "status": "completed", "conclusion": "failure", "started_at": "2026-11-10T10:00:00Z", "app": app,
+             "check_suite": {"id": 1}},
+            {"name": "test", "status": "completed", "conclusion": "success", "started_at": "2026-11-10T10:05:00Z", "app": app,
+             "check_suite": {"id": 2}}])
+        self.assertTrue(github.pr_view(t)["checks_unknown"])
+        self.assertEqual(proof.checks_of(t)["state"], "unknown")
+        # The same name passing in both is no hidden failure: still passed.
+        self.github_says("CLEAN", runs=[
+            {"name": "test", "status": "completed", "conclusion": "success", "started_at": "2026-11-10T10:00:00Z", "app": app},
+            {"name": "test", "status": "completed", "conclusion": "success", "started_at": "2026-11-10T10:05:00Z", "app": app}])
+        self.assertNotIn("checks_unknown", github.pr_view(t))
+        self.assertEqual(proof.checks_of(t)["state"], "passed")
 
     def test_accept_merges_without_check_access(self):
         t = self.said_ready()

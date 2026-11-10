@@ -628,27 +628,42 @@ def pr_read(task):
 
 def check_rows(repo, sha):
     """A commit's checks from GitHub's REST API (check runs and commit statuses), as statusCheckRollup's rows:
-    (rows, whole). whole: both could be read. A token with one permission but not the other still sees part."""
+    (rows, whole). whole: both could be read in full. A token with one permission but not the other still sees part.
+    Never whole (fail-closed, so never said to pass) when GitHub has more than the one page read (its total_count),
+    or when a check's name came back more than once with different outcomes: these rows name the app (github-actions),
+    not the workflow, so latest_checks() can't tell a newer run of one job from another workflow's job of that name,
+    and could keep a pass over a failure."""
     rows, whole = [], bool(sha)
     if not sha:
         return rows, False
-    ok, out, _ = gh("api", f"repos/{repo}/commits/{sha}/check-runs?per_page=100")
-    try:
-        for c in json.loads(out).get("check_runs") or [] if ok else []:
-            rows.append({"name": c.get("name"), "status": (c.get("status") or "").upper(),
-                         "conclusion": (c.get("conclusion") or "").upper(), "startedAt": c.get("started_at") or "",
-                         "completedAt": c.get("completed_at") or "",
-                         "workflowName": ((c.get("app") or {}).get("slug") or "")})
-    except (ValueError, AttributeError):
-        ok = False
-    whole = whole and ok
-    ok, out, _ = gh("api", f"repos/{repo}/commits/{sha}/status")
-    try:
-        for c in json.loads(out).get("statuses") or [] if ok else []:
-            rows.append({"context": c.get("context"), "state": (c.get("state") or "").upper(),
-                         "startedAt": c.get("updated_at") or c.get("created_at") or ""})
-    except (ValueError, AttributeError):
-        ok = False
+
+    def read(path, key):
+        ok, out, _ = gh("api", f"repos/{repo}/commits/{sha}/{path}?per_page=100")
+        if not ok:
+            return [], False
+        try:
+            data = json.loads(out)
+            items = data.get(key) or []
+            total = data.get("total_count")
+        except (ValueError, AttributeError):
+            return [], False
+        if not isinstance(items, list) or not all(isinstance(c, dict) for c in items):
+            return [], False
+        return items, isinstance(total, int) and total <= len(items)
+
+    runs, ok = read("check-runs", "check_runs")
+    seen = {}
+    for c in runs:
+        rows.append({"name": c.get("name"), "status": (c.get("status") or "").upper(),
+                     "conclusion": (c.get("conclusion") or "").upper(), "startedAt": c.get("started_at") or "",
+                     "completedAt": c.get("completed_at") or "",
+                     "workflowName": ((c.get("app") or {}).get("slug") or "")})
+        seen.setdefault((rows[-1]["workflowName"], rows[-1]["name"]), set()).add((rows[-1]["status"], rows[-1]["conclusion"]))
+    whole = whole and ok and all(len(outcomes) == 1 for outcomes in seen.values())
+    statuses, ok = read("status", "statuses")
+    for c in statuses:
+        rows.append({"context": c.get("context"), "state": (c.get("state") or "").upper(),
+                     "startedAt": c.get("updated_at") or c.get("created_at") or ""})
     return rows, whole and ok
 
 
