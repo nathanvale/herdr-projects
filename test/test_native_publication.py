@@ -3,15 +3,16 @@ line: `adopt` records an existing pull request only when the commits prove it is
 task's base follows it, a repo on GitHub never falls back to a local merge when gh can't answer, gh's
 and git's failures say which one failed, and ready neither opens a second pull request nor merges.
 
-These run on CI only, as herdr-task's other command-line tests: HOME stays the account's own, the
-task lists and settings are throwaway ones (herdr-task's own overrides), hc is a stand-in first on
+These run on CI only, as herdr-task's other command-line tests: HOME is the run's throwaway one
+(test/home_guard.py), as are the task lists and settings (herdr-task's own overrides), hc is a stand-in first on
 PATH and gh a recording stand-in behind HERDR_TASK_GH, the task's route to gh. The remote says
 github.com but git reaches a local bare repo through url.insteadOf, so pushes and fetches are real
 and no network is used. They prove what herdr-task does with gh's answers; they don't prove
 GitHub's own answers, its sign-in or a real push's credentials.
 
-The proof tests alone write outside the throwaway folder: one file in ~/.herdr/artifacts, the only
-place herdr-task reads artifacts from, removed after."""
+The proof tests write one file in the throwaway home's artifacts folder, the only place herdr-task
+reads artifacts from, removed after."""
+import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
 import json
 import os
 import re
@@ -26,6 +27,41 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(ROOT, "mods", "tasks", "bin")
 CI = os.environ.get("CI") == "true"
 ON_CI = unittest.skipUnless(CI, "runs only on CI: herdr-task's commands never run from a test on a person's machine")
+# SHEP-147 (test/home_guard.py): every test runs on a throwaway HOME, where herdr-task refuses hc
+# (base.not_real) and launch admission sends nothing (launch_admission.py's guard). A fixture whose hc is
+# its own stand-in lifts that refusal for the processes it starts and for nothing else, as upstream's own
+# tests do in a subprocess (test_herdr_task.py: base.not_real = lambda: None). Python runs this
+# sitecustomize.py first in each of them; it patches whichever herdr_task.base that process imports, so a
+# negative control's older herdr-task is lifted too, never replaced by this tree's.
+LIFT = """import importlib.machinery, sys
+
+
+class _Lift:
+    def find_spec(self, name, path=None, target=None):
+        if name != "herdr_task.base":
+            return None
+        spec = importlib.machinery.PathFinder.find_spec(name, path)
+        if spec is not None and spec.loader is not None:
+            run = spec.loader.exec_module
+
+            def exec_module(module):
+                run(module)
+                module.not_real = lambda: None
+            spec.loader.exec_module = exec_module
+        return spec
+
+
+sys.meta_path.insert(0, _Lift())
+"""
+
+
+def stand_in_hc(env, folder):
+    """env for the processes a fixture starts when its hc is a stand-in: herdr-task's real-home refusal
+    lifted there alone (LIFT)."""
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, "sitecustomize.py"), "w") as f:
+        f.write(LIFT)
+    return {**env, "PYTHONPATH": os.pathsep.join(p for p in (folder, env.get("PYTHONPATH")) if p)}
 URL = "https://github.com/o/r.git"
 AUTH = "To get started with GitHub CLI, please run:  gh auth login"
 # gh 2.101.0's words, read from a repo signed in to github.com with an Enterprise, alias or Bitbucket
@@ -161,6 +197,7 @@ class Fixture:
                         HERDR_TASK_GH=self.gh_route,
                         HERDR_TASK_STORE=join("tasks"), HERDR_TASK_SETTINGS=join("shepherdr.json"),
                         HERDR_TASK_TEMPLATES=join("templates"))
+        self.env = stand_in_hc(self.env, join("lift"))
         self.github(prs=[])
         self.made = 0  # commit()'s files so far, each named for its own
         os.makedirs(self.repo)
@@ -1702,7 +1739,9 @@ class ATagNamedLikeABranch(unittest.TestCase):
         self.assertTrue(f.ok("done", "1", "--folder", f.repo)["merged"])
         f = Fixture(self, False)
         f.seed(base=f.tip)
-        self.assertIn("nothing to merge", f.ready()["message"])
+        # SHEP-96: nothing to merge waits in Ready for the person's Accept, its words capitalized.
+        self.assertIn("Nothing to merge", f.ready()["message"])
+        self.assertEqual((f.task()["state"], f.task().get("nothing_to_merge")), ("ready", True))
 
     def test_a_remote_tag_named_like_the_base_never_lands_on_it(self):
         f = Fixture(self)

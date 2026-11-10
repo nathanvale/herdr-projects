@@ -15,6 +15,7 @@ answers as its documentation shows them; Bitbucket's own answers, a real credent
 real account are native qualification, not this.
 
 Runs only on CI, as the other command-line tests."""
+import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
 import atexit
 import http.server
 import json

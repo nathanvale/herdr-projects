@@ -9,6 +9,10 @@ import tempfile
 import time
 import unittest
 
+# The fork's restart.sh starts through herdr-task's launch admission (L1), which refuses hc on this run's
+# throwaway HOME; these scripts' hc is a stand-in, so that refusal is lifted for them alone.
+from test_native_publication import stand_in_hc  # noqa: E402
+
 def read(p):
     with open(p) as f:
         return f.read()
@@ -97,7 +101,7 @@ class ChatLabel(unittest.TestCase):
         with open(hc, "w") as f:
             f.write(LOCAL_HC)
         os.chmod(hc, 0o755)
-        e = {"PATH": f"{d}/bin:/usr/bin:/bin", "HOME": d, "HERDR_APP_HOME": d, "FAKE_DIR": d, "HERDR_RESTART_RESUME": "1", **env}
+        e = stand_in_hc({"PATH": f"{d}/bin:/usr/bin:/bin", "HOME": d, "HERDR_APP_HOME": d, "FAKE_DIR": d, "HERDR_RESTART_RESUME": "1", **env}, os.path.join(d, "lift"))
         r = subprocess.run(["bash", SCRIPT, "t2", json.dumps(["claude", "--resume", "s1"])], env=e,
                            capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -127,7 +131,7 @@ class Bash32(unittest.TestCase):
         old = os.path.join(d, "bash32")
         with open(old, "w") as f:
             f.write("enable -n mapfile readarray\n")
-        e = {"PATH": f"{d}/bin:/usr/bin:/bin", "HOME": d, "HERDR_APP_HOME": d, "FAKE_DIR": d, "BASH_ENV": old, **env}
+        e = stand_in_hc({"PATH": f"{d}/bin:/usr/bin:/bin", "HOME": d, "HERDR_APP_HOME": d, "FAKE_DIR": d, "BASH_ENV": old, **env}, os.path.join(d, "lift"))
         r = subprocess.run(["bash", SCRIPT, "t2", json.dumps(["claude", "--model", "a b"])], env=e,
                            capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)

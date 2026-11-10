@@ -115,6 +115,14 @@ puts a message back only when a start surely didn't happen; `restart.sh`'s Azure
 branch reads argv with `argv_cmd` (#736). Upstream's SHEP-110 guard files every web action as a
 read or a change, so A2 now owns `service/voice-data.ts`, where its three actions are changes;
 upstream's #748 chat test names a live stand-in process, as C1's exact-process rule needs.
+An artifact-only task with nothing to merge waits for Accept (SHEP-96), and Accept removes
+its worktree only as `kept_because()` allows: untracked files keep it, where upstream would
+remove it. Upstream's SHEP-147 runs every test on a throwaway HOME; the fork's command-line
+fixtures, whose `hc` is a stand-in, lift herdr-task's real-home refusal for the processes they
+start alone (`stand_in_hc`), and its production guards are unchanged. #828's continued pull
+request is recorded and commented on only when GitHub answered for it in this repository on
+gh's host (`answered_in()`); a forge-refused read keeps `merge_queued`; `tidy_done()` reads the
+base as a branch (`base_commit()`).
 Qualification is unchanged: nothing here is native, Azure or R evidence.
 
 ### A1 provider checkpoint

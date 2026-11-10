@@ -87,7 +87,7 @@ mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/task
 mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/revive.py
 mods/tasks/bin/herdr_task/settings.py mods/tasks-menu/main.js mods/tasks/core/tasks.js mods/tasks/local.js mods/tasks/main.js service/actions.ts service/agents.ts service/compat.ts service/launch-sites.test.ts
 service/main.ts service/selections.test.ts service/selections.ts service/settings.test.ts service/settings.ts
-service/spaces.ts service/voice-data.ts service/watch.ts test/test_herdr_task.py test/test_launch_admission.py test/test_providers.py web/plugins/tasks/client.tsx
+service/spaces.ts service/voice-data.ts service/watch.ts test/test_herdr_task.py test/test_launch_admission.py test/test_restart.py test/test_providers.py web/plugins/tasks/client.tsx
 web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx web/src/restart.tsx'''.split()),
     # Native restart and revival: revival, a lost session at its shell and every restart go through launch admission on
     # the recorded binding (continued conversations) or today's settings (new ones, never onto another route), claimed
@@ -266,18 +266,18 @@ AFTER_Q = {
     # Upstream v3.1.29 merged into the fork (merge commit 2d612fdf, upstream e41ea9d2): every tracked source path
     # it changes. Its evidence is its own Check; Q's ledger keeps describing c9bc734f.
     'MERGE-v3.1.29': (
-        'NOTICE bin/herdr-browser bin/herdr-browser-view bin/herdr-secret bin/shepherdr bin/sync-shared '
-        'core/accept.js core/agents.js core/asks.js core/audio.js core/audio.test.js core/autopilot.cases.json '
-        'core/autopilot.js core/chat-media.test.js core/chat-view.js core/chat-view.test.js core/clean-env.js '
-        'core/clean-env.test.js core/grace.cases.json core/host.js core/host.test.js core/machines.js '
-        'core/mentions.js core/menus.js core/needs.js core/newspace.js core/paths.js core/recipe.js '
-        'core/screen.test.js core/secrets.js core/settings.js core/settings.test.js core/spaces.js '
-        'core/spaces.test.js core/tasklists.js core/tasks.js core/tasks.test.js core/usage.js core/usage.test.js '
-        'core/voice-key.test.js core/voice-spec.test.js core/voice-usage.test.js core/voice.js core/worktree.js '
-        'core/worktree.test.js layouts/shepherdr.json lib/COPIES lib/addons.js lib/addons.json lib/agent.js '
-        'lib/bridge.js lib/coordinator.js lib/dirs.js lib/features.json lib/inbox.js lib/keyholder.js '
-        'lib/local.js lib/machines.js lib/parked.js lib/secrets.js lib/settings.js lib/taskwhere.js '
-        'lib/unread.js lib/usage.js mods/accept-card/addons.js mods/accept-card/core/accept.js '
+        '.fallowrc.json NOTICE bin/herdr-browser bin/herdr-browser-view bin/herdr-secret bin/shepherdr '
+        'bin/sync-shared core/accept.js core/agents.js core/asks.js core/audio.js core/audio.test.js '
+        'core/autopilot.cases.json core/autopilot.js core/chat-media.test.js core/chat-view.js '
+        'core/chat-view.test.js core/clean-env.js core/clean-env.test.js core/grace.cases.json core/host.js '
+        'core/host.test.js core/machines.js core/mentions.js core/menus.js core/needs.js core/newspace.js '
+        'core/paths.js core/recipe.js core/screen.test.js core/secrets.js core/settings.js core/settings.test.js '
+        'core/spaces.js core/spaces.test.js core/tasklists.js core/tasks.js core/tasks.test.js core/usage.js '
+        'core/usage.test.js core/voice-key.test.js core/voice-spec.test.js core/voice-usage.test.js '
+        'core/voice.js core/worktree.js core/worktree.test.js layouts/shepherdr.json lib/COPIES lib/addons.js '
+        'lib/addons.json lib/agent.js lib/bridge.js lib/coordinator.js lib/dirs.js lib/features.json '
+        'lib/inbox.js lib/keyholder.js lib/local.js lib/machines.js lib/parked.js lib/secrets.js lib/settings.js '
+        'lib/taskwhere.js lib/unread.js lib/usage.js mods/accept-card/addons.js mods/accept-card/core/accept.js '
         'mods/accept-card/core/paths.js mods/accept-card/core/usage.js mods/accept-card/dirs.js '
         'mods/accept-card/main.js mods/accept-card/usage.js mods/artifacts/ARTIFACTS.md mods/artifacts/addons.js '
         'mods/artifacts/bin/herdr-artifact mods/artifacts/core/paths.js mods/artifacts/core/recipe.js '
@@ -378,11 +378,14 @@ AFTER_Q = {
         'service/voice-data.ts service/voice-hear.test.ts service/voice-hear.ts service/voice-tools.test.ts '
         'service/voice-tools.ts service/voice.ts service/watch.ts service/window.ts service/worktrees.ts '
         'templates/assistant.md templates/reviewer.md templates/worker.md test/fixtures/install-3.1.26.py '
-        'test/home_guard.py test/preload.ts test/test_ask_hook.py test/test_herdr_artifact.py '
-        'test/test_herdr_artifact_preview.py test/test_herdr_artifact_publish.py '
-        'test/test_herdr_artifact_show.py test/test_herdr_task.py test/test_install.py test/test_layout.py '
-        'test/test_repo.py test/test_restart.py test/test_secret_main.py test/test_sync_hold.py '
-        'test/test_usage.py tsconfig.json web/plugins/artifacts/client.tsx web/plugins/browser/client.tsx '
+        'test/home_guard.py test/preload.ts test/test_ask_hook.py test/test_bitbucket.py '
+        'test/test_bitbucket_publication.py test/test_checkout_access.py test/test_fallow_config.py '
+        'test/test_forge.py test/test_herdr_artifact.py test/test_herdr_artifact_preview.py '
+        'test/test_herdr_artifact_publish.py test/test_herdr_artifact_show.py test/test_herdr_task.py '
+        'test/test_install.py test/test_launch_admission.py test/test_layout.py test/test_native_publication.py '
+        'test/test_native_restart.py test/test_providers.py test/test_repo.py test/test_restart.py '
+        'test/test_secret_main.py test/test_session_discovery.py test/test_sync_hold.py test/test_usage.py '
+        'tsconfig.json web/plugins/artifacts/client.tsx web/plugins/browser/client.tsx '
         'web/plugins/chat/client.tsx web/plugins/chat/markdown.tsx web/plugins/chat/rows.tsx '
         'web/plugins/places/client.tsx web/plugins/places/drag.ts web/plugins/reactions/client.tsx '
         'web/plugins/reactions/leave.test.ts web/plugins/reactions/leave.ts web/plugins/tasks/client.tsx '

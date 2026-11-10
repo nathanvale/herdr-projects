@@ -1,4 +1,5 @@
 """bin/checkout-access through its command line, against real git repositories in temporary folders."""
+import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
 import importlib.machinery
 import importlib.util
 import json
@@ -12,7 +13,8 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
-ENV = {"PATH": os.environ["PATH"], "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+# HOME: the run's throwaway one (home_guard, SHEP-147); a program started with none falls back to the real one.
+ENV = {"PATH": os.environ["PATH"], "HOME": os.environ["HOME"], "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
        "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
        "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid"}
 

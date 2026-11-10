@@ -118,7 +118,9 @@ def facts(s, t, report):
         # (upstream), and a moved-head note already there stays while the head is still moved.
         issue, moved = pr_problem(v), adopted_moved(s, t, v)
         problem = issue or (moved if t["state"] == "ready" else None)
-        if t.get("merge_queued"):
+        # A read the forge refused (not this task's, or out of reach) says nothing about GitHub's queue: a
+        # pull request Herdr queued stays queued, so a later MERGED read still updates its base and drops its branch.
+        if t.get("merge_queued") and not v.get("refused"):
             queue_pass(s, t, v, report)
         if needs_approval(v):
             pr["needs_approval"] = True
@@ -148,7 +150,8 @@ def facts(s, t, report):
         if t["state"] in ("ready", "running") and problem != t.get("attention"):
             if problem:
                 t["attention"], t["attention_at"] = problem, now()
-                t.pop("merge_queued", None)
+                if not v.get("refused"):
+                    t.pop("merge_queued", None)
                 report["attention"].append(t["id"])
             elif t.get("attention", "").startswith(("Checks failing", "It conflicts", "The pull request was closed", MERGE_FAILED, BEHIND, MOVED)) \
                     and not (t["state"] == "running" and moved and t["attention"].startswith(MOVED)):

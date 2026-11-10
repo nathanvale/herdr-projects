@@ -12,6 +12,7 @@ They prove what herdr-task does with gh's answers, not GitHub's own answers or a
 
 Runs only on CI, as the publication tests: herdr-task's commands never run from a test on a
 person's machine."""
+import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
 import json
 import os
 import sys
@@ -27,7 +28,9 @@ BITBUCKET = {"provider": "bitbucket", "host": "bitbucket.org", "repo": "o/r", "n
              "url": "https://bitbucket.org/o/r/pull-requests/7"}
 OTHER_REPO = "https://github.com/o/fork/pull/7"
 OTHER_HOST = "https://github.example.com/o/r/pull/7"
-VIEW = ["pr", "view", "7", "--repo", "o/r", "--json", "state,mergeable,headRefOid,baseRefName,statusCheckRollup,mergeCommit,url"]
+# reviewDecision and mergeStateStatus since v3.1.29: an approval it waits for (#743) and a base it is behind.
+VIEW = ["pr", "view", "7", "--repo", "o/r", "--json",
+        "state,mergeable,headRefOid,baseRefName,statusCheckRollup,mergeCommit,url,reviewDecision,mergeStateStatus"]
 SUMMARY = "Sign-in works again"  # the Fixture's ready --summary
 COMMENT = ["pr", "comment", "7", "--repo", "o/r", "--body", SUMMARY]
 

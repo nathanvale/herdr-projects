@@ -44,7 +44,7 @@
       "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/github.py",
       "upstream_blob": "43fc4b1b5a7906143746d88b26642ffbea069cb7",
-      "sha256": "e1399b8744f227ce2d54759b2bf66e457de08c2362ba618d5f40b1e938987e6f"
+      "sha256": "b15100554665e1696e70ddf1523b4f781b90f7fcf6db9f078e8ec63a1c748380"
     },
     {
       "phase": "A2",
@@ -68,7 +68,7 @@
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/tick.py",
       "upstream_blob": "7551f73fdd414e73c974b5bdf40757dd023a8fee",
-      "sha256": "57603f7115c991dd7acc90055d60eecec95c7ec81fdf771e0c2c0f53b64fff5c"
+      "sha256": "231bf8fdb1911aeb2f2c597398348947b2568c4704c286405abcfcaa45c36bf7"
     },
     {
       "phase": "A1",
@@ -92,19 +92,19 @@
       "phase": "L2",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "5a252f043641bc089baaa6a0385fbcbd4bc7f228",
-      "sha256": "526a22ef9bea4788e28180994e45bf3d69c444dff0ae2a374f0a7978a4a673aa"
+      "sha256": "8737f72e92179b755fdcdd8b82a609c6f5b7af3ec823f77cf7b0131f5ee8b1ea"
     },
     {
       "phase": "B2",
       "path": "test/test_native_publication.py",
       "upstream_blob": null,
-      "sha256": "6029cb7c77a0b1c3db33ee76cd88fc264f56f63bf27f44320b3bf9785f851b4b"
+      "sha256": "95860ff86625b772d8c19d1ae78ac912540a3ce62eda48f1f8c47d9dc47cb0ac"
     },
     {
       "phase": "L2",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "ccfe53727eb8f5dc3b594cfeb59874513575fb2ec6ae135a0d1929652f3d0086"
+      "sha256": "e8b417e4ac168c56c3d4091f0a7aed0b50944a89a749001a35811e705efd3d89"
     },
     {
       "phase": "A2",
@@ -194,7 +194,7 @@
       "phase": "L2",
       "path": "test/test_session_discovery.py",
       "upstream_blob": null,
-      "sha256": "878b6974f9cfe782a3c1ca6fe215c1563170e3c14b11e0e63216e267d4b0c9cf"
+      "sha256": "fba26d783147f9043d2430d711907b60ca3720a058a9cfc3deaeed6d098185f3"
     },
     {
       "phase": "W1",
@@ -290,7 +290,7 @@
       "phase": "S1",
       "path": "test/test_forge.py",
       "upstream_blob": null,
-      "sha256": "9934521733dde37ee0c0e899b06a2f9934db3f06f6379a3de6e575efcf4fc42c"
+      "sha256": "18bcb956e79afa4522f69f52a334311e711bf0d3090dc4984f85f731c514a51d"
     },
     {
       "phase": "B2",
@@ -320,7 +320,7 @@
       "phase": "B2",
       "path": "test/test_bitbucket.py",
       "upstream_blob": null,
-      "sha256": "b8247e480cea1179ef23691680a16e974189bc2381e5d15cafc3a9e8b13c905f"
+      "sha256": "93ec2d44318a2d93790ab5c6232f225c23288921449a9b2766581b4fe0fa41c8"
     },
     {
       "phase": "B2",
@@ -332,7 +332,7 @@
       "phase": "B2",
       "path": "test/test_bitbucket_publication.py",
       "upstream_blob": null,
-      "sha256": "e58611687e7c1eca2fbda340673e0d13db42bf2fd381a23b8692efcdb90b3240"
+      "sha256": "a299f25c8d49089397468a887ca369f24648a8147a3498a0d832efdf19201c30"
     },
     {
       "phase": "L2",
@@ -368,7 +368,7 @@
       "phase": "L2",
       "path": "test/test_launch_admission.py",
       "upstream_blob": null,
-      "sha256": "b333cfebed5418de91925fbda21bd1f6875a258895b4b3d1baa3e67b37c735b9"
+      "sha256": "c462c97d2f8b65ad47b237993f41ba5430613574abf93bf3c47633f54f72419b"
     },
     {
       "phase": "L1",
@@ -465,6 +465,12 @@
       "path": "service/voice-data.ts",
       "upstream_blob": "a1cfcb74f3637b723901bb6521296af498b6a9a9",
       "sha256": "7a2bb46005d084a52c275e12164ba5e3f0e914f8c1463e1839aa954b391dd6ca"
+    },
+    {
+      "phase": "A2",
+      "path": "test/test_restart.py",
+      "upstream_blob": "7a261abf76880621dc16799278d926caaa030b9b",
+      "sha256": "8dbc3e410c9dba1f27b6b3a69978ab71696b2ebaaca58663174bebf7b3262c3f"
     },
     {
       "phase": "A2",
@@ -578,7 +584,7 @@
       "phase": "L2",
       "path": "test/test_native_restart.py",
       "upstream_blob": null,
-      "sha256": "64988a938926f64566f666107bc6b2cd7e375d48b18750d6cba3948dace8f603"
+      "sha256": "1cffb9ba760df93f70220e4ff446db58bea94f257e986fe771ce7965390f2ba8"
     }
   ],
   "requirements": [

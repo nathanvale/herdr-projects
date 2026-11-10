@@ -1,3 +1,4 @@
+import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
 import json
 import os
 from pathlib import Path
@@ -37,7 +38,7 @@ class SourceCheckpoint(unittest.TestCase):
         self.assertEqual(observed['candidate_readiness'], 'blocked')
         self.assertEqual(observed['requirements'], 40)
         self.assertEqual(observed['file_dispositions'], 121)
-        self.assertEqual((observed['phase'], observed['source_deltas']), ('Q', 94))
+        self.assertEqual((observed['phase'], observed['source_deltas']), ('Q', 96))  # A2 owns service/voice-data.ts and test/test_restart.py since v3.1.29
 
     def test_candidate_gate_refuses_even_when_source_validation_passes(self):
         result, observed = self.run_check('--require-ready')
@@ -384,9 +385,10 @@ class NativeFoundation(unittest.TestCase):
         """The compliant route after Q merges: a later unit lists what it changes in AFTER_Q, in the checker."""
         checker = self.copy / 'bin/check-migration'
         text = checker.read_text()
-        self.assertEqual(text.count('AFTER_Q = {}'), 1)
+        # AFTER_Q names the v3.1.29 merge's paths already: this unit's entry joins them.
+        self.assertEqual(text.count('AFTER_Q = {\n'), 1)
         try:
-            checker.write_text(text.replace('AFTER_Q = {}', "AFTER_Q = {'MIG-X': 'bin/checkout-access'}"))
+            checker.write_text(text.replace('AFTER_Q = {\n', "AFTER_Q = {\n    'MIG-X': 'bin/checkout-access',\n"))
             code, observed = self.changed('bin/checkout-access', lambda target: target.write_bytes(target.read_bytes() + b'\n'))
         finally:
             checker.write_text(text)
@@ -423,7 +425,8 @@ class NativeFoundation(unittest.TestCase):
         checker = self.copy / 'bin/check-migration'
         text = checker.read_text()
         try:
-            checker.write_text(text.replace('AFTER_Q = {}', "AFTER_Q = {'MIG-X': ['bin/checkout-access']}"))
+            self.assertEqual(text.count('AFTER_Q = {\n'), 1)
+            checker.write_text(text.replace('AFTER_Q = {\n', "AFTER_Q = {\n    'MIG-X': ['bin/checkout-access'],\n"))
             code, observed = self.check()
         finally:
             checker.write_text(text)

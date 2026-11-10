@@ -945,8 +945,11 @@ class BackToWork(unittest.TestCase):
     def gh_merges(self, views, merges):
         """merging(), with each gh call kept."""
         calls, merges = [], list(merges)
+        others = self.github.gh
         done = self.merging(views, [])
-        p = self.mock.patch.object(self.commands, "gh", lambda *a, **k: (calls.append(a), merges.pop(0))[1])
+        # The fork merges through its forge (forge.integrate -> github.pr_merge): its gh is github's.
+        p = self.mock.patch.object(self.github, "gh", lambda *a, **k: (calls.append(a), merges.pop(0))[1]
+                                   if a[:2] == ("pr", "merge") else others(*a, **k))
         p.start()
         self.addCleanup(p.stop)
         dropped = []
@@ -997,8 +1000,9 @@ class BackToWork(unittest.TestCase):
         def ask(t):
             got["asked"] += 1
             return entry
+        # merge_reach: the fork's facts() places the folder on GitHub's host first (forge.reach), here github.com.
         for name, value in (("pr_view", lambda t: v), ("pr_news", lambda *a: None), ("now", lambda: clock),
-                            ("queue_entry", ask), ("watch_main", lambda *a: None), ("update_main", lambda *a: None),
+                            ("merge_reach", lambda s, t: None), ("queue_entry", ask), ("watch_main", lambda *a: None), ("update_main", lambda *a: None),
                             ("drop_branch", lambda s, t: got["dropped"].append(t["id"])),
                             ("finish", lambda s, t, even_if_busy=False: (t.update(state="done"), got["done"].append(t["id"])))):
             p = self.mock.patch.object(self.tick, name, value)
@@ -2294,7 +2298,10 @@ class ChecksBeforeReady(unittest.TestCase):
                       "labels": {"herdr.role": "worker"}}]
         self.sent = []
         self.store = Store([])
+        import herdr_task.forge as forge
+        # The folder is on github.com, as the fork's forge places it (forge.reach), so the tick reads its pull request.
         for mod, name, value in ((github, "GH", gh), (github, "STORE", self.dir),
+                                 (forge, "repository", lambda s, fresh=False: {"provider": "github", "repo": "o/r", "host": "github.com"}),
                                  (tick, "now", lambda: self.clock[0]), (agents, "now", lambda: self.clock[0]),
                                  (github, "now", lambda: self.clock[0]), (ghnews, "now", lambda: self.clock[0]),
                                  (commands, "now", lambda: self.clock[0]),
@@ -2311,15 +2318,18 @@ class ChecksBeforeReady(unittest.TestCase):
              "worktree": self.dir, "branch": "b", "set": {"merge": "ask"}, **more}
         self.store.data["tasks"] = [t]
         opened = {"number": 41, "url": "https://github.com/o/r/pull/41", "repo": "o/r"}
-        with unittest.mock.patch.object(self.commands, "github", lambda s: "o/r"), \
-                unittest.mock.patch.object(self.commands, "pr_open", lambda s, t, repo, summary=None: t.setdefault("pr", dict(opened))):
+        where = {"provider": "github", "repo": "o/r", "host": "github.com"}
+        with unittest.mock.patch.object(self.commands, "publishing_repository", lambda s, fresh=False: where), \
+                unittest.mock.patch.object(self.commands, "pr_open", lambda s, t, where, summary=None: t.setdefault("pr", dict(opened))):
             msg = self.commands.finalize(self.store, t)
         self.assertIn("shows Working until its checks pass", msg)
         return t
 
     def github_says(self, mergeable="MERGEABLE", checks=()):
         with open(os.path.join(self.dir, "view.json"), "w") as f:
-            json.dump({"state": "OPEN", "mergeable": mergeable, "headRefOid": "abc", "statusCheckRollup": list(checks)}, f)
+            # url: GitHub names the pull request it answered for; the fork's forge reads nothing as this task's without it.
+            json.dump({"state": "OPEN", "mergeable": mergeable, "headRefOid": "abc", "statusCheckRollup": list(checks),
+                       "url": "https://github.com/o/r/pull/41"}, f)
 
     def look(self, t, after=60_000):
         """A tick's look at the task, after this long; (status, needs, why) and the news event then."""
@@ -2901,7 +2911,9 @@ class Revive(unittest.TestCase):
         import herdr_task.launch_admission as LA
         import herdr_task.providers as providers
         self.LA = LA
-        for module, name, value in ((LA, "STORE", self.dir), (providers, "read_strict", lambda path=None: {})):
+        # The run's HOME is a throwaway one (SHEP-147), where admission sends nothing (guard); this core and its hc
+        # are the fakes above, as upstream's in-process tests patch guard.
+        for module, name, value in ((LA, "STORE", self.dir), (providers, "read_strict", lambda path=None: {}), (LA, "guard", lambda a: None)):
             p = mock.patch.object(module, name, value)
             p.start()
             self.addCleanup(p.stop)
@@ -4415,9 +4427,16 @@ class TaskFlow(unittest.TestCase):
             f.write("#!/bin/sh\necho 'over the time budget' >&2\nexit 1\n")
         os.chmod(os.path.join(hooks, "pre-push"), 0o755)
         asked = []
+        def there(branch):
+            """What GitHub holds for a branch, as gh api .../git/ref/heads/<branch> answers: the bare remote's."""
+            r = subprocess.run(["git", "--git-dir", remote, "rev-parse", "--verify", "--quiet", "refs/heads/" + branch],
+                               capture_output=True, text=True)
+            return (True, r.stdout.strip(), "") if r.returncode == 0 else (False, "", "gh: Not Found (HTTP 404)")
 
         def gh(*a, **k):
             asked.append(a[:2])
+            if a[0] == "api" and "/git/ref/heads/" in a[1]:
+                return there(a[1].split("/git/ref/heads/", 1)[1])
             return (True, "https://github.com/o/r/pull/7", "") if a[:2] == ("pr", "create") else (True, "[]", "")
         self.patch(github, "gh", gh)
         self.assertEqual(github.pr_open(self.store, self.task, "o/r")["number"], 7)
@@ -4427,7 +4446,7 @@ class TaskFlow(unittest.TestCase):
         self.commit(wt, "more", "a.txt")
         with self.assertRaises(Exception) as e:
             github.pr_open(self.store, self.task, "o/r")
-        self.assertIn("Couldn't push task/1", str(e.exception))
+        self.assertIn("git couldn't push task/1", str(e.exception))  # the fork's words say git failed, not gh
 
     def test_ready_keeps_the_pull_request_the_task_continues(self):
         """#828: the work pushed to an open pull request's own branch: ready takes that one, never a second."""
@@ -4438,9 +4457,16 @@ class TaskFlow(unittest.TestCase):
         tip = self.commit(wt, "finish it", "a.txt")
         self.git(wt, "push", "-q", "origin", "task/1:refs/heads/feature")  # by the agent
         asked = []
+        def there(branch):
+            """What GitHub holds for a branch, as gh api .../git/ref/heads/<branch> answers: the bare remote's."""
+            r = subprocess.run(["git", "--git-dir", remote, "rev-parse", "--verify", "--quiet", "refs/heads/" + branch],
+                               capture_output=True, text=True)
+            return (True, r.stdout.strip(), "") if r.returncode == 0 else (False, "", "gh: Not Found (HTTP 404)")
 
         def gh(*a, **k):
             asked.append(a)
+            if a[0] == "api" and "/git/ref/heads/" in a[1]:
+                return there(a[1].split("/git/ref/heads/", 1)[1])
             if a[:2] == ("pr", "list") and "--search" in a:
                 return True, json.dumps([{"number": 2918, "url": "https://github.com/o/r/pull/2918", "isCrossRepository": False,
                                           "baseRefName": "main", "headRefName": "feature", "headRefOid": tip}]), ""

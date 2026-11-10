@@ -4,6 +4,7 @@ A generated copy (lib/COPIES) carries a whole shared module into a mod. Fallow's
 duplication and complexity are reported once, at the source in lib/ or core/. These tests keep that list equal
 to what sync-shared writes, so a new or dropped copy cannot silently skew the report.
 """
+import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
 import importlib.machinery
 import importlib.util
 import json
