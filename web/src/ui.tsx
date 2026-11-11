@@ -1203,7 +1203,8 @@ export function LeadBack({ onClick, to }: { onClick: () => void; to: string }) {
       aria-label={`Back to ${to}`}
       className="press-dim relative inline-flex size-8 shrink-0 items-center justify-center rounded-full text-fg2 hover:bg-hover hover:text-fg"
     >
-      <BackMini className="size-5 shrink-0" />
+      {/* data-back: a voice call's close and back find the screen's own Back by it (BackIcon's mark, SHEP-51) */}
+      <BackMini data-back="" className="size-5 shrink-0" />
     </button>
   )
 }

@@ -97,6 +97,7 @@ mods/tasks/bin/herdr_task/settings.py mods/tasks-menu/main.js mods/tasks/core/ta
 service/live-switch.test.ts service/main.ts service/selections.test.ts service/selections.ts service/settings.test.ts service/settings.ts service/chat-reach.test.ts
 service/reach.test.ts service/reach.ts
 service/spaces.ts service/voice-data.ts service/watch.ts test/test_herdr_task.py test/test_launch_admission.py test/test_restart.py test/test_providers.py web/plugins/tasks/client.tsx
+web/src/back.test.tsx web/src/ui.tsx
 web/plugins/chat/client.tsx web/plugins/chat/composer.test.tsx web/plugins/chat/markdown.tsx web/plugins/chat/suggest.test.ts
 web/plugins/chat/suggest.ts
 web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx web/src/kernel.ts web/src/restart.tsx'''.split()),
@@ -290,7 +291,7 @@ AFTER_Q = {
     # Check; Q's ledger keeps describing d53e014b.
     'MERGE-v3.1.32': (
         'core/recipe.test.js mods/artifacts/recipe-view.js mods/tasks/bin/herdr_task/launch_admission.py '
-        'test/test_herdr_artifact_media.py web/src/screens/Recipe.tsx'
+        'test/test_herdr_artifact_media.py web/src/back.test.tsx web/src/screens/Recipe.tsx'
     ),
     # Upstream v3.1.31 merged into the fork (upstream 6b8caac9, lightweight tag v3.1.31; fork base 9b7ec505): every
     # tracked source path it changes. Its evidence is its own Check; Q's ledger keeps describing its candidate d53e014b.

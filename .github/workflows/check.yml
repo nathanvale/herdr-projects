@@ -96,7 +96,7 @@ jobs:
         run: |
           python3 -c "import json; print('\n'.join(sorted({r['mutation']['file'] for l in ('pr60', 'up32') for r in json.load(open(f'docs/migration/{l}-sensitivity.json'))['workflow_obligations']})))" > "$RUNNER_TEMP/pr60-files"
           xargs git diff --exit-code -- < "$RUNNER_TEMP/pr60-files"
-          bun test ./service/live-switch.test.ts
+          bun test ./service/live-switch.test.ts ./web/src/back.test.tsx
           python3 -m unittest discover -s test -p test_providers.py -k ResumeNudge -k MissingHistory -k SwitchOrder -v
           python3 -m unittest discover -s test -p test_native_restart.py -k test_a_log_revival_cant_find_here -k test_a_lost_agent_resumes_its_own_session_once -v
       - name: installer into a brand-new throwaway home (dry run, install, doctor, uninstall)

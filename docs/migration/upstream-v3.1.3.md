@@ -276,7 +276,7 @@ names v3.1.32: every U path outside the phase table and the overrides is byte-id
 whose upstream file changed re-pin `upstream_blob` to v3.1.32, and each changed row's `sha256` is re-pinned to
 the merged content. `AFTER_Q` names the source paths no other entry names (`MERGE-v3.1.32`, with
 `launch_admission.py` for the SHEP-211 adaptation), so Q's ledger keeps describing `d53e014b`. The gate's checks
-are unchanged and it still admits 116 rows.
+are unchanged; it now admits 118 rows, A2 owning `web/src/ui.tsx` and its new test (below).
 
 Where the two sides met:
 
@@ -295,15 +295,20 @@ Where the two sides met:
   killed or started when admission refuses, nothing started when the old agent doesn't end, the caller ended
   after, and no nudge on a new conversation.
   SHEP-211's own unit tests admit through a stand-in launch admission. `docs/migration/up32-sensitivity.json`
-  holds six guard-removal rows, run by its own Check step; the step after the ledgers checks every file
+  holds six guard-removal rows on `commands.py` and one on `web/src/ui.tsx`, run by its own Check step; the step after the ledgers checks every file
   either ledger mutates and reruns `SwitchOrder`. A `switch --restart` of a Codex conversation now ends its
   argv with the nudge, and its test says so.
 - SHEP-209's artifact media go through the service's existing `served()` (`service/media.ts`): a `Range` header
   only shapes the body of a file the request gate already admitted (the private listener's and the tailnet's
   alike), and the artifact's sandboxed content-security policy and `nosniff` stay on whole, partial and refused
   answers. `served()`'s ranges are `service/media.test.ts`'s.
-- SHEP-210 (the web Back button) and the release's version strings come in as they are; the version is
-  upstream's provenance, not a fork release.
+- SHEP-210 (the web Back button) gave a conversation header's Back (`LeadBack`) a new 20px chevron without the
+  `data-back` mark every Back's icon carries, which a voice call's close and back find it by
+  (`web/plugins/voice/client.tsx` `closeTop`). The fork puts the mark back on it; `web/src/back.test.tsx` reads it
+  from the real component's HTML, and a v3.1.32 ledger row removes it. The release's version strings come in as
+  they are; the version is upstream's provenance, not a fork release.
+- SHEP-209's artifact `Range` for a file on another machine still reads the whole file there before it is
+  sliced (each seek of a clip fetches it again): upstream's behavior, kept as it is and named here, not changed.
 
 ### A1 provider checkpoint
 
