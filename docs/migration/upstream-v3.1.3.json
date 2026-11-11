@@ -62,7 +62,7 @@
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "1f8a11c28d086ec2292fc25fc288e0b75da190e4",
-      "sha256": "4e54f70929bd1ec66a577d2f4cda78483e90a603700a5266a6ab359f7cf4e327"
+      "sha256": "4676ba75968a6696f891aa5fa7d61182613d5aedceaa4703020aba22b7f20d65"
     },
     {
       "phase": "B1",
@@ -116,7 +116,7 @@
       "phase": "L2",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "dda42467b776dbfee8038264bbd3be6f6f4a001c",
-      "sha256": "7ea57675c7ce7b6cea2e4990e82d23235ca5d4b05d2ad47102dd92e8ea549c78"
+      "sha256": "8f10237865a7d79d0785fc7258300ff6d068e4b2c48a704b17fcd278a6df43c5"
     },
     {
       "phase": "B2",
@@ -128,7 +128,7 @@
       "phase": "L2",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "7691cf5c8e6b3b48bb5494c4359aedb7a75a3b3ea85114079d700638b63c6ad1"
+      "sha256": "8cc917b00845f7648b29a80f45ddf77e62e5eadd257a69fa3d107cf9671ef5b3"
     },
     {
       "phase": "A2",
@@ -626,7 +626,7 @@
       "phase": "A2",
       "path": "service/live-switch.test.ts",
       "upstream_blob": null,
-      "sha256": "71a03cb38d362b58755c6b4d7ed42e4b493a4ec4c716a761aac4fed15031a5d5"
+      "sha256": "cc5970b1126797a18b5d2562ba2c90085cfbe4c43e5e86094bdec2e734b0229e"
     },
     {
       "phase": "A2",

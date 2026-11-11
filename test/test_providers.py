@@ -1318,5 +1318,106 @@ class Binding(unittest.TestCase):
                 self.assertNotIn("marker-azure-openai-key-52de", r.stdout + r.stderr)
 
 
+# What a resumed session hears first (SHEP-189), written out here apart from the code.
+NUDGE = ("Shepherdr resumed your session because your agent had stopped. Carry on where you left off: check "
+         "what is already done with `herdr-task show`, then keep going with the task.")
+
+
+@ON_CI
+class ResumeNudge(unittest.TestCase):
+    """PR 60: herdr-task resume says it resumed the session only when it did. A handoff (--fresh, no session recorded,
+    or another kind of agent) is a new conversation and says nothing of the kind; another command's own message still
+    goes after either. Through the real CLI, its launch admission and launch; hc is the fixture's stand-in."""
+
+    def started(self, f, *extra):
+        f.provider({"route": "personal"})
+        tid = f.add("--here")
+        f.ok("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now", *extra)
+        f.settle(tid=tid)
+        return tid
+
+    def first_words(self, f):
+        """What the newest agent hc was asked to start reads first: the last word of its command."""
+        _, agent = f.agent_words(f.launches()[-1])
+        return agent
+
+    def resume(self, f, tid, *extra):
+        return f.ok("resume", str(tid), "--folder", f.repo, "--space", "sp1", *extra)
+
+    def test_a_resumed_session_hears_that_it_was_resumed(self):
+        f = Fixture(self)
+        tid = self.started(f)
+        f.give_session(tid, "55555555-6666-4777-8888-999999999999")
+        self.assertTrue(self.resume(f, tid)["resumed"])
+        agent = self.first_words(f)
+        self.assertEqual(agent[agent.index("--resume") + 1], "55555555-6666-4777-8888-999999999999")
+        self.assertEqual(agent[-1], NUDGE)
+        f.settle(2, tid=tid)
+
+    def test_fresh_starts_with_the_handoff_alone(self):
+        f = Fixture(self)
+        tid = self.started(f)
+        f.give_session(tid, "66666666-7777-4888-8999-aaaaaaaaaaaa")
+        self.assertFalse(self.resume(f, tid, "--fresh")["resumed"])
+        agent = self.first_words(f)
+        self.assertNotIn("--resume", agent)
+        self.assertTrue(agent[-1].startswith("You are taking over task "), agent[-1][:80])
+        self.assertNotIn("Shepherdr resumed your session", agent[-1])
+        f.settle(2, tid=tid)
+
+    def test_no_session_recorded_starts_with_the_handoff_alone(self):
+        f = Fixture(self)
+        tid = self.started(f)  # its agent left no session
+        self.assertFalse(self.resume(f, tid)["resumed"])
+        agent = self.first_words(f)
+        self.assertNotIn("--resume", agent)
+        self.assertTrue(agent[-1].startswith("You are taking over task "), agent[-1][:80])
+        self.assertNotIn("Shepherdr resumed your session", agent[-1])
+        f.settle(2, tid=tid)
+
+    def test_another_kind_of_agent_starts_with_the_handoff_alone(self):
+        f = Fixture(self)
+        tid = self.started(f)
+        f.give_session(tid, "77777777-8888-4999-8aaa-bbbbbbbbbbbb")
+        self.assertFalse(self.resume(f, tid, "--agent", "codex")["resumed"])
+        agent = self.first_words(f)
+        self.assertEqual(agent[0], "codex")
+        self.assertNotIn("77777777-8888-4999-8aaa-bbbbbbbbbbbb", agent)
+        self.assertTrue(agent[-1].startswith("You are taking over task "), agent[-1][:80])
+        self.assertNotIn("Shepherdr resumed your session", agent[-1])
+        f.settle(2, tid=tid)
+
+    def test_another_commands_message_goes_after_a_handoff_and_a_resumed_session(self):
+        """herdr-task fix with no agent left starts one with its own message (commands.tell): after the handoff when
+        no session is recorded, after the resumed session when one is; never the resume nudge."""
+        f = Fixture(self)
+        tid = self.started(f)
+        # A task in a worktree, as fix needs: the fixture's repo stands in for the worktree (its folder is all a
+        # launch reads), written into the task list herdr-task reopens.
+        path = f.ok("where", "--folder", f.repo)["store"]
+        with open(path) as fh:
+            d = json.load(fh)
+        t = next(x for x in d["tasks"] if x["id"] == tid)
+        t.update(mode="worktree", worktree=f.repo, branch="main", base="main")
+        with open(path, "w") as fh:
+            json.dump(d, fh, indent=2)
+        asked = "can't merge yet: Checks failing: lint."
+        self.assertTrue(f.ok("fix", str(tid), "--folder", f.repo, "--reason", "Checks failing: lint.")["new_agent"])
+        agent = self.first_words(f)
+        self.assertNotIn("--resume", agent)
+        self.assertTrue(agent[-1].startswith("You are taking over task "), agent[-1][:80])
+        self.assertIn(asked, agent[-1])
+        self.assertNotIn("Shepherdr resumed your session", agent[-1])
+        f.settle(2, tid=tid)
+        f.give_session(tid, "88888888-9999-4aaa-8bbb-cccccccccccc")
+        self.assertTrue(f.ok("fix", str(tid), "--folder", f.repo, "--reason", "Checks failing: lint.")["new_agent"])
+        agent = self.first_words(f)
+        self.assertEqual(agent[agent.index("--resume") + 1], "88888888-9999-4aaa-8bbb-cccccccccccc")
+        self.assertIn(asked, agent[-1])
+        self.assertFalse(agent[-1].startswith("You are taking over task "))
+        self.assertNotIn("Shepherdr resumed your session", agent[-1])
+        f.settle(3, tid=tid)
+
+
 if __name__ == "__main__":
     unittest.main()

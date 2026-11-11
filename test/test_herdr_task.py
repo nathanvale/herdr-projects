@@ -931,8 +931,11 @@ class BackToWork(unittest.TestCase):
             return {"address": "t2"}, True
         with self.mock.patch.object(self.commands, "start_again", fake):
             self.commands.cmd_resume(self.args(space=None, agent=None, argv=None, parent=None))
-        self.assertEqual(got.get("message"), self.commands.RESUME_NUDGE)
-        self.assertIn("Carry on where you left off", got["message"])
+        # only for the resumed session itself: start_again sends it there and never with a handoff (test_providers
+        # ResumeNudge runs both through the CLI)
+        self.assertEqual(got.get("resumed_message"), self.commands.RESUME_NUDGE)
+        self.assertIsNone(got.get("message"))
+        self.assertIn("Carry on where you left off", got["resumed_message"])
 
     def test_resume_fresh_sends_no_nudge(self):
         """--fresh starts a new conversation from the handoff: no "resumed your session" (missing history is never

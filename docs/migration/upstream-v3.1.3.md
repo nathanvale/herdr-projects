@@ -157,7 +157,11 @@ Where the two sides met:
 - SHEP-188's `mid_turn()` joins `finish()` beside `kept_because()`: a folder stays while its agent
   or helper is mid-turn, and stays when the branch holds work that didn't merge.
 - SHEP-189's resume nudge goes through the fork's admitted `start_again()`; `--fresh` (a new conversation from
-  the handoff) gets none, as it is no resume.
+  the handoff) gets none, as it is no resume. Since PR 60's resume fix, `start_again()` sends it
+  (`resumed_message`) only after the resumed session itself: a resume that falls back to a handoff (no session
+  or history recorded, or another kind of agent) says nothing of a resume, and another command's own message
+  (`message`, as `herdr-task fix` sends) still goes after either. `test_providers.py`'s `ResumeNudge` runs
+  each case through the real CLI, its launch admission and launch, with the stand-in `hc`.
 - SHEP-202's caller-free shell send goes through the one revival owner: `bring_back()` passes
   `without_caller()`'s environment to `Admission.type_into()`.
 - SHEP-207's Codex process tree (`codex_working()`): a process list it can't read (no `ps`, one that
@@ -174,7 +178,13 @@ Where the two sides met:
   that failed after an earlier one took, fails the switch with words that say it switched
   (`switched`), never a plain success or a plain refusal. The service's home-file io says which: its `sh` exits 3 for no such file, and
   any other failure, of a read or a write, is an error. That makes A2 the owner of `core/live-switch.js`
-  and its test, with the new `service/live-switch.test.ts` (named in `AFTER_Q` as `PR60-FIX`).
+  and its test, with the new `service/live-switch.test.ts` (named in `AFTER_Q` as `PR60-FIX`). PR 60's
+  later regressions add, through `change()` with the stand-in hub: a Claude Code agent whose own process
+  says another config folder, or one that can't be read, refuses before anything is typed or any
+  settings file is read, and one on `~/.claude` switches in place (the hub answers the folder question as
+  the agent's machine would, so the process read itself isn't run here); and after a switch whose
+  default couldn't be put back, the same `Agents`' `cached()` reads its defaults again. Pick
+  persistence stays unproved: its file can't be written under test.
 - The installer's page (PR 60's review #8): an install or update from a source with no built page
   (`--no-build` with none built, `--force` past a failed build, or a copy with neither `web/src` nor
   `web/dist`) no longer retires the page installed before. Its files stay, and stay in the install
@@ -229,6 +239,10 @@ Where the two sides met:
   `test/test_herdr_browser_libs.py`. The rest were already named in `AFTER_Q` by the v3.1.31 merge, and
   the gate admitted 114 rows. PR 60's reach proof adds `service/reach.ts` and its test to A2, named in
   `AFTER_Q` as `PR60-REACH`, and the gate now admits 116 rows.
+  PR 60's resume and live-switch unit adds 10 rows to its sensitivity ledger (38 in all), and a Check step
+  after it confirms every file the ledger mutates matches the checkout and runs the new regressions
+  again. It re-pins `commands.py`, `test_herdr_task.py`, `test_providers.py` and
+  `service/live-switch.test.ts`; the gate still admits 116 rows.
 - SHEP-191's cross-site page link (`pageLink()`) applies before the private listener's own checks.
   Writes, sockets and the API stay refused cross-site, and the private peer's owner and host rules
   are unchanged.

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "about": "PR 60's guard-removal proofs, run by bin/check-sensitivity --ledger (Check's own step beside Q's): each mutation removes one part of a review fix (#8's installer kept-page guard, then the six suggestion, reach-map and browser-note fixes, then the service's reach caller in service/reach.ts), or a control it must keep, and the named regression must fail by an assertion; with the source restored it must pass. Not part of Q's reconciliation ledger, which describes its candidate only.",
+  "about": "PR 60's guard-removal proofs, run by bin/check-sensitivity --ledger (Check's own step beside Q's): each mutation removes one part of a review fix (#8's installer kept-page guard, then the six suggestion, reach-map and browser-note fixes, then the service's reach caller in service/reach.ts, then the resume nudge and the live switch's folder check and cached defaults), or a control it must keep, and the named regression must fail by an assertion; with the source restored it must pass. Not part of Q's reconciliation ledger, which describes its candidate only.",
   "workflow_obligations": [
     {
       "step": "PR 60 #8: the full install retires the page a source without one doesn't replace",
@@ -336,6 +336,126 @@
         "after": "return this.of(sp?.machine ?? null);",
         "test_file": "service/reach.test.ts",
         "test": "a remote agent's # list from the service puts its own spaces under this machine, with their route"
+      }
+    },
+    {
+      "step": "PR 60 resume nudge: a resumed session gets no nudge",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "first = \"\\n\\n\".join(m for m in (resumed_message, message) if m) or None",
+        "after": "first = message",
+        "test_file": "test/test_providers.py",
+        "test": "test_a_resumed_session_hears_that_it_was_resumed"
+      }
+    },
+    {
+      "step": "PR 60 resume nudge: the nudge goes after a handoff again (no session recorded)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "text = handoff(s, t, prev, parent, argv) + ((\"\\n\\n\" + message) if message else \"\")",
+        "after": "text = handoff(s, t, prev, parent, argv) + ((\"\\n\\n\" + message) if message else \"\") + ((\"\\n\\n\" + resumed_message) if resumed_message else \"\")",
+        "test_file": "test/test_providers.py",
+        "test": "test_no_session_recorded_starts_with_the_handoff_alone"
+      }
+    },
+    {
+      "step": "PR 60 resume nudge: the nudge goes after a handoff again (another kind of agent)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "text = handoff(s, t, prev, parent, argv) + ((\"\\n\\n\" + message) if message else \"\")",
+        "after": "text = handoff(s, t, prev, parent, argv) + ((\"\\n\\n\" + message) if message else \"\") + ((\"\\n\\n\" + resumed_message) if resumed_message else \"\")",
+        "test_file": "test/test_providers.py",
+        "test": "test_another_kind_of_agent_starts_with_the_handoff_alone"
+      }
+    },
+    {
+      "step": "PR 60 resume nudge: the nudge goes after a handoff again (--fresh)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "text = handoff(s, t, prev, parent, argv) + ((\"\\n\\n\" + message) if message else \"\")",
+        "after": "text = handoff(s, t, prev, parent, argv) + ((\"\\n\\n\" + message) if message else \"\") + ((\"\\n\\n\" + resumed_message) if resumed_message else \"\")",
+        "test_file": "test/test_providers.py",
+        "test": "test_fresh_starts_with_the_handoff_alone"
+      }
+    },
+    {
+      "step": "PR 60 resume nudge: another command's message is lost after a resumed session",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "first = \"\\n\\n\".join(m for m in (resumed_message, message) if m) or None",
+        "after": "first = \"\\n\\n\".join(m for m in (resumed_message,) if m) or None",
+        "test_file": "test/test_providers.py",
+        "test": "test_another_commands_message_goes_after_a_handoff_and_a_resumed_session"
+      }
+    },
+    {
+      "step": "PR 60 resume nudge: another command's message is lost after a handoff",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "text = handoff(s, t, prev, parent, argv) + ((\"\\n\\n\" + message) if message else \"\")",
+        "after": "text = handoff(s, t, prev, parent, argv)",
+        "test_file": "test/test_providers.py",
+        "test": "test_another_commands_message_goes_after_a_handoff_and_a_resumed_session"
+      }
+    },
+    {
+      "step": "PR 60 review #2: the live switch skips the agent's own folder check (another folder)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "service/agents.ts",
+        "before": "|| await this.folderRefusal(addr, t))",
+        "after": ")",
+        "test_file": "service/live-switch.test.ts",
+        "test": "a Claude Code agent on another config folder: nothing is typed or read, and the switch says why"
+      }
+    },
+    {
+      "step": "PR 60 review #2: the live switch skips the agent's own folder check (unreadable)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "service/agents.ts",
+        "before": "|| await this.folderRefusal(addr, t))",
+        "after": ")",
+        "test_file": "service/live-switch.test.ts",
+        "test": "a Claude Code agent whose config folder can't be read: nothing is typed or read, and the switch says why"
+      }
+    },
+    {
+      "step": "PR 60 review #2 control: the folder check refuses ~/.claude too",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "service/agents.ts",
+        "before": "return running ? restartRefusal(running, k.foreground?.pid, read) : lostRefusal(\"claude\", k, read);",
+        "after": "return OTHER_FOLDER;",
+        "test_file": "service/live-switch.test.ts",
+        "test": "a Claude Code agent on ~/.claude switches in place"
+      }
+    },
+    {
+      "step": "PR 60 review #8: a switch whose default stayed keeps the cached defaults",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "service/agents.ts",
+        "before": "if (e?.switched) { this.known.delete(`${machine ?? \"\"}|${kind}`); this.used(pick); }",
+        "after": "if (e?.switched) { this.used(pick); }",
+        "test_file": "service/live-switch.test.ts",
+        "test": "after a switch whose default couldn't be put back, the defaults are read again"
       }
     }
   ]

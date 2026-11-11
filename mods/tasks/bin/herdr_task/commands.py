@@ -1121,10 +1121,12 @@ def last_agent(t):
     return t["agents"][-1] if t["agents"] else None
 
 
-def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None, fresh=False, restart=False):
+def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None, fresh=False, restart=False,
+                resumed_message=None):
     """Starts an agent for the task: the last agent's own session when it's the same kind of agent
     and the session is known (unless fresh: a new conversation with a handoff); else a fresh one
-    with a handoff. `message` goes after either. A resumed session keeps the provider binding its
+    with a handoff. `message` goes after either; `resumed_message` only after the resumed session (a handoff
+    is a new conversation, never called a resume). A resumed session keeps the provider binding its
     conversation recorded (providers.plan_of_record): today's defaults never reroute it, and
     changed routing refuses here, before anything changes. restart: a model menu's Restart or
     Switch agent (the window's or the web's); since L2 it goes the same way as resume and switch (its
@@ -1156,7 +1158,8 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     res = resume_argv(argv, prev["session"]) if resuming else None
     with adm.claimed():
         if res:
-            return launch(s, t, argv, space, message, parent=parent, resume=res, admission=adm), True
+            first = "\n\n".join(m for m in (resumed_message, message) if m) or None
+            return launch(s, t, argv, space, first, parent=parent, resume=res, admission=adm), True
         text = handoff(s, t, prev, parent, argv) + (("\n\n" + message) if message else "")
         t["review_gate"] = True
         return launch(s, t, argv, space, text, parent=parent, admission=adm), False
@@ -1181,10 +1184,10 @@ def cmd_resume(args):
             t["state"] = "running"
         back_to_work(s, t, "resumed")
         fresh = getattr(args, "fresh", False)
-        # The nudge says the session resumed: never on --fresh, a new conversation from the handoff (missing history is
-        # its own case, never called a resume).
+        # The nudge says the session resumed: only after the recorded session itself, never with a handoff (--fresh, no
+        # session or history recorded, or another kind of agent: a new conversation, PR 60).
         a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=fresh,
-                                 message=None if fresh else RESUME_NUDGE)
+                                 resumed_message=RESUME_NUDGE)
         v = view(s, t)
     say(args, {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed},
         f"{s.ref(t)} {'resumed its session' if resumed else 'started with a handoff'}: {a['address']}")

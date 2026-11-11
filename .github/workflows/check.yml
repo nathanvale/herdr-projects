@@ -86,6 +86,14 @@ jobs:
       - name: PR 60 installer page guard sensitivity (each part removed, its installer regression must fail)
         # PR 60 review #8: the same runner on its own ledger, apart from Q's; bin/shepherdr is put back byte for byte.
         run: python3 bin/check-sensitivity --ledger docs/migration/pr60-sensitivity.json
+      - name: PR 60 after the last guard removal (every mutated file as checked out, its new regressions green again)
+        # check-sensitivity puts each file back byte for byte but runs nothing after its last row: here every file the
+        # ledger mutates must match the checkout, and the resume nudge and live switch regressions pass once more.
+        run: |
+          python3 -c "import json; print('\n'.join(sorted({r['mutation']['file'] for r in json.load(open('docs/migration/pr60-sensitivity.json'))['workflow_obligations']})))" > "$RUNNER_TEMP/pr60-files"
+          xargs git diff --exit-code -- < "$RUNNER_TEMP/pr60-files"
+          bun test ./service/live-switch.test.ts
+          python3 -m unittest discover -s test -p test_providers.py -k ResumeNudge -v
       - name: installer into a brand-new throwaway home (dry run, install, doctor, uninstall)
         run: |
           root=$(mktemp -d)
