@@ -9,6 +9,7 @@ import re
 
 from .base import Fail, HOME, git, WHERE
 from .forge import BITBUCKET, pr_checks, pr_read, pr_view, provider_of
+from .github import CANT_READ_CHECKS
 
 ARTIFACTS = WHERE.path("artifacts")
 # Files named on the card, and commits.
@@ -118,6 +119,9 @@ def checks_of(t, tip=None):
         return {"state": "failed", "text": f"{len(bad)} failing: " + ", ".join(bad[:FEW])}
     if running:
         return {"state": "running", "text": f"{running} of {total} still running"}
+    if v.get("checks_unknown"):
+        # SHEP-179: this machine's GitHub token can't read its checks: never said to pass
+        return {"state": "unknown", "text": CANT_READ_CHECKS}
     if not total:
         return {"state": "none", "text": "No checks on its pull request"}
     return {"state": "passed", "text": f"All {total} passed"}

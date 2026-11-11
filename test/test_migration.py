@@ -38,7 +38,7 @@ class SourceCheckpoint(unittest.TestCase):
         self.assertEqual(observed['candidate_readiness'], 'blocked')
         self.assertEqual(observed['requirements'], 40)
         self.assertEqual(observed['file_dispositions'], 121)
-        self.assertEqual((observed['phase'], observed['source_deltas']), ('Q', 96))  # A2 owns service/voice-data.ts and test/test_restart.py since v3.1.29
+        self.assertEqual((observed['phase'], observed['source_deltas']), ('Q', 116))  # A2 owns service/voice-data.ts and test/test_restart.py since v3.1.29, herdr_task/agents.py since v3.1.31's unknown-check policy, core/live-switch.js, its test and service/live-switch.test.ts since PR 60's review, and core/mentions.js, its test and copy, web/plugins/chat/client.tsx, composer.test.tsx, markdown.tsx, suggest.ts and its test, web/src/kernel.ts and service/chat-reach.test.ts since its six-claim fix, service/reach.ts and its test since its reach proof; N1 owns bin/shepherdr and test/test_install.py since its review #8, bin/herdr-browser and test/test_herdr_browser_libs.py since the six-claim fix
 
     def test_candidate_gate_refuses_even_when_source_validation_passes(self):
         result, observed = self.run_check('--require-ready')

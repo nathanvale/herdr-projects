@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 
-from .base import Fail, git, guard, now, run, STORE, VERSION
+from .base import Fail, git, guard, now, run, STORE, stop_note, VERSION
 from .settings import (
     agent_argv, agent_key, bare, merge_policy, review_limits, set_opts, settings_block, settings_for, space_base,
     task_settings, worker_argv, worktrees_on,
@@ -25,11 +25,11 @@ from .sessions import refresh_sessions
 from .launch_admission import admit_task
 from .github import (
     base_commit, drop_branch, finish, GH_ACCESS, GhFailed, local_base, merge_into_branch, merged_here, needs_approval, NO_ASK,
-    own_work, plain, remote_of, STAYS, update_main, watch_main,
+    note_checks, own_work, plain, remote_of, STAYS, update_main, watch_main,
 )
 from .github import CHECKS_RUNNING as PR_CHECKS_RUNNING
 from .forge import (
-    admit, adopt_existing, already_merged, integrate, merge_reach, name_of, no_local_merge, no_merge, pr_adopt,
+    GITHUB, admit, adopt_existing, already_merged, integrate, merge_reach, name_of, no_local_merge, no_merge, pr_adopt,
     pr_open, pr_pending, pr_problem, pr_read, pr_view, provider_of, publishing_repository, repair_of, repository,
 )
 from .publications import facts as publication_facts
@@ -63,7 +63,7 @@ def for_the_person(fn):
 
 def cmd_where(args):
     loc = locate(args.folder)
-    with Store(loc) as st:  # makes ~/.herdr/tasks and moves old lists in
+    with Store(loc, write="try") as st:  # makes ~/.herdr/tasks and moves old lists in, where it can (#900)
         pass
     slug, path = st.slug, st.path
     say(args, {**loc, "slug": slug, "store": path, "prefix": st.prefix, "version": VERSION}, f"{loc['folder']}\n{path}")
@@ -813,7 +813,7 @@ def finalize(s, t):
         t["auto_merge"] = policy
         if t.get("pr"):
             if policy == "auto":
-                err = merge_now(s, t)
+                err = merge_now(s, t, auto=True)
                 return msg + (f" Merging it waits: {err}" if err else " Merged; done.")
             return msg + " It merges by itself once its checks pass."
         no_local_merge(s, t)
@@ -1121,16 +1121,27 @@ def last_agent(t):
     return t["agents"][-1] if t["agents"] else None
 
 
-def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None, fresh=False, restart=False):
+def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None, fresh=False, restart=False,
+                resumed_message=None):
     """Starts an agent for the task: the last agent's own session when it's the same kind of agent
     and the session is known (unless fresh: a new conversation with a handoff); else a fresh one
-    with a handoff. `message` goes after either. A resumed session keeps the provider binding its
+    with a handoff. `message` goes after either; `resumed_message` only after the resumed session (a handoff
+    is a new conversation, never called a resume). A resumed session keeps the provider binding its
     conversation recorded (providers.plan_of_record): today's defaults never reroute it, and
     changed routing refuses here, before anything changes. restart: a model menu's Restart or
     Switch agent (the window's or the web's); since L2 it goes the same way as resume and switch (its
     recorded binding when it continues the conversation, today's settings for a new one), and only a
-    model it names that the recorded deployment would replace refuses (RESTART_MODEL)."""
+    model it names that the recorded deployment would replace refuses (RESTART_MODEL).
+    Missing history (revive.history_of): the Claude Code session it would resume has a recorded log that is positively
+    gone here, so the CLI is expected to find no conversation to continue (a Codex rollout missing from its recorded
+    path isn't judged so: Codex finds a thread by its id). A new conversation then, on that conversation's recorded
+    binding (never today's settings: a binding they can't carry refuses before anything changes), opening with the
+    handover that says its
+    earlier session is gone (revive.lost_message), then the handoff and `message`; never `resumed_message`.
+    Returns (its record, resumed); after missing history the record returned is a copy that also says missing_history
+    and previous_session (the task's own row doesn't)."""
     from .providers import AZURE, PERSONAL_RECORD, restart_route, RESTART_MODEL, same_model
+    from .revive import GONE, history_of, lost_message
     prev = last_agent(t)
     # The last agent's argv again, unless the task's agent, model or effort changed since (edit).
     keep = prev and prev.get("argv") and (t.get("pick_at") or 0) <= (prev.get("at") or 0)
@@ -1139,16 +1150,19 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     fixed = bool(argv_json) or (not key and bool(keep))
     same = prev and agent_key(argv) == prev.get("agent")
     resuming = bool(same and prev.get("session") and not fresh)
-    # Before anything changes: launch admission (its plan, from the recorded binding when it resumes; an open earlier
-    # start; its Assistant) refuses here.
+    gone = resuming and history_of(prev.get("log"), prev.get("address"), agent_key(argv)) == GONE
+    resuming = resuming and not gone
+    # Before anything changes: launch admission (its plan, from the recorded binding when it resumes or its history is
+    # missing; an open earlier start; its Assistant) refuses here.
     adm = admit_task(s, t, argv, space, parent or (prev or {}).get("parent"),
                      select=None if fixed else (lambda: worker_argv(s, t, space, key)), prev=prev,
-                     bound=(prev.get("provider") or PERSONAL_RECORD) if resuming else None)
-    if restart and not resuming:
+                     bound=(prev.get("provider") or PERSONAL_RECORD) if resuming or gone else None)
+    if restart and not (resuming or gone):
         # A new conversation takes today's settings, never onto another route than the agent it replaces (L2).
         was = (prev or {}).get("provider") or PERSONAL_RECORD
         restart_route(was["route"], was, adm.binding, agent_key(argv), s.ref(t))
-    if restart and resuming and adm.plan["route"] == AZURE and not same_model(argv, prev.get("argv"), adm.plan["deployment"]):
+    if restart and (resuming or gone) and adm.plan["route"] == AZURE and \
+            not same_model(argv, prev.get("argv"), adm.plan["deployment"]):
         # A recorded conversation keeps its deployment (A2): a model picked in the menu would be replaced silently.
         raise Fail(RESTART_MODEL.format(who=s.ref(t), deployment=adm.plan["deployment"]))
     unarchive(s, t)
@@ -1156,10 +1170,21 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     res = resume_argv(argv, prev["session"]) if resuming else None
     with adm.claimed():
         if res:
-            return launch(s, t, argv, space, message, parent=parent, resume=res, admission=adm), True
-        text = handoff(s, t, prev, parent, argv) + (("\n\n" + message) if message else "")
+            first = "\n\n".join(m for m in (resumed_message, message) if m) or None
+            return launch(s, t, argv, space, first, parent=parent, resume=res, admission=adm), True
+        # Missing history: no pointer to the log that is gone (the handoff says none was left).
+        text = handoff(s, t, dict(prev, log=None) if gone else prev, parent, argv)
+        text = lost_message() + "\n\n" + text if gone else text
+        text += ("\n\n" + message) if message else ""
         t["review_gate"] = True
-        return launch(s, t, argv, space, text, parent=parent, admission=adm), False
+        a = launch(s, t, argv, space, text, parent=parent, admission=adm)
+        return (dict(a, missing_history=True, previous_session=prev["session"]) if gone else a), False
+
+
+# SHEP-189: what a resumed agent hears first. Its session comes back with no message, so without this
+# it sat idle until someone wrote to it.
+RESUME_NUDGE = ("Shepherdr resumed your session because your agent had stopped. Carry on where you left off: check "
+                "what is already done with `herdr-task show`, then keep going with the task.")
 
 
 def cmd_resume(args):
@@ -1174,10 +1199,20 @@ def cmd_resume(args):
         if t["state"] == "done":
             t["state"] = "running"
         back_to_work(s, t, "resumed")
-        a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=getattr(args, "fresh", False))
+        fresh = getattr(args, "fresh", False)
+        # The nudge says the session resumed: only after the recorded session itself, never with a handoff (--fresh, no
+        # session recorded, its recorded log gone, or another kind of agent: a new conversation, PR 60).
+        a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=fresh,
+                                 resumed_message=RESUME_NUDGE)
         v = view(s, t)
-    say(args, {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed},
-        f"{s.ref(t)} {'resumed its session' if resumed else 'started with a handoff'}: {a['address']}")
+    out = {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed}
+    gone = {k: a[k] for k in ("missing_history", "previous_session") if k in a}
+    how = "resumed its session" if resumed else "started with a handoff" + (MISSING_WORDS if gone else "")
+    say(args, {**out, **gone}, f"{s.ref(t)} {how}: {a['address']}")
+
+
+# Said after a start whose recorded session's log is gone (revive.history_of): a new conversation, never a resume.
+MISSING_WORDS = " (missing history: its earlier session's log is gone, so this is a new conversation)"
 
 
 def cmd_switch(args):
@@ -1201,10 +1236,13 @@ def cmd_switch(args):
     ended = []
     if old and not args.keep:
         # The new agent took over: end the old one (its terminal, shell and all).
+        stop_note("switch-kill", task=s.ref(t), terminal=old["address"], by="switch")
         run(["hc", "kill", old["address"]])
         ended.append(old["address"])
-    say(args, {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed, "ended": ended},
-        f"{s.ref(t)}: {a['agent']} {a['address']} {'resumed its session' if resumed else 'took over'}" + (f", {old['address']} ended" if ended else ""))
+    gone = {k: a[k] for k in ("missing_history", "previous_session") if k in a}
+    say(args, {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed, "ended": ended, **gone},
+        f"{s.ref(t)}: {a['agent']} {a['address']} {'resumed its session' if resumed else 'took over'}"
+        + (MISSING_WORDS if gone else "") + (f", {old['address']} ended" if ended else ""))
 
 
 def workers(s, t):
@@ -1244,6 +1282,10 @@ MERGE_FAILED = "GitHub didn't merge it"  # a merge that failed: never in the way
 CHECKS_RUNNING = "Checks are still running."
 WAITS_APPROVAL = "It waits for an approving review."  # #743: not a problem, it merges once approved
 IN_QUEUE = "It is in GitHub's merge queue."  # #802: merging, done once GitHub merged it
+# Its GitHub checks unknown (SHEP-179, C0): never merged by itself (Nathan's conservative policy); the person's own
+# Accept or merge still merges, and GitHub still refuses what its required checks block.
+CHECKS_UNKNOWN = ("Its GitHub checks can't all be read here, so it doesn't merge by itself until they can and pass; "
+                  "or the person checks them on GitHub and accepts it.")
 QUEUE_DAY = 24 * 3600000  # how long a base branch's merge queue is remembered
 
 
@@ -1306,12 +1348,14 @@ def merged_elsewhere(s, t, v):
             f"`herdr-task done {ref}` marks the task done and leaves the worktree and branch for you to remove.")
 
 
-def merge_now(s, t):
+def merge_now(s, t, auto=False):
     """Merges the task's pull request on GitHub (squash) and tidies up here. Returns why it
     couldn't, or why one already merged doesn't finish the task (merged_elsewhere()); None when
     it's merged (and the task done). A base branch with GitHub's merge queue (#742, #801, #802):
     the pull request joins the queue and the task stays Merging until GitHub merged it (the tick
-    finishes it then, and deletes its branch there)."""
+    finishes it then, and deletes its branch there). auto: a merge nobody asked for just now (merge
+    auto or checks, an Accept made while its checks ran): never while this read's checks are
+    unknown (CHECKS_UNKNOWN); it stays as set and the next look tries again."""
     n = str(t["pr"]["number"])
     # The folder's host first (forge.reach()): on another host, or none named, nothing is read as this
     # task's and nothing merges or changes. gh failing to place the folder is gh failing to reach it.
@@ -1327,6 +1371,8 @@ def merge_now(s, t):
     if not v:
         return (f"{UNREACHED} #{n} on {name_of(t['pr'])} ({plain(why or 'no answer')}). Nothing merged. "
                 f"{repair_of(t['pr'], why)}")
+    if provider_of(t["pr"]) == GITHUB and not v.get("refused"):
+        note_checks(s, t, v)  # SHEP-179: GitHub's checks read or not, for doctor and the Accept card
     queue = False
     if v.get("state") != "MERGED":
         problem = pr_problem(v) or adopted_moved(s, t, v)
@@ -1348,6 +1394,8 @@ def merge_now(s, t):
             t["pr"]["needs_approval"] = True
             return WAITS_APPROVAL
         t["pr"].pop("needs_approval", None)
+        if auto and v.get("checks_unknown"):
+            return CHECKS_UNKNOWN
         base = t.get("base") or "main"
         matched = v.get("headRefOid") or ""
         queue = uses_queue(s, base)

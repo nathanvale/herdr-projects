@@ -1206,8 +1206,9 @@ class StartSites(unittest.TestCase):
                 self.assertNotIn(words, text)
                 self.assertIn("launch run", text)
         self.assertNotIn("hc run", self.read("service/agents.ts").replace("herdr-task", ""))
-        # Upstream's data folders (SHEP-141): the app's home is appHome(), no longer an APP constant.
-        self.assertIn('join(appHome(), "mods", "coordinator", "restart.sh")', self.read("service/agents.ts"))
+        # The Assistant's restart.sh, as SHEP-181 finds it (layoutScript(): the window layout's copy, else the one shipped
+        # beside the service), never an hc run of its own.
+        self.assertIn('layoutScript("restart.sh")', self.read("service/agents.ts"))
 
 
 if __name__ == "__main__":

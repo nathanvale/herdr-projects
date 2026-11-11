@@ -51,6 +51,23 @@ class Repo(unittest.TestCase):
         self.assertEqual(used - ours - shipped, set(), "the layout uses a mod nobody ships")
         self.assertEqual(d["id"], "root")
 
+    def test_lone_child_containers_fill_their_space(self):
+        # Herdr keeps a saved px size for a resizable container's child (SHEP-193, GitHub #915): a row or column with
+        # one child must not be resizable, and that child takes the whole space by weight, never a fixed size.
+        def walk(node):
+            kids = node.get("children") or []
+            if node.get("type") in ("row", "column") and len(kids) == 1:
+                yield node, kids[0]
+            for k in kids:
+                yield from walk(k)
+
+        d = json.load(open(J("layouts", "shepherdr.json")))
+        found = list(walk(d))
+        self.assertTrue(found)
+        for node, child in found:
+            self.assertIs(node.get("resizable"), False, f"{node['id']} holds one child and is resizable")
+            self.assertEqual((child.get("size") or {}).get("weight"), 1, f"{child['id']} is the only child of {node['id']} but has no weight 1")
+
     def test_keys_name_our_layout_and_parse(self):
         keys = json.load(open(J("keys.json")))
         layouts = [c for c in keys if c.startswith("layout:")]
@@ -316,7 +333,7 @@ class Repo(unittest.TestCase):
 
     def test_version_everywhere(self):
         v = re.search(r'^VERSION = "([^"]+)"', open(J("bin", "shepherdr")).read(), re.M).group(1)
-        self.assertEqual(v, "3.1.29")
+        self.assertEqual(v, "3.1.31")
         self.assertRegex(open(J("CHANGELOG.md")).read(), rf"(?m)^## {re.escape(v)}\b", "CHANGELOG's newest entry")
         self.assertIn(v, open(J("RECIPE.md")).read())
         self.assertIn(v, open(J("README.md")).read())
@@ -372,15 +389,20 @@ class ShellScripts(unittest.TestCase):
             self.assertIsNone(m, f"{os.path.relpath(f, ROOT)}: bash 4's {m and m.group(1)} (a while read loop works on 3.2)")
 
     def test_each_parses(self):
+        # #908: macOS's bash is 3.2, and `bash -n` on a script that quotes an apostrophe inside a double-quoted ${...}
+        # fails there ("syntax error near unexpected token `('"); plain bash fails it too, bash --posix and dash don't.
+        # So every script parses under plain bash, and one whose first line says sh also under sh (dash here).
         import shutil
         import subprocess
         for f in shell_scripts():
             with open(f, encoding="utf-8") as fh:
-                shell = "bash" if "bash" in fh.readline() else "sh"
-            if not shutil.which(shell):
-                continue
-            out = subprocess.run([shell, "-n", f], capture_output=True, text=True)
-            self.assertEqual(out.returncode, 0, f"{shell} -n {os.path.relpath(f, ROOT)}: {out.stderr}")
+                first = fh.readline()
+            runs = [["bash", "-n"]] + ([] if "bash" in first else [["sh", "-n"]])
+            for cmd in runs:
+                if not shutil.which(cmd[0]):
+                    continue
+                out = subprocess.run(cmd + [f], capture_output=True, text=True)
+                self.assertEqual(out.returncode, 0, f"{' '.join(cmd)} {os.path.relpath(f, ROOT)}: {out.stderr}")
 
 
 class MacAudio(unittest.TestCase):

@@ -8,7 +8,7 @@ import secrets
 import subprocess
 import time
 
-from .base import Fail, git, guard, hc_json, now, PR_EVERY, run, SHELLS, STORE
+from .base import Fail, git, guard, hc_json, now, PR_EVERY, run, SHELLS, STORE, stop_note
 from .settings import machine_name, worker_argv
 from .agents import (
     agent_log, agent_running, busy_again, detail, held_ask, last_question, live_agents, own_work, ready_turns, status_word,
@@ -16,8 +16,8 @@ from .agents import (
 )
 from .provider import NUDGE, provider_cut, provider_error, PROVIDER_WAITS
 from .sessions import find_lost_logs, refresh_sessions, session_of
-from .github import (BEHIND, drop_branch, finish, GhFailed, merged_here, needs_approval, pr_wait, queue_entry, tidy_done,
-                     tidy_due, update_main, watch_main)
+from .github import (BEHIND, drop_branch, finish, GhFailed, merged_here, needs_approval, note_checks, pr_wait, queue_entry,
+                     tidy_done, tidy_due, update_main, watch_main)
 from .forge import already_merged, merge_reach, pr_merged, pr_pending, pr_problem, pr_view, provider_of, reach, repository
 from .launch import default_space, track
 from .store import locate, read_list, Store, store_files
@@ -91,6 +91,8 @@ def facts(s, t, report):
         v = pr_view(t)
         if not v:
             return
+        if provider_of(pr) == "github" and not v.get("refused"):
+            note_checks(s, t, v)  # SHEP-179: GitHub's checks read or not
         if v.get("state") == "MERGED":
             held = merged_elsewhere(s, t, v)
             if held:
@@ -263,7 +265,7 @@ def tick_store(s, report):
                 except Exception as e:  # never stops the tick
                     report.setdefault("github_error", []).append(f"{s.ref(t)}: {e}")
             if t["state"] == "ready" and t.get("auto_merge") and t.get("pr") and not t.get("attention") and t.get("_pr_fresh"):
-                if not merge_now(s, t):
+                if not merge_now(s, t, auto=True):
                     report["done"].append(t["id"])
             t.pop("_pr_fresh", None)
     due_pass(s, report)
@@ -368,6 +370,7 @@ def end_done(s, t, report, pressed=False):
         if agent_running(k) and status_word(k) == "working" and now() - done_at < DONE_WORKING_MS:
             continue
         if quiet_hc("kill", k).returncode == 0:
+            stop_note("end-done", task=s.ref(t), terminal=k["address"], status=status_word(k), pressed=pressed)
             ended.append(k)
     if ended:
         report.setdefault("ended", []).append({"task": s.ref(t), "terminals": [k["address"] for k in ended]})
@@ -432,6 +435,8 @@ def memory_guard(report):
     if ended:
         h = sample()
     report["memory_guard"] = {"memory": h["memory"], "ended": ended}
+    if ended:
+        stop_note("memory-guard", memory=h["memory"], terminals=ended)
     if h["memory"] <= GUARD_MEMORY or now() - (g.get("alerted") or 0) < GUARD_ALERT_EVERY_MS:
         return
     k = hc_json("get", SCHEDULER)
@@ -547,6 +552,19 @@ def retry_pass(report):
                         rows[k["address"]] = row
                     if row and not row.get("stale"):
                         want = {x: row[x] for x in ("address", "reason", "tries", "due", "over") if x in row}
+                # SHEP-189: a running task whose agents were all running and now are not has gone
+                # "stopped". Logged once at the moment it happens: which terminals, what Herdr saw.
+                up = any(agent_running(k) and (k.get("labels") or {}).get("herdr.role") != "reviewer" for k in mine)
+                if t.get("alive") and not up:
+                    from .machine import sample
+                    h = sample()
+                    stop_note("gone", task=s.ref(t), memory=h["memory"], load=h["load"], terminals=[
+                        {"address": k["address"], "state": k.get("state"), "status": status_word(k),
+                         "foreground": (k.get("foreground") or {}).get("name"), "role": (k.get("labels") or {}).get("herdr.role")}
+                        for k in mine if (k.get("labels") or {}).get("herdr.role") != "reviewer"])
+                if bool(t.get("alive")) != up:
+                    t["alive"] = up
+                    s.dirty = True
                 if (t.get("retry") or None) != want:
                     if want:
                         t["retry"] = want

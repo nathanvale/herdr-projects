@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { place, queueReason, reportOf, estimated, order, ago, autoPrefix, refOf, taskKey, matches, busyAgain, secondLine, leftOf, ORDER, STATUS, WORKING_AGAIN, GRACE_MS, fromLine, autoWhere, inSpace, selectChange, webSelectSave, webSelectLevels } from "./tasks.js";
+import { place, queueReason, reportOf, estimated, order, ago, autoPrefix, refOf, taskKey, matches, busyAgain, secondLine, leftOf, ORDER, STATUS, WORKING_AGAIN, GRACE_MS, fromLine, autoWhere, inSpace, selectChange, webSelectSave, webSelectLevels, holdingItems } from "./tasks.js";
 import { REASONS, fit } from "./needs.js";
 
 const NOW = 1_800_000_000_000;
@@ -46,6 +46,9 @@ describe("a task's status (as herdr-task's task_status)", () => {
     expect(at({ id: 1, state: "ready", auto_merge: "checks", pr: { number: 3, needs_approval: true } })).toMatchObject({ section: "working", why: "Merges once it's approved" });
     expect(at({ id: 1, state: "ready", merge_requested: true }, [{ address: "t1", status: "working" }])).toMatchObject({ section: "working", why: "Merging" });
     expect(at({ id: 1, state: "ready", auto_merge: true, pr: { number: 3 } })).toMatchObject({ section: "working", why: "Merges once its checks pass" });
+    // Its checks unknown: it never merges by itself, so it is the person's (Ready), never Working on a merge that won't come.
+    expect(at({ id: 1, state: "ready", auto_merge: "checks", pr: { number: 3, checks_unknown: true } }).section).toBe("ready");
+    expect(at({ id: 1, state: "ready", auto_merge: "checks", pr: { number: 3, checks_unknown: true, needs_approval: true } })).toMatchObject({ section: "working", why: "Merges once it's approved" });
   });
   test("a pull request whose checks still run is Working, then Ready (SHEP-175)", () => {
     const idle = [{ address: "t1", status: "idle", since: NOW - 600_000 }];
@@ -246,4 +249,25 @@ test("the web selector keeps an effort with an inherited deployment, and a CLI c
   const base = { selection: { agent: "claude", deployment: null, effort: null }, listed: { claude: ["picked"] }, inventory: { claude: "7" } };
   expect(webSelectSave(base, { agent: "claude", dep: "picked", effort: "", fromList: true, levels: [] }, true)).toEqual({ agent: "claude", deployment: "picked", inventory: "7" });
   expect(webSelectSave(base, { agent: "claude", dep: "typed", effort: "", fromList: false, levels: [] }, true)).toEqual({ agent: "claude", deployment: "typed" });
+});
+
+describe("Needs-you items the task's own status has moved past (SHEP-195)", () => {
+  // The task as its list says it now, keyed as the Tasks panel keys items.
+  const truthOf = (...ps) => new Map(ps.map((p) => [`${p.list.machine ?? ""}:${p.list.folder}:${refOf(p.list, p.task)}`, p]));
+  const item = (kind, extra = {}) => ({ kind, machine: null, folder: "/f", ref: "X-3", ...extra });
+  test("a check or waiting item for a task now Done is dropped; its row shows Done", () => {
+    const done = at({ id: 3, state: "done", attention: "CI failed", title: "T" });
+    const truth = truthOf(done);
+    expect(holdingItems([item("check"), item("waiting")], truth)).toEqual([]);
+    expect(done.section).toBe("done");
+  });
+  test("an item for a task still needing the person stays", () => {
+    const stuck = at({ id: 3, state: "running", attention: "CI failed" });
+    expect(holdingItems([item("check")], truthOf(stuck))).toHaveLength(1);
+  });
+  test("an item whose task no list has (another machine not loaded) stays, as do asks and provider items", () => {
+    const done = at({ id: 3, state: "done" });
+    const items = [item("check", { ref: "X-9" }), item("blocked", { terminal: "t1" }), item("provider")];
+    expect(holdingItems(items, truthOf(done))).toHaveLength(3);
+  });
 });

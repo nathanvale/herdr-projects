@@ -121,7 +121,41 @@ def lost_message(ref=None, template=None):
     return msg
 
 
+# A recorded session log as one rule reads it for every start that would resume it: revival here (only a KEPT log is
+# resumed) and a task's resume (commands.start_again: only a GONE one isn't).
+KEPT, GONE, UNKNOWN = "kept", "gone", "unknown"
+
+
+def history_of(log, address=None, kind=None):
+    """What a recorded session log says here: KEPT (a file at its path), GONE (positively: the folder that held it is
+    read and doesn't hold it) or UNKNOWN; None when no log was recorded (a session just begun, or its log not found
+    yet). Never GONE for an agent on another machine (address MACHINE/terminal), a folder missing here or unreadable,
+    a path that is there but isn't a file, or a Codex rollout (kind "codex"): Codex finds a thread by its id, not by
+    the path recorded here, and moves its rollouts (compressed to .jsonl.zst once cold, a newer rollout of the same
+    thread, archived), so one missing from that path may still resume."""
+    if not log:
+        return None  # none recorded: a session just begun, or its log not found yet
+    if "/" in (address or ""):
+        return UNKNOWN  # its machine's own files, not this one's
+    if os.path.isfile(log):
+        return KEPT
+    if kind == "codex":
+        return UNKNOWN  # Codex resolves the thread by its id wherever its rollout is now
+    try:
+        names = os.listdir(os.path.dirname(log)) if os.path.isabs(log) else None
+    except OSError:
+        names = None  # its folder is missing here or can't be read: unknown, never gone
+    return GONE if names is not None and os.path.basename(log) not in names else UNKNOWN
+
+
 LINE_SHELLS = ("bash", "zsh", "sh", "dash", "ksh", "fish")
+
+
+def without_caller():
+    """The environment for hc send into a shell: no HC_TERMINAL_ID, so hc names no caller. A caller that is an
+    agent makes hc wrap the text in <hc from=…> when the shell reports its status too (herdr-core's tagged()),
+    and bash or zsh then fails to run the line (SHEP-202, GitHub #925). The line is the person's, not an agent's."""
+    return {k: v for k, v in os.environ.items() if k != "HC_TERMINAL_ID"}
 
 
 def shell_line(shell, cwd, env, argv, direct=False, need=None):
@@ -361,7 +395,7 @@ def plan(k, rec, running):
     if (p["route"] != "personal" or folder) and shell not in LINE_SHELLS:
         return ("held", f"Its shell ({shell or 'unknown'}) can't be given the provider binding or Claude Code folder this "
                         f"agent started with, so it isn't typed back. Nothing was started.", False, None)
-    if rec and rec.get("session") and rec.get("log") and os.path.isfile(rec["log"]):
+    if rec and rec.get("session") and history_of(rec.get("log")) == KEPT:
         how, argv = "resume", resume_argv(kind, base, rec["session"], CUT if rec.get("working") else None)
     else:
         # Its session is gone: a new one, with the handover (and an Assistant's role, its template's words), on the
@@ -448,7 +482,9 @@ def bring_back(k, rec, step, report):
         adm.task, adm.config_dir = task, carry.get("config_dir")
         with adm.claimed():
             unchanged()
-            out = adm.type_into(k["address"], line, facts, run, lambda lid: write_record(k, dict(rec, launch=lid)))
+            # SHEP-202: typed with no caller named (without_caller()), so hc never wraps the person's line for the shell.
+            out = adm.type_into(k["address"], line, facts, lambda a: run(a, env=without_caller()),
+                                lambda lid: write_record(k, dict(rec, launch=lid)))
     except Fail as e:
         launch = getattr(e, "launch", None)
         if launch:

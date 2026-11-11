@@ -91,6 +91,8 @@ const coreName = () => {
   if (!askedName) { askedName = true; hc(["server", "status"]).then((r) => { ownName = JSON.parse(r.stdout || "{}")?.core?.name || null; }).catch(() => { askedName = false; }); }
   return ownName;
 };
+// The same, waited for: a reach map that starts on another machine needs it at once (loadReach, PR 60).
+const coreNameNow = async () => ownName ?? hc(["server", "status"]).then((r) => (ownName = JSON.parse(r.stdout || "{}")?.core?.name || null)).catch(() => null);
 // When an ask was made: its id is <terminal>.<seconds>.<pid> (ask-hook.sh), taken at the end of
 // that second so it sits after what was said in it.
 const askAt = (id) => { const p = String(id).split("."); const sec = Number(p[p.length - 2]); return Number.isFinite(sec) && sec > 1e9 ? sec * 1000 + 999 : Date.now(); };
@@ -2041,7 +2043,11 @@ export default class Chat extends View {
     try { graph = JSON.parse(r?.stdout || "null")?.graph ?? null; } catch {}
     const here = graph ? null : (spaces() ?? []).filter((x) => (x.machine ?? null) === (this.machine ?? null))
       .map((x) => ({ id: String(x.id).split("/").pop(), name: x.name, route: "", machine: this.machine ?? "", target: String(x.id).split("/").pop(), assistant: false }));
-    this.reach = { from: graph?.core?.name ?? this.machine, spaces: graph ? mentions.reachable(graph) : here };
+    // the spaces this window knows, as the agent's machine sees them: a machine whose document the map read as empty
+    // still lists its spaces (SHEP-185), and this machine's go under its herdr-core name (PR 60)
+    const known = graph ? (spaces() ?? []).map((x) => ({ id: String(x.id).split("/").pop(), name: x.name, folder: x.folder, machine: x.machine ?? null })) : [];
+    const name = graph && this.machine ? await coreNameNow() : null;
+    this.reach = { from: graph?.core?.name ?? this.machine, spaces: graph ? mentions.reachable(graph, mentions.knownFrom(known, name, this.machine)) : here };
   }
 
   // A message's words with each #-mention in plain markdown: its name and machine, and "out of
@@ -4022,6 +4028,13 @@ export default class Chat extends View {
     this.press = { x: unzoom(x), y: unzoom(y), rx: x, ry: y, at: Date.now() };
   }
 
+  // SHEP-192 (GitHub #916): a press in the chat that moves is a drag, which selects the text under it. The selection stays
+  // until the next press in the chat, so refocus() leaves the keyboard where it is meanwhile (Ctrl+C copies it).
+  noteDrag(at) {
+    if (!this.pressing || this.pressMoved || !at || !this.pressWin) return;
+    if (Math.hypot(at.x - this.pressWin.x, at.y - this.pressWin.y) > 3) this.pressMoved = true;
+  }
+
   // This chat pane in the window ({ x, y, width, height }), from the press that opens something
   // over it (the viewers: images, text, artifacts); null before any press.
   paneArea() {
@@ -4421,16 +4434,18 @@ export default class Chat extends View {
   refocus(paneFocused, showsBox, cx) {
     // Focus moves only outside render: from a timer callback right after it.
     // Never while a dialog over it holds the keyboard (New space's field, #752): Herdr counts this pane focused under it.
+    // Never over a text selection (GitHub #916, SHEP-192): a drag over the messages selects them, and the box taking the
+    // keyboard then made Ctrl+C copy nothing. The timers check again when they fire: a drag can start after they're set.
     const dialog = dialogHolds(shared(KEY_HOLDER));
-    if (paneFocused && showsBox && !dialog && (!this.wasFocused || !this.hadBox)) {
-      cx.timer.after(0, () => { if (!dialogHolds(shared(KEY_HOLDER))) this.box.focus(); });
-      cx.timer.after(600, () => { if (!dialogHolds(shared(KEY_HOLDER))) this.box.focus(); });
+    if (paneFocused && showsBox && !dialog && !this.pressMoved && (!this.wasFocused || !this.hadBox)) {
+      cx.timer.after(0, () => { if (!this.pressMoved && !dialogHolds(shared(KEY_HOLDER))) this.box.focus(); });
+      cx.timer.after(600, () => { if (!this.pressMoved && !dialogHolds(shared(KEY_HOLDER))) this.box.focus(); });
     }
     // The pane focused again (a command, a click on its header) can leave the box without the
     // keyboard: give it back, unless the person just pressed something inside the chat.
     // Not while the keyboard is somewhere else in the window that isn't a pane (#633): a task's chat, the list or its
     // search in the Tasks panel (shared "keyboard.holder", keyHolder()); Herdr still counts this pane as focused then.
-    else if (paneFocused && showsBox && !this.call && this.focused === false && Date.now() - (this.press?.at ?? 0) > 1500
+    else if (paneFocused && showsBox && !this.call && !this.pressMoved && this.focused === false && Date.now() - (this.press?.at ?? 0) > 1500
       && !keysElsewhere(liveHolder(shared(KEY_HOLDER)), this.areaKey())
       && Date.now() - (this.refocusAt ?? 0) > 1000) {
       this.refocusAt = Date.now();
@@ -4531,9 +4546,10 @@ export default class Chat extends View {
         this.noteArea(null);
         cx.notify();
       })
-      .on_mouse_move((e) => { if (e.bounds) this.noteArea(e.bounds); })
-      // Where a press was, for the action buttons under messages (rows can't take handlers).
-      .on_mouse_down("left", (e) => { this.notePress(e); holdKeys(this.areaKey()); this.pressWin = e.position; this.keepIcons = null; if (e.bounds) this.noteArea(e.bounds); })
+      .on_mouse_move((e) => { if (e.bounds) this.noteArea(e.bounds); this.noteDrag(e.position); })
+      // Where a press was, for the action buttons under messages (rows can't take handlers). A new press ends any selection.
+      .on_mouse_down("left", (e) => { this.notePress(e); holdKeys(this.areaKey()); this.pressWin = e.position; this.keepIcons = null; this.pressing = true; this.pressMoved = false; if (e.bounds) this.noteArea(e.bounds); })
+      .on_mouse_up("left", () => { this.pressing = false; })
       // Files dropped anywhere on the chat go with the next message.
       .on_drop((e, cx) => { this.addFiles(attach.paths(e.paths ?? [])); this.saveSoon(cx); this.box.focus(); cx.notify(); });
 

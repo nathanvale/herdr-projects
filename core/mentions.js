@@ -32,20 +32,56 @@ export function nodes(graph) {
 
 // The spaces a reach map's start can reach, its own first: [{ id, name, route, machine, target, emoji?, assistant }].
 // route: "" here, "vm-demo" or "laptop>vm-x"; machine: that machine's own name; target: what tell-assistant takes.
-// Only each machine's own spaces (another machine's, mirrored in its document, carry a machine and are left out).
-export function reachable(graph) {
+// Each machine's own spaces (another machine's, mirrored in its document, carry a machine and are left out), then the
+// spaces the service already knows on that machine (known: [{ id, name, folder, machine, emoji, assistant }], the
+// sidebar's list): a machine whose herdr-core document the map read as empty still lists its spaces. A space with no
+// name of its own is named as Herdr names it (SHEP-185): "Home" in its machine's home folder, else its folder's name.
+export function reachable(graph, known = []) {
   const out = [], seen = new Set();
   for (const { node, route } of nodes(graph)) {
     const r = route.join(">");
+    const name = node.core?.name || route[route.length - 1] || node.host || "";
     const live = new Set((node.assistants ?? []).map((a) => a.space).filter(Boolean));
-    for (const s of node.spaces ?? []) {
-      if (!s?.id || s.machine || seen.has(s.id)) continue;
+    const own = (node.spaces ?? []).filter((s) => s?.id && !s.machine);
+    const called = [name, route[route.length - 1]].filter(Boolean);  // the machine's core name, or the name its link gave
+    const mine = known.filter((k) => k?.id && (route.length ? called.includes(k.machine) : !k.machine || called.includes(k.machine)));
+    for (const s of [...own, ...mine]) {
+      if (!s?.id || seen.has(s.id)) continue;
       seen.add(s.id);
-      out.push({ id: s.id, name: s.name || s.id, route: r, machine: node.core?.name || route[route.length - 1] || node.host || "",
-        target: targetOf(r, s.id), ...(s.icon ? { emoji: s.icon } : {}), assistant: live.has(s.id) });
+      const emoji = s.icon || s.emoji;
+      out.push({ id: s.id, name: spaceName(s, node.home), route: r, machine: name, target: targetOf(r, s.id),
+        ...(emoji ? { emoji } : {}), assistant: live.has(s.id) || !!s.assistant });
     }
   }
   return out;
+}
+
+// The caller's known spaces as a reach map's start sees them, for reachable() (PR 60). The caller (the service or the
+// window) gives a space on its own machine no machine; the map can start on another machine (the one running the
+// chat's agent: from, as the caller names it). There, the start's own spaces lose their machine, and the caller's carry
+// its herdr-core name (here), so they show only under the machine of that name, with its route. While that name is
+// unknown they are left out: never listed as the start's own. A map that starts on the caller's machine: as they are.
+export function knownFrom(known, here, from) {
+  if (!from) return known ?? [];
+  return (known ?? []).flatMap((k) => {
+    const m = k?.machine || here || null;
+    return m ? [{ ...k, machine: m === from ? null : m }] : [];
+  });
+}
+
+// What the "#" list gets for a machine's reach map (the service's /api/reach): where the map starts, the spaces it
+// reaches with the caller's known ones placed relative to that start (knownFrom), and when the map was drawn.
+// doc: that machine's .reach.json (null: none read); machine: that machine as the caller names it (null: its own).
+export function reachIn(doc, known, here, machine) {
+  return { from: doc?.graph?.core?.name ?? machine, spaces: reachable(doc?.graph, knownFrom(known, here, machine)), checked: doc?.at ?? null };
+}
+
+// A space's name as the window shows it: its own, else Herdr's name for an unnamed one (its folder's, "Home" at home).
+export function spaceName(s, home) {
+  if (s.name) return s.name;
+  const f = String(s.folder ?? "").replace(/\/+$/, "");
+  if (f) return f === home ? "Home" : f.split("/").pop() || f;
+  return "Space";
 }
 
 export const targetOf = (route, id) => (route ? `${route}/${id}` : id);

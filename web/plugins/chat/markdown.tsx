@@ -11,12 +11,14 @@ const shortTitle = (MNs as any).short as (t: string) => string
 
 marked.setOptions({ gfm: true, breaks: false })
 
-// a link goes to a new tab, never in place of the app
-DOMPurify.addHook('afterSanitizeAttributes', (node) => {
-  if (node.tagName !== 'A' || !node.getAttribute('href')) return
-  node.setAttribute('target', '_blank')
-  node.setAttribute('rel', 'noopener noreferrer')
-})
+// a link goes to a new tab, never in place of the app. DOMPurify works only on a page with a DOM (every browser): where
+// there is none (a test that draws the app as HTML, PR 60) it has no hooks to add
+if (DOMPurify.isSupported)
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (node.tagName !== 'A' || !node.getAttribute('href')) return
+    node.setAttribute('target', '_blank')
+    node.setAttribute('rel', 'noopener noreferrer')
+  })
 
 const svg = (d: string[], cls: string) => `<svg viewBox="0 0 16 16" aria-hidden="true" class="${cls}">${d.map((x) => `<path d="${x}"/>`).join('')}</svg>`
 const COPY = svg(

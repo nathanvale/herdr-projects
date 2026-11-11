@@ -2,6 +2,7 @@
 clashes, --adopt, uninstall. Never touches the real home."""
 import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
 import re
+import hashlib
 import json
 import os
 import shutil
@@ -16,11 +17,11 @@ APP = ".config/herdr-app"
 CI = os.environ.get("CI") == "true"
 
 
-def run(*args, ok=True, build=False):
+def run(*args, ok=True, build=False, env=None):
     # the web app is built by its own test (a fresh clone); the others install this checkout's as it is
     if args and args[0] in ("install", "update") and not build:
         args = (*args, "--no-build")
-    p = subprocess.run([sys.executable, SHEPHERDR, *args], capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    p = subprocess.run([sys.executable, SHEPHERDR, *args], capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env)
     if ok and p.returncode != 0:
         raise AssertionError(f"shepherdr {' '.join(args)} failed:\n{p.stdout}\n{p.stderr}")
     return p
@@ -38,6 +39,14 @@ def tree(top):
             with open(p, "rb") as fh:
                 out[os.path.relpath(p, top)] = fh.read()
     return out
+
+
+# PR 60 review #8: two built pages, written here rather than built, so what an install keeps or retires is known by name.
+PAGE_DIST = ".local/share/shepherdr/web/dist"
+PAGE_A = {"index.html": b'<!doctype html><title>page A</title><script src="./assets/a-1.js"></script>\n',
+          "assets/a-1.js": b"console.log('page A')\n"}
+PAGE_B = {"index.html": b'<!doctype html><title>page B</title><script src="./assets/b-2.js"></script>\n',
+          "assets/b-2.js": b"console.log('page B')\n"}
 
 
 # Shepherdr's own data (layout.py): an install makes its folders and the old paths' links; uninstall leaves the data.
@@ -68,7 +77,7 @@ class Install(unittest.TestCase):
         out = run("install", "--root", self.root, "--yes").stdout
         self.assertRegex(out, r"files: \d+ new\n")
         rec = json.load(open(self.p(APP, "data/shepherdr/installed.json")))
-        self.assertEqual(rec["version"], "3.1.29")
+        self.assertEqual(rec["version"], "3.1.31")
         self.assertTrue(os.path.isfile(self.p(APP, "mods/tasks/bin/herdr-task")))
         self.assertTrue(os.path.isfile(self.p(APP, "layouts/shepherdr.json")))
         self.assertEqual(os.path.realpath(self.p(".local/bin/herdr-task")), os.path.realpath(self.p(APP, "mods/tasks/bin/herdr-task")))
@@ -243,6 +252,95 @@ class Install(unittest.TestCase):
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("65535", p.stdout + p.stderr)
 
+    def test_update_retires_what_shepherdr_no_longer_ships(self):
+        """#895: an older release shipped a mod and a helper that the next one drops. The update removes the mod's folder
+        (its shared copy of lib/ui.js too, which doctor rejects) and the helper; what the person changed in them is in
+        the backup, and said. Doctor passes and the record forgets them."""
+        src = tempfile.mkdtemp(prefix="shepherdr-src-")
+        try:
+            old = os.path.join(src, "old")
+            shutil.copytree(ROOT, old, ignore=shutil.ignore_patterns(".git", "node_modules"))
+            os.makedirs(os.path.join(old, "mods", "retired-tool"))
+            with open(os.path.join(old, "mods", "retired-tool", "main.js"), "w") as f:
+                f.write("// retired\n")
+            with open(os.path.join(old, "mods", "retired-tool", "mod.json"), "w") as f:
+                f.write('{"name": "retired-tool"}\n')
+            shutil.copy(os.path.join(old, "lib", "ui.js"), os.path.join(old, "mods", "retired-tool", "ui.js"))
+            with open(os.path.join(old, "bin", "old-tool"), "w") as f:
+                f.write("#!/bin/sh\necho old\n")
+            os.chmod(os.path.join(old, "bin", "old-tool"), 0o755)
+            with open(os.path.join(old, "lib", "COPIES"), "a") as f:
+                f.write("ui.js: retired-tool\n")
+            with open(os.path.join(old, "lib", "addons.json")) as f:
+                manifest = json.load(f)
+            manifest["core"]["mods"].append("retired-tool")
+            with open(os.path.join(old, "lib", "addons.json"), "w") as f:
+                json.dump(manifest, f, indent=2)
+            run("install", "--root", self.root, "--source", old, "--yes")
+            self.assertTrue(os.path.isfile(self.p(APP, "mods/retired-tool/ui.js")))
+            self.assertTrue(os.path.isfile(self.p(APP, "bin/old-tool")))
+            with open(self.p(APP, "mods/retired-tool/main.js"), "a") as f:
+                f.write("// mine\n")
+            with open(self.p(APP, "bin/old-tool"), "a") as f:
+                f.write("echo mine\n")
+            # the next release: ROOT (this checkout) no longer ships either of them
+            up = run("update", "--root", self.root, "--yes").stdout
+            self.assertFalse(os.path.exists(self.p(APP, "mods/retired-tool")), "the retired mod's folder is gone")
+            self.assertFalse(os.path.exists(self.p(APP, "bin/old-tool")), "the retired helper is gone")
+            self.assertFalse(os.path.exists(self.p(".local/share/shepherdr/bin/old-tool")), "and its copy under the app's own folder")
+            self.assertIn("removed mod retired-tool: Shepherdr no longer ships it", up)
+            self.assertIn("removed .config/herdr-app/bin/old-tool: Shepherdr no longer ships it", up)
+            backup = re.search(r"removed \.config/herdr-app/mods/retired-tool/main\.js: .*your changed copy is in (\S+)", up).group(1)
+            with open(backup) as f:
+                self.assertTrue(f.read().endswith("// mine\n"), "the person's change is in the backup")
+            self.assertFalse(os.path.exists(os.path.join(os.path.dirname(backup), "ui.js")), "Shepherdr's unchanged copy isn't backed up")
+            backup_tool = re.search(r"your changed copy is in (\S+)", re.search(r"removed \.config/herdr-app/bin/old-tool:.*", up).group(0)).group(1)
+            with open(backup_tool) as f:
+                self.assertTrue(f.read().endswith("echo mine\n"))
+            rec = json.load(open(self.p(APP, "data/shepherdr/installed.json")))
+            self.assertFalse([k for k in rec["files"] if "retired-tool" in k or k.endswith("old-tool")], "the record forgets them")
+            self.assertNotIn("retired-tool", rec["mods"])
+            d = run("doctor", "--root", self.root).stdout
+            self.assertNotIn("✗", d)
+            self.assertNotIn("changed since install", d)
+        finally:
+            shutil.rmtree(src, ignore_errors=True)
+
+    def test_update_replaces_an_old_helper_copy_doctor_rejects(self):
+        """#905: an older helper without the SHEP block that doctor rejects is an old copy, not the person's edit: it is
+        backed up and Shepherdr's goes in, so doctor passes (and later updates aren't stuck on it)."""
+        helpers = {"bin/herdr-secret": f"{APP}/bin/herdr-secret", "mods/artifacts/bin/herdr-artifact": f"{APP}/mods/artifacts/bin/herdr-artifact"}
+        run("install", "--root", self.root, "--yes")
+        for src_rel, dst in helpers.items():
+            with open(self.p(dst), "rb") as f:
+                text = f.read().decode()
+            a = text.index("# ---- SHEP:")
+            b = text.index("# ---- end SHEP ----")
+            b = text.index("\n", b) + 1
+            with open(self.p(dst), "w") as f:       # the older copy: no SHEP block
+                f.write(text[:a] + text[b:])
+        self.assertIn("has no SHEP block", run("doctor", "--root", self.root, ok=False).stdout)
+        up = run("update", "--root", self.root, "--yes").stdout
+        for src_rel, dst in helpers.items():
+            with open(self.p(dst), "rb") as f, open(os.path.join(ROOT, src_rel), "rb") as g:
+                self.assertEqual(f.read(), g.read(), dst)
+            self.assertIn(f"replaced {dst}: an older Shepherdr's copy", up)
+        backup = re.search(r"replaced .*?kept as (\S+?)\.?$", up, re.M).group(1)
+        self.assertTrue(os.path.isfile(backup))
+        d = run("doctor", "--root", self.root).stdout
+        self.assertNotIn("✗", d)
+
+    def test_update_says_loudly_when_the_install_is_not_whole(self):
+        """An update that goes in but leaves doctor failing says so at its end, with the ✗ lines and no 'done'."""
+        run("install", "--root", self.root, "--yes")
+        with open(self.p(APP, "mods/toasts/ui.js"), "a") as f:
+            f.write("// hand copy\n")
+        up = run("update", "--root", self.root, "--yes").stdout
+        self.assertIn("✗ shared lib copies differ", up)
+        self.assertIn("NOT DONE: the install isn't whole", up)
+        self.assertNotIn("  done. Next:", up)
+        run("doctor", "--root", self.root, ok=False)
+
     def test_doctor_says_why_not_shared(self):
         """doctor (GitHub #754): when tailscale serve refused the share, it's broken (not a note), in tailscale's own
         words with another port to use; a custom port is named."""
@@ -266,6 +364,29 @@ class Install(unittest.TestCase):
         self.assertEqual(bad, [])
         self.assertIn("https://box.tailnet.example:8443/shepherdr/", " ".join(notes))
         self.assertIn("port 8443", " ".join(notes))
+
+    def test_doctor_warns_when_github_checks_cant_be_read(self):
+        """SHEP-179: a repo with tasks whose checks this machine's GitHub token can't read gets a warning naming the
+        permissions to add; one it can read, or a list without tasks, gets none."""
+        from importlib.machinery import SourceFileLoader
+        from unittest import mock
+        sh = SourceFileLoader("shepherdr_cli", SHEPHERDR).load_module()
+        folder = sh.where_for(self.root).path("tasks")
+        os.makedirs(folder, exist_ok=True)
+        for slug, repo, tasks in (("a", "o/locked", [{"id": 1}]), ("b", "o/open", [{"id": 1}]), ("c", "o/empty", [])):
+            with open(os.path.join(folder, f"{slug}.json"), "w") as f:
+                json.dump({"github": {"repo": repo, "at": 1}, "tasks": tasks}, f)
+        gh = os.path.join(self.root, "fake-gh")
+        with open(gh, "w") as f:
+            f.write("#!/bin/sh\ncase \"$2\" in\n  repos/o/locked/*check-runs*) echo 'gh: Resource not accessible by personal access token (HTTP 403)' >&2; exit 1;;\n"
+                    "  *) echo '{}';;\nesac\n")
+        os.chmod(gh, 0o755)
+        with mock.patch.dict(os.environ, {"HERDR_TASK_GH": gh}):
+            out = sh.github_checks_check(self.root)
+        self.assertEqual(len(out), 1, out)
+        self.assertIn("o/locked", out[0])
+        self.assertIn("Checks: read", out[0])
+        self.assertNotIn("Commit statuses", out[0])
 
     def test_service_answers(self):
         """doctor and install trust only Shepherdr's own service on its port: the id it wrote in service.json, not
@@ -317,6 +438,8 @@ class Install(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(share, "service/main.ts")))
             self.assertEqual(os.path.realpath(os.path.join(root, ".local/bin/herdr-task")), os.path.realpath(os.path.join(share, "mods/tasks/bin/herdr-task")))
             self.assertTrue(os.path.isfile(os.path.join(share, "mods/artifacts/recipe-view.js")))
+            # SHEP-181: restarting an Assistant from the web needs no window layout
+            self.assertTrue(os.path.isfile(os.path.join(share, "mods/coordinator/restart.sh")))
             p = subprocess.run([sys.executable, os.path.join(share, "mods/tasks/bin/herdr-task"), "--help"], capture_output=True, text=True)
             self.assertEqual(p.returncode, 0, p.stderr)
             # #735: the artifact guide comes along (agents on the machine serving the web app read it too)
@@ -421,6 +544,114 @@ class Install(unittest.TestCase):
         finally:
             shutil.rmtree(root, ignore_errors=True)
             shutil.rmtree(src, ignore_errors=True)
+
+    def test_web_only_update_retires_what_it_no_longer_ships(self):
+        """The web-only install retires its files the same way: a template an older release shipped goes, and a changed
+        one is backed up and said; the record forgets it."""
+        src = tempfile.mkdtemp(prefix="shepherdr-src-")
+        root = tempfile.mkdtemp(prefix="shepherdr-web-")
+        try:
+            old = os.path.join(src, "old")
+            shutil.copytree(ROOT, old, ignore=shutil.ignore_patterns(".git", "node_modules"))
+            with open(os.path.join(old, "templates", "retired.md"), "w") as f:
+                f.write("# retired\n")
+            run("install", "--web", "--root", root, "--source", old, "--yes", "--force")
+            tpl = os.path.join(root, ".config/herdr-core/templates/retired.md")
+            self.assertTrue(os.path.isfile(tpl))
+            with open(tpl, "a") as f:
+                f.write("mine\n")
+            up = run("update", "--web", "--root", root, "--yes", "--force", "--source", ROOT).stdout
+            self.assertFalse(os.path.exists(tpl))
+            backup = re.search(r"templates/retired\.md: Shepherdr no longer ships it; your changed copy is in (\S+)", up).group(1)
+            with open(backup) as f:
+                self.assertTrue(f.read().endswith("mine\n"))
+            rec = json.load(open(os.path.join(root, ".local/share/shepherdr/installed.json")))
+            self.assertNotIn(".config/herdr-core/templates/retired.md", rec["files"])
+            self.assertIn("service/main.ts", " ".join(rec["files"]))
+        finally:
+            shutil.rmtree(src, ignore_errors=True)
+            shutil.rmtree(root, ignore_errors=True)
+
+    def page_installed_before_stays(self, root, web):
+        """PR 60 review #8: a source with no built page (--no-build with none built, --force past a failed build, or a
+        copy with neither web/src nor web/dist) leaves the installed page and its record rows as they were, update after
+        update; a failed build without --force still refuses; a source with a built page again replaces it, retiring
+        what the new one no longer has. -> doctor's output at the end."""
+        kind = ("--web",) if web else ()
+        record = os.path.join(root, ".local/share/shepherdr/installed.json" if web else f"{APP}/data/shepherdr/installed.json")
+        src, bins = tempfile.mkdtemp(prefix="shepherdr-src-"), tempfile.mkdtemp(prefix="shepherdr-nobun-")
+        try:
+            s = os.path.join(src, "s")
+            shutil.copytree(ROOT, s, ignore=shutil.ignore_patterns(".git", "node_modules"))
+            shutil.rmtree(os.path.join(s, "web/dist"), ignore_errors=True)
+            self.assertTrue(os.path.isdir(os.path.join(s, "web/src")))
+
+            def put(page):
+                for name, data in page.items():
+                    os.makedirs(os.path.dirname(os.path.join(s, "web/dist", name)), exist_ok=True)
+                    with open(os.path.join(s, "web/dist", name), "wb") as f:
+                        f.write(data)
+
+            def holds(page, said):
+                # the installed page as the disk has it, and its rows as the record has them
+                top = os.path.join(root, PAGE_DIST)
+                disk = {}
+                for d, _, names in os.walk(top):
+                    for n in names:
+                        with open(os.path.join(d, n), "rb") as f:
+                            disk[os.path.relpath(os.path.join(d, n), top)] = f.read()
+                with open(record) as f:
+                    rows = {k[len(PAGE_DIST) + 1:]: v for k, v in json.load(f)["files"].items() if k.startswith(PAGE_DIST + "/")}
+                self.assertEqual(disk, page, said)
+                self.assertEqual(rows, {n: hashlib.sha256(b).hexdigest() for n, b in page.items()}, said)
+
+            def update(*more, **k):
+                return run("update", *kind, "--root", root, "--source", s, "--yes", *more, **k)
+
+            put(PAGE_A)
+            run("install", *kind, "--root", root, "--source", s, "--yes")
+            holds(PAGE_A, "a built page installs and is recorded")
+            shutil.rmtree(os.path.join(s, "web/dist"))
+            # --no-build, nothing built
+            out = update().stdout
+            self.assertIn("has no built web app: the page installed before stays, not updated", out)
+            holds(PAGE_A, out)
+            # a build that fails (no Bun on this PATH), with --force: installed without a new page
+            os.symlink(shutil.which("git"), os.path.join(bins, "git"))
+            nobun = {**os.environ, "PATH": bins}
+            out = update("--force", build=True, env=nobun).stdout
+            self.assertIn("couldn't build the web app (Bun isn't installed", out)
+            holds(PAGE_A, out)
+            # and without --force it refuses, changing nothing
+            p = update(build=True, env=nobun, ok=False)
+            self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+            self.assertIn("Nothing was changed", p.stderr)
+            holds(PAGE_A, p.stderr)
+            # no flag: a copy with neither web/src nor web/dist (never built, nothing to build)
+            shutil.rmtree(os.path.join(s, "web/src"))
+            out = update(build=True).stdout
+            self.assertNotIn("building", out)
+            self.assertIn("the page installed before stays", out)
+            holds(PAGE_A, out)
+            # a built page again: its new file goes in, and the one it no longer has goes, from the disk and the record
+            put(PAGE_B)
+            out = update(build=True).stdout
+            self.assertNotIn("the page installed before stays", out)
+            holds(PAGE_B, out)
+            return run("doctor", "--root", root).stdout
+        finally:
+            shutil.rmtree(src, ignore_errors=True)
+            shutil.rmtree(bins, ignore_errors=True)
+
+    def test_update_keeps_the_page_installed_before_without_a_built_one(self):
+        self.assertNotIn("missing:", self.page_installed_before_stays(self.root, web=False))
+
+    def test_web_only_update_keeps_the_page_installed_before_without_a_built_one(self):
+        root = tempfile.mkdtemp(prefix="shepherdr-web-")
+        try:
+            self.assertNotIn("missing:", self.page_installed_before_stays(root, web=True))
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
 
     def test_update_runs_the_new_installer(self):
         """`shepherdr update` is the installed (old) copy: after a release it hands over to the source's installer, so
@@ -749,6 +980,40 @@ class AgentBrowser(unittest.TestCase):
         self.assertIn("agent-browser 0.41.1 for the task browser (Shepherdr's own copy)", sh("doctor", "--root", root).stdout)
         self.assertEqual(sh("uninstall", "--root", root).returncode, 0)
         self.assertFalse(os.path.exists(os.path.dirname(mine)), "uninstall takes Shepherdr's agent-browser away")
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "AppArmor's user-namespace block is Linux's")
+    def test_install_note_says_chrome_cant_start_and_where_the_fix_is(self):
+        """PR 60: the installer keeps the last line of `herdr-browser --install` as its note. With AppArmor blocking
+        Chrome's sandbox, that was the machine-wide sysctl alone; now it says Chrome can't start and where the fix for
+        this Chrome is. Nothing on this machine is changed: the restriction, unshare and ldd are stand-ins."""
+        root = os.path.join(self.tmp, "root")
+        os.makedirs(os.path.join(root, APP))
+        fakes = os.path.join(self.tmp, "fakes")
+        os.makedirs(fakes)
+        for name, body in (("unshare", "exit 1\n"), ("ldd", "echo '\tlibc.so.6 => /lib/libc.so.6 (0x1)'\n")):
+            with open(os.path.join(fakes, name), "w") as f:
+                f.write("#!/bin/sh\n" + body)
+            os.chmod(os.path.join(fakes, name), 0o755)
+        chrome = os.path.join(self.tmp, "chrome")
+        with open(chrome, "w") as f:
+            f.write("#!/bin/sh\necho chrome\n")
+        os.chmod(chrome, 0o755)
+        sysctl = os.path.join(self.tmp, "apparmor_restrict_unprivileged_userns")
+        with open(sysctl, "w") as f:
+            f.write("1\n")
+        path = ":".join(d for d in os.environ["PATH"].split(":") if not os.path.exists(os.path.join(d, "agent-browser")))
+        env = {**os.environ, "PATH": f"{fakes}:{path}", "HERDR_BROWSER_URL": "file://" + self.rel,
+               "HERDR_BROWSER_SHA256": self.sha, "HERDR_BROWSER_USERNS_SYSCTL": sysctl,
+               "HERDR_BROWSER_APPARMOR_D": os.path.join(self.tmp, "no-apparmor.d"), "AGENT_BROWSER_EXECUTABLE_PATH": chrome,
+               "SHEPHERDR_AGENT_BROWSER": "1"}
+        p = subprocess.run([sys.executable, SHEPHERDR, "install", "--root", root, "--yes", "--no-build"], capture_output=True,
+                           text=True, stdin=subprocess.DEVNULL, env=env)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        notes = [ln for ln in p.stdout.splitlines() if ln.startswith("  - the task browser: ")]
+        self.assertEqual(notes, ["  - the task browser: Chrome can't start: AppArmor blocks its sandbox here (Chrome's sandbox "
+                                 "stays on; nothing on this machine was changed). Run herdr-browser --install for the fix for "
+                                 "this Chrome."], p.stdout)
+        self.assertNotIn("sysctl", p.stdout)
 
 
 if __name__ == "__main__":

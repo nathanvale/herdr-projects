@@ -1,18 +1,21 @@
 // The model menu and restart from the web (2.1's restart sheet): what an agent runs on now and what its CLIs offer
-// (core/agents.js, as the window's model menu), and restarting it on another model, effort or speed the window's way:
-// herdr-task switch for a task's agent, the Assistant's restart.sh for an Assistant, parked behind its chat.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+// (core/agents.js, as the window's model menu); another model, level or Fast in place (core/live-switch.js, SHEP-181:
+// the CLI's own commands, the same conversation); and a restart for what can't change in place (another CLI or
+// permission mode): herdr-task switch for a task's agent, the Assistant's restart.sh for an Assistant, parked behind
+// its chat.
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { join } from "node:path";
 import type { Hub } from "./hub.ts";
-import { HOME, appHome, where, writable } from "./paths.ts";
+import { where, writable } from "./paths.ts";
 import { sh } from "./model.ts";
+import { layoutScript } from "./layout-scripts.ts";
 import * as AG from "../core/agents.js";
 import { chatLabel } from "../core/spaces.js";
 import { kindOf } from "../core/chat-reader.js";
 import { FOLDER } from "../core/chat-log.js";
+import * as LS from "../core/live-switch.js";
 
-const { DEFAULTS, parseDefaults, current, menuFor, rowFor, argvFor, sessionOf, inOtherFolder, OTHER_FOLDER, restartRefusal, lostRefusal, NAMES, line, PICKS_FILE, parsePicks, pickKey, withPin, withRecent } = AG as any;
+const { DEFAULTS, parseDefaults, current, menuFor, rowFor, argvFor, sessionOf, inOtherFolder, OTHER_FOLDER, restartRefusal, lostRefusal, providerRefusal, NAMES, line, PICKS_FILE, parsePicks, pickKey, withPin, withRecent } = AG as any;
 
 async function run(cmd: string[]) {
   const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
@@ -143,6 +146,67 @@ export class Agents {
     return running ? restartRefusal(running, k.foreground?.pid, read) : lostRefusal("claude", k, read);
   }
 
+  /** The model menu's pick: in place when only the model, level or Fast changes (the same agent, its conversation
+   *  on), else a restart. Resolves with { live } or { terminal } (the restarted agent's address). */
+  async change(addr: string, reader: any, pick: { kind: string; model?: string; effort?: string; speed?: string; perm?: string }) {
+    const t: any = this.hub.terminals.get(addr);
+    if (!t || t.state !== "live") throw new Error("That agent isn't running.");
+    const machine = addr.includes("/") ? addr.split("/")[0] : null;
+    const kind = kindOf(t) ?? reader?.kind ?? "claude";
+    // A live switch types into the running CLI and puts back ~/.claude or ~/.codex settings: it can carry neither a
+    // recorded provider binding (Azure Foundry: its model is the deployment, A1/L2) nor another CLAUDE_CONFIG_DIR. Those
+    // go to restart(), whose launch owner keeps the binding or refuses in its own words. The agent's own process is
+    // asked too (folderRefusal), as restart() does: a page's reader may be gone or have no path yet.
+    if (providerRefusal(t) || inOtherFolder(kind, reader?.path ?? null) || await this.folderRefusal(addr, t))
+      return { terminal: await this.restart(addr, reader, pick) };
+    const dflt = await this.defaults(kind, machine);
+    let meta = reader?.conv?.meta ?? {};
+    if (t.created_ms && meta.at && meta.at < t.created_ms) meta = { used: meta.used, window: meta.window };
+    const c = current(kind, t.foreground?.argv ?? t.argv ?? [], meta, dflt);
+    const from = { agent: kind, model: rowFor(kind, c) ?? "", effort: c.effort ?? "", fast: !!c.fast, perm: c.perm ?? "" };
+    const to = { agent: pick.kind, model: pick.model ?? "", effort: pick.effort ?? "", fast: pick.speed === "fast", perm: pick.perm ?? "" };
+    if (!LS.liveOK(from, to)) return { terminal: await this.restart(addr, reader, pick) };
+    const state = t.status?.state;
+    if (state === "working") throw new Error("It's busy with a turn. Switch once it's done, or stop it first.");
+    if (state === "blocked") throw new Error("It's waiting on a question. Answer it, then switch.");
+    const hc = (args: string[]) => run([process.env.SHEPHERDR_HC || "hc", ...args]);
+    // a send returns once a turn starts or ~5 s pass, and a command starts none: its answer on screen is what counts,
+    // so each is waited for only as long as a refusal takes (it comes at once), not for the rest
+    const io = {
+      send: async (text: string) => {
+        const p = this.hub.send(addr, text);
+        const r = await Promise.race([p, Bun.sleep(800).then(() => null)]);
+        if (r && r.code !== 0) throw new Error("It couldn't be reached to switch.");
+      },
+      keys: async (...keys: string[]) => { await hc(["keys", addr, ...keys]); },
+      screen: async () => (await hc(["read", addr, "--lines", "2000"])).out,
+      // no such file: null (a switch's command may make it, and its keys then go); one that can't be read, or a machine
+      // that can't be reached, throws, so nothing is switched (core/live-switch.js)
+      readFile: async (rel: string) => {
+        const r = await sh(this.hub, '[ -e "$HOME/$1" ] || [ -L "$HOME/$1" ] || exit 3; cat "$HOME/$1"', ["read", rel], machine);
+        if (r.code === 3) return null;
+        if (r.code !== 0) throw new Error("unreadable");
+        return r.stdout;
+      },
+      writeFile: async (rel: string, text: string) => {
+        const r = await sh(this.hub, 'printf %s "$2" > "$HOME/$1"', ["write", rel, text], machine);
+        if (r.code !== 0) throw new Error("not written");
+      },
+      sleep: (ms: number) => Bun.sleep(ms),
+    };
+    const names = Object.fromEntries(menuFor(kind, dflt, from.model || null).models.map((m: any) => [m.id, m.name]));
+    try {
+      await LS.switchLive(io, kind, from, to, { names });
+    } catch (e: any) {
+      // it switched, but the default it saved stayed: what runs changed all the same, and the error says both
+      if (e?.switched) { this.known.delete(`${machine ?? ""}|${kind}`); this.used(pick); }
+      throw e;
+    }
+    this.known.delete(`${machine ?? ""}|${kind}`);
+    this.used(pick);
+    return { live: true };
+  }
+
   /** Restarts it on the picked CLI, model, effort and speed; resolves with the new agent's address. */
   async restart(addr: string, reader: any, pick: { kind: string; model?: string; effort?: string; speed?: string; perm?: string }) {
     const t: any = this.hub.terminals.get(addr);
@@ -168,8 +232,8 @@ export class Agents {
       this.used(pick);
       return out.terminal as string;
     }
-    const script = join(appHome(), "mods", "coordinator", "restart.sh");
-    if (!existsSync(script)) throw new Error("Restarting an Assistant needs Shepherdr's window layout installed.");
+    const script = layoutScript("restart.sh");
+    if (!script) throw new Error("This install can't restart an Assistant: update Shepherdr on that machine.");
     const p = Bun.spawn(["bash", script, addr, JSON.stringify(built.argv)], { stdout: "pipe", stderr: "pipe", stdin: "ignore",
       env: { ...process.env, HERDR_RESTART_CHAT: pane, ...(built.resume ? { HERDR_RESTART_RESUME: "1" } : {}) } });
     const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);

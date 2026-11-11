@@ -5,8 +5,8 @@ import clsx from 'clsx'
 import * as SL from '@core/slash.js'
 const { typing: slashTyping, match: slashMatch } = SL as any
 import { openAccept } from '@client/screens/Accept.tsx'
-import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ComponentType, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode, type RefObject } from 'react'
-import { act, chatName, definePlugin, getDraft, getState, goChat, has, holdReload, openArtifact, openItem, openNeeds, openTask, registry, setDraft, setOutbox, setUI, taskOf, useDraft, useSnap, useStore, useUI, type UI } from '@client/kernel.ts'
+import { createContext, Fragment, memo, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type ComponentType, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode, type RefObject } from 'react'
+import { act, chatName, chatPlace, definePlugin, getDraft, getState, goChat, has, holdReload, openArtifact, openItem, openNeeds, openTask, registry, setDraft, setOutbox, setUI, taskOf, useDraft, useSnap, useStore, useUI, type UI } from '@client/kernel.ts'
 import { anchorOf, keyOf, partsOf, placesOf, priorOf, reasonOf, SEND_TIMEOUT, type Outgoing } from '@client/outbox.ts'
 import { dropFiles, keepFile, keptFile, postFile, retrying, sweepFiles } from '@client/uploads.ts'
 import { AlertIcon, BackIcon, CameraIcon, CheckIcon, CopyIcon, Count, DeleteIcon, dimmed, Dot, DownIcon, DownloadIcon, Empty, field, FileIcon, ic, IconButton, KeyIcon, LinkButton, LiveWave, MachineIcon, Menu, MenuItem, MenuSeparator, MenuSetting, MicIcon, ModeIcon, MoreIcon, NextIcon, PageIcon, PlanIcon, PlusIcon, Primary, QuestionIcon, ReplyIcon, RestartIcon, roundBtn, SearchIcon, SecretField, Sent, SmileIcon, Tab, Tabs, TextBox, UpIcon, useElapsed, XIcon } from '@client/ui.tsx'
@@ -16,7 +16,7 @@ import { modelCommand, modeName, taskChatId, type CardAsk, type Chat, type Choic
 import { sendsOnTap } from '@shared/alerts.ts'
 import { buzz, ForkIcon, mine, openBar, openPicker, quick, react, RewindIcon } from '@plugins/reactions/client.tsx'
 import { EDGE } from '@client/gestures.ts'
-import { enterHint, sendsNow } from '@client/enter.ts'
+import { enterHint, sendsNow, touchOnly } from '@client/enter.ts'
 import { still, useArrive } from '@client/motion.ts'
 import { draggingFiles, dropped, named, pasted } from './paste.ts'
 import { dayLabel } from './days.ts'
@@ -25,6 +25,7 @@ import { Fold } from './fold.tsx'
 import { Markdown } from './markdown.tsx'
 import { answeredBy, cancelReply, canReply, isArtifact, jumpTo, startReply } from './reply.ts'
 import { typing, working } from './typing.ts'
+import { suggestionOf, suggestionsOn } from './suggest.ts'
 import { JobsSheet, JobsTag, NeedsYou, openSubagent, TurnLine, useSubagent, WorkingLine } from './activity.tsx'
 import { ClockIcon } from '@heroicons/react/16/solid'
 import { AskedRow, Band, BriefRow, Chips, EndedRow, ErrorRow, NoteRow, Notice, HeadRow, ImagesLine, NewsRow, onTerminal, PilotRow, PublishingRow, questionsBelow, ReplyLine, Thumbs, WORDS } from './rows.tsx'
@@ -1898,8 +1899,19 @@ function SlashList({ chatKey, text, pick }: { chatKey: string; text: string; pic
   )
 }
 
-function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder: string; cli: string }) {
+export function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder: string; cli: string }) {
   const [text, setText] = useDraft(chatKey)
+  // the suggested next message (SHEP-186), as the chat's own space has the setting (PR 60)
+  const snap = useSnap()
+  const suggest = suggestionOf(useChat(chatKey), suggestionsOn(snap?.settings, snap ? chatPlace(snap, chatKey) : null))
+  // the suggestion the person has used or typed over (by its message): it doesn't come back for that message
+  const [spent, setSpent] = useState<string | null>(null)
+  // the ghost text shows only in an empty box, while the suggestion is still the one waiting
+  const ghost = suggest && spent !== suggest.id && !text ? suggest : null
+  // the same words for a screen reader (the grey copy is hidden from it): on the box and on Send, only while it shows.
+  // A touch screen's Enter makes a new line (enter.ts), so there it is Send that sends it (PR 60)
+  const ghostId = useId()
+  const describedBy = ghost ? ghostId : undefined
   const files = useUI((u) => u.files[chatKey]) ?? noFiles
   const device = useUI((u) => u.device)
   const focused = useUI((u) => u.focus === chatKey)
@@ -1907,7 +1919,7 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
   const plus = useUI((u) => u.plus === chatKey)
   const ref = useRef<HTMLTextAreaElement>(null)
   const live = useUI((u) => registry.composerLive.find((l) => l.when(u, chatKey)))
-  const sendable = !!(text.trim() || files.length)
+  const sendable = !!(text.trim() || files.length || ghost)
   const Mic = registry.composerMic
   useEffect(() => {
     if (focused && device === 'desktop') ref.current?.focus()
@@ -1983,7 +1995,6 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
   const recalled = useRef('')
   // the "#" list: spaces this chat's agent reaches; the "@" list: tasks in them (mentions.tsx). Escape closes it for
   // what is typed, Up and Down choose, Enter or Tab takes
-  const snap = useSnap()
   const word = mentionTyping(text)
   const [mclosed, setMclosed] = useState<string | null>(null)
   const reach = useReach(chatKey, word !== null)
@@ -1992,8 +2003,8 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
   const [msel, setMsel] = useState(0)
   useEffect(() => setMsel(0), [word, (MNc as any).typingTask(text) === null])
   const takeMention = (i: Item) => { setText(takeItem(chatKey, text, i)); ref.current?.focus() }
-  const send = (hold = false) => {
-    const t = expandPicked(chatKey, text.trim())
+  const send = (hold = false, words = text) => {
+    const t = expandPicked(chatKey, words.trim())
     if (!t && !files.length) return
     recall.current = -1
     const reply = getState().ui.reply[chatKey]
@@ -2028,6 +2039,12 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
     setOutbox((all) => [...all, out])
     void deliver(out.cid)
   }
+  // Enter or Send with nothing typed sends the suggestion; Tab fills it in for editing (below)
+  const accept = (hold = false) => {
+    if (!ghost) return
+    setSpent(ghost.id)
+    send(hold, ghost.text)
+  }
   return (
     // what goes with the box (send, +, a file's x, its menu) leaves the box the focus: a phone's keyboard stays up. What
     // shows over the box (working, queued, jobs, lists) is a stack with one gap, none of its own: as the window's
@@ -2038,7 +2055,7 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
       {/* the window's box: the words across its full width, then a row in it of attach on the left and on the right
           what the agent runs on (the model menu), the mic and Send; nothing under it. Its corners are half a
           round button and the padding, so the buttons sit in the bottom ones with the same curve round them */}
-      <div data-composer className="relative round-box bg-bg p-1.5 shadow-box has-[textarea:focus]:shadow-box-focus">
+      <div data-composer data-suggest={ghost ? '' : undefined} className="relative round-box bg-bg p-1.5 shadow-box has-[textarea:focus]:shadow-box-focus">
         {/* what it replies to: one quiet line inside the box, over the words (like WhatsApp and Telegram) */}
         <ReplyStrip chatKey={chatKey} />
         {live ? (
@@ -2055,11 +2072,15 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
                 data-kept
                 data-quiet
                 aria-label={placeholder}
+                aria-describedby={describedBy}
                 rows={1}
                 value={text}
                 placeholder=""
                 enterKeyHint={enterHint()}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value && suggest) setSpent(suggest.id)
+                  setText(e.target.value)
+                }}
                 onPaste={(e) => {
                   // a screenshot or a copied file attaches, as + does; text pastes as text
                   const list = pasted(e.clipboardData)
@@ -2077,6 +2098,13 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
                 onFocus={() => setUI({ focus: chatKey })}
                 onBlur={() => getState().ui.focus === chatKey && setUI({ focus: null })}
                 onKeyDown={(e) => {
+                  // the suggested next message: Tab fills it in for editing (Shift+Tab goes on as usual), Enter sends it
+                  if (ghost && e.key === 'Tab' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault()
+                    setSpent(ghost.id)
+                    setText(ghost.text)
+                    return
+                  }
                   if (choosable.length && !e.nativeEvent.isComposing) {
                     const n = choosable.length, at = Math.min(msel, n - 1)
                     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); return setMsel((at + (e.key === 'ArrowDown' ? 1 : n - 1)) % n) }
@@ -2102,7 +2130,8 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
                   if (sendsNow(e, getState().ui.keyboard)) {
                     e.preventDefault()
                     // Shepherdr 3: Ctrl+Enter holds it until the agent is free
-                    send(e.ctrlKey || e.metaKey)
+                    if (!text && ghost) accept(e.ctrlKey || e.metaKey)
+                    else send(e.ctrlKey || e.metaKey)
                   }
                   if (e.key === 'Escape') {
                     e.preventDefault()
@@ -2124,9 +2153,11 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
               />
               {!text ? (
                 <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-2.5 left-2.5 flex items-center text-fg3 phone:right-3.5 phone:left-3.5">
-                  <span className="truncate">{placeholder}</span>
+                  {/* the suggested next message (SHEP-186): greyed out where the placeholder is; Tab fills it in, Enter sends it */}
+                  <span data-ghost={ghost ? '' : undefined} className={clsx('truncate', ghost && 'italic opacity-70')}>{ghost ? ghost.text : placeholder}</span>
                 </span>
               ) : null}
+              {ghost ? <span id={ghostId} className="sr-only">{`Suggested next message: ${ghost.text}. ${touchOnly() ? 'Send sends it.' : 'Enter sends it, Tab fills it in.'}`}</span> : null}
             </div>
             <div data-btns className="flex items-center gap-1">
               {registry.composerPlus ? (
@@ -2148,9 +2179,10 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
               <button
                   type="button"
                 aria-label="Send"
+                aria-describedby={describedBy}
                 disabled={!sendable}
                 // Shepherdr 3 on a phone: a long press on Send holds it until the agent is free (the phone's Ctrl+Enter)
-                onPointerDown={() => { held.current = false; holdTimer.current = setTimeout(() => { held.current = true; buzz(); send(true) }, 500) }}
+                onPointerDown={() => { held.current = false; holdTimer.current = setTimeout(() => { held.current = true; buzz(); if (ghost && !text) accept(true); else send(true) }, 500) }}
                 onPointerUp={() => clearTimeout(holdTimer.current)}
                 onPointerLeave={() => clearTimeout(holdTimer.current)}
                 onContextMenu={(e) => e.preventDefault()}
@@ -2158,7 +2190,9 @@ function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder:
                   if (held.current) return
                   // a light tap from the phone as it goes, like ChatGPT's
                   if (matchMedia('(pointer: coarse)').matches) buzz()
-                  send()
+                  // with nothing typed, Send sends the suggested next message
+                  if (ghost && !text) accept()
+                  else send()
                 }}
                 className="press-dim relative grid size-[34px] shrink-0 place-items-center rounded-full bg-fg text-bg after:absolute after:-inset-1.5 disabled:bg-bubble disabled:text-fg3 phone:size-11"
               >
@@ -2886,6 +2920,7 @@ function Ended({ chatKey }: { chatKey: string }) {
 function ChatView({ chatKey, placeholder, unreachable }: { chatKey: string; placeholder: string; unreachable?: string }) {
   const from = useStore((s) => chatName(s.snap!, chatKey))
   const chat = useChat(chatKey)
+  const snap = useSnap()
   const override = useUI((u) => registry.chatBody.find((b) => b.when(u, chatKey)))
   if (override) return <override.View chatKey={chatKey} />
   // the window's notice instead of the conversation (opening, not a chat agent, not found, ended); a chat not heard

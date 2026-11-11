@@ -23,7 +23,8 @@ pass. Imported installer/service code is source input, not authority to run it.
 | Input | Exact commit |
 | --- | --- |
 | F, reserved fork parent | `4f0236f03a88c5e9fa344475d90d3a20ef418481` |
-| U, upstream v3.1.29 parent (since its merge) | `e41ea9d2c0a273a5c7b6aebf51cf2e4d112a1d1e` |
+| U, upstream v3.1.31 parent (since its merge) | `6b8caac946a5c3fae0543624e93a0a5553d3b214` |
+| Upstream v3.1.29, U before the v3.1.31 merge (history) | `e41ea9d2c0a273a5c7b6aebf51cf2e4d112a1d1e` |
 | Upstream v3.1.16, U before the v3.1.29 merge (history) | `57302497117183a1772464b31751da12a1c03e4a` |
 | Upstream v3.1.3, S0's U (history) | `dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc` |
 | P, required Bitbucket contract source | `074dec5ea0bf0a057f520fa50497bf9e1b696ad9` |
@@ -123,6 +124,147 @@ start alone (`stand_in_hc`), and its production guards are unchanged. #828's con
 request is recorded and commented on only when GitHub answered for it in this repository on
 gh's host (`answered_in()`); a forge-refused read keeps `merge_queued`; `tidy_done()` reads the
 base as a branch (`base_commit()`).
+Qualification is unchanged: nothing here is native, Azure or R evidence.
+
+### Upstream v3.1.31 merge
+
+`codex/upstream-v3.1.31-intake` merges upstream v3.1.31 (`6b8caac9`, a lightweight tag) into
+`integrate/upstream-v3.1.3` at `9b7ec505` with a merge commit: both are parents, nothing is
+squashed or rebased. Git's merge base is v3.1.29 (`e41ea9d2`). U now names v3.1.31: every U path
+outside the phase table and the overrides is byte-identical to it, and each row's `upstream_blob`
+and `sha256` are re-pinned to v3.1.31 and the merged content. `AFTER_Q` names the merge's source
+paths (`MERGE-v3.1.31`), so Q's ledger keeps describing its candidate `d53e014b`. The gate's checks are
+unchanged.
+
+Where the two sides met:
+
+- SHEP-179's unreadable-checks read joins the fork's `github.pr_read()`, which keeps `baseRefName`,
+  `url` and gh's reason for identity admission. Checks it can't read are `checks_unknown`, shown
+  as unknown on the Accept card, never as passed. `note_checks()` runs for GitHub views only, never
+  a refused or Bitbucket one. The REST fallback (`check_rows()`) is whole only when GitHub's
+  `total_count` fits the one page it reads and no check name came back with different outcomes
+  (its rows name the app, not the workflow); otherwise it is unknown (C0). A row with a field of the
+  wrong kind is unknown too, never a crash of the folder's tick, and a failure read beside it still
+  counts. Nathan chose the conservative policy (11 November 2026): unknown checks never merge by
+  themselves. `merge_now(auto=True)` refuses them for the tick's merge (merge `auto` or `checks`,
+  including an Accept made while checks ran) and for ready's merge `auto`; the person's own Accept
+  or merge is unchanged, and GitHub still refuses what its required checks block. A task held this
+  way is the person's: `ready_wait()` and `core/tasks.js` `readyWait()` show it Ready (never
+  Working on a merge that won't come), its Accept card says the checks are unknown, and its merge
+  setting stays, so a later full read that passes still merges it by itself. That makes A2 the
+  owner of `T/agents.py` (`ready_wait()`), beside `core/tasks.js`: its row pins v3.1.31's blob
+  `5acf2887` and the changed content.
+- SHEP-188's `mid_turn()` joins `finish()` beside `kept_because()`: a folder stays while its agent
+  or helper is mid-turn, and stays when the branch holds work that didn't merge.
+- SHEP-189's resume nudge goes through the fork's admitted `start_again()`; `--fresh` (a new conversation from
+  the handoff) gets none, as it is no resume. Since PR 60's resume fix, `start_again()` sends it
+  (`resumed_message`) only after the resumed session itself: a resume that falls back to a handoff (no session
+  or history recorded, or another kind of agent) says nothing of a resume, and another command's own message
+  (`message`, as `herdr-task fix` sends) still goes after either. `test_providers.py`'s `ResumeNudge` runs
+  each case through the real CLI, its launch admission and launch, with the stand-in `hc`.
+  Since PR 60's missing-log fix, a recorded Claude Code session whose log is positively gone here
+  (`revive.history_of()`, the rule revival shares: its folder is read and doesn't hold it) is missing history, not a
+  `--resume` the CLI is expected to refuse: a new
+  conversation on that conversation's recorded binding (a binding today's routing can't carry refuses before
+  anything changes), opening with the handover that says the earlier session is gone, then the handoff and
+  `message`, with no nudge; the result says `resumed: false`, `missing_history` and `previous_session`. A log not
+  recorded yet, a folder missing here or unreadable, an agent on another machine, or a Codex rollout missing from its
+  recorded path is unknown and still resumes: Codex finds a thread by its id (openai/codex `rust-v0.166.0`,
+  `6ff1e1ca`: a cold rollout becomes `.jsonl.zst` and the plain file goes; `codex resume <id>` reads archived threads
+  too). Revival still resumes only a log it finds. `MissingHistory` runs those cases the same way.
+- SHEP-202's caller-free shell send goes through the one revival owner: `bring_back()` passes
+  `without_caller()`'s environment to `Admission.type_into()`.
+- SHEP-207's Codex process tree (`codex_working()`): a process list it can't read (no `ps`, one that
+  failed, even with some output, or an empty listing) is unknown, so the agent's log decides, as with
+  no pid. The tick goes on, and a task back at work is Ready again only once a listing it can read
+  shows nothing of its own running (PR 60's review).
+- SHEP-181's live model and effort switch runs only for a Personal agent in its own config folder.
+  One with a recorded provider binding (`herdr.provider`, as `providerRefusal()` reads it), or
+  another `CLAUDE_CONFIG_DIR` by its page or its own process (`folderRefusal()`, as `restart()`
+  asks), goes to `restart()`, whose launch owner keeps the binding or refuses. After PR 60's review, the
+  defaults a switch saves go back also when the CLI made its settings file just then (none before); a
+  file that can't be read (or, for Claude Code, isn't settings JSON), or a machine that can't be
+  reached, refuses before anything is typed; and a default that couldn't be put back, or a command
+  that failed after an earlier one took, fails the switch with words that say it switched
+  (`switched`), never a plain success or a plain refusal. The service's home-file io says which: its `sh` exits 3 for no such file, and
+  any other failure, of a read or a write, is an error. That makes A2 the owner of `core/live-switch.js`
+  and its test, with the new `service/live-switch.test.ts` (named in `AFTER_Q` as `PR60-FIX`). PR 60's
+  later regressions add, through `change()` with the stand-in hub: a Claude Code agent whose own process
+  says another config folder, or one that can't be read, refuses before anything is typed or any
+  settings file is read, and one on `~/.claude` switches in place (the hub answers the folder question as
+  the agent's machine would, so the process read itself isn't run here); and after a switch whose
+  default couldn't be put back, the same `Agents`' `cached()` reads its defaults again. Pick
+  persistence stays unproved: its file can't be written under test.
+- The installer's page (PR 60's review #8): an install or update from a source with no built page
+  (`--no-build` with none built, `--force` past a failed build, or a copy with neither `web/src` nor
+  `web/dist`) no longer retires the page installed before. Its files stay, and stay in the install
+  record, in both the full and the web-only installer, and the update says the page wasn't updated; a
+  source with a built page still replaces it and retires what the new one no longer has, and a failed
+  build without `--force` still refuses. That makes N1, the owner of `docs/install.md`, the owner of
+  `bin/shepherdr` and `test/test_install.py` (both already named in `AFTER_Q` by the v3.1.31 merge),
+  and the gate then admitted 102 rows. Check proves the guard's regressions with `bin/check-sensitivity
+  --ledger docs/migration/pr60-sensitivity.json` (named `PR60-FIX8`), beside Q's own run: removing the
+  guard in either installer, dropping the kept page's record rows, keeping old page files when a built
+  page replaces them, or installing past a failed build without `--force` must each fail an installer
+  regression.
+- PR 60's six other review claims, all on code the v3.1.31 merge brought in:
+  - The suggested next message ends at any message of the person's, a photo, a file or a queued one
+    with no words included.
+  - The web app follows the chat's own space's setting (its own value, else its machine's, else
+    Everywhere's), as the agents do.
+  - While a suggestion shows, the message box and Send describe it to a screen reader, in words that
+    match the device's Enter.
+  - The `#` list's known spaces are placed relative to the machine its reach map starts on, in the web
+    app and the window alike.
+  - `herdr-browser --install` ends a Chrome that can't start on a line that says so and where its fix
+    is, so the installer's note is no longer the machine-wide `sysctl` alone.
+
+  Where these are proved, and where they are not:
+  - The regressions are in `suggest.test.ts`, `service/settings.test.ts` (the service's real sections,
+    read by the web's resolver), `web/plugins/chat/composer.test.tsx`, `core/mentions.test.js`,
+    `service/chat-reach.test.ts`, `test_herdr_browser_libs.py` and `test_install.py`.
+  - The composer test draws the real Composer as HTML (`react-dom/server`, read with Bun's
+    `HTMLRewriter`), its store filled through the kernel's own socket handler. It checks the box's and
+    Send's description of the suggestion, its absence, the touch wording and the space's own setting
+    at the call site. For that, the store's `useSyncExternalStore` hooks (`kernel.ts`, `restart.tsx`)
+    pass their getter as the server snapshot too. The app mounts with `createRoot` and never hydrates,
+    so the browser never calls it. `markdown.tsx` adds DOMPurify's link hook only where DOMPurify works,
+    which is every browser; with no DOM it has no hooks to add.
+  - The window's `loadReach` is tested with the native stand-ins (`fake-herdr`, `fake-gpui`). It now
+    waits for this machine's herdr-core name before placing its spaces for a map that starts elsewhere.
+  - The service's answer is `reachIn()` (`core/mentions.js`), tested directly. Its caller, the
+    service's `#` list, is now `service/reach.ts` (moved unchanged out of `service/main.ts`, which starts
+    the service when imported). `service/reach.test.ts` runs it with the real `Host`, `Compat` and
+    `exec` against a stand-in herdr-core: a remote agent's list, this machine's own, a machine with no
+    map, and the minute's cache. `service/main.ts` keeps only the line that builds it and the line that
+    serves it at `/api/reach`, checked by reading only.
+  - The PR 60 sensitivity ledger has a row for each fix: with the fix removed, its regression must fail
+    by an assertion. Check runs it; no result is claimed here.
+  - Not proved by any of this: a browser's accessibility tree, VoiceOver or TalkBack, real phones, real
+    reach maps across machines, a real AppArmor host or Chrome, and the installer on a real home.
+
+  That makes A2 the owner of `core/mentions.js`, its test and its chat copy, of
+  `web/plugins/chat/client.tsx`, `markdown.tsx`, `suggest.ts` and its test, and of `web/src/kernel.ts`. A2 also owns the
+  two new tests, which `AFTER_Q` names as `PR60-SIX`. N1 becomes the owner of `bin/herdr-browser` and
+  `test/test_herdr_browser_libs.py`. The rest were already named in `AFTER_Q` by the v3.1.31 merge, and
+  the gate admitted 114 rows. PR 60's reach proof adds `service/reach.ts` and its test to A2, named in
+  `AFTER_Q` as `PR60-REACH`, and the gate now admits 116 rows.
+  PR 60's resume and live-switch unit adds 10 rows to its sensitivity ledger (38 in all), and a Check step
+  after it confirms every file the ledger mutates matches the checkout and runs the new regressions
+  again. It re-pins `commands.py`, `test_herdr_task.py`, `test_providers.py` and
+  `service/live-switch.test.ts`; the gate still admits 116 rows.
+  PR 60's missing-log unit adds 12 rows (50 in all) and moves four of the resume nudge rows onto the handoff's new
+  message line (same mutations), and that Check step also runs `MissingHistory` and the two revival regressions again. It re-pins `commands.py`, `revive.py`, `test_providers.py` and
+  `test_native_restart.py`; the gate still admits 116 rows.
+- SHEP-191's cross-site page link (`pageLink()`) applies before the private listener's own checks.
+  Writes, sockets and the API stay refused cross-site, and the private peer's owner and host rules
+  are unchanged.
+- SHEP-198's pull request title and body sit beside the fork's `open_prs()` and `no_other_base()`;
+  publication custody is unchanged.
+- `AGENTS.md` stays the fork's override; upstream's new notes there are not imported.
+
+Ordinary Task Accept still squash-merges (`pr_merge()`); this integration lands by merge commit.
+The four accepted PR 59 review minors and the PR 58 sensitivity-gate gap stay open and unchanged.
 Qualification is unchanged: nothing here is native, Azure or R evidence.
 
 ### A1 provider checkpoint

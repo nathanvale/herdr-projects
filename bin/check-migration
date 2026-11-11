@@ -11,9 +11,9 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 INPUTS = {
     'F': '4f0236f03a88c5e9fa344475d90d3a20ef418481',
-    # U is the exact upstream parent the native foundation equals: v3.1.29 since its merge (v3.1.16 57302497 before;
-    # S0 merged v3.1.3, dc018f2a).
-    'U': 'e41ea9d2c0a273a5c7b6aebf51cf2e4d112a1d1e',
+    # U is the exact upstream parent the native foundation equals: v3.1.31 since its merge (v3.1.29 e41ea9d2 before,
+    # v3.1.16 57302497 before that; S0 merged v3.1.3, dc018f2a).
+    'U': '6b8caac946a5c3fae0543624e93a0a5553d3b214',
     'P': '074dec5ea0bf0a057f520fa50497bf9e1b696ad9',
     'B': 'de8e17957efb4aa016d7e4d652f397aaa95f0880',
 }
@@ -36,9 +36,12 @@ PHASES = {
 mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py
 mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/takeover.py service/azure-deployments.test.ts
 service/azure-deployments.ts test/azure-binding.cases.json test/test_providers.py'''.split()),
-    'N1': frozenset('''docs/install.md mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py
-mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/tick.py test/test_herdr_task.py
-test/test_native_publication.py'''.split()),
+    # N1 owns the installer beside its docs/install.md since PR 60's review #8: an update from a source with no
+    # built page keeps the page installed before, and its record rows. Since PR 60's six-claim fix it owns the task
+    # browser's helper the installer runs too: a Chrome that can't start ends `--install` on a line that says so.
+    'N1': frozenset('''bin/herdr-browser bin/shepherdr docs/install.md mods/tasks/bin/herdr_task/cli.py
+mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/tick.py
+test/test_herdr_browser_libs.py test/test_herdr_task.py test/test_install.py test/test_native_publication.py'''.split()),
     'C1': frozenset('''core/agents.js core/chat-find.test.js core/chat-log.js mods/chat/core/agents.js
 mods/chat/core/chat-log.js mods/chat/main.js mods/coordinator/core/agents.js mods/newspace/core/agents.js
 mods/shepherdr-settings/core/agents.js mods/tasks/bin/herdr_task/news.py mods/tasks/bin/herdr_task/sessions.py
@@ -76,19 +79,27 @@ web/plugins/places/add.tsx'''.split()),
     # Azure selectors and bound starts: the person's Provider settings (desktop and web) with Refresh and manual entry,
     # save-only new-start selectors for a task and an Assistant, each start's binding recorded and kept on resume, and
     # the L2 sites (restart, fork, a lost session, revival) refusing anything but Personal. Earlier owners it changes are
-    # A2's from here.
-    'A2': frozenset('''core/agents.js core/agents.test.js core/chat-find.test.js core/settings.js core/tasks.js core/tasks.test.js
+    # A2's from here. Since PR 60's six-claim fix A2, the owner of the service's settings and main, also owns the chat's
+    # suggested next message (per space, read by screen readers), the #-mention reach list's known spaces, and the
+    # kernel's store hooks' server snapshot and markdown.tsx's DOM-only link hook, which let a test draw the real
+    # Composer as HTML. Since PR 60's reach proof it owns service/reach.ts too: the service's # list, out of main.ts so a
+    # test runs it with a stand-in herdr-core.
+    'A2': frozenset('''core/agents.js core/agents.test.js core/chat-find.test.js core/live-switch.js core/live-switch.test.js
+core/mentions.js core/mentions.test.js core/settings.js core/tasks.js core/tasks.test.js
 lib/COPIES lib/agent.js mods/chat-models/core/agents.js mods/chat/agent.js
-mods/chat/core/agents.js mods/chat/core/settings.js mods/chat/core/tasks.js mods/chat/main.js mods/coordinator/core/agents.js
+mods/chat/core/agents.js mods/chat/core/mentions.js mods/chat/core/settings.js mods/chat/core/tasks.js mods/chat/main.js mods/coordinator/core/agents.js
 mods/coordinator/core/settings.js mods/coordinator/restart.sh mods/jump/core/tasks.js mods/newspace/agent.js mods/newspace/core/agents.js
 mods/newspace/core/settings.js mods/shepherdr-settings/agent.js mods/shepherdr-settings/core/agents.js
 mods/shepherdr-settings/core/settings.js mods/shepherdr-settings/main.js mods/shepherdr-settings/provider-section.js
-mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py
+mods/tasks/bin/herdr_task/agents.py mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py
 mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/revive.py
 mods/tasks/bin/herdr_task/settings.py mods/tasks-menu/main.js mods/tasks/core/tasks.js mods/tasks/local.js mods/tasks/main.js service/actions.ts service/agents.ts service/compat.ts service/launch-sites.test.ts
-service/main.ts service/selections.test.ts service/selections.ts service/settings.test.ts service/settings.ts
+service/live-switch.test.ts service/main.ts service/selections.test.ts service/selections.ts service/settings.test.ts service/settings.ts service/chat-reach.test.ts
+service/reach.test.ts service/reach.ts
 service/spaces.ts service/voice-data.ts service/watch.ts test/test_herdr_task.py test/test_launch_admission.py test/test_restart.py test/test_providers.py web/plugins/tasks/client.tsx
-web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx web/src/restart.tsx'''.split()),
+web/plugins/chat/client.tsx web/plugins/chat/composer.test.tsx web/plugins/chat/markdown.tsx web/plugins/chat/suggest.test.ts
+web/plugins/chat/suggest.ts
+web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx web/src/kernel.ts web/src/restart.tsx'''.split()),
     # Native restart and revival: revival, a lost session at its shell and every restart go through launch admission on
     # the recorded binding (continued conversations) or today's settings (new ones, never onto another route), claimed
     # in the journal before anything is typed or started. Earlier owners it changes are L2's from here.
@@ -116,6 +127,8 @@ docs/migration/upstream-v3.1.3.md test/test_migration.py''',
     'A2': 'docs/azure-selectors.md',
     'L2': 'docs/native-restart.md',
     'Q': 'bin/check-sensitivity docs/migration/q-reconciliation.json',
+    # PR 60 review #8: the installer page guard's removal proofs, which Check runs through bin/check-sensitivity.
+    'PR60-FIX8': 'docs/migration/pr60-sensitivity.json',
     'PR 20': '.claude/.gitignore .claude/checkout-access.json bin/checkout-access test/test_checkout_access.py',
     # MIG-12, a tooling unit outside every phase: the report-only Fallow setup (docs/fallow.md). Its pinned tool
     # package lives apart from U's package.json and bun.lock, which stay exact U.
@@ -263,6 +276,44 @@ PROSE = frozenset('AGENTS.md CHANGELOG.md CLAUDE.md CODING_STANDARDS.md GLOSSARY
 # A unit merged after Q that changes a tracked path outside Q's own and prose names it here, under the unit's name
 # ({'MIG-10': 'path other/path'}). Its evidence is its own Check; Q's ledger keeps describing its candidate only.
 AFTER_Q = {
+    # PR 60's review of the live switch (A2): the switch in place across the service's own home-file io, a new test.
+    'PR60-FIX': 'service/live-switch.test.ts',
+    # PR 60's six-claim fix: the window's reach list and the real Composer's HTML, two new tests.
+    'PR60-SIX': 'service/chat-reach.test.ts web/plugins/chat/composer.test.tsx',
+    # PR 60's reach proof: the service's # list in its own module, and its test with a stand-in herdr-core.
+    'PR60-REACH': 'service/reach.test.ts service/reach.ts',
+    # Upstream v3.1.31 merged into the fork (upstream 6b8caac9, lightweight tag v3.1.31; fork base 9b7ec505): every
+    # tracked source path it changes. Its evidence is its own Check; Q's ledger keeps describing its candidate d53e014b.
+    'MERGE-v3.1.31': (
+        'bin/herdr-browser bin/shepherdr core/agents.js core/chat-log.js core/chat-log.test.js '
+        'core/live-switch.js core/live-switch.test.js core/mentions.js core/mentions.test.js core/settings.js '
+        'core/settings.test.js core/tasks.js core/tasks.test.js layouts/shepherdr.json lib/addons.json '
+        'lib/coordinator.js lib/features.json mods/artifacts/bin/herdr-artifact mods/chat-models/core/agents.js '
+        'mods/chat/attach.js mods/chat/core/agents.js mods/chat/core/chat-log.js mods/chat/core/mentions.js '
+        'mods/chat/core/settings.js mods/chat/core/tasks.js mods/chat/main.js mods/coordinator/coordinator.js '
+        'mods/coordinator/core/agents.js mods/coordinator/core/settings.js mods/jump/core/tasks.js '
+        'mods/menu-tasks/coordinator.js mods/new-menu-tasks/coordinator.js mods/newspace/coordinator.js '
+        'mods/newspace/core/agents.js mods/newspace/core/settings.js mods/newspace/main.js '
+        'mods/shepherdr-settings/coordinator.js mods/shepherdr-settings/core/agents.js '
+        'mods/shepherdr-settings/core/settings.js mods/spaces-chat/coordinator.js mods/tabs-tasks/coordinator.js '
+        'mods/tasks/bin/herdr_task/agents.py mods/tasks/bin/herdr_task/assistant_settings.py '
+        'mods/tasks/bin/herdr_task/autopilot.py mods/tasks/bin/herdr_task/base.py '
+        'mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/github.py '
+        'mods/tasks/bin/herdr_task/machine.py mods/tasks/bin/herdr_task/machines.py '
+        'mods/tasks/bin/herdr_task/proof.py mods/tasks/bin/herdr_task/revive.py '
+        'mods/tasks/bin/herdr_task/settings.py mods/tasks/bin/herdr_task/takeover.py '
+        'mods/tasks/bin/herdr_task/templates.py mods/tasks/bin/herdr_task/tick.py mods/tasks/coordinator.js '
+        'mods/tasks/core/tasks.js mods/tasks/main.js package.json service/actions.ts service/agents.ts '
+        'service/auth.test.ts service/auth.ts service/compat.ts service/layout-scripts.ts service/main.ts '
+        'service/newspace-folder-list.test.ts service/settings.test.ts service/settings.ts '
+        'service/terminal.test.ts service/terminal.ts service/watch.ts templates/assistant.md '
+        'templates/worker.md test/fixtures/codex-code-mode/rollout-items.jsonl test/test_chat_refocus.py '
+        'test/test_chat_view_size.py test/test_herdr_artifact_publish.py test/test_herdr_browser_libs.py '
+        'test/test_herdr_task.py test/test_install.py test/test_repo.py web/plugins/chat/client.tsx '
+        'web/plugins/chat/suggest.test.ts web/plugins/chat/suggest.ts web/plugins/tasks/client.tsx '
+        'web/plugins/voice/client.tsx web/shared/types.ts web/src/App.tsx web/src/groups.test.ts '
+        'web/src/groups.ts web/src/kernel.ts web/src/restart.tsx web/src/ui.tsx'
+    ),
     # Upstream v3.1.29 merged into the fork (merge commit 2d612fdf, upstream e41ea9d2): every tracked source path
     # it changes. Its evidence is its own Check; Q's ledger keeps describing c9bc734f.
     'MERGE-v3.1.29': (
