@@ -151,7 +151,9 @@ Where the two sides met:
   or merge is unchanged, and GitHub still refuses what its required checks block. A task held this
   way is the person's: `ready_wait()` and `core/tasks.js` `readyWait()` show it Ready (never
   Working on a merge that won't come), its Accept card says the checks are unknown, and its merge
-  setting stays, so a later full read that passes still merges it by itself.
+  setting stays, so a later full read that passes still merges it by itself. That makes A2 the
+  owner of `T/agents.py` (`ready_wait()`), beside `core/tasks.js`: its row pins v3.1.31's blob
+  `5acf2887` and the changed content, and the gate now admits 97 rows.
 - SHEP-188's `mid_turn()` joins `finish()` beside `kept_because()`: a folder stays while its agent
   or helper is mid-turn, and stays when the branch holds work that didn't merge.
 - SHEP-189's resume nudge goes through the fork's admitted `start_again()`; `--fresh` (a new conversation from

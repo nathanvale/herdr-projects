@@ -581,6 +581,12 @@
       "sha256": "fe814feba45024df7eb91d165d1f38b5316f021bbed47a2d68dea8c71a87f33c"
     },
     {
+      "phase": "A2",
+      "path": "mods/tasks/bin/herdr_task/agents.py",
+      "upstream_blob": "5acf28872653648f6ec0168b53009935b01ab014",
+      "sha256": "18f3e5ad86a63e822a0ceb58bc0c8e4880ca2301978ec83dc642b732055d5d5f"
+    },
+    {
       "phase": "L2",
       "path": "test/test_native_restart.py",
       "upstream_blob": null,

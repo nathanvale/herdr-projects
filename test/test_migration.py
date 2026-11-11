@@ -38,7 +38,7 @@ class SourceCheckpoint(unittest.TestCase):
         self.assertEqual(observed['candidate_readiness'], 'blocked')
         self.assertEqual(observed['requirements'], 40)
         self.assertEqual(observed['file_dispositions'], 121)
-        self.assertEqual((observed['phase'], observed['source_deltas']), ('Q', 96))  # A2 owns service/voice-data.ts and test/test_restart.py since v3.1.29
+        self.assertEqual((observed['phase'], observed['source_deltas']), ('Q', 97))  # A2 owns service/voice-data.ts and test/test_restart.py since v3.1.29, herdr_task/agents.py since v3.1.31's unknown-check policy
 
     def test_candidate_gate_refuses_even_when_source_validation_passes(self):
         result, observed = self.run_check('--require-ready')
