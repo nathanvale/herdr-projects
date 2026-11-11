@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "about": "PR 60's guard-removal proofs, run by bin/check-sensitivity --ledger (Check's own step beside Q's): each mutation removes one part of a review fix (#8's installer kept-page guard, then the six suggestion, reach-map and browser-note fixes, then the service's reach caller in service/reach.ts, then the resume nudge and the live switch's folder check and cached defaults), or a control it must keep, and the named regression must fail by an assertion; with the source restored it must pass. Not part of Q's reconciliation ledger, which describes its candidate only.",
+  "about": "PR 60's guard-removal proofs, run by bin/check-sensitivity --ledger (Check's own step beside Q's): each mutation removes one part of a review fix (#8's installer kept-page guard, then the six suggestion, reach-map and browser-note fixes, then the service's reach caller in service/reach.ts, then the resume nudge and the live switch's folder check and cached defaults, then a task's resume whose recorded log is gone), or a control it must keep, and the named regression must fail by an assertion; with the source restored it must pass. Not part of Q's reconciliation ledger, which describes its candidate only.",
   "workflow_obligations": [
     {
       "step": "PR 60 #8: the full install retires the page a source without one doesn't replace",
@@ -456,6 +456,138 @@
         "after": "if (e?.switched) { this.used(pick); }",
         "test_file": "service/live-switch.test.ts",
         "test": "after a switch whose default couldn't be put back, the defaults are read again"
+      }
+    },
+    {
+      "step": "PR 60 missing history: a gone log still gets the doomed resume",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "gone = resuming and history_of(prev.get(\"log\"), prev.get(\"address\")) == GONE",
+        "after": "gone = False",
+        "test_file": "test/test_providers.py",
+        "test": "test_a_gone_log_starts_anew_on_the_recorded_azure_binding_not_todays_default"
+      }
+    },
+    {
+      "step": "PR 60 missing history: its new conversation takes today's settings, not the recorded binding",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "bound=(prev.get(\"provider\") or PERSONAL_RECORD) if resuming or gone else None)",
+        "after": "bound=(prev.get(\"provider\") or PERSONAL_RECORD) if resuming else None)",
+        "test_file": "test/test_providers.py",
+        "test": "test_a_gone_log_starts_anew_on_the_recorded_azure_binding_not_todays_default"
+      }
+    },
+    {
+      "step": "PR 60 missing history: the handover that says the earlier session is gone is dropped",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "text = lost_message() + \"\n\n\" + text if gone else text",
+        "after": "text = text",
+        "test_file": "test/test_providers.py",
+        "test": "test_a_gone_log_starts_anew_on_the_recorded_azure_binding_not_todays_default"
+      }
+    },
+    {
+      "step": "PR 60 missing history: the resume nudge goes with the handover",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "text = lost_message() + \"\n\n\" + text if gone else text",
+        "after": "text = (resumed_message or \"\") + lost_message() + \"\n\n\" + text if gone else text",
+        "test_file": "test/test_providers.py",
+        "test": "test_a_gone_log_starts_anew_on_the_recorded_azure_binding_not_todays_default"
+      }
+    },
+    {
+      "step": "PR 60 missing history: the caller's own message is dropped",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "text += (\"\n\n\" + message) if message else \"\"",
+        "after": "text += (\"\n\n\" + message) if message and not gone else \"\"",
+        "test_file": "test/test_providers.py",
+        "test": "test_the_callers_own_message_goes_after_the_handover"
+      }
+    },
+    {
+      "step": "PR 60 missing history: --fresh is taken as missing history (control: a new conversation by choice keeps today's settings)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "gone = resuming and history_of(prev.get(\"log\"), prev.get(\"address\")) == GONE",
+        "after": "gone = bool(same and prev.get(\"session\")) and history_of(prev.get(\"log\"), prev.get(\"address\")) == GONE",
+        "test_file": "test/test_providers.py",
+        "test": "test_fresh_and_another_kind_of_agent_keep_todays_settings"
+      }
+    },
+    {
+      "step": "PR 60 missing history: a log folder missing here or unreadable is taken as gone",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/revive.py",
+        "before": "        names = None  # its folder is missing here or can't be read: unknown, never gone",
+        "after": "        names = []",
+        "test_file": "test/test_providers.py",
+        "test": "test_a_log_this_machine_cant_read_is_never_taken_as_gone"
+      }
+    },
+    {
+      "step": "PR 60 missing history: an agent on another machine is judged by this one's files",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/revive.py",
+        "before": "    if \"/\" in (address or \"\"):",
+        "after": "    if False:",
+        "test_file": "test/test_providers.py",
+        "test": "test_a_log_this_machine_cant_read_is_never_taken_as_gone"
+      }
+    },
+    {
+      "step": "PR 60 missing history: a log not found yet is taken as gone (control: it still resumes)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/revive.py",
+        "before": "        return None  # none recorded: a session just begun, or its log not found yet",
+        "after": "        return GONE  # none recorded: a session just begun, or its log not found yet",
+        "test_file": "test/test_providers.py",
+        "test": "test_a_kept_log_and_a_log_not_found_yet_still_resume"
+      }
+    },
+    {
+      "step": "PR 60 missing history: revival resumes a log it can't find (control: revival's own threshold kept)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/revive.py",
+        "before": "history_of(rec.get(\"log\")) == KEPT",
+        "after": "history_of(rec.get(\"log\")) != GONE",
+        "test_file": "test/test_native_restart.py",
+        "test": "test_a_log_revival_cant_find_here_is_missing_history_whatever_the_reason"
+      }
+    },
+    {
+      "step": "PR 60 missing history: a kept log isn't found (control: revival still resumes its own session)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/revive.py",
+        "before": "    if os.path.isfile(log):",
+        "after": "    if False:",
+        "test_file": "test/test_native_restart.py",
+        "test": "test_a_lost_agent_resumes_its_own_session_once_through_the_journal"
       }
     }
   ]

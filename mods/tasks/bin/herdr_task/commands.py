@@ -1131,8 +1131,15 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     changed routing refuses here, before anything changes. restart: a model menu's Restart or
     Switch agent (the window's or the web's); since L2 it goes the same way as resume and switch (its
     recorded binding when it continues the conversation, today's settings for a new one), and only a
-    model it names that the recorded deployment would replace refuses (RESTART_MODEL)."""
+    model it names that the recorded deployment would replace refuses (RESTART_MODEL).
+    Missing history (revive.history_of): the session it would resume has a recorded log that is positively gone here,
+    so the CLI would refuse the resume. A new conversation then, on that conversation's recorded binding (never today's
+    settings: a binding they can't carry refuses before anything changes), opening with the handover that says its
+    earlier session is gone (revive.lost_message), then the handoff and `message`; never `resumed_message`.
+    Returns (its record, resumed); after missing history the record returned is a copy that also says missing_history
+    and previous_session (the task's own row doesn't)."""
     from .providers import AZURE, PERSONAL_RECORD, restart_route, RESTART_MODEL, same_model
+    from .revive import GONE, history_of, lost_message
     prev = last_agent(t)
     # The last agent's argv again, unless the task's agent, model or effort changed since (edit).
     keep = prev and prev.get("argv") and (t.get("pick_at") or 0) <= (prev.get("at") or 0)
@@ -1141,16 +1148,19 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     fixed = bool(argv_json) or (not key and bool(keep))
     same = prev and agent_key(argv) == prev.get("agent")
     resuming = bool(same and prev.get("session") and not fresh)
-    # Before anything changes: launch admission (its plan, from the recorded binding when it resumes; an open earlier
-    # start; its Assistant) refuses here.
+    gone = resuming and history_of(prev.get("log"), prev.get("address")) == GONE
+    resuming = resuming and not gone
+    # Before anything changes: launch admission (its plan, from the recorded binding when it resumes or its history is
+    # missing; an open earlier start; its Assistant) refuses here.
     adm = admit_task(s, t, argv, space, parent or (prev or {}).get("parent"),
                      select=None if fixed else (lambda: worker_argv(s, t, space, key)), prev=prev,
-                     bound=(prev.get("provider") or PERSONAL_RECORD) if resuming else None)
-    if restart and not resuming:
+                     bound=(prev.get("provider") or PERSONAL_RECORD) if resuming or gone else None)
+    if restart and not (resuming or gone):
         # A new conversation takes today's settings, never onto another route than the agent it replaces (L2).
         was = (prev or {}).get("provider") or PERSONAL_RECORD
         restart_route(was["route"], was, adm.binding, agent_key(argv), s.ref(t))
-    if restart and resuming and adm.plan["route"] == AZURE and not same_model(argv, prev.get("argv"), adm.plan["deployment"]):
+    if restart and (resuming or gone) and adm.plan["route"] == AZURE and \
+            not same_model(argv, prev.get("argv"), adm.plan["deployment"]):
         # A recorded conversation keeps its deployment (A2): a model picked in the menu would be replaced silently.
         raise Fail(RESTART_MODEL.format(who=s.ref(t), deployment=adm.plan["deployment"]))
     unarchive(s, t)
@@ -1160,9 +1170,13 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
         if res:
             first = "\n\n".join(m for m in (resumed_message, message) if m) or None
             return launch(s, t, argv, space, first, parent=parent, resume=res, admission=adm), True
-        text = handoff(s, t, prev, parent, argv) + (("\n\n" + message) if message else "")
+        # Missing history: no pointer to the log that is gone (the handoff says none was left).
+        text = handoff(s, t, dict(prev, log=None) if gone else prev, parent, argv)
+        text = lost_message() + "\n\n" + text if gone else text
+        text += ("\n\n" + message) if message else ""
         t["review_gate"] = True
-        return launch(s, t, argv, space, text, parent=parent, admission=adm), False
+        a = launch(s, t, argv, space, text, parent=parent, admission=adm)
+        return (dict(a, missing_history=True, previous_session=prev["session"]) if gone else a), False
 
 
 # SHEP-189: what a resumed agent hears first. Its session comes back with no message, so without this
@@ -1185,12 +1199,18 @@ def cmd_resume(args):
         back_to_work(s, t, "resumed")
         fresh = getattr(args, "fresh", False)
         # The nudge says the session resumed: only after the recorded session itself, never with a handoff (--fresh, no
-        # session or history recorded, or another kind of agent: a new conversation, PR 60).
+        # session recorded, its recorded log gone, or another kind of agent: a new conversation, PR 60).
         a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=fresh,
                                  resumed_message=RESUME_NUDGE)
         v = view(s, t)
-    say(args, {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed},
-        f"{s.ref(t)} {'resumed its session' if resumed else 'started with a handoff'}: {a['address']}")
+    out = {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed}
+    gone = {k: a[k] for k in ("missing_history", "previous_session") if k in a}
+    how = "resumed its session" if resumed else "started with a handoff" + (MISSING_WORDS if gone else "")
+    say(args, {**out, **gone}, f"{s.ref(t)} {how}: {a['address']}")
+
+
+# Said after a start whose recorded session's log is gone (revive.history_of): a new conversation, never a resume.
+MISSING_WORDS = " (missing history: its earlier session's log is gone, so this is a new conversation)"
 
 
 def cmd_switch(args):
@@ -1217,8 +1237,10 @@ def cmd_switch(args):
         stop_note("switch-kill", task=s.ref(t), terminal=old["address"], by="switch")
         run(["hc", "kill", old["address"]])
         ended.append(old["address"])
-    say(args, {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed, "ended": ended},
-        f"{s.ref(t)}: {a['agent']} {a['address']} {'resumed its session' if resumed else 'took over'}" + (f", {old['address']} ended" if ended else ""))
+    gone = {k: a[k] for k in ("missing_history", "previous_session") if k in a}
+    say(args, {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed, "ended": ended, **gone},
+        f"{s.ref(t)}: {a['agent']} {a['address']} {'resumed its session' if resumed else 'took over'}"
+        + (MISSING_WORDS if gone else "") + (f", {old['address']} ended" if ended else ""))
 
 
 def workers(s, t):

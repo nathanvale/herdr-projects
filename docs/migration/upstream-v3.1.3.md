@@ -162,6 +162,13 @@ Where the two sides met:
   or history recorded, or another kind of agent) says nothing of a resume, and another command's own message
   (`message`, as `herdr-task fix` sends) still goes after either. `test_providers.py`'s `ResumeNudge` runs
   each case through the real CLI, its launch admission and launch, with the stand-in `hc`.
+  Since PR 60's missing-log fix, a recorded session whose log is positively gone here (`revive.history_of()`, the
+  rule revival shares: its folder is read and doesn't hold it) is missing history, not a doomed `--resume`: a new
+  conversation on that conversation's recorded binding (a binding today's routing can't carry refuses before
+  anything changes), opening with the handover that says the earlier session is gone, then the handoff and
+  `message`, with no nudge; the result says `resumed: false`, `missing_history` and `previous_session`. A log not
+  recorded yet, a folder missing here or unreadable, or an agent on another machine is unknown and still resumes;
+  revival still resumes only a log it finds. `MissingHistory` runs those cases the same way.
 - SHEP-202's caller-free shell send goes through the one revival owner: `bring_back()` passes
   `without_caller()`'s environment to `Admission.type_into()`.
 - SHEP-207's Codex process tree (`codex_working()`): a process list it can't read (no `ps`, one that
@@ -243,6 +250,9 @@ Where the two sides met:
   after it confirms every file the ledger mutates matches the checkout and runs the new regressions
   again. It re-pins `commands.py`, `test_herdr_task.py`, `test_providers.py` and
   `service/live-switch.test.ts`; the gate still admits 116 rows.
+  PR 60's missing-log unit adds 11 rows (49 in all), and that Check step also runs `MissingHistory` and the two
+  revival regressions again. It re-pins `commands.py`, `revive.py`, `test_providers.py` and
+  `test_native_restart.py`; the gate still admits 116 rows.
 - SHEP-191's cross-site page link (`pageLink()`) applies before the private listener's own checks.
   Writes, sockets and the API stay refused cross-site, and the private peer's owner and host rules
   are unchanged.

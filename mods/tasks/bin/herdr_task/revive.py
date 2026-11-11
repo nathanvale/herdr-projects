@@ -121,6 +121,29 @@ def lost_message(ref=None, template=None):
     return msg
 
 
+# A recorded session log as one rule reads it for every start that would resume it: revival here (only a KEPT log is
+# resumed) and a task's resume (commands.start_again: only a GONE one isn't).
+KEPT, GONE, UNKNOWN = "kept", "gone", "unknown"
+
+
+def history_of(log, address=None):
+    """What a recorded session log says here: KEPT (a file at its path), GONE (positively: the folder that held it is
+    read and doesn't hold it) or UNKNOWN; None when no log was recorded (a session just begun, or its log not found
+    yet). Never GONE for an agent on another machine (address MACHINE/terminal), a folder missing here or unreadable,
+    or a path that is there but isn't a file."""
+    if not log:
+        return None  # none recorded: a session just begun, or its log not found yet
+    if "/" in (address or ""):
+        return UNKNOWN  # its machine's own files, not this one's
+    if os.path.isfile(log):
+        return KEPT
+    try:
+        names = os.listdir(os.path.dirname(log)) if os.path.isabs(log) else None
+    except OSError:
+        names = None  # its folder is missing here or can't be read: unknown, never gone
+    return GONE if names is not None and os.path.basename(log) not in names else UNKNOWN
+
+
 LINE_SHELLS = ("bash", "zsh", "sh", "dash", "ksh", "fish")
 
 
@@ -368,7 +391,7 @@ def plan(k, rec, running):
     if (p["route"] != "personal" or folder) and shell not in LINE_SHELLS:
         return ("held", f"Its shell ({shell or 'unknown'}) can't be given the provider binding or Claude Code folder this "
                         f"agent started with, so it isn't typed back. Nothing was started.", False, None)
-    if rec and rec.get("session") and rec.get("log") and os.path.isfile(rec["log"]):
+    if rec and rec.get("session") and history_of(rec.get("log")) == KEPT:
         how, argv = "resume", resume_argv(kind, base, rec["session"], CUT if rec.get("working") else None)
     else:
         # Its session is gone: a new one, with the handover (and an Assistant's role, its template's words), on the

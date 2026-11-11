@@ -253,6 +253,20 @@ class Revival(unittest.TestCase):
         # Revival never writes the task list: its state, holds, dependencies, approval and worktree stay as they were.
         self.assertEqual(f.task(), before)
 
+    def test_a_log_revival_cant_find_here_is_missing_history_whatever_the_reason(self):
+        """Revival resumes only a log it finds (revive.history_of KEPT): one never recorded, or in a folder missing here,
+        is missing history too, as before PR 60 shared the rule with a task's resume (which resumes those)."""
+        for case in ("none recorded", "folder missing here"):
+            with self.subTest(case=case):
+                f = Fixture(self)
+                log = None if case == "none recorded" else os.path.join(f.tmp, "elsewhere", f"{SESSION}.jsonl")
+                f.worker(rec=f.record(log=log))
+                [row] = f.revive()["revived"]
+                self.assertEqual((row["how"], row.get("missing_history"), row.get("previous_session")), ("fresh", True, SESSION))
+                [send] = f.sends()
+                self.assertNotIn("--resume", send[2])
+                self.assertIn("<restart>Your earlier session is gone", send[2])
+
     def test_missing_history_is_a_new_conversation_never_reported_as_a_resume(self):
         f = Fixture(self)
         f.worker()

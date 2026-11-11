@@ -146,14 +146,15 @@ class Fixture:
     def add(self, *extra):
         return self.ok("add", "Fix login", "--folder", self.repo, "--space", "sp1", *extra)["id"]
 
-    def give_session(self, tid, session, agent=-1):
+    def give_session(self, tid, session, agent=-1, **row):
         """Its agent's conversation, as the watcher records one it finds (sessions.refresh_sessions): the fixture's
-        stand-in for a session log, written into the task list herdr-task reopens."""
+        stand-in for a session log, written into the task list herdr-task reopens. row: more of the agent's row (its
+        log's path, its address)."""
         path = self.ok("where", "--folder", self.repo)["store"]
         with open(path) as fh:
             d = json.load(fh)
         t = next(x for x in d["tasks"] if x["id"] == tid)
-        t["agents"][agent]["session"] = session
+        t["agents"][agent].update(session=session, **row)
         with open(path, "w") as fh:
             json.dump(d, fh, indent=2)
 
@@ -1417,6 +1418,174 @@ class ResumeNudge(unittest.TestCase):
         self.assertFalse(agent[-1].startswith("You are taking over task "))
         self.assertNotIn("Shepherdr resumed your session", agent[-1])
         f.settle(3, tid=tid)
+
+
+GONE_SESSION = "99999999-aaaa-4bbb-8ccc-dddddddddddd"
+# The handover a new conversation opens with when its earlier session is gone (core/chat-view.js FRESH), written out.
+RESTART = "<restart>Your earlier session is gone, so this is a new one that remembers none of it."
+TAKEOVER = "You are taking over task "
+ASKED = "can't merge yet: Checks failing: lint."
+
+
+@ON_CI
+class MissingHistory(unittest.TestCase):
+    """PR 60: a task's recorded session whose log is positively gone here (its folder is read and doesn't hold it) is
+    missing history: a new conversation on the binding that conversation recorded, never today's settings, said so,
+    never called a resume and never a doomed --resume; the caller's own message still goes last. A log that isn't
+    recorded yet, or one this machine can't read, is never taken as gone. Through the real CLI, its launch admission
+    and launch; hc is the fixture's stand-in, the settings test-written Personal and Azure metadata, and the session
+    logs files and folders in the fixture's own tmp."""
+
+    def started(self, f, provider, *extra):
+        f.provider(provider)
+        tid = f.add("--here")
+        f.ok("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now", *extra)
+        f.settle(tid=tid)
+        return tid
+
+    def history(self, f):
+        """A project's folder of session logs (as Claude Code keeps one), the fixture's own."""
+        folder = os.path.join(f.tmp, "history", "projects", "repo")
+        os.makedirs(folder, exist_ok=True)
+        return folder
+
+    def gone(self, f, tid, **row):
+        """The agent's session recorded with a log its folder no longer holds (the file is never written)."""
+        f.give_session(tid, GONE_SESSION, log=os.path.join(self.history(f), GONE_SESSION + ".jsonl"), **row)
+
+    def resume(self, f, tid, *extra):
+        return f.ok("resume", str(tid), "--folder", f.repo, "--space", "sp1", *extra)
+
+    def newest(self, f):
+        return f.agent_words(f.launches()[-1])[1]
+
+    def starts_anew(self, agent):
+        """No resume of the gone session; the handover first, then the task's handoff; no resume nudge."""
+        self.assertNotIn("--resume", agent)
+        self.assertNotIn(GONE_SESSION, agent)
+        self.assertTrue(agent[-1].startswith(RESTART), agent[-1][:120])
+        self.assertIn(TAKEOVER, agent[-1])
+        self.assertNotIn("Shepherdr resumed your session", agent[-1])
+        self.assertNotIn(".jsonl", agent[-1])  # no pointer to the log that is gone
+
+    def test_a_gone_log_starts_anew_on_the_recorded_azure_binding_not_todays_default(self):
+        f = Fixture(self)
+        azure = {"route": "azure-foundry", **CLAUDE, "claude_auth": "api-key"}
+        tid = self.started(f, azure)
+        self.gone(f, tid)
+        f.provider({**azure, "claude_deployment": "new-default"})
+        out = self.resume(f, tid)
+        self.assertEqual((out["resumed"], out.get("missing_history"), out.get("previous_session")), (False, True, GONE_SESSION))
+        agent = self.newest(f)
+        self.starts_anew(agent)
+        # The recorded deployment and Claude Code's Foundry environment, rebuilt from the record, not the new default.
+        self.assertEqual(agent[agent.index("--model") + 1], "claude-deployment")
+        self.assertEqual(json.loads(agent[agent.index("--settings") + 1])["env"], claude_env("claude-deployment", "ANTHROPIC_FOUNDRY_API_KEY"))
+        self.assertNotIn("new-default", json.dumps(agent))
+        self.assertEqual(f.task(tid)["agents"][-1]["provider"], record("api-key"))
+        f.settle(2, tid=tid)
+        f.no_secret()
+
+    def test_a_gone_logs_recorded_binding_is_kept_or_refused_before_anything_changes(self):
+        azure = {"route": "azure-foundry", **CLAUDE, "claude_auth": "api-key"}
+        for was, now, words in (({"route": "personal"}, azure, "conversation started on Personal (the CLI's own sign-in)"),
+                                (azure, {"route": "personal"}, "conversation started on Azure Foundry example with API key"),
+                                (azure, {**azure, "claude_resource": "other"}, "conversation started on Azure Foundry example with API key")):
+            with self.subTest(was=was["route"], now=now.get("claude_resource") or now["route"]):
+                f = Fixture(self)
+                tid = self.started(f, was)
+                self.gone(f, tid)
+                f.provider(now)
+                before = f.snapshot()
+                self.assertIn(words, f.refused("resume", str(tid), "--folder", f.repo, "--space", "sp1"))
+                f.nothing_started(before)
+        # Personal recorded and Personal today: a new conversation on Personal, said so in words.
+        f = Fixture(self)
+        tid = self.started(f, {"route": "personal"})
+        self.gone(f, tid)
+        p = f.run("resume", str(tid), "--folder", f.repo, "--space", "sp1")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("started with a handoff (missing history", p.stdout)
+        self.assertNotIn("resumed its session", p.stdout)
+        self.starts_anew(self.newest(f))
+        self.assertNotIn("provider", f.task(tid)["agents"][-1])
+        f.settle(2, tid=tid)
+
+    def test_the_callers_own_message_goes_after_the_handover(self):
+        """herdr-task fix with no agent left (commands.tell): its message, whole, after the handover and the handoff."""
+        f = Fixture(self)
+        tid = self.started(f, {"route": "personal"})
+        path = f.ok("where", "--folder", f.repo)["store"]
+        with open(path) as fh:
+            d = json.load(fh)
+        t = next(x for x in d["tasks"] if x["id"] == tid)
+        t.update(mode="worktree", worktree=f.repo, branch="main", base="main")
+        with open(path, "w") as fh:
+            json.dump(d, fh, indent=2)
+        self.gone(f, tid)
+        self.assertTrue(f.ok("fix", str(tid), "--folder", f.repo, "--reason", "Checks failing: lint.")["new_agent"])
+        agent = self.newest(f)
+        self.starts_anew(agent)
+        self.assertIn(ASKED, agent[-1])
+        self.assertGreater(agent[-1].index(ASKED), agent[-1].index(TAKEOVER))
+        f.settle(2, tid=tid)
+
+    def test_a_kept_log_and_a_log_not_found_yet_still_resume(self):
+        for case in ("kept", "not found yet"):
+            with self.subTest(case=case):
+                f = Fixture(self)
+                tid = self.started(f, {"route": "personal"})
+                log = os.path.join(self.history(f), GONE_SESSION + ".jsonl")
+                if case == "kept":
+                    open(log, "w").close()
+                f.give_session(tid, GONE_SESSION, log=log if case == "kept" else None)
+                out = self.resume(f, tid)
+                self.assertEqual((out["resumed"], out.get("missing_history")), (True, None))
+                agent = self.newest(f)
+                self.assertEqual(agent[agent.index("--resume") + 1], GONE_SESSION)
+                self.assertEqual(agent[-1], NUDGE)
+                f.settle(2, tid=tid)
+
+    def test_a_log_this_machine_cant_read_is_never_taken_as_gone(self):
+        for case in ("folder missing here", "folder unreadable", "agent on another machine"):
+            with self.subTest(case=case):
+                f = Fixture(self)
+                tid = self.started(f, {"route": "personal"})
+                if case == "folder missing here":
+                    f.give_session(tid, GONE_SESSION, log=os.path.join(f.tmp, "elsewhere", "projects", "repo", GONE_SESSION + ".jsonl"))
+                elif case == "folder unreadable":
+                    folder = self.history(f)
+                    os.chmod(folder, 0)
+                    self.addCleanup(os.chmod, folder, 0o755)
+                    # Unreadable for this user (never root here: it would read it, and this case would prove nothing).
+                    with self.assertRaises(PermissionError):
+                        os.listdir(folder)
+                    f.give_session(tid, GONE_SESSION, log=os.path.join(folder, GONE_SESSION + ".jsonl"))
+                else:
+                    self.gone(f, tid, address="mini/t1")
+                out = self.resume(f, tid)
+                self.assertEqual((out["resumed"], out.get("missing_history")), (True, None))
+                agent = self.newest(f)
+                self.assertEqual(agent[agent.index("--resume") + 1], GONE_SESSION)
+                self.assertEqual(agent[-1], NUDGE)
+                f.settle(2, tid=tid)
+
+    def test_fresh_and_another_kind_of_agent_keep_todays_settings(self):
+        """Not missing history: --fresh and a change of agent are new conversations by choice, on today's settings."""
+        azure = {"route": "azure-foundry", **CLAUDE, **CODEX, "claude_auth": "api-key"}
+        for extra, model in ((("--fresh",), "new-default"), (("--agent", "codex"), "code-deployment")):
+            with self.subTest(extra=extra):
+                f = Fixture(self)
+                tid = self.started(f, azure)
+                self.gone(f, tid)
+                f.provider({**azure, "claude_deployment": "new-default"})
+                out = self.resume(f, tid, *extra)
+                self.assertEqual((out["resumed"], out.get("missing_history")), (False, None))
+                agent = self.newest(f)
+                self.assertTrue(agent[-1].startswith(TAKEOVER), agent[-1][:120])
+                self.assertNotIn("Shepherdr resumed your session", agent[-1])
+                self.assertEqual(agent[agent.index("-m" if extra[0] == "--agent" else "--model") + 1], model)
+                f.settle(2, tid=tid)
 
 
 if __name__ == "__main__":
