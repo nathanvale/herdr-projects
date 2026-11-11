@@ -26,19 +26,19 @@
       "phase": "N1",
       "path": "test/test_install.py",
       "upstream_blob": "c7cab506f4ac148b5c1a4fdbdce3e93d03146d1f",
-      "sha256": "93243d3e8e95e23d72ad0326f28e17559cf893c52d2fcb839bc1ac334bbd5687"
+      "sha256": "811ef64b7b24ddd5f3d76529e3fd887f1d37d701c91d96dde7c54841f3d9aac8"
     },
     {
       "phase": "N1",
       "path": "bin/herdr-browser",
       "upstream_blob": "8c0e6d46105659d5c55e41ff72780a3454604040",
-      "sha256": "cd07e6344bf3a314f96700d29276fc7bb74f807357e4e6f00c5b91be8c31db8f"
+      "sha256": "6b9df33c20a380fb532e64b93a1ee3cca47cd286e7f140ecd50e8dc6fb497ed3"
     },
     {
       "phase": "N1",
       "path": "test/test_herdr_browser_libs.py",
       "upstream_blob": "98dc1ff3530f9cc23ce4776ef6c68756cf04a1df",
-      "sha256": "a7f665f8be52894fe5191c6a140ee0a0a24fb895163fed1ca77371f30abbbc5f"
+      "sha256": "f04a7274865de9856cfc81ef3eef755950d19552bdc9e69d9e36a4aa4208da11"
     },
     {
       "phase": "B2",
@@ -164,7 +164,7 @@
       "phase": "L2",
       "path": "mods/chat/main.js",
       "upstream_blob": "0913d259afa42d91ccfc9a8fa792e1d3ae299cbb",
-      "sha256": "85496b662dd1b5cb6e4ae8bec0855bf95c4259075e040e02e9e9a7b8bf86b744"
+      "sha256": "611c62b199c6eac24ec5c985877a9e973e4d6d26175e1064fb7a0b563dd93911"
     },
     {
       "phase": "A2",
@@ -272,7 +272,7 @@
       "phase": "A2",
       "path": "service/main.ts",
       "upstream_blob": "6a5725405c30282ea05466a2a9aa4d9e28a36ca8",
-      "sha256": "5ad15199ab43b3460dfa7d13dcefe435efe2b96d9cece8019545c921bbcba1c6"
+      "sha256": "b0433109860b844d5a297cc66ebad2e8fff6de6641648915f98382c55889074f"
     },
     {
       "phase": "H1",
@@ -572,7 +572,7 @@
       "phase": "A2",
       "path": "web/src/restart.tsx",
       "upstream_blob": "41efe7fd8cdc801cfbef3e602dd80f91d5ffda25",
-      "sha256": "cb6e2d941a722c75c4fd7be0a93ccd9e67a0009743c98badc2f98fede541b34f"
+      "sha256": "4938f2e6e096d9080f4ae82bc81abdf9f76f82d4079fe8460bbaf64204a0dc02"
     },
     {
       "phase": "A2",
@@ -630,27 +630,45 @@
     },
     {
       "phase": "A2",
+      "path": "web/src/kernel.ts",
+      "upstream_blob": "a70bc6e8f7e1d49aecbcbf931e00766b2161e623",
+      "sha256": "409f4c3489916624de8fb67eab2ebeb5a79eae808446a588c3ec1f8b85fdbc11"
+    },
+    {
+      "phase": "A2",
+      "path": "web/plugins/chat/composer.test.tsx",
+      "upstream_blob": null,
+      "sha256": "1f78c973ab0bb097eae413eda570289e0549f1c2b9c781429adfad5cb49e3222"
+    },
+    {
+      "phase": "A2",
+      "path": "service/chat-reach.test.ts",
+      "upstream_blob": null,
+      "sha256": "b9947fe8cc72de244c35f1e843be60fea4bf7b9d0825e050aa652cd59ce2ba94"
+    },
+    {
+      "phase": "A2",
       "path": "core/mentions.js",
       "upstream_blob": "7a3d7023c06afb20cfdfe12da57d25be8af6fcac",
-      "sha256": "2caafe9c698a971347352166b7a86326deb9928a384a0fd766d252cb0f590085"
+      "sha256": "0ff2d024a6e52dd0c5726d2bbb59be606ac002fd7efae065417e37cef4f22f62"
     },
     {
       "phase": "A2",
       "path": "core/mentions.test.js",
       "upstream_blob": "91b59cd3197abc2199d796e28d5a9fa24c72e037",
-      "sha256": "8e7f67d9cbead90046783c4f17c36d4a5b2d3089c9508c67fa46410f6838bc83"
+      "sha256": "c3b8f107a53be3bbfc7c9301b63a6eb1c803259d25d338e5560f174b98290da0"
     },
     {
       "phase": "A2",
       "path": "mods/chat/core/mentions.js",
       "upstream_blob": "7a3d7023c06afb20cfdfe12da57d25be8af6fcac",
-      "sha256": "2caafe9c698a971347352166b7a86326deb9928a384a0fd766d252cb0f590085"
+      "sha256": "0ff2d024a6e52dd0c5726d2bbb59be606ac002fd7efae065417e37cef4f22f62"
     },
     {
       "phase": "A2",
       "path": "web/plugins/chat/client.tsx",
       "upstream_blob": "1b784763ee5916db50657364dc429ce7a274cc23",
-      "sha256": "6235da3cc004f92a8058d5dfa8543b80e2fdf4df130f6518f942a8cec46d93a6"
+      "sha256": "383447acd416415fa23c8952a22d20e52c735277724e186d590347975a91934c"
     },
     {
       "phase": "A2",

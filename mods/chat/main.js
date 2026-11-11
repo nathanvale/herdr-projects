@@ -91,6 +91,8 @@ const coreName = () => {
   if (!askedName) { askedName = true; hc(["server", "status"]).then((r) => { ownName = JSON.parse(r.stdout || "{}")?.core?.name || null; }).catch(() => { askedName = false; }); }
   return ownName;
 };
+// The same, waited for: a reach map that starts on another machine needs it at once (loadReach, PR 60).
+const coreNameNow = async () => ownName ?? hc(["server", "status"]).then((r) => (ownName = JSON.parse(r.stdout || "{}")?.core?.name || null)).catch(() => null);
 // When an ask was made: its id is <terminal>.<seconds>.<pid> (ask-hook.sh), taken at the end of
 // that second so it sits after what was said in it.
 const askAt = (id) => { const p = String(id).split("."); const sec = Number(p[p.length - 2]); return Number.isFinite(sec) && sec > 1e9 ? sec * 1000 + 999 : Date.now(); };
@@ -2044,7 +2046,8 @@ export default class Chat extends View {
     // the spaces this window knows, as the agent's machine sees them: a machine whose document the map read as empty
     // still lists its spaces (SHEP-185), and this machine's go under its herdr-core name (PR 60)
     const known = graph ? (spaces() ?? []).map((x) => ({ id: String(x.id).split("/").pop(), name: x.name, folder: x.folder, machine: x.machine ?? null })) : [];
-    this.reach = { from: graph?.core?.name ?? this.machine, spaces: graph ? mentions.reachable(graph, mentions.knownFrom(known, coreName(), this.machine)) : here };
+    const name = graph && this.machine ? await coreNameNow() : null;
+    this.reach = { from: graph?.core?.name ?? this.machine, spaces: graph ? mentions.reachable(graph, mentions.knownFrom(known, name, this.machine)) : here };
   }
 
   // A message's words with each #-mention in plain markdown: its name and machine, and "out of

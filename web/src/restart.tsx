@@ -242,7 +242,7 @@ type Section = { key: string; title: string | null; agent: string; rows: (MenuMo
 let menuOpen: { chat: string; typed?: string } | null = null
 const menuListeners = new Set<() => void>()
 const setMenuOpen = (v: typeof menuOpen) => { menuOpen = v; menuListeners.forEach((f) => f()) }
-const useMenuOpen = () => useSyncExternalStore((f) => (menuListeners.add(f), () => void menuListeners.delete(f)), () => menuOpen)
+const useMenuOpen = () => useSyncExternalStore((f) => (menuListeners.add(f), () => void menuListeners.delete(f)), () => menuOpen, () => menuOpen)
 
 /** open the model menu over a chat's model button; typed: the model a /model named ('' for none) */
 export function openModelMenu(chat: string, typed?: string) {

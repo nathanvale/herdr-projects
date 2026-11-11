@@ -152,7 +152,7 @@
       "mutation": {
         "runner": "unittest",
         "file": "bin/herdr-browser",
-        "before": "sandbox_check >&2 || { echo \"herdr-browser: Chrome can't start: AppArmor blocks its sandbox here, and nothing was changed. herdr-browser --install says the fix for this Chrome.\" >&2; exit 1; }",
+        "before": "sandbox_check >&2 || { echo \"herdr-browser: Chrome can't start: AppArmor blocks its sandbox here (Chrome's sandbox stays on; nothing on this machine was changed). Run herdr-browser --install for the fix for this Chrome.\" >&2; exit 1; }",
         "after": "sandbox_check >&2 || exit 1",
         "test_file": "test/test_herdr_browser_libs.py",
         "test": "test_install_ends_on_the_sandbox_failure_and_where_its_fix_is"
@@ -164,7 +164,7 @@
       "mutation": {
         "runner": "unittest",
         "file": "bin/herdr-browser",
-        "before": "sandbox_check >&2 || { echo \"herdr-browser: Chrome can't start: AppArmor blocks its sandbox here, and nothing was changed. herdr-browser --install says the fix for this Chrome.\" >&2; exit 1; }",
+        "before": "sandbox_check >&2 || { echo \"herdr-browser: Chrome can't start: AppArmor blocks its sandbox here (Chrome's sandbox stays on; nothing on this machine was changed). Run herdr-browser --install for the fix for this Chrome.\" >&2; exit 1; }",
         "after": "sandbox_check >&2 || exit 1",
         "test_file": "test/test_install.py",
         "test": "test_install_note_says_chrome_cant_start_and_where_the_fix_is"
@@ -176,10 +176,118 @@
       "mutation": {
         "runner": "unittest",
         "file": "bin/herdr-browser",
-        "before": "libs_check >&2 || { echo \"herdr-browser: Chrome can't start: missing system libraries ($_m). herdr-browser --install says how to install them.\" >&2; exit 1; }",
+        "before": "libs_check >&2 || { echo \"herdr-browser: Chrome can't start: missing system libraries ($_m). Run herdr-browser --install for how to install them.\" >&2; exit 1; }",
         "after": "libs_check >&2 || exit 1",
         "test_file": "test/test_herdr_browser_libs.py",
         "test": "test_install_ends_on_the_missing_libraries_and_where_their_fix_is"
+      }
+    },
+    {
+      "step": "PR 60 #2: the message box loses its description of the suggestion",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "web/plugins/chat/client.tsx",
+        "before": "                aria-label={placeholder}\n                aria-describedby={describedBy}\n",
+        "after": "                aria-label={placeholder}\n",
+        "test_file": "web/plugins/chat/composer.test.tsx",
+        "test": "a suggestion is described to a screen reader on the box and on Send"
+      }
+    },
+    {
+      "step": "PR 60 #2: Send loses its description of the suggestion",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "web/plugins/chat/client.tsx",
+        "before": "                aria-label=\"Send\"\n                aria-describedby={describedBy}\n",
+        "after": "                aria-label=\"Send\"\n",
+        "test_file": "web/plugins/chat/composer.test.tsx",
+        "test": "a suggestion is described to a screen reader on the box and on Send"
+      }
+    },
+    {
+      "step": "PR 60 #2: the description is hidden from screen readers",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "web/plugins/chat/client.tsx",
+        "before": "<span id={ghostId} className=\"sr-only\">",
+        "after": "<span id={ghostId} aria-hidden=\"true\" className=\"sr-only\">",
+        "test_file": "web/plugins/chat/composer.test.tsx",
+        "test": "a suggestion is described to a screen reader on the box and on Send"
+      }
+    },
+    {
+      "step": "PR 60 #2: a description left pointing nowhere without a suggestion",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "web/plugins/chat/client.tsx",
+        "before": "const describedBy = ghost ? ghostId : undefined",
+        "after": "const describedBy = ghostId",
+        "test_file": "web/plugins/chat/composer.test.tsx",
+        "test": "no suggestion, no description"
+      }
+    },
+    {
+      "step": "PR 60 #2: a touch screen told that Enter sends it",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "web/plugins/chat/client.tsx",
+        "before": "touchOnly() ? 'Send sends it.' : 'Enter sends it, Tab fills it in.'",
+        "after": "'Enter sends it, Tab fills it in.'",
+        "test_file": "web/plugins/chat/composer.test.tsx",
+        "test": "on a touch screen, where Enter makes a new line, the words say Send"
+      }
+    },
+    {
+      "step": "PR 60 #4: the Composer reads Everywhere's setting for every chat",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "web/plugins/chat/client.tsx",
+        "before": "suggestionsOn(snap?.settings, snap ? chatPlace(snap, chatKey) : null)",
+        "after": "suggestionsOn(snap?.settings)",
+        "test_file": "web/plugins/chat/composer.test.tsx",
+        "test": "the chat's space's own setting decides whether its suggestion shows"
+      }
+    },
+    {
+      "step": "PR 60 #6: the window gives its reach map no known spaces",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "mods/chat/main.js",
+        "before": "mentions.reachable(graph, mentions.knownFrom(known, name, this.machine))",
+        "after": "mentions.reachable(graph)",
+        "test_file": "service/chat-reach.test.ts",
+        "test": "a remote agent's # list puts the window's own spaces under this machine, with their route"
+      }
+    },
+    {
+      "step": "PR 60 #6: the window places its spaces before it knows its own name",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "mods/chat/main.js",
+        "before": "await coreNameNow()",
+        "after": "coreName()",
+        "test_file": "service/chat-reach.test.ts",
+        "test": "a remote agent's # list puts the window's own spaces under this machine, with their route"
+      }
+    },
+    {
+      "step": "PR 60 #1: the service's reach answer passes its known spaces as it has them",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "core/mentions.js",
+        "before": "reachable(doc?.graph, knownFrom(known, here, machine))",
+        "after": "reachable(doc?.graph, known)",
+        "test_file": "core/mentions.test.js",
+        "test": "the service's reach answer places its known spaces relative to the map's start"
       }
     }
   ]

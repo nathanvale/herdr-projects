@@ -66,7 +66,7 @@ import * as NF from "../core/notify.js";
 const { withEverywhere, withSpace } = NF as any;
 
 import * as MN from "../core/mentions.js";
-const { REACH_FILE, reachable, knownFrom } = MN as any;
+const { REACH_FILE, reachIn } = MN as any;
 
 // A machine's reach map, as its spaces: kept a minute (its scheduler redraws it every 5)
 const reaches = new Map<string, { at: number; got: Promise<{ from: string | null; spaces: any[]; checked: number | null }> }>();
@@ -82,9 +82,8 @@ function reachOf(machine: string | null) {
   const k = machine ?? "", was = reaches.get(k);
   if (was && Date.now() - was.at < 60_000) return was.got;
   const got = exec(hub, ["sh", "-c", REACH_FILE], machine, 20).then((r) => {
-    const d = JSON.parse(r.stdout || "null");
     // the map starts on the agent's machine: the service's own spaces go under its herdr-core name there (PR 60)
-    return { from: d?.graph?.core?.name ?? machine, spaces: reachable(d?.graph, knownFrom(knownSpaces(), host.me?.name || null, machine)), checked: d?.at ?? null };
+    return reachIn(JSON.parse(r.stdout || "null"), knownSpaces(), host.me?.name || null, machine);
   }).catch(() => null).then((r) => r?.checked ? r : {
     // no map there yet (its scheduler hasn't run): its own spaces, which it always reaches
     from: machine, checked: null,

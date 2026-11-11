@@ -69,6 +69,13 @@ export function knownFrom(known, here, from) {
   });
 }
 
+// What the "#" list gets for a machine's reach map (the service's /api/reach): where the map starts, the spaces it
+// reaches with the caller's known ones placed relative to that start (knownFrom), and when the map was drawn.
+// doc: that machine's .reach.json (null: none read); machine: that machine as the caller names it (null: its own).
+export function reachIn(doc, known, here, machine) {
+  return { from: doc?.graph?.core?.name ?? machine, spaces: reachable(doc?.graph, knownFrom(known, here, machine)), checked: doc?.at ?? null };
+}
+
 // A space's name as the window shows it: its own, else Herdr's name for an unnamed one (its folder's, "Home" at home).
 export function spaceName(s, home) {
   if (s.name) return s.name;

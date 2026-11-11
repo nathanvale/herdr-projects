@@ -260,10 +260,10 @@ class MissingLibraries(unittest.TestCase):
     # PR 60: the installer keeps only the last line of `--install` as its note (bin/shepherdr ensure_agent_browser).
     # It was the machine-wide sysctl, or the install command: neither said Chrome can't start. The last line now does,
     # and names where the whole fix is; the fix itself is still said in full above it.
-    SANDBOX_LAST = ("herdr-browser: Chrome can't start: AppArmor blocks its sandbox here, and nothing was changed. "
-                    "herdr-browser --install says the fix for this Chrome.")
+    SANDBOX_LAST = ("herdr-browser: Chrome can't start: AppArmor blocks its sandbox here (Chrome's sandbox stays on; "
+                    "nothing on this machine was changed). Run herdr-browser --install for the fix for this Chrome.")
     LIBS_LAST = ("herdr-browser: Chrome can't start: missing system libraries (libgbm.so.1 libnss3.so libfoo.so.2). "
-                 "herdr-browser --install says how to install them.")
+                 "Run herdr-browser --install for how to install them.")
 
     def test_install_ends_on_the_sandbox_failure_and_where_its_fix_is(self):
         self.fake_ldd(RESOLVED)

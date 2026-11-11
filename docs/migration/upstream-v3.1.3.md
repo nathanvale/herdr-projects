@@ -199,11 +199,30 @@ Where the two sides met:
   - `herdr-browser --install` ends a Chrome that can't start on a line that says so and where its fix
     is, so the installer's note is no longer the machine-wide `sysctl` alone.
 
-  That makes A2 the owner of `core/mentions.js`, its test and its chat copy, and of
-  `web/plugins/chat/client.tsx`, `suggest.ts` and its test. N1 becomes the owner of `bin/herdr-browser`
-  and `test/test_herdr_browser_libs.py`. All of these were already named in `AFTER_Q` by the v3.1.31
-  merge, and the gate now admits 110 rows. The same PR 60 sensitivity ledger proves each fix's
-  regression fails by an assertion with the fix removed.
+  Where these are proved, and where they are not:
+  - The regressions are in `suggest.test.ts`, `service/settings.test.ts` (the service's real sections,
+    read by the web's resolver), `web/plugins/chat/composer.test.tsx`, `core/mentions.test.js`,
+    `service/chat-reach.test.ts`, `test_herdr_browser_libs.py` and `test_install.py`.
+  - The composer test draws the real Composer as HTML (`react-dom/server`, read with Bun's
+    `HTMLRewriter`), its store filled through the kernel's own socket handler. It checks the box's and
+    Send's description of the suggestion, its absence, the touch wording and the space's own setting
+    at the call site. For that, the store's `useSyncExternalStore` hooks (`kernel.ts`, `restart.tsx`)
+    pass their getter as the server snapshot too. The app mounts with `createRoot` and never hydrates,
+    so the browser never calls it.
+  - The window's `loadReach` is tested with the native stand-ins (`fake-herdr`, `fake-gpui`). It now
+    waits for this machine's herdr-core name before placing its spaces for a map that starts elsewhere.
+  - The service's answer is `reachIn()` (`core/mentions.js`), tested directly. The one line in
+    `service/main.ts` that calls it is checked by reading only, since that file starts the service.
+  - The PR 60 sensitivity ledger has a row for each fix: with the fix removed, its regression must fail
+    by an assertion. Check runs it; no result is claimed here.
+  - Not proved by any of this: a browser's accessibility tree, VoiceOver or TalkBack, real phones, real
+    reach maps across machines, a real AppArmor host or Chrome, and the installer on a real home.
+
+  That makes A2 the owner of `core/mentions.js`, its test and its chat copy, of
+  `web/plugins/chat/client.tsx`, `suggest.ts` and its test, and of `web/src/kernel.ts`. A2 also owns the
+  two new tests, which `AFTER_Q` names as `PR60-SIX`. N1 becomes the owner of `bin/herdr-browser` and
+  `test/test_herdr_browser_libs.py`. The rest were already named in `AFTER_Q` by the v3.1.31 merge, and
+  the gate now admits 113 rows.
 - SHEP-191's cross-site page link (`pageLink()`) applies before the private listener's own checks.
   Writes, sockets and the API stay refused cross-site, and the private peer's owner and host rules
   are unchanged.

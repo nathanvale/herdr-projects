@@ -540,7 +540,8 @@ const subscribe = (l: () => void) => {
 
 /** Pick only what a part shows: it redraws when that changes, not on every change to the store. */
 export function useStore<T>(pick: (s: State) => T): T {
-  return useSyncExternalStore(subscribe, () => pick(state))
+  // the same for a page drawn as HTML (a test's; the app mounts with createRoot and never hydrates)
+  return useSyncExternalStore(subscribe, () => pick(state), () => pick(state))
 }
 
 /** change what waits to show in the chats; what a chat already shows goes at once */
@@ -595,7 +596,7 @@ export function setDraft(key: string, text: string) {
 
 /** a half-typed text that survives a reload (the screen reloads itself on a new build); undefined until first set */
 export function useDraftOf(key: string): string | undefined {
-  return useSyncExternalStore(subscribeDrafts, () => drafts[key])
+  return useSyncExternalStore(subscribeDrafts, () => drafts[key], () => drafts[key])
 }
 
 /** a half-typed text that survives a reload, and its setter */

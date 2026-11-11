@@ -1899,8 +1899,11 @@ function SlashList({ chatKey, text, pick }: { chatKey: string; text: string; pic
   )
 }
 
-function Composer({ chatKey, placeholder, cli, suggest = null }: { chatKey: string; placeholder: string; cli: string; suggest?: { id: string; text: string } | null }) {
+export function Composer({ chatKey, placeholder, cli }: { chatKey: string; placeholder: string; cli: string }) {
   const [text, setText] = useDraft(chatKey)
+  // the suggested next message (SHEP-186), as the chat's own space has the setting (PR 60)
+  const snap = useSnap()
+  const suggest = suggestionOf(useChat(chatKey), suggestionsOn(snap?.settings, snap ? chatPlace(snap, chatKey) : null))
   // the suggestion the person has used or typed over (by its message): it doesn't come back for that message
   const [spent, setSpent] = useState<string | null>(null)
   // the ghost text shows only in an empty box, while the suggestion is still the one waiting
@@ -1992,7 +1995,6 @@ function Composer({ chatKey, placeholder, cli, suggest = null }: { chatKey: stri
   const recalled = useRef('')
   // the "#" list: spaces this chat's agent reaches; the "@" list: tasks in them (mentions.tsx). Escape closes it for
   // what is typed, Up and Down choose, Enter or Tab takes
-  const snap = useSnap()
   const word = mentionTyping(text)
   const [mclosed, setMclosed] = useState<string | null>(null)
   const reach = useReach(chatKey, word !== null)
@@ -2938,7 +2940,7 @@ function ChatView({ chatKey, placeholder, unreachable }: { chatKey: string; plac
         ) : null}
         <Messages chat={chat ?? { key: chatKey, cli: 'Claude Code', messages: [] }} from={from} />
       </StickToBottom>
-      {chat?.finished && taskChatId(chatKey) ? <Ended chatKey={chatKey} /> : <Composer chatKey={chatKey} placeholder={placeholderOf(chatKey, chat, placeholder)} cli={chat?.cli ?? 'Claude Code'} suggest={suggestionOf(chat, suggestionsOn(snap?.settings, snap ? chatPlace(snap, chatKey) : null))} />}
+      {chat?.finished && taskChatId(chatKey) ? <Ended chatKey={chatKey} /> : <Composer chatKey={chatKey} placeholder={placeholderOf(chatKey, chat, placeholder)} cli={chat?.cli ?? 'Claude Code'} />}
     </DropFiles>
   )
 }

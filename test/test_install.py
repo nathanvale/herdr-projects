@@ -1010,8 +1010,9 @@ class AgentBrowser(unittest.TestCase):
                            text=True, stdin=subprocess.DEVNULL, env=env)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         notes = [ln for ln in p.stdout.splitlines() if ln.startswith("  - the task browser: ")]
-        self.assertEqual(notes, ["  - the task browser: Chrome can't start: AppArmor blocks its sandbox here, and nothing was "
-                                 "changed. herdr-browser --install says the fix for this Chrome."], p.stdout)
+        self.assertEqual(notes, ["  - the task browser: Chrome can't start: AppArmor blocks its sandbox here (Chrome's sandbox "
+                                 "stays on; nothing on this machine was changed). Run herdr-browser --install for the fix for "
+                                 "this Chrome."], p.stdout)
         self.assertNotIn("sysctl", p.stdout)
 
 
