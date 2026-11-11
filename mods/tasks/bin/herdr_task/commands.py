@@ -1122,7 +1122,7 @@ def last_agent(t):
 
 
 def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None, fresh=False, restart=False,
-                resumed_message=None, before_launch=None):
+                resumed_message=None, before_send=None):
     """Starts an agent for the task: the last agent's own session when it's the same kind of agent
     and the session is known (unless fresh: a new conversation with a handoff); else a fresh one
     with a handoff. `message` goes after either; `resumed_message` only after the resumed session (a handoff
@@ -1138,8 +1138,9 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     binding (never today's settings: a binding they can't carry refuses before anything changes), opening with the
     handover that says its
     earlier session is gone (revive.lost_message), then the handoff and `message`; never `resumed_message`.
-    before_launch: called once, after launch admission passed and was claimed, just before the launch (switch ends
-    the old agent there, SHEP-211: a start admission refuses changes nothing).
+    before_send: run by launch admission's submit() once nothing can refuse the start any more (admitted, claimed,
+    its revision and Assistant checked, recorded as being sent), just before hc runs: switch ends the old agent
+    there (SHEP-211), so a start that is refused changes nothing. A Fail from it cancels the start.
     Returns (its record, resumed); after missing history the record returned is a copy that also says missing_history
     and previous_session (the task's own row doesn't)."""
     from .providers import AZURE, PERSONAL_RECORD, restart_route, RESTART_MODEL, same_model
@@ -1171,8 +1172,7 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     parent = adm.parent
     res = resume_argv(argv, prev["session"]) if resuming else None
     with adm.claimed():
-        if before_launch:
-            before_launch()
+        adm.before_send = before_send
         if res:
             first = "\n\n".join(m for m in (resumed_message, message) if m) or None
             return launch(s, t, argv, space, first, parent=parent, resume=res, admission=adm), True
@@ -1227,10 +1227,14 @@ SWITCH_NUDGE = ("Shepherdr restarted your session on a new agent (the task's age
                 "with the task.")
 
 
-def end_agent(s, t, address):
-    """Ends a task's agent (its terminal, shell and all); hc kill returns once it's gone."""
+def end_agent(s, t, address, check=False):
+    """Ends a task's agent (its terminal, shell and all); hc kill returns once it's gone. check: refuse when hc says it
+    didn't (an agent switching itself isn't checked: the kill ends this command too)."""
     stop_note("switch-kill", task=s.ref(t), terminal=address, by="switch")
-    run(["hc", "kill", address])
+    r = run(["hc", "kill", address])
+    if check and r.returncode != 0:
+        raise Fail(f"{address} didn't end (hc kill exited {r.returncode}), so no new agent was started: the old one may "
+                   f"still be at work there.")
 
 
 def cmd_switch(args):
@@ -1254,17 +1258,17 @@ def cmd_switch(args):
         own = bool(old and me and old["address"].split("/")[-1] == me)
 
         def end_old():
-            # SHEP-211, adapted to launch admission (L2): only once the new start is admitted (a switch it refuses
-            # leaves the old agent at work), the old agent ends before the new one starts. The new one may resume the
-            # same session, and ending the old one after that cut the session's turn short under the new agent, which
-            # then sat on "Interrupted" with nothing to do. Its worktree and session stay for the new agent.
+            # SHEP-211, adapted to launch admission (L2): only once nothing can refuse the new start (a switch it
+            # refuses leaves the old agent at work), the old agent ends before the new one starts. The new one may
+            # resume the same session, and ending the old one after that cut the session's turn short under the new
+            # agent, which then sat on "Interrupted" with nothing to do. Its worktree and session stay for the new one.
             if old and not args.keep and not own:
-                end_agent(s, t, old["address"])
+                end_agent(s, t, old["address"], check=True)
                 ended.append(old["address"])
         try:
             a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=getattr(args, "fresh", False),
                                      restart=getattr(args, "restart", False), resumed_message=SWITCH_NUDGE,
-                                     before_launch=end_old)
+                                     before_send=end_old)
         except Fail as e:
             if ended:
                 # Its own words, its launch id kept (a start that may have been sent): said in place, not replaced.

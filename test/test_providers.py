@@ -1632,7 +1632,7 @@ elif verb == "get" and sys.argv[2:3] == ["t1"] and not ended:
     print(json.dumps({"address": "t1", "state": "live", "status": {"state": "working"}, "foreground": {"name": "claude"},
                       "labels": {"herdr.task.space": "sp1"}}))
 elif verb == "kill":
-    pass
+    sys.exit(1 if os.environ.get("FAKE_HC_KILL") == "fail" else 0)
 else:
     sys.exit(1)
 '''
@@ -1698,8 +1698,20 @@ class SwitchOrder(unittest.TestCase):
         before = f.snapshot()
         why = f.refused("switch", str(tid), "--folder", f.repo, "--space", "sp1")
         self.assertIn("conversation started on Azure Foundry example with API key", why)
+        self.assertIn(["get", "t1", "--json"], f.calls()[since:])  # the old agent was there, at work
         self.assertEqual(self.order(f, since), [])
         f.nothing_started(before)
+
+    def test_a_switch_whose_old_agent_doesnt_end_starts_nothing(self):
+        """hc kill failing leaves the old agent possibly at work in the same session: no new agent starts beside it."""
+        f = Fixture(self)
+        tid = self.started(f, {"route": "personal"})
+        f.give_session(tid, "eeeeeeee-1111-4222-8333-444444444444", address="t1")
+        since = self.live_old(f)
+        f.env["FAKE_HC_KILL"] = "fail"
+        why = f.refused("switch", str(tid), "--folder", f.repo, "--space", "sp1")
+        self.assertIn("t1 didn't end (hc kill exited 1), so no new agent was started", why)
+        self.assertEqual(self.order(f, since), ["kill"])
 
     def test_a_switch_from_the_old_agents_own_terminal_ends_it_after(self):
         f = Fixture(self)

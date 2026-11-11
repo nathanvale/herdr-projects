@@ -274,8 +274,9 @@ Qualification is unchanged: nothing here is native, Azure or R evidence.
 squashed or rebased. Git's merge base is v3.1.31 (`6b8caac9`); upstream adds 6 commits and 31 files. U now
 names v3.1.32: every U path outside the phase table and the overrides is byte-identical to it, the six rows
 whose upstream file changed re-pin `upstream_blob` to v3.1.32, and each changed row's `sha256` is re-pinned to
-the merged content. `AFTER_Q` names the source paths no entry named yet (`MERGE-v3.1.32`), so Q's ledger keeps
-describing `d53e014b`. The gate's checks are unchanged and it still admits 116 rows.
+the merged content. `AFTER_Q` names the source paths no other entry names (`MERGE-v3.1.32`, with
+`launch_admission.py` for the SHEP-211 adaptation), so Q's ledger keeps describing `d53e014b`. The gate's checks
+are unchanged and it still admits 116 rows.
 
 Where the two sides met:
 
@@ -283,15 +284,18 @@ Where the two sides met:
   history.
 - SHEP-211 (switch ends the old agent before resuming its session, and nudges it on) met the fork's launch
   admission (L2) in `commands.py`. Upstream ends the old agent before `start_again`; here a refused start must
-  change nothing, so `start_again` takes `before_launch`, called once admission passed and was claimed, just
-  before the launch, and switch ends the old agent there. An agent switching itself still ends after the new
-  one starts, as upstream has it. The switch nudge goes through the fork's `resumed_message`, so a resumed
+  change nothing, so `start_again` takes `before_send`, which launch admission's `submit()` runs once nothing can
+  refuse the start any more (admitted, claimed, its revision and Assistant checked, recorded as being sent), just
+  before `hc run`; switch ends the old agent there, and only when `hc kill` says it ended (otherwise the start is
+  cancelled and nothing is sent). An agent switching itself still ends after the new one starts, as upstream has
+  it. The switch nudge goes through the fork's `resumed_message`, so a resumed
   session hears it and a new conversation (`--fresh`, missing history, another kind of agent) doesn't. A
   failure after the old agent ended says so, keeping its launch id. `test_providers.py`'s `SwitchOrder` runs
   the CLI with a stand-in hc whose old agent is live: kill before the start on a same-kind resume, nothing
-  killed or started when admission refuses, the caller ended after, and no nudge on a new conversation.
+  killed or started when admission refuses, nothing started when the old agent doesn't end, the caller ended
+  after, and no nudge on a new conversation.
   SHEP-211's own unit tests admit through a stand-in launch admission. `docs/migration/up32-sensitivity.json`
-  holds five guard-removal rows, run by its own Check step; the step after the ledgers checks every file
+  holds six guard-removal rows, run by its own Check step; the step after the ledgers checks every file
   either ledger mutates and reruns `SwitchOrder`. A `switch --restart` of a Codex conversation now ends its
   argv with the nudge, and its test says so.
 - SHEP-209's artifact media go through the service's existing `served()` (`service/media.ts`): a `Range` header

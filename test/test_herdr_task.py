@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -4904,11 +4905,11 @@ class TaskFlow(unittest.TestCase):
         self.patch(self.commands, "refresh_sessions", lambda *a: None)
         self.patch(self.commands, "stop_note", lambda *a, **k: None)
         self.patch(self.commands, "unarchive", lambda *a: None)
-        self.patch(self.commands, "run", lambda argv, **k: events.append(("run", argv)))
+        self.patch(self.commands, "run", lambda argv, **k: (events.append(("run", argv)), types.SimpleNamespace(returncode=0))[1])
 
         # The fork's launch admission (L2) comes first; its own preflight is test_launch_admission's and test_providers'.
         class Admission:
-            plan, binding, config_dir = {"route": "personal"}, {"route": "personal"}, None
+            plan, binding, config_dir, before_send = {"route": "personal"}, {"route": "personal"}, None, None
 
             def __init__(self, parent):
                 self.parent = parent
@@ -4924,6 +4925,9 @@ class TaskFlow(unittest.TestCase):
         self.patch(self.commands, "admit_task", admit)
 
         def launch(s, t, argv, space, message=None, parent=None, resume=None, role=None, admission=None):
+            # as Admission.submit(): before_send once nothing can refuse the start, then the start is sent
+            if admission.before_send:
+                admission.before_send()
             events.append(("launch", resume, message))
             return {"address": "t2", "agent": "claude", "argv": argv}
         self.patch(self.commands, "launch", launch)

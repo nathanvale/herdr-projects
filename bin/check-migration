@@ -285,12 +285,12 @@ AFTER_Q = {
     'PR60-SIX': 'service/chat-reach.test.ts web/plugins/chat/composer.test.tsx',
     # PR 60's reach proof: the service's # list in its own module, and its test with a stand-in herdr-core.
     'PR60-REACH': 'service/reach.test.ts service/reach.ts',
-    # Upstream v3.1.32 merged into the fork (upstream be647c82, tag v3.1.32; fork base fbad5cb5): every tracked source
-    # path it changes that no entry here names yet. Its evidence is its own Check; Q's ledger keeps describing d53e014b.
+    # Upstream v3.1.32 merged into the fork (upstream be647c82, tag v3.1.32; fork base fbad5cb5), with SHEP-211 adapted to
+    # launch admission: every tracked source path they change that no other entry names. Its evidence is its own
+    # Check; Q's ledger keeps describing d53e014b.
     'MERGE-v3.1.32': (
-        'core/chat-media.test.js core/recipe.js core/recipe.test.js mods/artifacts/ARTIFACTS.md '
-        'mods/artifacts/core/recipe.js mods/artifacts/recipe-view.js mods/chat/core/recipe.js service/artifacts.ts '
-        'test/test_herdr_artifact_media.py web/plugins/artifacts/client.tsx web/src/screens/Recipe.tsx web/src/styles.css'
+        'core/recipe.test.js mods/artifacts/recipe-view.js mods/tasks/bin/herdr_task/launch_admission.py '
+        'test/test_herdr_artifact_media.py web/src/screens/Recipe.tsx'
     ),
     # Upstream v3.1.31 merged into the fork (upstream 6b8caac9, lightweight tag v3.1.31; fork base 9b7ec505): every
     # tracked source path it changes. Its evidence is its own Check; Q's ledger keeps describing its candidate d53e014b.

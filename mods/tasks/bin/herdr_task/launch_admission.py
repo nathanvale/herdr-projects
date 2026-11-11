@@ -270,6 +270,9 @@ class Admission:
         # task: the task as its start reads it (refuse_busy's record check); config_dir: a Claude
         # Code start's folder, carried explicitly (None: the terminal's own environment decides).
         self.task, self.config_dir = None, None
+        # before_send: what submit() runs once nothing can refuse this start any more, just before hc runs (a switch
+        # ending the agent it replaces, SHEP-211). A Fail there cancels the start: nothing was sent.
+        self.before_send = None
 
     def label(self):
         return ["--label", f"{LABEL}={self.launch}"]
@@ -336,6 +339,12 @@ class Admission:
         if self.parent and parent_live and not parent_live(self.parent):
             raise Fail(PARENT_CHANGED.format(self.parent))
         self._mark_sent(record)
+        if self.before_send:
+            try:
+                self.before_send()
+            except Fail as e:
+                self._close(UNCERTAIN, CANCELLED, reason=str(e)[:300])
+                raise
         try:
             r = run(["hc", *hc_args])
         except (FileNotFoundError, PermissionError):

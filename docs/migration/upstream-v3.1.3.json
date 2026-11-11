@@ -62,7 +62,7 @@
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "b93bec12f3c7f0b610f4c45cfd6e9e75cc602b46",
-      "sha256": "1a62a9cb030ed6d50c466ac82f3c2adef37914c337570233c1ef9bda5b0d0da4"
+      "sha256": "5e84df77eb745f40a6d2c7038c554fb1493294a611f7b145dca7a411dc7425cc"
     },
     {
       "phase": "B1",
@@ -116,7 +116,7 @@
       "phase": "L2",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "86746b983b3d175592ac6f11b98c8a04985b3906",
-      "sha256": "1e0cff41fe8692dce8708d18e1f3906a060fe5747e928159bbd5bf523ca44125"
+      "sha256": "57f32c35f3b5f8dfdaf3df14414614b3cefaae061a442eec63b367a971d62d94"
     },
     {
       "phase": "B2",
@@ -128,7 +128,7 @@
       "phase": "L2",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "2ccb080719f00ef389bd43c4fcea83762f6dccbc7eaffa76a8c4be9d71488110"
+      "sha256": "34b1ca478acd3370a2a78495626b9618a94ac349b3b2080549495219a6373a06"
     },
     {
       "phase": "A2",
@@ -368,7 +368,7 @@
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/launch_admission.py",
       "upstream_blob": null,
-      "sha256": "9c7e90bede3dc9a6cc8d641b08e52fa9c777d232c3cdd8e3cf925d9c52cb1acd"
+      "sha256": "93fb7cf3fce163e4e4a0898f2a2504759e5da2fd24db012638683ff1638cfc63"
     },
     {
       "phase": "A2",
