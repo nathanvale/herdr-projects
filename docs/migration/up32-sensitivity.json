@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "about": "v3.1.32's merge into the fork: guard-removal proofs for SHEP-211 as adapted to the fork's launch admission, run by bin/check-sensitivity --ledger (Check's own step beside Q's and PR 60's). Each mutation removes one part of the adapted switch (the old agent ending once nothing can refuse the new start and before it is sent, and only when hc says it ended; the switch nudge on a resumed session only) or a control it must keep (an agent switching itself ends after), or the data-back mark SHEP-210's new Back dropped, and the named CLI regression, whose stand-in hc has the old agent live, must fail by an assertion; with the source restored it must pass. Not part of Q's or PR 60's ledgers.",
+  "about": "v3.1.32's merge into the fork: guard-removal proofs for SHEP-211 as adapted to the fork's launch admission, run by bin/check-sensitivity --ledger (Check's own step beside Q's and PR 60's). Each mutation removes one part of the adapted switch (the old agent ending once nothing can refuse the new start and before it is sent, and only when hc says it ended; the switch nudge on a resumed session only) or a control it must keep (an agent switching itself ends after), or the data-back mark SHEP-210's new Back dropped, or the remote artifact cache and truncated-read refusal Nathan chose for SHEP-209's ranges, and the named CLI regression, whose stand-in hc has the old agent live, must fail by an assertion; with the source restored it must pass. Not part of Q's or PR 60's ledgers.",
   "workflow_obligations": [
     {
       "step": "v3.1.32 SHEP-211 in the fork: switch ends the old agent after the new one starts again (every switch treated as the caller's)",
@@ -84,6 +84,42 @@
         "after": "      <BackMini className=\"size-5 shrink-0\" />",
         "test_file": "web/src/back.test.tsx",
         "test": "a conversation header Back carries the mark a voice call finds Back by"
+      }
+    },
+    {
+      "step": "PR 61 remote artifacts: another machine's file is read there again for every part (nothing kept)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "service/artifacts.ts",
+        "before": "      let bytes = keep(k);",
+        "after": "      let bytes: Uint8Array | null = null;",
+        "test_file": "service/artifacts-remote.test.ts",
+        "test": "another machine's clip is read there once, then served part by part from what was kept"
+      }
+    },
+    {
+      "step": "PR 61 remote artifacts: a read herdr-core cut short is served (and kept)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "service/artifacts.ts",
+        "before": "        if (!r || r.code !== 0 || r.truncated) return new Response(\"no such file\", { status: 404 });",
+        "after": "        if (!r || r.code !== 0) return new Response(\"no such file\", { status: 404 });",
+        "test_file": "service/artifacts-remote.test.ts",
+        "test": "a read herdr-core cut short is refused and not kept"
+      }
+    },
+    {
+      "step": "PR 61 remote artifacts: what is kept is shared across machines (the key loses its machine)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "service/artifacts.ts",
+        "before": "      const k = `artifact\\0${machine}\\0${id}\\0v${v}\\0${rel}`;",
+        "after": "      const k = `artifact\\0${id}\\0v${v}\\0${rel}`;",
+        "test_file": "service/artifacts-remote.test.ts",
+        "test": "what is kept is one machine's, one artifact's, one version's and one path's"
       }
     }
   ]

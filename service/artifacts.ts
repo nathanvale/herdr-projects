@@ -10,7 +10,7 @@ import { join, extname, normalize } from "node:path";
 import { HOME, where } from "./paths.ts";
 import { SH } from "../core/paths.js";
 import type { Hub } from "./hub.ts";
-import { served } from "./media.ts";
+import { keep, served } from "./media.ts";
 
 // Every registry on a machine, each followed by a record separator (mods/jump, mods/chat read them the same way).
 const READ_ARTS = SH + 'cd "$SHEP_ARTIFACTS" 2>/dev/null || exit 0; for f in *.json .*.json; do [ -f "$f" ] && cat "$f" && printf "\\n\\036\\n"; done; true';
@@ -72,11 +72,11 @@ export class Artifacts {
     } catch {}
   }
 
-  /** A command on another machine through herdr-core; its output as bytes. */
+  /** A command on another machine through herdr-core; its output as bytes, and whether herdr-core cut it short. */
   private async exec(machine: string, argv: string[], timeout = 30) {
     if (!this.hub) throw new Error("Not connected.");
-    const r = await this.hub.call<{ code: number; stdout: string; stderr: string }>("machine.exec", { argv, on: machine, timeout }, (timeout + 5) * 1000);
-    return { code: r.code, out: Buffer.from(r.stdout ?? "", "base64"), err: Buffer.from(r.stderr ?? "", "base64").toString("utf8") };
+    const r = await this.hub.call<{ code: number; stdout: string; stderr: string; truncated?: boolean }>("machine.exec", { argv, on: machine, timeout }, (timeout + 5) * 1000);
+    return { code: r.code, out: Buffer.from(r.stdout ?? "", "base64"), err: Buffer.from(r.stderr ?? "", "base64").toString("utf8"), truncated: !!r.truncated };
   }
 
   /** Every connected other machine's artifacts, each marked with its machine and its folder's name there; one out of
@@ -112,10 +112,18 @@ export class Artifacts {
     // a part of it when asked for one (Range): a player seeks without loading all of a clip (service/media.ts)
     const headers = { "content-security-policy": SHOWN, "x-content-type-options": "nosniff", "cache-control": "private, max-age=3600" };
     if (machine) {
-      // there: the same path under its own artifacts/files (new or old layout), read only if it is a file
-      const r = await this.exec(machine, ["sh", "-c", SH + 'f="$SHEP_ARTIFACTS/files/$1/v$2/$3"; [ -f "$f" ] && exec cat -- "$f"; exit 1', "file", id, String(v), rel]).catch(() => null);
-      if (!r || r.code !== 0) return new Response("no such file", { status: 404 });
-      return served(new Blob([r.out]), type, range, headers);
+      // there: the same path under its own artifacts/files (new or old layout), read only if it is a file. Kept a little
+      // while (media.ts keep(), with /api/file's other-machine files: up to 120 s from when it was read there, 64 MB in
+      // all, the newest kept first), as a player asks for a clip part by part. A read herdr-core cut short is refused and
+      // never kept. Its key names this machine, artifact, version and path, apart from /api/file's (machine, then a path).
+      const k = `artifact\0${machine}\0${id}\0v${v}\0${rel}`;
+      let bytes = keep(k);
+      if (!bytes) {
+        const r = await this.exec(machine, ["sh", "-c", SH + 'f="$SHEP_ARTIFACTS/files/$1/v$2/$3"; [ -f "$f" ] && exec cat -- "$f"; exit 1', "file", id, String(v), rel]).catch(() => null);
+        if (!r || r.code !== 0 || r.truncated) return new Response("no such file", { status: 404 });
+        bytes = keep(k, new Uint8Array(r.out))!;
+      }
+      return served(new Blob([bytes as Uint8Array<ArrayBuffer>]), type, range, headers);
     }
     const p = join(FILES, id, `v${v}`, rel);
     if (!p.startsWith(join(FILES, id, `v${v}`) + "/") || !existsSync(p) || !statSync(p).isFile()) return new Response("no such file", { status: 404 });

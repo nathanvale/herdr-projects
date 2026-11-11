@@ -276,7 +276,7 @@ names v3.1.32: every U path outside the phase table and the overrides is byte-id
 whose upstream file changed re-pin `upstream_blob` to v3.1.32, and each changed row's `sha256` is re-pinned to
 the merged content. `AFTER_Q` names the source paths no other entry names (`MERGE-v3.1.32`, with
 `launch_admission.py` for the SHEP-211 adaptation), so Q's ledger keeps describing `d53e014b`. The gate's checks
-are unchanged; it now admits 118 rows, A2 owning `web/src/ui.tsx` and its new test (below).
+are unchanged; it now admits 120 rows, A2 owning `web/src/ui.tsx`, `service/artifacts.ts` and their new tests (below).
 
 Where the two sides met:
 
@@ -295,7 +295,7 @@ Where the two sides met:
   killed or started when admission refuses, nothing started when the old agent doesn't end, the caller ended
   after, and no nudge on a new conversation.
   SHEP-211's own unit tests admit through a stand-in launch admission. `docs/migration/up32-sensitivity.json`
-  holds six guard-removal rows on `commands.py` and one on `web/src/ui.tsx`, run by its own Check step; the step after the ledgers checks every file
+  holds six guard-removal rows on `commands.py`, one on `web/src/ui.tsx` and three on `service/artifacts.ts`, run by its own Check step; the step after the ledgers checks every file
   either ledger mutates and reruns `SwitchOrder`. A `switch --restart` of a Codex conversation now ends its
   argv with the nudge, and its test says so.
 - SHEP-209's artifact media go through the service's existing `served()` (`service/media.ts`): a `Range` header
@@ -307,8 +307,15 @@ Where the two sides met:
   (`web/plugins/voice/client.tsx` `closeTop`). The fork puts the mark back on it; `web/src/back.test.tsx` reads it
   from the real component's HTML, and a v3.1.32 ledger row removes it. The release's version strings come in as
   they are; the version is upstream's provenance, not a fork release.
-- SHEP-209's artifact `Range` for a file on another machine still reads the whole file there before it is
-  sliced (each seek of a clip fetches it again): upstream's behavior, kept as it is and named here, not changed.
+- SHEP-209's artifact `Range` for a file on another machine read the whole file there for every part a player asked
+  for, and a read herdr-core cut short was served as if whole. At Nathan's choice (PR 61's review), `Artifacts.file()`
+  now keeps another machine's artifact bytes in `media.ts`'s `keep()`, as `/api/file` does for its files: up to 120 s
+  from when they were read there (a read from what was kept doesn't extend it), 64 MB in all shared with `/api/file`,
+  the newest kept first; a file larger than that is served but not kept. Its key names the machine, artifact, version
+  and path, apart from `/api/file`'s. A read herdr-core reports truncated is refused (404) and never kept. Request
+  admission, the private listener, the sandboxed content-security policy and `nosniff` are unchanged.
+  `service/artifacts-remote.test.ts` drives the real `Artifacts.file()` with a stand-in hub, and three ledger rows
+  remove the cache, the truncation refusal and the key's machine.
 
 ### A1 provider checkpoint
 

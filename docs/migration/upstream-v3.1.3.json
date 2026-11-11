@@ -642,6 +642,18 @@
     },
     {
       "phase": "A2",
+      "path": "service/artifacts-remote.test.ts",
+      "upstream_blob": null,
+      "sha256": "a2c9141191ad2d9d5b23d8b89eb89c2682689b5e8a29f89b0bfd0219663f9ddd"
+    },
+    {
+      "phase": "A2",
+      "path": "service/artifacts.ts",
+      "upstream_blob": "3ac8f8ed7c9181b27c0dd8d9ac964b636cbab747",
+      "sha256": "80c10c38c6a1599305e29027017717bc80f3db87b7f78445722811674ad43ac3"
+    },
+    {
+      "phase": "A2",
       "path": "web/src/back.test.tsx",
       "upstream_blob": null,
       "sha256": "2515abc4cfbd48183d075f03c61ff4513d043255391730cd2f18aa5424174381"
