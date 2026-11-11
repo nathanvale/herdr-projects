@@ -632,7 +632,9 @@ def check_rows(repo, sha):
     Never whole (fail-closed, so never said to pass) when GitHub has more than the one page read (its total_count),
     or when a check's name came back more than once with different outcomes: these rows name the app (github-actions),
     not the workflow, so latest_checks() can't tell a newer run of one job from another workflow's job of that name,
-    and could keep a pass over a failure."""
+    and could keep a pass over a failure. A row with a field of the wrong kind (a status that isn't text, an app that
+    isn't an object) never stops the tick: its text fields read as empty, what it did say (a failure) still counts,
+    and the read is not whole."""
     rows, whole = [], bool(sha)
     if not sha:
         return rows, False
@@ -649,22 +651,37 @@ def check_rows(repo, sha):
             return [], False
         if not isinstance(items, list) or not all(isinstance(c, dict) for c in items):
             return [], False
-        return items, isinstance(total, int) and total <= len(items)
+        return items, type(total) is int and total <= len(items)
+
+    odd = []
+
+    def text(c, *keys):
+        """The first of these fields that is text; one of another kind (not None) makes the read not whole."""
+        for k in keys:
+            x = c.get(k)
+            if isinstance(x, str) and x:
+                return x
+            if x is not None and not isinstance(x, str):
+                odd.append(k)
+        return ""
 
     runs, ok = read("check-runs", "check_runs")
     seen = {}
     for c in runs:
-        rows.append({"name": c.get("name"), "status": (c.get("status") or "").upper(),
-                     "conclusion": (c.get("conclusion") or "").upper(), "startedAt": c.get("started_at") or "",
-                     "completedAt": c.get("completed_at") or "",
-                     "workflowName": ((c.get("app") or {}).get("slug") or "")})
+        app = c.get("app")
+        if app is not None and not isinstance(app, dict):
+            odd.append("app")
+        rows.append({"name": text(c, "name") or None, "status": text(c, "status").upper(),
+                     "conclusion": text(c, "conclusion").upper(), "startedAt": text(c, "started_at"),
+                     "completedAt": text(c, "completed_at"),
+                     "workflowName": text(app, "slug") if isinstance(app, dict) else ""})
         seen.setdefault((rows[-1]["workflowName"], rows[-1]["name"]), set()).add((rows[-1]["status"], rows[-1]["conclusion"]))
     whole = whole and ok and all(len(outcomes) == 1 for outcomes in seen.values())
     statuses, ok = read("status", "statuses")
     for c in statuses:
-        rows.append({"context": c.get("context"), "state": (c.get("state") or "").upper(),
-                     "startedAt": c.get("updated_at") or c.get("created_at") or ""})
-    return rows, whole and ok
+        rows.append({"context": text(c, "context") or None, "state": text(c, "state").upper(),
+                     "startedAt": text(c, "updated_at", "created_at")})
+    return rows, whole and ok and not odd
 
 
 def note_checks(s, task, v):

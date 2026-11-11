@@ -143,7 +143,12 @@ Where the two sides met:
   as unknown on the Accept card, never as passed. `note_checks()` runs for GitHub views only, never
   a refused or Bitbucket one. The REST fallback (`check_rows()`) is whole only when GitHub's
   `total_count` fits the one page it reads and no check name came back with different outcomes
-  (its rows name the app, not the workflow); otherwise it is unknown (C0).
+  (its rows name the app, not the workflow); otherwise it is unknown (C0). A row with a field of the
+  wrong kind is unknown too, never a crash of the folder's tick, and a failure read beside it still
+  counts. Nathan chose the conservative policy (11 November 2026): unknown checks never merge by
+  themselves. `merge_now(auto=True)` refuses them for the tick's merge (merge `auto` or `checks`,
+  including an Accept made while checks ran) and for ready's merge `auto`; the person's own Accept
+  or merge is unchanged, and GitHub still refuses what its required checks block.
 - SHEP-188's `mid_turn()` joins `finish()` beside `kept_because()`: a folder stays while its agent
   or helper is mid-turn, and stays when the branch holds work that didn't merge.
 - SHEP-189's resume nudge goes through the fork's admitted `start_again()`; `--fresh` (a new conversation from

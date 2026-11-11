@@ -38,13 +38,13 @@
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/commands.py",
       "upstream_blob": "1f8a11c28d086ec2292fc25fc288e0b75da190e4",
-      "sha256": "ae91b7812afd0310c180781374dba36d8468fb2216cd128c83c14ccaee068d22"
+      "sha256": "4e54f70929bd1ec66a577d2f4cda78483e90a603700a5266a6ab359f7cf4e327"
     },
     {
       "phase": "B1",
       "path": "mods/tasks/bin/herdr_task/github.py",
       "upstream_blob": "4e4cd59b4856bc06d0e2876c212045284aeb526b",
-      "sha256": "c972cb925c0ae988929df49b39bb501ec7016ea1258f6fd7a3277a19c8ed6cc7"
+      "sha256": "db69010f7d50ff04b555d6685712a21276e57606560b7eface5063fcf151aec2"
     },
     {
       "phase": "A2",
@@ -68,7 +68,7 @@
       "phase": "L1",
       "path": "mods/tasks/bin/herdr_task/tick.py",
       "upstream_blob": "01ce1a294b0427e4f5c9fce83357576401f5fa18",
-      "sha256": "56ffdd05f60a098761156ca15abd34b44a919d0b7711d79e0c2832f3046db20c"
+      "sha256": "06acbd8bdd3930fdb77069392b6e66ca187b11f1031543c90b0d437e2add0282"
     },
     {
       "phase": "A1",
@@ -92,7 +92,7 @@
       "phase": "L2",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "dda42467b776dbfee8038264bbd3be6f6f4a001c",
-      "sha256": "9954459cfefc7cb2800676234dfd36563dd5dea3c377975a3e760079179077f9"
+      "sha256": "06d0447a15baa0e6a16bd267d9554a2fa04aaa281d3860e94ff1bd7d9e68e4be"
     },
     {
       "phase": "B2",

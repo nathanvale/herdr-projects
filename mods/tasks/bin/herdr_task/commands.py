@@ -813,7 +813,7 @@ def finalize(s, t):
         t["auto_merge"] = policy
         if t.get("pr"):
             if policy == "auto":
-                err = merge_now(s, t)
+                err = merge_now(s, t, auto=True)
                 return msg + (f" Merging it waits: {err}" if err else " Merged; done.")
             return msg + " It merges by itself once its checks pass."
         no_local_merge(s, t)
@@ -1255,6 +1255,10 @@ MERGE_FAILED = "GitHub didn't merge it"  # a merge that failed: never in the way
 CHECKS_RUNNING = "Checks are still running."
 WAITS_APPROVAL = "It waits for an approving review."  # #743: not a problem, it merges once approved
 IN_QUEUE = "It is in GitHub's merge queue."  # #802: merging, done once GitHub merged it
+# Its GitHub checks unknown (SHEP-179, C0): never merged by itself (Nathan's conservative policy); the person's own
+# Accept or merge still merges, and GitHub still refuses what its required checks block.
+CHECKS_UNKNOWN = ("Its GitHub checks can't all be read here, so it doesn't merge by itself until they can and pass; "
+                  "or the person checks them on GitHub and accepts it.")
 QUEUE_DAY = 24 * 3600000  # how long a base branch's merge queue is remembered
 
 
@@ -1317,12 +1321,14 @@ def merged_elsewhere(s, t, v):
             f"`herdr-task done {ref}` marks the task done and leaves the worktree and branch for you to remove.")
 
 
-def merge_now(s, t):
+def merge_now(s, t, auto=False):
     """Merges the task's pull request on GitHub (squash) and tidies up here. Returns why it
     couldn't, or why one already merged doesn't finish the task (merged_elsewhere()); None when
     it's merged (and the task done). A base branch with GitHub's merge queue (#742, #801, #802):
     the pull request joins the queue and the task stays Merging until GitHub merged it (the tick
-    finishes it then, and deletes its branch there)."""
+    finishes it then, and deletes its branch there). auto: a merge nobody asked for just now (merge
+    auto or checks, an Accept made while its checks ran): never while this read's checks are
+    unknown (CHECKS_UNKNOWN); it stays as set and the next look tries again."""
     n = str(t["pr"]["number"])
     # The folder's host first (forge.reach()): on another host, or none named, nothing is read as this
     # task's and nothing merges or changes. gh failing to place the folder is gh failing to reach it.
@@ -1361,6 +1367,8 @@ def merge_now(s, t):
             t["pr"]["needs_approval"] = True
             return WAITS_APPROVAL
         t["pr"].pop("needs_approval", None)
+        if auto and v.get("checks_unknown"):
+            return CHECKS_UNKNOWN
         base = t.get("base") or "main"
         matched = v.get("headRefOid") or ""
         queue = uses_queue(s, base)

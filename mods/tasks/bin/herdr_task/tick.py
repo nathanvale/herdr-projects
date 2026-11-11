@@ -265,7 +265,7 @@ def tick_store(s, report):
                 except Exception as e:  # never stops the tick
                     report.setdefault("github_error", []).append(f"{s.ref(t)}: {e}")
             if t["state"] == "ready" and t.get("auto_merge") and t.get("pr") and not t.get("attention") and t.get("_pr_fresh"):
-                if not merge_now(s, t):
+                if not merge_now(s, t, auto=True):
                     report["done"].append(t["id"])
             t.pop("_pr_fresh", None)
     due_pass(s, report)

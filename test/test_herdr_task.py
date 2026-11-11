@@ -2522,6 +2522,7 @@ class PrLooks(unittest.TestCase):
                 unittest.mock.patch.object(self.commands, "pr_open", lambda s, t, where, summary=None: t.setdefault("pr", dict(opened))):
             msg = self.commands.finalize(self.store, t)
         self.assertIn("shows Working until its checks pass", msg)
+        self.said = msg
         return t
 
     def github_says(self, mergeable="MERGEABLE", checks=()):
@@ -2683,7 +2684,7 @@ class ChecksUnreadable(PrLooks):
         import herdr_task.proof as proof
         t = self.said_ready()
         self.github_says("CLEAN", runs=[{"name": "test", "status": "completed", "conclusion": "success"}], total=150)
-        self.assertTrue(github.pr_view(t)["checks_unknown"])
+        self.assertTrue(github.pr_view(t).get("checks_unknown"))
         self.assertEqual(proof.checks_of(t)["state"], "unknown")
 
     def test_same_named_jobs_of_two_workflows_never_hide_a_failure(self):
@@ -2698,7 +2699,7 @@ class ChecksUnreadable(PrLooks):
              "check_suite": {"id": 1}},
             {"name": "test", "status": "completed", "conclusion": "success", "started_at": "2026-11-10T10:05:00Z", "app": app,
              "check_suite": {"id": 2}}])
-        self.assertTrue(github.pr_view(t)["checks_unknown"])
+        self.assertTrue(github.pr_view(t).get("checks_unknown"))
         self.assertEqual(proof.checks_of(t)["state"], "unknown")
         # The same name passing in both is no hidden failure: still passed.
         self.github_says("CLEAN", runs=[
@@ -2706,6 +2707,78 @@ class ChecksUnreadable(PrLooks):
             {"name": "test", "status": "completed", "conclusion": "success", "started_at": "2026-11-10T10:05:00Z", "app": app}])
         self.assertNotIn("checks_unknown", github.pr_view(t))
         self.assertEqual(proof.checks_of(t)["state"], "passed")
+
+    def test_a_malformed_check_row_reads_unknown_and_keeps_a_failure_it_read(self):
+        """A REST row with a field of the wrong kind never stops the folder's tick: the read is unknown, never passed,
+        and a failure read beside it still goes back to its agent."""
+        import herdr_task.github as github
+        import herdr_task.proof as proof
+        t = self.said_ready()
+        self.github_says("CLEAN", runs=[
+            {"name": "lint", "status": "completed", "conclusion": "failure"},
+            {"name": ["test"], "status": 7, "conclusion": {"x": 1}, "started_at": 5, "app": "github-actions"}])
+        with open(os.path.join(self.dir, "status.json"), "w") as f:
+            json.dump({"statuses": [{"context": 3, "state": None, "updated_at": []}], "total_count": 1}, f)
+        self.assertTrue(github.pr_view(t).get("checks_unknown"))
+        self.assertEqual(self.look(t, after=1000)[:2], ("working", "Back to its agent to fix"))
+        self.assertEqual(t["attention"], "Checks failing: lint.")
+        self.assertEqual(proof.checks_of(t)["state"], "failed")
+        # Nothing failing, but one row malformed: unknown, never passed.
+        os.remove(os.path.join(self.dir, "status.json"))
+        self.github_says("CLEAN", runs=[{"name": "test", "status": "completed", "conclusion": "success", "app": ["x"]}])
+        self.assertTrue(github.pr_view(t).get("checks_unknown"))
+        self.assertEqual(proof.checks_of(t)["state"], "unknown")
+
+    def merges_here(self):
+        """merge_now()'s tidying after GitHub merged, stubbed: the task is done."""
+        for name, value in (("watch_main", lambda *a, **k: None), ("update_main", lambda *a, **k: None),
+                            ("finish", lambda s, t, even_if_busy=False: t.update(state="done"))):
+            p = unittest.mock.patch.object(self.commands, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def asked_to_merge(self):
+        if not os.path.exists(self.gh_log):
+            return False
+        with open(self.gh_log) as f:
+            return any(a[:2] == ["pr", "merge"] for a in map(json.loads, f))
+
+    def tick_once(self, t):
+        self.clock[0] += 60_000
+        t["pr"]["checked"] = 0
+        self.tick.tick_store(self.store, {"attention": [], "done": []})
+
+    def test_unknown_checks_never_merge_by_themselves(self):
+        """Nathan's conservative policy: checks that can't all be read hold the tick's merge (merge auto or checks, and
+        an Accept made while its checks ran); read in full and passed, it merges by itself as before. The person's own
+        Accept still merges (test_accept_merges_without_check_access)."""
+        self.merges_here()
+        t = self.said_ready()
+        t["auto_merge"] = "checks"
+        self.github_says("CLEAN")  # GraphQL and REST both refuse the checks: unknown
+        self.tick_once(t)
+        self.assertFalse(self.asked_to_merge())
+        self.assertEqual((t["state"], t["auto_merge"], t["pr"].get("checks_unknown")), ("ready", "checks", True))
+        self.assertEqual(self.commands.merge_now(self.store, t, auto=True), self.commands.CHECKS_UNKNOWN)
+        self.assertFalse(self.asked_to_merge())
+        self.github_says("CLEAN", runs=[{"name": "test", "status": "completed", "conclusion": "success"}])
+        self.tick_once(t)
+        self.assertTrue(self.asked_to_merge())
+        self.assertEqual(t["state"], "done")
+
+    def test_ready_under_merge_auto_waits_while_checks_are_unknown(self):
+        """merge auto merges at ready: never while its checks are unknown; read in full and passed, at once as before."""
+        self.merges_here()
+        self.github_says("CLEAN")
+        t = self.said_ready(set={"merge": "auto"})
+        self.assertIn("Merging it waits: " + self.commands.CHECKS_UNKNOWN, self.said)
+        self.assertFalse(self.asked_to_merge())
+        self.assertEqual((t["state"], t["auto_merge"]), ("ready", "auto"))
+        self.github_says("CLEAN", runs=[{"name": "test", "status": "completed", "conclusion": "success"}])
+        t = self.said_ready(set={"merge": "auto"})
+        self.assertIn("Merged; done.", self.said)
+        self.assertTrue(self.asked_to_merge())
+        self.assertEqual(t["state"], "done")
 
     def test_accept_merges_without_check_access(self):
         t = self.said_ready()
