@@ -1,0 +1,90 @@
+{
+  "schema": 1,
+  "about": "PR 60 review #8's guard-removal proofs, run by bin/check-sensitivity --ledger (Check's own step beside Q's): each mutation removes one part of the installer's kept-page guard, or a control it must keep, and the named installer regression must fail by an assertion; with the source restored it must pass. Not part of Q's reconciliation ledger, which describes its candidate only.",
+  "workflow_obligations": [
+    {
+      "step": "PR 60 #8: the full install retires the page a source without one doesn't replace",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "bin/shepherdr",
+        "before": "rel not in MANAGED and rel not in kept",
+        "after": "rel not in MANAGED",
+        "test_file": "test/test_install.py",
+        "test": "test_update_keeps_the_page_installed_before_without_a_built_one"
+      }
+    },
+    {
+      "step": "PR 60 #8: the web-only update retires the page a source without one doesn't replace",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "bin/shepherdr",
+        "before": "x not in MANAGED and x not in kept",
+        "after": "x not in MANAGED",
+        "test_file": "test/test_install.py",
+        "test": "test_web_only_update_keeps_the_page_installed_before_without_a_built_one"
+      }
+    },
+    {
+      "step": "PR 60 #8: the full install keeps the page but drops its record rows",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "bin/shepherdr",
+        "before": "    for rel in gone:\n        files.pop(rel, None)\n",
+        "after": "    for rel in [*gone, *kept]:\n        files.pop(rel, None)\n",
+        "test_file": "test/test_install.py",
+        "test": "test_update_keeps_the_page_installed_before_without_a_built_one"
+      }
+    },
+    {
+      "step": "PR 60 #8: the web-only update keeps the page but drops its record rows",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "bin/shepherdr",
+        "before": "rec.update({\"files\": files, \"links\": links,",
+        "after": "rec.update({\"files\": {k: v for k, v in files.items() if k not in kept}, \"links\": links,",
+        "test_file": "test/test_install.py",
+        "test": "test_web_only_update_keeps_the_page_installed_before_without_a_built_one"
+      }
+    },
+    {
+      "step": "PR 60 #8: the full install keeps the old page files even when a built page replaces it",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "bin/shepherdr",
+        "before": "    if built_page(src):\n        return set()\n    kept =",
+        "after": "    kept =",
+        "test_file": "test/test_install.py",
+        "test": "test_update_keeps_the_page_installed_before_without_a_built_one"
+      }
+    },
+    {
+      "step": "PR 60 #8: the web-only update keeps the old page files even when a built page replaces it",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "bin/shepherdr",
+        "before": "    if built_page(src):\n        return set()\n    kept =",
+        "after": "    kept =",
+        "test_file": "test/test_install.py",
+        "test": "test_web_only_update_keeps_the_page_installed_before_without_a_built_one"
+      }
+    },
+    {
+      "step": "PR 60 #8: a failed build without --force installs anyway",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "bin/shepherdr",
+        "before": "    if a.force:\n        r.notes.append(f\"couldn't build the web app (",
+        "after": "    if True:\n        r.notes.append(f\"couldn't build the web app (",
+        "test_file": "test/test_install.py",
+        "test": "test_update_keeps_the_page_installed_before_without_a_built_one"
+      }
+    }
+  ]
+}

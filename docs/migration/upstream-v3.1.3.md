@@ -182,7 +182,11 @@ Where the two sides met:
   source with a built page still replaces it and retires what the new one no longer has, and a failed
   build without `--force` still refuses. That makes N1, the owner of `docs/install.md`, the owner of
   `bin/shepherdr` and `test/test_install.py` (both already named in `AFTER_Q` by the v3.1.31 merge),
-  and the gate now admits 102 rows.
+  and the gate now admits 102 rows. Check proves the guard's regressions with `bin/check-sensitivity
+  --ledger docs/migration/pr60-sensitivity.json` (named `PR60-FIX8`), beside Q's own run: removing the
+  guard in either installer, dropping the kept page's record rows, keeping old page files when a built
+  page replaces them, or installing past a failed build without `--force` must each fail an installer
+  regression.
 - SHEP-191's cross-site page link (`pageLink()`) applies before the private listener's own checks.
   Writes, sockets and the API stay refused cross-site, and the private peer's owner and host rules
   are unchanged.

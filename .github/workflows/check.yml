@@ -83,6 +83,9 @@ jobs:
         # Q: the fork proved its regressions by removing the guard (foundry.yml); the ported ones are the `ported`
         # rows of docs/migration/q-reconciliation.json. Each source file is put back byte for byte after its run.
         run: python3 bin/check-sensitivity
+      - name: PR 60 installer page guard sensitivity (each part removed, its installer regression must fail)
+        # PR 60 review #8: the same runner on its own ledger, apart from Q's; bin/shepherdr is put back byte for byte.
+        run: python3 bin/check-sensitivity --ledger docs/migration/pr60-sensitivity.json
       - name: installer into a brand-new throwaway home (dry run, install, doctor, uninstall)
         run: |
           root=$(mktemp -d)

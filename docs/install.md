@@ -97,9 +97,9 @@ again changes only what changed; a file you edited since is kept (the new copy g
 mod file Shepherdr changed too: that one is replaced and yours goes to the backup folder.
 
 What it retires: a file Shepherdr shipped before and no longer ships (or a mod `lib/addons.json` dropped) is removed on
-the next update, whether you edited it or not; a changed one is backed up first and the update says where. The web
-page is the exception: from a source with none built it stays, as above. A one-file
-helper copy from an older release that doctor rejects (no current SHEP block) is replaced the same way.
+the next update, whether you edited it or not; a changed one is backed up first and the update says where. A one-file
+helper copy from an older release that doctor rejects (no current SHEP block) is replaced the same way. The web page
+is the exception: from a source with none built it stays, as above.
 
 What it backs up: anything it replaces or removes, in `~/.config/herdr-app/.shepherdr-backup/<time>/`, at the same
 path under your home.
