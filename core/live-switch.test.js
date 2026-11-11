@@ -166,6 +166,29 @@ test("a default that couldn't be put back is no success: it says it switched and
   expect(JSON.parse(t.files[".claude/settings.json"]).fastMode).toBe(true);
 });
 
+// review of the fix: a settings file that isn't JSON can't be put back either, before or after
+test("Claude Code: settings that aren't JSON: refused before typing; made so by a command: no plain success", async () => {
+  const bad = fakeTerm({ send: () => "" }, { ".claude/settings.json": "{ oops" });
+  await expect(switchLive(bad.io, "claude", { model: "opus", effort: "high" }, { model: "sonnet", effort: "high" }))
+    .rejects.toThrow("~/.claude/settings.json couldn't be read");
+  expect(bad.sent).toEqual([]);
+  const t = fakeTerm({
+    send: (text, f) => { f[".claude/settings.json"] = "{ half"; return `❯ ${text}\n  ⎿  Fast mode ON\n`; },
+  }, { ".claude/settings.json": JSON.stringify({ theme: "dark" }) });
+  const err = await switchLive(t.io, "claude", { model: "opus", effort: "high", fast: false }, { model: "opus", effort: "high", fast: true }).then(() => null, (e) => e);
+  expect([err?.message, err?.switched]).toEqual(["It switched, but ~/.claude/settings.json couldn't be put back, so new sessions may start on this choice.", true]);
+});
+
+// a command that failed after an earlier one took: a switch part of the way, never a plain refusal
+test("Claude Code: /model took, then /effort failed: it says it switched part of the way", async () => {
+  const t = fakeTerm({
+    send: (text) => (text.startsWith("/model") ? `❯ ${text}\n  ⎿  Set model to Sonnet 5.5\n` : `❯ ${text}\n  ⎿  Invalid effort level: turbo\n`),
+  }, { ".claude/settings.json": "{}" });
+  const err = await switchLive(t.io, "claude", { model: "opus", effort: "high" }, { model: "sonnet", effort: "turbo" }).then(() => null, (e) => e);
+  expect(t.sent).toEqual(["/model sonnet", "/effort turbo"]);
+  expect([err?.message, err?.switched]).toEqual(["It switched part of the way, then: Invalid effort level: turbo", true]);
+});
+
 test("Codex: its model picked, then its level for this session only (s, never Enter)", async () => {
   const config = 'service_tier = "fast"\n';
   const t = fakeTerm({

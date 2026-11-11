@@ -169,9 +169,10 @@ Where the two sides met:
   another `CLAUDE_CONFIG_DIR` by its page or its own process (`folderRefusal()`, as `restart()`
   asks), goes to `restart()`, whose launch owner keeps the binding or refuses. After PR 60's review, the
   defaults a switch saves go back also when the CLI made its settings file just then (none before); a
-  file that can't be read, or a machine that can't be reached, refuses before anything is typed; and a
-  default that couldn't be put back fails the switch with words that say it switched (`switched`),
-  never a plain success. The service's home-file io says which: its `sh` exits 3 for no such file, and
+  file that can't be read (or, for Claude Code, isn't settings JSON), or a machine that can't be
+  reached, refuses before anything is typed; and a default that couldn't be put back, or a command
+  that failed after an earlier one took, fails the switch with words that say it switched
+  (`switched`), never a plain success or a plain refusal. The service's home-file io says which: its `sh` exits 3 for no such file, and
   any other failure, of a read or a write, is an error. That makes A2 the owner of `core/live-switch.js`
   and its test, with the new `service/live-switch.test.ts` (named in `AFTER_Q` as `PR60-FIX`), and the
   gate now admits 100 rows.

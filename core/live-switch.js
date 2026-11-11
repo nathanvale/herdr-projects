@@ -58,11 +58,10 @@ export const count = (screen, re) => String(screen ?? "").split("\n").filter((l)
 export const claudeAsksSwitch = (screen) => /Switch model\?/.test(screen ?? "") && /❯\s*1\.\s*Yes/.test(screen ?? "");
 
 /** The settings file with the keys a command touched as they were before (null: nothing to put back). Only those
- *  keys: anything else written meanwhile stays. */
+ *  keys: anything else written meanwhile stays. Throws when either isn't a settings object: nothing could be put back. */
 export function claudeRestore(before, now) {
-  let b, n;
-  try { b = JSON.parse(before || "{}"); n = JSON.parse(now || "{}"); } catch { return null; }
-  if (!n || typeof n !== "object" || !b || typeof b !== "object") return null;
+  const b = JSON.parse(before || "{}"), n = JSON.parse(now || "{}");
+  if (!n || typeof n !== "object" || !b || typeof b !== "object") throw new Error("not a settings object");
   let changed = false;
   for (const k of CLAUDE_KEYS) {
     if (JSON.stringify(b[k]) === JSON.stringify(n[k])) continue;
@@ -156,10 +155,12 @@ async function waitFor(io, test, ms = 8000) {
 }
 
 /** What a file held before the commands: its text, "" when it didn't exist (a command may make it). One that can't be
- *  read stops the switch here, before anything is typed. */
-async function prior(io, rel) {
+ *  read, or that `check` can't take as the CLI's settings, stops the switch here, before anything is typed. */
+async function prior(io, rel, check = () => {}) {
   try {
-    return (await io.readFile(rel)) ?? "";
+    const text = (await io.readFile(rel)) ?? "";
+    check(text);
+    return text;
   } catch {
     throw new Error(`Can't switch it in place: ~/${rel} couldn't be read, so the default a switch saves there couldn't be put back.`);
   }
@@ -180,17 +181,20 @@ async function putBack(io, rel, before, restore) {
   }
 }
 
-/** The switch's outcome: a command's failure (with the default not put back, said too), or a switch whose default stayed
- *  (`switched`: what runs did change). */
-function outcome(failed, lost) {
-  if (failed) throw lost ? new Error(`${failed.message} Also, ${lost}`) : failed;
+/** The switch's outcome: a command's failure (with the default not put back, said too; after an earlier command took,
+ *  said as a switch part of the way), or a switch whose default stayed. `switched` on the error: what runs did change. */
+function outcome(failed, lost, took) {
+  if (failed) {
+    const words = lost ? `${failed.message} Also, ${lost}` : failed.message;
+    throw took ? Object.assign(new Error(`It switched part of the way, then: ${words}`), { switched: true }) : lost ? new Error(words) : failed;
+  }
   if (lost) throw Object.assign(new Error(`It switched, but ${lost}`), { switched: true });
 }
 
 /** Claude Code: the commands typed one by one, each waited for; its default put back. Resolves with what it ran. */
 async function claude(io, ch) {
-  const before = await prior(io, CLAUDE_SETTINGS);
-  let failed = null;
+  const before = await prior(io, CLAUDE_SETTINGS, (text) => claudeRestore(text, text));
+  let failed = null, took = false;
   try {
     for (const c of claudeCommands(ch)) {
       // an answer counts only after this command's own echo (the same command may be on screen from before)
@@ -208,11 +212,12 @@ async function claude(io, ch) {
       if (!s || a === null) throw new Error(`Claude Code didn't answer ${c.text.split(" ")[0]}.`);
       const bad = c.fail && !c.done.test(a) ? c.fail.exec(a) : null;
       if (bad) throw new Error(bad[0].trim());
+      took = true;
     }
   } catch (e) {
     failed = e;
   }
-  outcome(failed, await putBack(io, CLAUDE_SETTINGS, before, claudeRestore));
+  outcome(failed, await putBack(io, CLAUDE_SETTINGS, before, claudeRestore), took);
 }
 
 /** Codex: /model's two pickers (its level for this session only, "s"), then /fast; config.toml put back. */
@@ -222,7 +227,7 @@ async function codex(io, ch, labels) {
     for (const k of moveTo(rows, n)) await io.keys(k);
     await io.sleep(150);
   };
-  let failed = null;
+  let failed = null, took = false;
   try {
     const CHANGED = /^\s*•\s*Model changed to /, TIER = /^\s*•\s*Service tier set to /;
     if (ch.model !== undefined || ch.effort !== undefined) {
@@ -255,12 +260,14 @@ async function codex(io, ch, labels) {
         s = await waitFor(io, (s) => count(s, CHANGED) > was);
         if (!s) throw new Error("Codex didn't confirm the change.");
       }
+      took = true;
     }
     if (ch.fast !== undefined) {
       const was = count(await io.screen(), TIER);
       await io.send("/fast");
       const s = await waitFor(io, (s) => count(s, TIER) > was);
       if (!s) throw new Error("Codex didn't confirm Fast.");
+      took = true;
       const said = String(s).split("\n").filter((l) => TIER.test(l)).pop();
       const on = /set to (fast|priority)/i.test(said);
       // a toggle: once more if it went the other way
@@ -273,7 +280,7 @@ async function codex(io, ch, labels) {
   } catch (e) {
     failed = e;
   }
-  outcome(failed, await putBack(io, CODEX_CONFIG, before, codexRestore));
+  outcome(failed, await putBack(io, CODEX_CONFIG, before, codexRestore), took);
 }
 
 /** Switches the agent in place. `labels`: Codex's { names: { id: label }, model, effort } (the picker's words for

@@ -590,13 +590,13 @@
       "phase": "A2",
       "path": "core/live-switch.js",
       "upstream_blob": "d870374deb11566c4c822d27d73a0949d2eacd85",
-      "sha256": "bf2bda1ac163adae6a2495fbea38cebb879d900fceb849db4b54e0d86d0ca77c"
+      "sha256": "b9a4ea44f1aa893a523f6b5a955732dfb9ff4d000164e3ef2a518f9a309016ca"
     },
     {
       "phase": "A2",
       "path": "core/live-switch.test.js",
       "upstream_blob": "252f81795d4fc44ad543c622339e4bcb09b869b8",
-      "sha256": "0031e307716785a56aed4b5cbb70a997a084d77df4b82314fc9b745f6ade4d78"
+      "sha256": "2c36a5dc46bed653cadbfd3bed79be6bf93a10012ea5ed075c7290138ae44c66"
     },
     {
       "phase": "A2",
