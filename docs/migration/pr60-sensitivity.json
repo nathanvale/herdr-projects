@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "about": "PR 60 review #8's guard-removal proofs, run by bin/check-sensitivity --ledger (Check's own step beside Q's): each mutation removes one part of the installer's kept-page guard, or a control it must keep, and the named installer regression must fail by an assertion; with the source restored it must pass. Not part of Q's reconciliation ledger, which describes its candidate only.",
+  "about": "PR 60's guard-removal proofs, run by bin/check-sensitivity --ledger (Check's own step beside Q's): each mutation removes one part of a review fix (#8's installer kept-page guard, then the six suggestion, reach-map and browser-note fixes), or a control it must keep, and the named regression must fail by an assertion; with the source restored it must pass. Not part of Q's reconciliation ledger, which describes its candidate only.",
   "workflow_obligations": [
     {
       "step": "PR 60 #8: the full install retires the page a source without one doesn't replace",
@@ -84,6 +84,102 @@
         "after": "    if True:\n        r.notes.append(f\"couldn't build the web app (",
         "test_file": "test/test_install.py",
         "test": "test_update_keeps_the_page_installed_before_without_a_built_one"
+      }
+    },
+    {
+      "step": "PR 60 #3: a message of the person with no words leaves the old suggestion",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "web/plugins/chat/suggest.ts",
+        "before": "    if (m.who === 'you') return null\n    if (!m.text) continue\n    if (m.error) return null",
+        "after": "    if (!m.text) continue\n    if (m.who === 'you' || m.error) return null",
+        "test_file": "web/plugins/chat/suggest.test.ts",
+        "test": "a message of the person with no words ends the suggestion"
+      }
+    },
+    {
+      "step": "PR 60 #4: the web app reads Everywhere's setting for every chat",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "web/plugins/chat/suggest.ts",
+        "before": "((place ? row(place) : undefined) ?? row('all'))",
+        "after": "row('all')",
+        "test_file": "web/plugins/chat/suggest.test.ts",
+        "test": "the chat's space's setting, else Everywhere's"
+      }
+    },
+    {
+      "step": "PR 60 #4: the service's sections, read by the web app as Everywhere's only",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "web/plugins/chat/suggest.ts",
+        "before": "((place ? row(place) : undefined) ?? row('all'))",
+        "after": "row('all')",
+        "test_file": "service/settings.test.ts",
+        "test": "Suggested next message: the web app reads each space's resolved value from the sections"
+      }
+    },
+    {
+      "step": "PR 60 #1/#6: known spaces passed as the caller has them, to a map that starts elsewhere",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "core/mentions.js",
+        "before": "  if (!from) return known ?? [];\n  return (known ?? []).flatMap(",
+        "after": "  return known ?? [];\n  return (known ?? []).flatMap(",
+        "test_file": "core/mentions.test.js",
+        "test": "known spaces go under their own machine when the map starts on another one"
+      }
+    },
+    {
+      "step": "PR 60 #1/#6: the caller's own spaces not given its machine name",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "core/mentions.js",
+        "before": "const m = k?.machine || here || null;",
+        "after": "const m = k?.machine || null;",
+        "test_file": "core/mentions.test.js",
+        "test": "known spaces go under their own machine when the map starts on another one"
+      }
+    },
+    {
+      "step": "PR 60 #5: --install ends on the machine-wide sysctl when AppArmor blocks Chrome's sandbox",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "bin/herdr-browser",
+        "before": "sandbox_check >&2 || { echo \"herdr-browser: Chrome can't start: AppArmor blocks its sandbox here, and nothing was changed. herdr-browser --install says the fix for this Chrome.\" >&2; exit 1; }",
+        "after": "sandbox_check >&2 || exit 1",
+        "test_file": "test/test_herdr_browser_libs.py",
+        "test": "test_install_ends_on_the_sandbox_failure_and_where_its_fix_is"
+      }
+    },
+    {
+      "step": "PR 60 #5: the installer's note is the machine-wide sysctl",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "bin/herdr-browser",
+        "before": "sandbox_check >&2 || { echo \"herdr-browser: Chrome can't start: AppArmor blocks its sandbox here, and nothing was changed. herdr-browser --install says the fix for this Chrome.\" >&2; exit 1; }",
+        "after": "sandbox_check >&2 || exit 1",
+        "test_file": "test/test_install.py",
+        "test": "test_install_note_says_chrome_cant_start_and_where_the_fix_is"
+      }
+    },
+    {
+      "step": "PR 60 #5: --install ends on the install command when Chrome's libraries are missing",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "bin/herdr-browser",
+        "before": "libs_check >&2 || { echo \"herdr-browser: Chrome can't start: missing system libraries ($_m). herdr-browser --install says how to install them.\" >&2; exit 1; }",
+        "after": "libs_check >&2 || exit 1",
+        "test_file": "test/test_herdr_browser_libs.py",
+        "test": "test_install_ends_on_the_missing_libraries_and_where_their_fix_is"
       }
     }
   ]

@@ -182,11 +182,28 @@ Where the two sides met:
   source with a built page still replaces it and retires what the new one no longer has, and a failed
   build without `--force` still refuses. That makes N1, the owner of `docs/install.md`, the owner of
   `bin/shepherdr` and `test/test_install.py` (both already named in `AFTER_Q` by the v3.1.31 merge),
-  and the gate now admits 102 rows. Check proves the guard's regressions with `bin/check-sensitivity
+  and the gate then admitted 102 rows. Check proves the guard's regressions with `bin/check-sensitivity
   --ledger docs/migration/pr60-sensitivity.json` (named `PR60-FIX8`), beside Q's own run: removing the
   guard in either installer, dropping the kept page's record rows, keeping old page files when a built
   page replaces them, or installing past a failed build without `--force` must each fail an installer
   regression.
+- PR 60's six other review claims, all on code the v3.1.31 merge brought in:
+  - The suggested next message ends at any message of the person's, a photo, a file or a queued one
+    with no words included.
+  - The web app follows the chat's own space's setting (its own value, else its machine's, else
+    Everywhere's), as the agents do.
+  - While a suggestion shows, the message box and Send describe it to a screen reader, in words that
+    match the device's Enter.
+  - The `#` list's known spaces are placed relative to the machine its reach map starts on, in the web
+    app and the window alike.
+  - `herdr-browser --install` ends a Chrome that can't start on a line that says so and where its fix
+    is, so the installer's note is no longer the machine-wide `sysctl` alone.
+
+  That makes A2 the owner of `core/mentions.js`, its test and its chat copy, and of
+  `web/plugins/chat/client.tsx`, `suggest.ts` and its test. N1 becomes the owner of `bin/herdr-browser`
+  and `test/test_herdr_browser_libs.py`. All of these were already named in `AFTER_Q` by the v3.1.31
+  merge, and the gate now admits 110 rows. The same PR 60 sensitivity ledger proves each fix's
+  regression fails by an assertion with the fix removed.
 - SHEP-191's cross-site page link (`pageLink()`) applies before the private listener's own checks.
   Writes, sockets and the API stay refused cross-site, and the private peer's owner and host rules
   are unchanged.

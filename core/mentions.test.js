@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { expand, expandTasks, hasMention, match, matchTasks, parseTask, pickInto, pickTaskInto, plain, reachable, split, taskToken, token, typing, typingTask } from "./mentions.js";
+import { expand, expandTasks, hasMention, knownFrom, match, matchTasks, parseTask, pickInto, pickTaskInto, plain, reachable, split, taskToken, token, typing, typingTask } from "./mentions.js";
 import { mentionedIn } from "./send.js";
 
 // A reach map as herdr-task draws it: here (mini) links to vm-demo over herdr-core, and through it to vm-x; laptop is a
@@ -59,6 +59,44 @@ test("a machine whose document lists no spaces still lists the spaces the servic
   expect(plain.map((s) => s.name)).toEqual(["shop"]);
   // the same space known and in the map: listed once, with the map's own entry
   expect(reachable(map, [{ id: "sp8c0069b90399cae8fb2944eccc07150a", name: "Plu home", folder: "/base/gamma", machine: "vm-b" }]).length).toBe(1);
+});
+
+// PR 60: the chat's agent runs on vm-a, so its reach map starts there. The service (on mini) knows its own spaces with
+// no machine; listed as they were, they showed as vm-a's own ("spMINI", no route) though only mini has them. vm-a
+// reaches mini over herdr-core, whose document reads as empty, and vm-b over ssh.
+test("known spaces go under their own machine when the map starts on another one", () => {
+  const map = {
+    core: { id: "c-a", name: "vm-a" }, host: "vm-a", spaces: [{ id: "spA1", name: "api" }], assistants: [],
+    links: [
+      { how: "herdr-core", to: "mini", ok: true, id: "c-mini", next: { core: { id: "c-mini", name: "mini" }, spaces: [], links: [] } },
+      { how: "ssh", to: "vm-b", ok: true, id: "c-b", next: { core: { id: "c-b", name: "vm-b" }, spaces: [], links: [] } },
+    ],
+  };
+  // as the service knows them: its own (no machine), vm-a's, vm-b's, and one on a machine vm-a doesn't reach
+  const known = [
+    { id: "spMINI", name: "shop", folder: "/m/shop", machine: null },
+    { id: "spA2", name: "docs", folder: "/a/docs", machine: "vm-a" },
+    { id: "spB1", name: "lab", folder: "/b/lab", machine: "vm-b" },
+    { id: "spFAR", name: "far", folder: "/f", machine: "box-z" },
+  ];
+  const rows = (list) => list.map((s) => [s.id, s.route, s.machine, s.target]);
+  expect(rows(reachable(map, knownFrom(known, "mini", "vm-a")))).toEqual([
+    ["spA1", "", "vm-a", "spA1"],
+    ["spA2", "", "vm-a", "spA2"],
+    ["spMINI", "mini", "mini", "mini/spMINI"],
+    ["spB1", "vm-b", "vm-b", "vm-b/spB1"],
+  ]);
+  // the service's own name not known yet: its spaces are left out, never vm-a's own
+  expect(rows(reachable(map, knownFrom(known, null, "vm-a")))).toEqual([
+    ["spA1", "", "vm-a", "spA1"],
+    ["spA2", "", "vm-a", "spA2"],
+    ["spB1", "vm-b", "vm-b", "vm-b/spB1"],
+  ]);
+  // a map vm-a draws without mini: the service's spaces aren't reachable, so they aren't listed
+  const alone = { ...map, links: [map.links[1]] };
+  expect(reachable(alone, knownFrom(known, "mini", "vm-a")).some((s) => s.id === "spMINI")).toBe(false);
+  // a map that starts on the caller's own machine: the list as it was (SHEP-185's case)
+  expect(knownFrom(known, "mini", null)).toBe(known);
 });
 
 test("what is typed after #, and the spaces that match it", () => {

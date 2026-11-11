@@ -981,6 +981,39 @@ class AgentBrowser(unittest.TestCase):
         self.assertEqual(sh("uninstall", "--root", root).returncode, 0)
         self.assertFalse(os.path.exists(os.path.dirname(mine)), "uninstall takes Shepherdr's agent-browser away")
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "AppArmor's user-namespace block is Linux's")
+    def test_install_note_says_chrome_cant_start_and_where_the_fix_is(self):
+        """PR 60: the installer keeps the last line of `herdr-browser --install` as its note. With AppArmor blocking
+        Chrome's sandbox, that was the machine-wide sysctl alone; now it says Chrome can't start and where the fix for
+        this Chrome is. Nothing on this machine is changed: the restriction, unshare and ldd are stand-ins."""
+        root = os.path.join(self.tmp, "root")
+        os.makedirs(os.path.join(root, APP))
+        fakes = os.path.join(self.tmp, "fakes")
+        os.makedirs(fakes)
+        for name, body in (("unshare", "exit 1\n"), ("ldd", "echo '\tlibc.so.6 => /lib/libc.so.6 (0x1)'\n")):
+            with open(os.path.join(fakes, name), "w") as f:
+                f.write("#!/bin/sh\n" + body)
+            os.chmod(os.path.join(fakes, name), 0o755)
+        chrome = os.path.join(self.tmp, "chrome")
+        with open(chrome, "w") as f:
+            f.write("#!/bin/sh\necho chrome\n")
+        os.chmod(chrome, 0o755)
+        sysctl = os.path.join(self.tmp, "apparmor_restrict_unprivileged_userns")
+        with open(sysctl, "w") as f:
+            f.write("1\n")
+        path = ":".join(d for d in os.environ["PATH"].split(":") if not os.path.exists(os.path.join(d, "agent-browser")))
+        env = {**os.environ, "PATH": f"{fakes}:{path}", "HERDR_BROWSER_URL": "file://" + self.rel,
+               "HERDR_BROWSER_SHA256": self.sha, "HERDR_BROWSER_USERNS_SYSCTL": sysctl,
+               "HERDR_BROWSER_APPARMOR_D": os.path.join(self.tmp, "no-apparmor.d"), "AGENT_BROWSER_EXECUTABLE_PATH": chrome,
+               "SHEPHERDR_AGENT_BROWSER": "1"}
+        p = subprocess.run([sys.executable, SHEPHERDR, "install", "--root", root, "--yes", "--no-build"], capture_output=True,
+                           text=True, stdin=subprocess.DEVNULL, env=env)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        notes = [ln for ln in p.stdout.splitlines() if ln.startswith("  - the task browser: ")]
+        self.assertEqual(notes, ["  - the task browser: Chrome can't start: AppArmor blocks its sandbox here, and nothing was "
+                                 "changed. herdr-browser --install says the fix for this Chrome."], p.stdout)
+        self.assertNotIn("sysctl", p.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

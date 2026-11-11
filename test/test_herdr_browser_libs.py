@@ -257,5 +257,40 @@ class MissingLibraries(unittest.TestCase):
         self.assertNotIn("ready", p.stdout)
 
 
+    # PR 60: the installer keeps only the last line of `--install` as its note (bin/shepherdr ensure_agent_browser).
+    # It was the machine-wide sysctl, or the install command: neither said Chrome can't start. The last line now does,
+    # and names where the whole fix is; the fix itself is still said in full above it.
+    SANDBOX_LAST = ("herdr-browser: Chrome can't start: AppArmor blocks its sandbox here, and nothing was changed. "
+                    "herdr-browser --install says the fix for this Chrome.")
+    LIBS_LAST = ("herdr-browser: Chrome can't start: missing system libraries (libgbm.so.1 libnss3.so libfoo.so.2). "
+                 "herdr-browser --install says how to install them.")
+
+    def test_install_ends_on_the_sandbox_failure_and_where_its_fix_is(self):
+        self.fake_ldd(RESOLVED)
+        self.fake_unshare(ok=False)
+        self.os_release("ID=ubuntu\n")
+        p = self.run_hb("--install", extra={"HERDR_BROWSER_USERNS_SYSCTL": self.sysctl("1\n")})
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertEqual(p.stdout, "")
+        self.assertEqual(p.stderr.strip().splitlines()[-1], self.SANDBOX_LAST)
+        self.assertIn("sudo apparmor_parser -r /etc/apparmor.d/herdr-browser-chrome", p.stderr)
+        self.assertIn("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0", p.stderr)
+
+    def test_install_ends_on_the_missing_libraries_and_where_their_fix_is(self):
+        self.fake_ldd(MISSING)
+        self.os_release("ID=debian\n")
+        p = self.run_hb("--install")
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertEqual(p.stdout, "")
+        self.assertEqual(p.stderr.strip().splitlines()[-1], self.LIBS_LAST)
+        self.assertIn("Install: sudo apt-get install -y libgbm1 libnss3", p.stderr)
+        # a Chrome that can start: ready, and no failure line
+        self.fake_ldd(RESOLVED)
+        p = self.run_hb("--install")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("ready", p.stdout)
+        self.assertNotIn("can't start", p.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

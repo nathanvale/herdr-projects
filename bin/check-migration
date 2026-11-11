@@ -37,10 +37,11 @@ mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/task
 mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/takeover.py service/azure-deployments.test.ts
 service/azure-deployments.ts test/azure-binding.cases.json test/test_providers.py'''.split()),
     # N1 owns the installer beside its docs/install.md since PR 60's review #8: an update from a source with no
-    # built page keeps the page installed before, and its record rows.
-    'N1': frozenset('''bin/shepherdr docs/install.md mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py
-mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/tick.py test/test_herdr_task.py
-test/test_install.py test/test_native_publication.py'''.split()),
+    # built page keeps the page installed before, and its record rows. Since PR 60's six-claim fix it owns the task
+    # browser's helper the installer runs too: a Chrome that can't start ends `--install` on a line that says so.
+    'N1': frozenset('''bin/herdr-browser bin/shepherdr docs/install.md mods/tasks/bin/herdr_task/cli.py
+mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/tick.py
+test/test_herdr_browser_libs.py test/test_herdr_task.py test/test_install.py test/test_native_publication.py'''.split()),
     'C1': frozenset('''core/agents.js core/chat-find.test.js core/chat-log.js mods/chat/core/agents.js
 mods/chat/core/chat-log.js mods/chat/main.js mods/coordinator/core/agents.js mods/newspace/core/agents.js
 mods/shepherdr-settings/core/agents.js mods/tasks/bin/herdr_task/news.py mods/tasks/bin/herdr_task/sessions.py
@@ -78,11 +79,12 @@ web/plugins/places/add.tsx'''.split()),
     # Azure selectors and bound starts: the person's Provider settings (desktop and web) with Refresh and manual entry,
     # save-only new-start selectors for a task and an Assistant, each start's binding recorded and kept on resume, and
     # the L2 sites (restart, fork, a lost session, revival) refusing anything but Personal. Earlier owners it changes are
-    # A2's from here.
+    # A2's from here. Since PR 60's six-claim fix A2, the owner of the service's settings and main, also owns the chat's
+    # suggested next message (per space, read by screen readers) and the #-mention reach list's known spaces.
     'A2': frozenset('''core/agents.js core/agents.test.js core/chat-find.test.js core/live-switch.js core/live-switch.test.js
-core/settings.js core/tasks.js core/tasks.test.js
+core/mentions.js core/mentions.test.js core/settings.js core/tasks.js core/tasks.test.js
 lib/COPIES lib/agent.js mods/chat-models/core/agents.js mods/chat/agent.js
-mods/chat/core/agents.js mods/chat/core/settings.js mods/chat/core/tasks.js mods/chat/main.js mods/coordinator/core/agents.js
+mods/chat/core/agents.js mods/chat/core/mentions.js mods/chat/core/settings.js mods/chat/core/tasks.js mods/chat/main.js mods/coordinator/core/agents.js
 mods/coordinator/core/settings.js mods/coordinator/restart.sh mods/jump/core/tasks.js mods/newspace/agent.js mods/newspace/core/agents.js
 mods/newspace/core/settings.js mods/shepherdr-settings/agent.js mods/shepherdr-settings/core/agents.js
 mods/shepherdr-settings/core/settings.js mods/shepherdr-settings/main.js mods/shepherdr-settings/provider-section.js
@@ -91,6 +93,7 @@ mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/provider
 mods/tasks/bin/herdr_task/settings.py mods/tasks-menu/main.js mods/tasks/core/tasks.js mods/tasks/local.js mods/tasks/main.js service/actions.ts service/agents.ts service/compat.ts service/launch-sites.test.ts
 service/live-switch.test.ts service/main.ts service/selections.test.ts service/selections.ts service/settings.test.ts service/settings.ts
 service/spaces.ts service/voice-data.ts service/watch.ts test/test_herdr_task.py test/test_launch_admission.py test/test_restart.py test/test_providers.py web/plugins/tasks/client.tsx
+web/plugins/chat/client.tsx web/plugins/chat/suggest.test.ts web/plugins/chat/suggest.ts
 web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx web/src/restart.tsx'''.split()),
     # Native restart and revival: revival, a lost session at its shell and every restart go through launch admission on
     # the recorded binding (continued conversations) or today's settings (new ones, never onto another route), claimed

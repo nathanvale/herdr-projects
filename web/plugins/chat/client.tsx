@@ -5,8 +5,8 @@ import clsx from 'clsx'
 import * as SL from '@core/slash.js'
 const { typing: slashTyping, match: slashMatch } = SL as any
 import { openAccept } from '@client/screens/Accept.tsx'
-import { createContext, Fragment, memo, useContext, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ComponentType, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode, type RefObject } from 'react'
-import { act, chatName, definePlugin, getDraft, getState, goChat, has, holdReload, openArtifact, openItem, openNeeds, openTask, registry, setDraft, setOutbox, setUI, taskOf, useDraft, useSnap, useStore, useUI, type UI } from '@client/kernel.ts'
+import { createContext, Fragment, memo, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type ComponentType, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode, type RefObject } from 'react'
+import { act, chatName, chatPlace, definePlugin, getDraft, getState, goChat, has, holdReload, openArtifact, openItem, openNeeds, openTask, registry, setDraft, setOutbox, setUI, taskOf, useDraft, useSnap, useStore, useUI, type UI } from '@client/kernel.ts'
 import { anchorOf, keyOf, partsOf, placesOf, priorOf, reasonOf, SEND_TIMEOUT, type Outgoing } from '@client/outbox.ts'
 import { dropFiles, keepFile, keptFile, postFile, retrying, sweepFiles } from '@client/uploads.ts'
 import { AlertIcon, BackIcon, CameraIcon, CheckIcon, CopyIcon, Count, DeleteIcon, dimmed, Dot, DownIcon, DownloadIcon, Empty, field, FileIcon, ic, IconButton, KeyIcon, LinkButton, LiveWave, MachineIcon, Menu, MenuItem, MenuSeparator, MenuSetting, MicIcon, ModeIcon, MoreIcon, NextIcon, PageIcon, PlanIcon, PlusIcon, Primary, QuestionIcon, ReplyIcon, RestartIcon, roundBtn, SearchIcon, SecretField, Sent, SmileIcon, Tab, Tabs, TextBox, UpIcon, useElapsed, XIcon } from '@client/ui.tsx'
@@ -16,7 +16,7 @@ import { modelCommand, modeName, taskChatId, type CardAsk, type Chat, type Choic
 import { sendsOnTap } from '@shared/alerts.ts'
 import { buzz, ForkIcon, mine, openBar, openPicker, quick, react, RewindIcon } from '@plugins/reactions/client.tsx'
 import { EDGE } from '@client/gestures.ts'
-import { enterHint, sendsNow } from '@client/enter.ts'
+import { enterHint, sendsNow, touchOnly } from '@client/enter.ts'
 import { still, useArrive } from '@client/motion.ts'
 import { draggingFiles, dropped, named, pasted } from './paste.ts'
 import { dayLabel } from './days.ts'
@@ -1905,6 +1905,10 @@ function Composer({ chatKey, placeholder, cli, suggest = null }: { chatKey: stri
   const [spent, setSpent] = useState<string | null>(null)
   // the ghost text shows only in an empty box, while the suggestion is still the one waiting
   const ghost = suggest && spent !== suggest.id && !text ? suggest : null
+  // the same words for a screen reader (the grey copy is hidden from it): on the box and on Send, only while it shows.
+  // A touch screen's Enter makes a new line (enter.ts), so there it is Send that sends it (PR 60)
+  const ghostId = useId()
+  const describedBy = ghost ? ghostId : undefined
   const files = useUI((u) => u.files[chatKey]) ?? noFiles
   const device = useUI((u) => u.device)
   const focused = useUI((u) => u.focus === chatKey)
@@ -2066,6 +2070,7 @@ function Composer({ chatKey, placeholder, cli, suggest = null }: { chatKey: stri
                 data-kept
                 data-quiet
                 aria-label={placeholder}
+                aria-describedby={describedBy}
                 rows={1}
                 value={text}
                 placeholder=""
@@ -2150,6 +2155,7 @@ function Composer({ chatKey, placeholder, cli, suggest = null }: { chatKey: stri
                   <span data-ghost={ghost ? '' : undefined} className={clsx('truncate', ghost && 'italic opacity-70')}>{ghost ? ghost.text : placeholder}</span>
                 </span>
               ) : null}
+              {ghost ? <span id={ghostId} className="sr-only">{`Suggested next message: ${ghost.text}. ${touchOnly() ? 'Send sends it.' : 'Enter sends it, Tab fills it in.'}`}</span> : null}
             </div>
             <div data-btns className="flex items-center gap-1">
               {registry.composerPlus ? (
@@ -2171,6 +2177,7 @@ function Composer({ chatKey, placeholder, cli, suggest = null }: { chatKey: stri
               <button
                   type="button"
                 aria-label="Send"
+                aria-describedby={describedBy}
                 disabled={!sendable}
                 // Shepherdr 3 on a phone: a long press on Send holds it until the agent is free (the phone's Ctrl+Enter)
                 onPointerDown={() => { held.current = false; holdTimer.current = setTimeout(() => { held.current = true; buzz(); if (ghost && !text) accept(true); else send(true) }, 500) }}
@@ -2931,7 +2938,7 @@ function ChatView({ chatKey, placeholder, unreachable }: { chatKey: string; plac
         ) : null}
         <Messages chat={chat ?? { key: chatKey, cli: 'Claude Code', messages: [] }} from={from} />
       </StickToBottom>
-      {chat?.finished && taskChatId(chatKey) ? <Ended chatKey={chatKey} /> : <Composer chatKey={chatKey} placeholder={placeholderOf(chatKey, chat, placeholder)} cli={chat?.cli ?? 'Claude Code'} suggest={suggestionOf(chat, suggestionsOn(snap?.settings))} />}
+      {chat?.finished && taskChatId(chatKey) ? <Ended chatKey={chatKey} /> : <Composer chatKey={chatKey} placeholder={placeholderOf(chatKey, chat, placeholder)} cli={chat?.cli ?? 'Claude Code'} suggest={suggestionOf(chat, suggestionsOn(snap?.settings, snap ? chatPlace(snap, chatKey) : null))} />}
     </DropFiles>
   )
 }

@@ -56,6 +56,19 @@ export function reachable(graph, known = []) {
   return out;
 }
 
+// The caller's known spaces as a reach map's start sees them, for reachable() (PR 60). The caller (the service or the
+// window) gives a space on its own machine no machine; the map can start on another machine (the one running the
+// chat's agent: from, as the caller names it). There, the start's own spaces lose their machine, and the caller's carry
+// its herdr-core name (here), so they show only under the machine of that name, with its route. While that name is
+// unknown they are left out: never listed as the start's own. A map that starts on the caller's machine: as they are.
+export function knownFrom(known, here, from) {
+  if (!from) return known ?? [];
+  return (known ?? []).flatMap((k) => {
+    const m = k?.machine || here || null;
+    return m ? [{ ...k, machine: m === from ? null : m }] : [];
+  });
+}
+
 // A space's name as the window shows it: its own, else Herdr's name for an unnamed one (its folder's, "Home" at home).
 export function spaceName(s, home) {
   if (s.name) return s.name;

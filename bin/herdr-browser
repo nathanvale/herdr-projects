@@ -264,8 +264,10 @@ EOF
 case "${1-}" in
   --install)
     if ensure; then
-      libs_check >&2 || exit 1
-      sandbox_check >&2 || exit 1
+      # each failure ends on one line that says so and where its fix is: the installer keeps only the last line as its
+      # note (bin/shepherdr ensure_agent_browser), which was the install command or the machine-wide sysctl (PR 60)
+      libs_check >&2 || { echo "herdr-browser: Chrome can't start: missing system libraries ($_m). herdr-browser --install says how to install them." >&2; exit 1; }
+      sandbox_check >&2 || { echo "herdr-browser: Chrome can't start: AppArmor blocks its sandbox here, and nothing was changed. herdr-browser --install says the fix for this Chrome." >&2; exit 1; }
       echo "herdr-browser: agent-browser $ver is ready ($bin), with Chrome."
       exit 0
     fi

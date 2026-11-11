@@ -2041,7 +2041,10 @@ export default class Chat extends View {
     try { graph = JSON.parse(r?.stdout || "null")?.graph ?? null; } catch {}
     const here = graph ? null : (spaces() ?? []).filter((x) => (x.machine ?? null) === (this.machine ?? null))
       .map((x) => ({ id: String(x.id).split("/").pop(), name: x.name, route: "", machine: this.machine ?? "", target: String(x.id).split("/").pop(), assistant: false }));
-    this.reach = { from: graph?.core?.name ?? this.machine, spaces: graph ? mentions.reachable(graph) : here };
+    // the spaces this window knows, as the agent's machine sees them: a machine whose document the map read as empty
+    // still lists its spaces (SHEP-185), and this machine's go under its herdr-core name (PR 60)
+    const known = graph ? (spaces() ?? []).map((x) => ({ id: String(x.id).split("/").pop(), name: x.name, folder: x.folder, machine: x.machine ?? null })) : [];
+    this.reach = { from: graph?.core?.name ?? this.machine, spaces: graph ? mentions.reachable(graph, mentions.knownFrom(known, coreName(), this.machine)) : here };
   }
 
   // A message's words with each #-mention in plain markdown: its name and machine, and "out of

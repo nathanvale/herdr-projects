@@ -10,6 +10,7 @@ writeFileSync(file, JSON.stringify({ everywhere: { machine: { start_load: 2 } },
 process.env.HERDR_TASK_SETTINGS = file;
 const { Settings } = await import("./settings.ts");
 const CORE: any = await import("../core/settings.js");
+const { suggestionsOn } = await import("../web/plugins/chat/suggest.ts");
 
 test("the Tasks rows say the window's words, and a change keeps the rest of the file", () => {
   const s = new Settings();
@@ -386,4 +387,33 @@ test("Refresh's list is read only when asked, and a pick from a list read under 
   s.sections(null, [], ["vm1"]);
   await expect(s.refreshDeployments("claude", "all", null)).rejects.toThrow("one machine");
   s.set("provider.route", "Personal");
+});
+
+// PR 60: the web app reads Suggested next message for the chat's own space from these sections, by its place id (the
+// space's id), as the agents do (herdr-task's settings.py): its own value, else its machine's, else Everywhere's
+test("Suggested next message: the web app reads each space's resolved value from the sections", () => {
+  writeFileSync(file, JSON.stringify({
+    everywhere: { agents: { suggestions: true } },
+    machines: { vm: { agents: { suggestions: false } } },
+    spaces: { sp7: { folder: "/shop", agents: { suggestions: false } }, sp9: { folder: "/docs" } },
+  }));
+  const s = new Settings();
+  s.start();
+  const spaces = [
+    { id: "sp7", name: "shop", machine: null, folder: "/shop" },
+    { id: "vm/sp8", name: "lab", machine: "vm", folder: "/lab" },
+    { id: "sp9", name: "docs", machine: null, folder: "/docs" },
+  ];
+  const sections = s.sections(null, spaces);
+  expect(suggestionsOn(sections, "sp7")).toBe(false);   // its own off, under Everywhere on
+  expect(suggestionsOn(sections, "vm/sp8")).toBe(false); // its machine's off
+  expect(suggestionsOn(sections, "sp9")).toBe(true);    // Everywhere's
+  expect(suggestionsOn(sections, null)).toBe(true);     // a chat in no space
+  // Everywhere off, one space's own on: on there only
+  s.set("agents.suggestions", "off", "all");
+  s.set("agents.suggestions", "on", "sp9", spaces[2]);
+  const after = s.sections(null, spaces);
+  expect(suggestionsOn(after, "sp9")).toBe(true);
+  expect(suggestionsOn(after, "sp7")).toBe(false);
+  expect(suggestionsOn(after, null)).toBe(false);
 });
