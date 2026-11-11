@@ -272,7 +272,7 @@
       "phase": "A2",
       "path": "service/main.ts",
       "upstream_blob": "6a5725405c30282ea05466a2a9aa4d9e28a36ca8",
-      "sha256": "b0433109860b844d5a297cc66ebad2e8fff6de6641648915f98382c55889074f"
+      "sha256": "7cd0a8f1354a91ef9d348cb0a4df0dccddf178c72c1f46c921a0fea07799951d"
     },
     {
       "phase": "H1",
@@ -651,6 +651,18 @@
       "path": "service/chat-reach.test.ts",
       "upstream_blob": null,
       "sha256": "4c8ef26419b157eaf90b37feb2e63e8730409559cc0cc8a9f0d4170b4ad48beb"
+    },
+    {
+      "phase": "A2",
+      "path": "service/reach.ts",
+      "upstream_blob": null,
+      "sha256": "a06a5c2bde3a04d16936f01630583370bcf1278768fb772eeafe87103a9965d5"
+    },
+    {
+      "phase": "A2",
+      "path": "service/reach.test.ts",
+      "upstream_blob": null,
+      "sha256": "3aa5fef5a6bc6934632483477ac46df9476de8bdef2eef56dc6ed9c0eab4167e"
     },
     {
       "phase": "A2",

@@ -212,8 +212,12 @@ Where the two sides met:
     which is every browser; with no DOM it has no hooks to add.
   - The window's `loadReach` is tested with the native stand-ins (`fake-herdr`, `fake-gpui`). It now
     waits for this machine's herdr-core name before placing its spaces for a map that starts elsewhere.
-  - The service's answer is `reachIn()` (`core/mentions.js`), tested directly. The one line in
-    `service/main.ts` that calls it is checked by reading only, since that file starts the service.
+  - The service's answer is `reachIn()` (`core/mentions.js`), tested directly. Its caller, the
+    service's `#` list, is now `service/reach.ts` (moved unchanged out of `service/main.ts`, which starts
+    the service when imported). `service/reach.test.ts` runs it with the real `Host`, `Compat` and
+    `exec` against a stand-in herdr-core: a remote agent's list, this machine's own, a machine with no
+    map, and the minute's cache. `service/main.ts` keeps only the line that builds it and the line that
+    serves it at `/api/reach`, checked by reading only.
   - The PR 60 sensitivity ledger has a row for each fix: with the fix removed, its regression must fail
     by an assertion. Check runs it; no result is claimed here.
   - Not proved by any of this: a browser's accessibility tree, VoiceOver or TalkBack, real phones, real
@@ -223,7 +227,8 @@ Where the two sides met:
   `web/plugins/chat/client.tsx`, `markdown.tsx`, `suggest.ts` and its test, and of `web/src/kernel.ts`. A2 also owns the
   two new tests, which `AFTER_Q` names as `PR60-SIX`. N1 becomes the owner of `bin/herdr-browser` and
   `test/test_herdr_browser_libs.py`. The rest were already named in `AFTER_Q` by the v3.1.31 merge, and
-  the gate now admits 114 rows.
+  the gate admitted 114 rows. PR 60's reach proof adds `service/reach.ts` and its test to A2, named in
+  `AFTER_Q` as `PR60-REACH`, and the gate now admits 116 rows.
 - SHEP-191's cross-site page link (`pageLink()`) applies before the private listener's own checks.
   Writes, sockets and the API stay refused cross-site, and the private peer's owner and host rules
   are unchanged.

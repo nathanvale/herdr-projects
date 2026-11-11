@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "about": "PR 60's guard-removal proofs, run by bin/check-sensitivity --ledger (Check's own step beside Q's): each mutation removes one part of a review fix (#8's installer kept-page guard, then the six suggestion, reach-map and browser-note fixes), or a control it must keep, and the named regression must fail by an assertion; with the source restored it must pass. Not part of Q's reconciliation ledger, which describes its candidate only.",
+  "about": "PR 60's guard-removal proofs, run by bin/check-sensitivity --ledger (Check's own step beside Q's): each mutation removes one part of a review fix (#8's installer kept-page guard, then the six suggestion, reach-map and browser-note fixes, then the service's reach caller in service/reach.ts), or a control it must keep, and the named regression must fail by an assertion; with the source restored it must pass. Not part of Q's reconciliation ledger, which describes its candidate only.",
   "workflow_obligations": [
     {
       "step": "PR 60 #8: the full install retires the page a source without one doesn't replace",
@@ -288,6 +288,54 @@
         "after": "reachable(doc?.graph, known)",
         "test_file": "core/mentions.test.js",
         "test": "the service's reach answer places its known spaces relative to the map's start"
+      }
+    },
+    {
+      "step": "PR 60 #1: the service's reach caller places its known spaces as if the map started here",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "service/reach.ts",
+        "before": "this.host.me?.name || null, machine);",
+        "after": "this.host.me?.name || null, null);",
+        "test_file": "service/reach.test.ts",
+        "test": "a remote agent's # list from the service puts its own spaces under this machine, with their route"
+      }
+    },
+    {
+      "step": "PR 60 #1: the service's reach caller gives the map no herdr-core name for this machine",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "service/reach.ts",
+        "before": "this.knownSpaces(), this.host.me?.name || null, machine)",
+        "after": "this.knownSpaces(), null, machine)",
+        "test_file": "service/reach.test.ts",
+        "test": "a remote agent's # list from the service puts its own spaces under this machine, with their route"
+      }
+    },
+    {
+      "step": "PR 60 #1: the service reads this machine's reach map, not the agent's machine's",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "service/reach.ts",
+        "before": "exec(this.hub, [\"sh\", \"-c\", REACH_FILE], machine, 20)",
+        "after": "exec(this.hub, [\"sh\", \"-c\", REACH_FILE], null, 20)",
+        "test_file": "service/reach.test.ts",
+        "test": "a remote agent's # list from the service puts its own spaces under this machine, with their route"
+      }
+    },
+    {
+      "step": "PR 60 #1: the service's # list ignores the machine running the chat's agent",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "bun",
+        "file": "service/reach.ts",
+        "before": "return this.of(a ? (a.includes(\"/\") ? a.split(\"/\")[0] : null) : sp?.machine ?? null);",
+        "after": "return this.of(sp?.machine ?? null);",
+        "test_file": "service/reach.test.ts",
+        "test": "a remote agent's # list from the service puts its own spaces under this machine, with their route"
       }
     }
   ]
