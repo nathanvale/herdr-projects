@@ -356,8 +356,8 @@
       "mutation": {
         "runner": "unittest",
         "file": "mods/tasks/bin/herdr_task/commands.py",
-        "before": "text = handoff(s, t, prev, parent, argv) + ((\"\\n\\n\" + message) if message else \"\")",
-        "after": "text = handoff(s, t, prev, parent, argv) + ((\"\\n\\n\" + message) if message else \"\") + ((\"\\n\\n\" + resumed_message) if resumed_message else \"\")",
+        "before": "text += (\"\\n\\n\" + message) if message else \"\"",
+        "after": "text += ((\"\\n\\n\" + message) if message else \"\") + ((\"\\n\\n\" + resumed_message) if resumed_message else \"\")",
         "test_file": "test/test_providers.py",
         "test": "test_no_session_recorded_starts_with_the_handoff_alone"
       }
@@ -368,8 +368,8 @@
       "mutation": {
         "runner": "unittest",
         "file": "mods/tasks/bin/herdr_task/commands.py",
-        "before": "text = handoff(s, t, prev, parent, argv) + ((\"\\n\\n\" + message) if message else \"\")",
-        "after": "text = handoff(s, t, prev, parent, argv) + ((\"\\n\\n\" + message) if message else \"\") + ((\"\\n\\n\" + resumed_message) if resumed_message else \"\")",
+        "before": "text += (\"\\n\\n\" + message) if message else \"\"",
+        "after": "text += ((\"\\n\\n\" + message) if message else \"\") + ((\"\\n\\n\" + resumed_message) if resumed_message else \"\")",
         "test_file": "test/test_providers.py",
         "test": "test_another_kind_of_agent_starts_with_the_handoff_alone"
       }
@@ -380,8 +380,8 @@
       "mutation": {
         "runner": "unittest",
         "file": "mods/tasks/bin/herdr_task/commands.py",
-        "before": "text = handoff(s, t, prev, parent, argv) + ((\"\\n\\n\" + message) if message else \"\")",
-        "after": "text = handoff(s, t, prev, parent, argv) + ((\"\\n\\n\" + message) if message else \"\") + ((\"\\n\\n\" + resumed_message) if resumed_message else \"\")",
+        "before": "text += (\"\\n\\n\" + message) if message else \"\"",
+        "after": "text += ((\"\\n\\n\" + message) if message else \"\") + ((\"\\n\\n\" + resumed_message) if resumed_message else \"\")",
         "test_file": "test/test_providers.py",
         "test": "test_fresh_starts_with_the_handoff_alone"
       }
@@ -404,8 +404,8 @@
       "mutation": {
         "runner": "unittest",
         "file": "mods/tasks/bin/herdr_task/commands.py",
-        "before": "text = handoff(s, t, prev, parent, argv) + ((\"\\n\\n\" + message) if message else \"\")",
-        "after": "text = handoff(s, t, prev, parent, argv)",
+        "before": "text += (\"\\n\\n\" + message) if message else \"\"",
+        "after": "text += \"\"",
         "test_file": "test/test_providers.py",
         "test": "test_another_commands_message_goes_after_a_handoff_and_a_resumed_session"
       }
@@ -464,7 +464,7 @@
       "mutation": {
         "runner": "unittest",
         "file": "mods/tasks/bin/herdr_task/commands.py",
-        "before": "gone = resuming and history_of(prev.get(\"log\"), prev.get(\"address\")) == GONE",
+        "before": "gone = resuming and history_of(prev.get(\"log\"), prev.get(\"address\"), agent_key(argv)) == GONE",
         "after": "gone = False",
         "test_file": "test/test_providers.py",
         "test": "test_a_gone_log_starts_anew_on_the_recorded_azure_binding_not_todays_default"
@@ -488,7 +488,7 @@
       "mutation": {
         "runner": "unittest",
         "file": "mods/tasks/bin/herdr_task/commands.py",
-        "before": "text = lost_message() + \"\n\n\" + text if gone else text",
+        "before": "text = lost_message() + \"\\n\\n\" + text if gone else text",
         "after": "text = text",
         "test_file": "test/test_providers.py",
         "test": "test_a_gone_log_starts_anew_on_the_recorded_azure_binding_not_todays_default"
@@ -500,8 +500,8 @@
       "mutation": {
         "runner": "unittest",
         "file": "mods/tasks/bin/herdr_task/commands.py",
-        "before": "text = lost_message() + \"\n\n\" + text if gone else text",
-        "after": "text = (resumed_message or \"\") + lost_message() + \"\n\n\" + text if gone else text",
+        "before": "text = lost_message() + \"\\n\\n\" + text if gone else text",
+        "after": "text = (resumed_message or \"\") + lost_message() + \"\\n\\n\" + text if gone else text",
         "test_file": "test/test_providers.py",
         "test": "test_a_gone_log_starts_anew_on_the_recorded_azure_binding_not_todays_default"
       }
@@ -512,8 +512,8 @@
       "mutation": {
         "runner": "unittest",
         "file": "mods/tasks/bin/herdr_task/commands.py",
-        "before": "text += (\"\n\n\" + message) if message else \"\"",
-        "after": "text += (\"\n\n\" + message) if message and not gone else \"\"",
+        "before": "text += (\"\\n\\n\" + message) if message else \"\"",
+        "after": "text += (\"\\n\\n\" + message) if message and not gone else \"\"",
         "test_file": "test/test_providers.py",
         "test": "test_the_callers_own_message_goes_after_the_handover"
       }
@@ -524,8 +524,8 @@
       "mutation": {
         "runner": "unittest",
         "file": "mods/tasks/bin/herdr_task/commands.py",
-        "before": "gone = resuming and history_of(prev.get(\"log\"), prev.get(\"address\")) == GONE",
-        "after": "gone = bool(same and prev.get(\"session\")) and history_of(prev.get(\"log\"), prev.get(\"address\")) == GONE",
+        "before": "gone = resuming and history_of(prev.get(\"log\"), prev.get(\"address\"), agent_key(argv)) == GONE",
+        "after": "gone = bool(same and prev.get(\"session\")) and history_of(prev.get(\"log\"), prev.get(\"address\"), agent_key(argv)) == GONE",
         "test_file": "test/test_providers.py",
         "test": "test_fresh_and_another_kind_of_agent_keep_todays_settings"
       }
@@ -588,6 +588,18 @@
         "after": "    if False:",
         "test_file": "test/test_native_restart.py",
         "test": "test_a_lost_agent_resumes_its_own_session_once_through_the_journal"
+      }
+    },
+    {
+      "step": "PR 60 missing history: a Codex rollout missing from its recorded path is taken as gone (control: Codex finds a thread by its id, so it still resumes)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/revive.py",
+        "before": "    if kind == \"codex\":",
+        "after": "    if False:",
+        "test_file": "test/test_providers.py",
+        "test": "test_a_log_this_machine_cant_read_is_never_taken_as_gone"
       }
     }
   ]

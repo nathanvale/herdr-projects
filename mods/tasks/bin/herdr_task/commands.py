@@ -1132,9 +1132,11 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     Switch agent (the window's or the web's); since L2 it goes the same way as resume and switch (its
     recorded binding when it continues the conversation, today's settings for a new one), and only a
     model it names that the recorded deployment would replace refuses (RESTART_MODEL).
-    Missing history (revive.history_of): the session it would resume has a recorded log that is positively gone here,
-    so the CLI would refuse the resume. A new conversation then, on that conversation's recorded binding (never today's
-    settings: a binding they can't carry refuses before anything changes), opening with the handover that says its
+    Missing history (revive.history_of): the Claude Code session it would resume has a recorded log that is positively
+    gone here, so the CLI is expected to find no conversation to continue (a Codex rollout missing from its recorded
+    path isn't judged so: Codex finds a thread by its id). A new conversation then, on that conversation's recorded
+    binding (never today's settings: a binding they can't carry refuses before anything changes), opening with the
+    handover that says its
     earlier session is gone (revive.lost_message), then the handoff and `message`; never `resumed_message`.
     Returns (its record, resumed); after missing history the record returned is a copy that also says missing_history
     and previous_session (the task's own row doesn't)."""
@@ -1148,7 +1150,7 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     fixed = bool(argv_json) or (not key and bool(keep))
     same = prev and agent_key(argv) == prev.get("agent")
     resuming = bool(same and prev.get("session") and not fresh)
-    gone = resuming and history_of(prev.get("log"), prev.get("address")) == GONE
+    gone = resuming and history_of(prev.get("log"), prev.get("address"), agent_key(argv)) == GONE
     resuming = resuming and not gone
     # Before anything changes: launch admission (its plan, from the recorded binding when it resumes or its history is
     # missing; an open earlier start; its Assistant) refuses here.

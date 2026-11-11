@@ -1511,6 +1511,15 @@ class MissingHistory(unittest.TestCase):
         self.assertNotIn("provider", f.task(tid)["agents"][-1])
         f.settle(2, tid=tid)
 
+    def test_switch_says_missing_history_too(self):
+        f = Fixture(self)
+        tid = self.started(f, {"route": "personal"})
+        self.gone(f, tid)
+        out = f.ok("switch", str(tid), "--folder", f.repo, "--space", "sp1")
+        self.assertEqual((out["resumed"], out.get("missing_history"), out.get("previous_session")), (False, True, GONE_SESSION))
+        self.starts_anew(self.newest(f))
+        f.settle(2, tid=tid)
+
     def test_the_callers_own_message_goes_after_the_handover(self):
         """herdr-task fix with no agent left (commands.tell): its message, whole, after the handover and the handoff."""
         f = Fixture(self)
@@ -1547,11 +1556,19 @@ class MissingHistory(unittest.TestCase):
                 f.settle(2, tid=tid)
 
     def test_a_log_this_machine_cant_read_is_never_taken_as_gone(self):
-        for case in ("folder missing here", "folder unreadable", "agent on another machine"):
+        """Unknown, so it resumes as before. A Codex rollout missing from its recorded path is unknown too: Codex finds a
+        thread by its id (openai/codex rust-v0.166.0: a cold rollout becomes .jsonl.zst and the plain file goes, and
+        `codex resume <id>` reads archived threads too)."""
+        for case in ("folder missing here", "folder unreadable", "agent on another machine", "codex rollout moved"):
             with self.subTest(case=case):
                 f = Fixture(self)
-                tid = self.started(f, {"route": "personal"})
-                if case == "folder missing here":
+                tid = self.started(f, {"route": "personal"}, *(("--agent", "codex") if case == "codex rollout moved" else ()))
+                if case == "codex rollout moved":
+                    # Its folder is read and doesn't hold the recorded file; Codex's compressed copy beside it.
+                    folder = self.history(f)
+                    open(os.path.join(folder, GONE_SESSION + ".jsonl.zst"), "w").close()
+                    f.give_session(tid, GONE_SESSION, log=os.path.join(folder, GONE_SESSION + ".jsonl"))
+                elif case == "folder missing here":
                     f.give_session(tid, GONE_SESSION, log=os.path.join(f.tmp, "elsewhere", "projects", "repo", GONE_SESSION + ".jsonl"))
                 elif case == "folder unreadable":
                     folder = self.history(f)
@@ -1566,7 +1583,10 @@ class MissingHistory(unittest.TestCase):
                 out = self.resume(f, tid)
                 self.assertEqual((out["resumed"], out.get("missing_history")), (True, None))
                 agent = self.newest(f)
-                self.assertEqual(agent[agent.index("--resume") + 1], GONE_SESSION)
+                if case == "codex rollout moved":
+                    self.assertEqual((agent[0], "resume" in agent, agent[-2]), ("codex", True, GONE_SESSION))
+                else:
+                    self.assertEqual(agent[agent.index("--resume") + 1], GONE_SESSION)
                 self.assertEqual(agent[-1], NUDGE)
                 f.settle(2, tid=tid)
 

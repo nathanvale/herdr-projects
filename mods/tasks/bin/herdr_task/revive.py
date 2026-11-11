@@ -126,17 +126,21 @@ def lost_message(ref=None, template=None):
 KEPT, GONE, UNKNOWN = "kept", "gone", "unknown"
 
 
-def history_of(log, address=None):
+def history_of(log, address=None, kind=None):
     """What a recorded session log says here: KEPT (a file at its path), GONE (positively: the folder that held it is
     read and doesn't hold it) or UNKNOWN; None when no log was recorded (a session just begun, or its log not found
     yet). Never GONE for an agent on another machine (address MACHINE/terminal), a folder missing here or unreadable,
-    or a path that is there but isn't a file."""
+    a path that is there but isn't a file, or a Codex rollout (kind "codex"): Codex finds a thread by its id, not by
+    the path recorded here, and moves its rollouts (compressed to .jsonl.zst once cold, a newer rollout of the same
+    thread, archived), so one missing from that path may still resume."""
     if not log:
         return None  # none recorded: a session just begun, or its log not found yet
     if "/" in (address or ""):
         return UNKNOWN  # its machine's own files, not this one's
     if os.path.isfile(log):
         return KEPT
+    if kind == "codex":
+        return UNKNOWN  # Codex resolves the thread by its id wherever its rollout is now
     try:
         names = os.listdir(os.path.dirname(log)) if os.path.isabs(log) else None
     except OSError:
