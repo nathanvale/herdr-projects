@@ -174,8 +174,15 @@ Where the two sides met:
   that failed after an earlier one took, fails the switch with words that say it switched
   (`switched`), never a plain success or a plain refusal. The service's home-file io says which: its `sh` exits 3 for no such file, and
   any other failure, of a read or a write, is an error. That makes A2 the owner of `core/live-switch.js`
-  and its test, with the new `service/live-switch.test.ts` (named in `AFTER_Q` as `PR60-FIX`), and the
-  gate now admits 100 rows.
+  and its test, with the new `service/live-switch.test.ts` (named in `AFTER_Q` as `PR60-FIX`).
+- The installer's page (PR 60's review #8): an install or update from a source with no built page
+  (`--no-build` with none built, `--force` past a failed build, or a copy with neither `web/src` nor
+  `web/dist`) no longer retires the page installed before. Its files stay, and stay in the install
+  record, in both the full and the web-only installer, and the update says the page wasn't updated; a
+  source with a built page still replaces it and retires what the new one no longer has, and a failed
+  build without `--force` still refuses. That makes N1, the owner of `docs/install.md`, the owner of
+  `bin/shepherdr` and `test/test_install.py` (both already named in `AFTER_Q` by the v3.1.31 merge),
+  and the gate now admits 102 rows.
 - SHEP-191's cross-site page link (`pageLink()`) applies before the private listener's own checks.
   Writes, sockets and the API stay refused cross-site, and the private peer's owner and host rules
   are unchanged.

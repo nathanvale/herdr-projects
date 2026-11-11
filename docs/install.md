@@ -74,7 +74,9 @@ Then in Herdr, `Ctrl+Shift+L` picks the Shepherdr layout.
 
 A fresh clone has no web app built (`web/dist` isn't in git): the installer builds it with Bun (`bun install`,
 `bun run build`) whenever it's missing or older than its sources, so nothing to do by hand. A build that fails stops
-the install before anything is written.
+the install before anything is written. An install without a new page (`--force` past a failed build, `--no-build`
+with none built, or a copy with neither `web/src` nor `web/dist`) leaves the page installed before where it is, still
+recorded, and says so; the next install with a built page replaces it.
 
 What goes where:
 

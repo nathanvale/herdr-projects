@@ -2,6 +2,7 @@
 clashes, --adopt, uninstall. Never touches the real home."""
 import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
 import re
+import hashlib
 import json
 import os
 import shutil
@@ -16,11 +17,11 @@ APP = ".config/herdr-app"
 CI = os.environ.get("CI") == "true"
 
 
-def run(*args, ok=True, build=False):
+def run(*args, ok=True, build=False, env=None):
     # the web app is built by its own test (a fresh clone); the others install this checkout's as it is
     if args and args[0] in ("install", "update") and not build:
         args = (*args, "--no-build")
-    p = subprocess.run([sys.executable, SHEPHERDR, *args], capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    p = subprocess.run([sys.executable, SHEPHERDR, *args], capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env)
     if ok and p.returncode != 0:
         raise AssertionError(f"shepherdr {' '.join(args)} failed:\n{p.stdout}\n{p.stderr}")
     return p
@@ -38,6 +39,14 @@ def tree(top):
             with open(p, "rb") as fh:
                 out[os.path.relpath(p, top)] = fh.read()
     return out
+
+
+# PR 60 review #8: two built pages, written here rather than built, so what an install keeps or retires is known by name.
+PAGE_DIST = ".local/share/shepherdr/web/dist"
+PAGE_A = {"index.html": b'<!doctype html><title>page A</title><script src="./assets/a-1.js"></script>\n',
+          "assets/a-1.js": b"console.log('page A')\n"}
+PAGE_B = {"index.html": b'<!doctype html><title>page B</title><script src="./assets/b-2.js"></script>\n',
+          "assets/b-2.js": b"console.log('page B')\n"}
 
 
 # Shepherdr's own data (layout.py): an install makes its folders and the old paths' links; uninstall leaves the data.
@@ -561,6 +570,87 @@ class Install(unittest.TestCase):
             self.assertIn("service/main.ts", " ".join(rec["files"]))
         finally:
             shutil.rmtree(src, ignore_errors=True)
+            shutil.rmtree(root, ignore_errors=True)
+
+    def page_installed_before_stays(self, root, web):
+        """PR 60 review #8: a source with no built page (--no-build with none built, --force past a failed build, or a
+        copy with neither web/src nor web/dist) leaves the installed page and its record rows as they were, update after
+        update; a failed build without --force still refuses; a source with a built page again replaces it, retiring
+        what the new one no longer has. -> doctor's output at the end."""
+        kind = ("--web",) if web else ()
+        record = os.path.join(root, ".local/share/shepherdr/installed.json" if web else f"{APP}/data/shepherdr/installed.json")
+        src, bins = tempfile.mkdtemp(prefix="shepherdr-src-"), tempfile.mkdtemp(prefix="shepherdr-nobun-")
+        try:
+            s = os.path.join(src, "s")
+            shutil.copytree(ROOT, s, ignore=shutil.ignore_patterns(".git", "node_modules"))
+            shutil.rmtree(os.path.join(s, "web/dist"), ignore_errors=True)
+            self.assertTrue(os.path.isdir(os.path.join(s, "web/src")))
+
+            def put(page):
+                for name, data in page.items():
+                    os.makedirs(os.path.dirname(os.path.join(s, "web/dist", name)), exist_ok=True)
+                    with open(os.path.join(s, "web/dist", name), "wb") as f:
+                        f.write(data)
+
+            def holds(page, said):
+                # the installed page as the disk has it, and its rows as the record has them
+                top = os.path.join(root, PAGE_DIST)
+                disk = {}
+                for d, _, names in os.walk(top):
+                    for n in names:
+                        with open(os.path.join(d, n), "rb") as f:
+                            disk[os.path.relpath(os.path.join(d, n), top)] = f.read()
+                with open(record) as f:
+                    rows = {k[len(PAGE_DIST) + 1:]: v for k, v in json.load(f)["files"].items() if k.startswith(PAGE_DIST + "/")}
+                self.assertEqual(disk, page, said)
+                self.assertEqual(rows, {n: hashlib.sha256(b).hexdigest() for n, b in page.items()}, said)
+
+            def update(*more, **k):
+                return run("update", *kind, "--root", root, "--source", s, "--yes", *more, **k)
+
+            put(PAGE_A)
+            run("install", *kind, "--root", root, "--source", s, "--yes")
+            holds(PAGE_A, "a built page installs and is recorded")
+            shutil.rmtree(os.path.join(s, "web/dist"))
+            # --no-build, nothing built
+            out = update().stdout
+            self.assertIn("has no built web app: the page installed before stays, not updated", out)
+            holds(PAGE_A, out)
+            # a build that fails (no Bun on this PATH), with --force: installed without a new page
+            os.symlink(shutil.which("git"), os.path.join(bins, "git"))
+            nobun = {**os.environ, "PATH": bins}
+            out = update("--force", build=True, env=nobun).stdout
+            self.assertIn("couldn't build the web app (Bun isn't installed", out)
+            holds(PAGE_A, out)
+            # and without --force it refuses, changing nothing
+            p = update(build=True, env=nobun, ok=False)
+            self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+            self.assertIn("Nothing was changed", p.stderr)
+            holds(PAGE_A, p.stderr)
+            # no flag: a copy with neither web/src nor web/dist (never built, nothing to build)
+            shutil.rmtree(os.path.join(s, "web/src"))
+            out = update(build=True).stdout
+            self.assertNotIn("building", out)
+            self.assertIn("the page installed before stays", out)
+            holds(PAGE_A, out)
+            # a built page again: its new file goes in, and the one it no longer has goes, from the disk and the record
+            put(PAGE_B)
+            out = update(build=True).stdout
+            self.assertNotIn("the page installed before stays", out)
+            holds(PAGE_B, out)
+            return run("doctor", "--root", root).stdout
+        finally:
+            shutil.rmtree(src, ignore_errors=True)
+            shutil.rmtree(bins, ignore_errors=True)
+
+    def test_update_keeps_the_page_installed_before_without_a_built_one(self):
+        self.assertNotIn("missing:", self.page_installed_before_stays(self.root, web=False))
+
+    def test_web_only_update_keeps_the_page_installed_before_without_a_built_one(self):
+        root = tempfile.mkdtemp(prefix="shepherdr-web-")
+        try:
+            self.assertNotIn("missing:", self.page_installed_before_stays(root, web=True))
+        finally:
             shutil.rmtree(root, ignore_errors=True)
 
     def test_update_runs_the_new_installer(self):

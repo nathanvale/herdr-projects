@@ -359,6 +359,24 @@ def source_items(src):
     return manifest, mods, items
 
 
+def built_page(src):
+    """Whether the source ships a web app: its built page (web/dist/index.html)."""
+    return os.path.isfile(os.path.join(src, "web", "dist", "index.html"))
+
+
+def kept_page(r, src, files):
+    """PR 60 review #8: a source with no built page (--no-build, --force past a failed build, or one with neither
+    web/src nor web/dist) ships none, and retiring the installed one would leave the service with no page. Its recorded
+    files that are still there stay, and stay recorded, so the next update finds them as before; a source with a built
+    page retires what that page no longer has. -> the recorded paths to keep."""
+    if built_page(src):
+        return set()
+    kept = {rel for rel in files if rel.startswith(f"{SHARE}/web/dist/") and os.path.lexists(r.p(rel))}
+    if kept:
+        r.notes.append(f"{src} has no built web app: the page installed before stays, not updated")
+    return kept
+
+
 def service_items(src):
     """The service (its TypeScript runs on Bun as it is), the shared core and the built web app; and what makes that
     folder a source for a web-only install on another machine (Serve from: `shepherdr web install-on` packs it)."""
@@ -371,7 +389,7 @@ def service_items(src):
             if not f.endswith((".test.ts", ".test.js")):
                 items.append(("service", f"{SHARE}/{top}/{f}", os.path.join(src, top, f)))
     dist = os.path.join(src, "web", "dist")
-    for f in walk_files(dist) if os.path.isfile(os.path.join(dist, "index.html")) else []:
+    for f in walk_files(dist) if built_page(src) else []:
         items.append(("service", f"{SHARE}/web/dist/{f}", os.path.join(dist, f)))
     # herdr-task, herdr-artifact and the helpers, the role instructions and the installer: a web-only install links
     # its helpers here; on any install the folder is a whole source to install another machine from
@@ -1071,8 +1089,11 @@ def cmd_install(a, update=False):
     actions = [settle(*x) for x in actions]
     shipped = {x[1] for x in actions}
     # Shipped before, not any more (a file, or a mod dropped from lib/addons.json): retired. Changed or not, it goes;
-    # a changed one is backed up first and said (#895: these stayed forever, and doctor then failed on them).
-    gone = [rel for rel in old_files if rel not in shipped and rel not in MANAGED and not rel.startswith(f"{APP}/keys")]
+    # a changed one is backed up first and said (#895: these stayed forever, and doctor then failed on them). An
+    # installed page a source without one doesn't replace stays (kept_page).
+    kept = kept_page(r, src, old_files)
+    gone = [rel for rel in old_files if rel not in shipped and rel not in MANAGED and rel not in kept
+            and not rel.startswith(f"{APP}/keys")]
     changed = {rel for rel in gone if read(r.p(rel)) is not None and fsha(rel, read(r.p(rel))) != old_files[rel]}
     retired_mods = sorted({m for m in (rec or {}).get("mods", {}) if m not in mods}
                           | {rel[len(f"{APP}/mods/"):].split("/")[0] for rel in gone if rel.startswith(f"{APP}/mods/")} - set(mods))
@@ -1231,9 +1252,11 @@ def cmd_install_web(a, update=False):
         atomic_write(r.p(rel), data, mode)
         files[rel] = fsha(rel, data)
     say(f"  files: {n} written")
-    # retired, as the herdr-app install does it: shipped before, not any more; a changed one is backed up first
+    # retired, as the herdr-app install does it: shipped before, not any more; a changed one is backed up first. An
+    # installed page a source without one doesn't replace stays (kept_page).
     shipped = {rel for _g, rel, _p in web_items(src)}
-    for rel in [x for x in files if x not in shipped and x not in MANAGED]:
+    kept = kept_page(r, src, files)
+    for rel in [x for x in files if x not in shipped and x not in MANAGED and x not in kept]:
         cur = read(r.p(rel))
         if cur is not None and fsha(rel, cur) != files[rel]:
             dest = r.backup(rel)

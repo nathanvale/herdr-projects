@@ -36,9 +36,11 @@ PHASES = {
 mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py
 mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/takeover.py service/azure-deployments.test.ts
 service/azure-deployments.ts test/azure-binding.cases.json test/test_providers.py'''.split()),
-    'N1': frozenset('''docs/install.md mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py
+    # N1 owns the installer beside its docs/install.md since PR 60's review #8: an update from a source with no
+    # built page keeps the page installed before, and its record rows.
+    'N1': frozenset('''bin/shepherdr docs/install.md mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py
 mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/tick.py test/test_herdr_task.py
-test/test_native_publication.py'''.split()),
+test/test_install.py test/test_native_publication.py'''.split()),
     'C1': frozenset('''core/agents.js core/chat-find.test.js core/chat-log.js mods/chat/core/agents.js
 mods/chat/core/chat-log.js mods/chat/main.js mods/coordinator/core/agents.js mods/newspace/core/agents.js
 mods/shepherdr-settings/core/agents.js mods/tasks/bin/herdr_task/news.py mods/tasks/bin/herdr_task/sessions.py

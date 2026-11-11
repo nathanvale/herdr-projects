@@ -14,7 +14,19 @@
       "phase": "N1",
       "path": "docs/install.md",
       "upstream_blob": "32ee9481aac2cc93d810c250fffec30b9384b2c8",
-      "sha256": "c7a7deeee6456f76bf2a401b87bc6b8f6dafadf57f44baa4650058945e8e6832"
+      "sha256": "ffaa1307f686e651c82b1557eb8284354676f8800cf72ddcaaf20c3f333b8e6e"
+    },
+    {
+      "phase": "N1",
+      "path": "bin/shepherdr",
+      "upstream_blob": "5bd7ce1f82628b9ae3d6acd9216c39bc9fb32e04",
+      "sha256": "4171b27056e35be8bce4fda7819529e725369de2def37888eff97ef9474c0c77"
+    },
+    {
+      "phase": "N1",
+      "path": "test/test_install.py",
+      "upstream_blob": "c7cab506f4ac148b5c1a4fdbdce3e93d03146d1f",
+      "sha256": "bc73959e5c163f5b7b44e21669fc810b661b843c05b90972a5b3e4fe2214d249"
     },
     {
       "phase": "B2",
