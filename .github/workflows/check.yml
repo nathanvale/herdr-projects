@@ -30,7 +30,7 @@ jobs:
   check:
     name: check
     runs-on: ubuntu-latest
-    timeout-minutes: 20  # PR 56 took 13 min; the restored sensitivity checks add about a minute
+    timeout-minutes: 30  # PR 60 at acf38bd5 hit 20 min (its Python suite took 882 s, 556 s the run before) before its last ledger rows and rerun
     steps:
       - uses: actions/checkout@v4
         with:
