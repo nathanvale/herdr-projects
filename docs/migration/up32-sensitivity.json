@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "about": "v3.1.32's merge into the fork: guard-removal proofs for SHEP-211 as adapted to the fork's launch admission, run by bin/check-sensitivity --ledger (Check's own step beside Q's and PR 60's). Each mutation removes one part of the adapted switch (the old agent ending after admission and before the launch, the switch nudge on a resumed session only) or a control it must keep (an agent switching itself ends after), and the named CLI regression, whose stand-in hc has the old agent live, must fail by an assertion; with the source restored it must pass. Not part of Q's or PR 60's ledgers.",
+  "workflow_obligations": [
+    {
+      "step": "v3.1.32 SHEP-211 in the fork: switch ends the old agent after the new one starts again (every switch treated as the caller's)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "        own = bool(old and me and old[\"address\"].split(\"/\")[-1] == me)",
+        "after": "        own = bool(old)",
+        "test_file": "test/test_providers.py",
+        "test": "test_a_same_kind_switch_ends_the_old_agent_before_it_resumes_the_session"
+      }
+    },
+    {
+      "step": "v3.1.32 SHEP-211 in the fork: the old agent ends before launch admission (a refused switch ends it)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "    adm = admit_task(s, t, argv, space, parent or (prev or {}).get(\"parent\"),",
+        "after": "    if before_launch:\n        before_launch()\n    adm = admit_task(s, t, argv, space, parent or (prev or {}).get(\"parent\"),",
+        "test_file": "test/test_providers.py",
+        "test": "test_a_refused_switch_leaves_the_old_agent_live_and_nothing_started"
+      }
+    },
+    {
+      "step": "v3.1.32 SHEP-211 in the fork: a session resumed by switch gets no first message",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "                                     restart=getattr(args, \"restart\", False), resumed_message=SWITCH_NUDGE,",
+        "after": "                                     restart=getattr(args, \"restart\", False),",
+        "test_file": "test/test_providers.py",
+        "test": "test_a_same_kind_switch_ends_the_old_agent_before_it_resumes_the_session"
+      }
+    },
+    {
+      "step": "v3.1.32 SHEP-211 in the fork: the switch nudge goes with a new conversation (--fresh, missing history)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "        text += (\"\\n\\n\" + message) if message else \"\"",
+        "after": "        text += ((\"\\n\\n\" + message) if message else \"\") + ((\"\\n\\n\" + resumed_message) if resumed_message else \"\")",
+        "test_file": "test/test_providers.py",
+        "test": "test_a_new_conversation_by_switch_hears_no_resume_nudge"
+      }
+    },
+    {
+      "step": "v3.1.32 SHEP-211 control: an agent switching itself is ended first (it would end the switch with it)",
+      "disposition": "ported",
+      "mutation": {
+        "runner": "unittest",
+        "file": "mods/tasks/bin/herdr_task/commands.py",
+        "before": "        own = bool(old and me and old[\"address\"].split(\"/\")[-1] == me)",
+        "after": "        own = False",
+        "test_file": "test/test_providers.py",
+        "test": "test_a_switch_from_the_old_agents_own_terminal_ends_it_after"
+      }
+    }
+  ]
+}

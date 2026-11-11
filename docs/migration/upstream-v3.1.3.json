@@ -5,7 +5,7 @@
   "candidate_readiness": "blocked",
   "inputs": {
     "F": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
-    "U": "6b8caac946a5c3fae0543624e93a0a5553d3b214",
+    "U": "be647c825c72f559b8cbec6cd1f6479a2cf9fdc6",
     "P": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
     "B": "de8e17957efb4aa016d7e4d652f397aaa95f0880"
   },
@@ -13,20 +13,20 @@
     {
       "phase": "N1",
       "path": "docs/install.md",
-      "upstream_blob": "32ee9481aac2cc93d810c250fffec30b9384b2c8",
-      "sha256": "935386b5ab09e98a915027328e2f585527a74d356f75a0ec4977c5a6c9519251"
+      "upstream_blob": "e008f88ce2c9e6224b09d47917f76c9243c71e4d",
+      "sha256": "355c3bbe1bf172608fc129e1f1a236102071264f7f9202a932b687b048ef7144"
     },
     {
       "phase": "N1",
       "path": "bin/shepherdr",
-      "upstream_blob": "5bd7ce1f82628b9ae3d6acd9216c39bc9fb32e04",
-      "sha256": "4171b27056e35be8bce4fda7819529e725369de2def37888eff97ef9474c0c77"
+      "upstream_blob": "3f0fcb87f04be8ee844236b9a6650a47ef199c70",
+      "sha256": "fe88288249dc6f8627c9c8cf2212b2ff019b25678d19c2a983f36f398fb1057d"
     },
     {
       "phase": "N1",
       "path": "test/test_install.py",
-      "upstream_blob": "c7cab506f4ac148b5c1a4fdbdce3e93d03146d1f",
-      "sha256": "811ef64b7b24ddd5f3d76529e3fd887f1d37d701c91d96dde7c54841f3d9aac8"
+      "upstream_blob": "aa9357fc9d43876eb83b4fb2a6016e1be84dbec5",
+      "sha256": "4d22c78034a1547f214455f68aa738370e8b39f013d6b7dbdc9592575fb77bdf"
     },
     {
       "phase": "N1",
@@ -61,8 +61,8 @@
     {
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/commands.py",
-      "upstream_blob": "1f8a11c28d086ec2292fc25fc288e0b75da190e4",
-      "sha256": "8faaa8a8827e93f1fee8b4a2b2dcb523c9ab523a55211fc3cb633d4c0dafa4ad"
+      "upstream_blob": "b93bec12f3c7f0b610f4c45cfd6e9e75cc602b46",
+      "sha256": "1a62a9cb030ed6d50c466ac82f3c2adef37914c337570233c1ef9bda5b0d0da4"
     },
     {
       "phase": "B1",
@@ -115,8 +115,8 @@
     {
       "phase": "L2",
       "path": "test/test_herdr_task.py",
-      "upstream_blob": "dda42467b776dbfee8038264bbd3be6f6f4a001c",
-      "sha256": "8f10237865a7d79d0785fc7258300ff6d068e4b2c48a704b17fcd278a6df43c5"
+      "upstream_blob": "86746b983b3d175592ac6f11b98c8a04985b3906",
+      "sha256": "1e0cff41fe8692dce8708d18e1f3906a060fe5747e928159bbd5bf523ca44125"
     },
     {
       "phase": "B2",
@@ -128,7 +128,7 @@
       "phase": "L2",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "6a47bc9a75f5f4d8b8ba72c135159214807011f2825b87c38791cf925fcddfbc"
+      "sha256": "2ccb080719f00ef389bd43c4fcea83762f6dccbc7eaffa76a8c4be9d71488110"
     },
     {
       "phase": "A2",
@@ -271,8 +271,8 @@
     {
       "phase": "A2",
       "path": "service/main.ts",
-      "upstream_blob": "6a5725405c30282ea05466a2a9aa4d9e28a36ca8",
-      "sha256": "7cd0a8f1354a91ef9d348cb0a4df0dccddf178c72c1f46c921a0fea07799951d"
+      "upstream_blob": "773579ecc210b824fd56b62386e06962f15ecf88",
+      "sha256": "4a28840d867f45476c18485cb823f0587241d24f8e00e60b9989b0b2764da7d1"
     },
     {
       "phase": "H1",

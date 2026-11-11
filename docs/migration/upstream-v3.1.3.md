@@ -23,7 +23,7 @@ pass. Imported installer/service code is source input, not authority to run it.
 | Input | Exact commit |
 | --- | --- |
 | F, reserved fork parent | `4f0236f03a88c5e9fa344475d90d3a20ef418481` |
-| U, upstream v3.1.31 parent (since its merge) | `6b8caac946a5c3fae0543624e93a0a5553d3b214` |
+| U, upstream v3.1.32 parent (since its merge; v3.1.31's `6b8caac9` before) | `be647c825c72f559b8cbec6cd1f6479a2cf9fdc6` |
 | Upstream v3.1.29, U before the v3.1.31 merge (history) | `e41ea9d2c0a273a5c7b6aebf51cf2e4d112a1d1e` |
 | Upstream v3.1.16, U before the v3.1.29 merge (history) | `57302497117183a1772464b31751da12a1c03e4a` |
 | Upstream v3.1.3, S0's U (history) | `dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc` |
@@ -266,6 +266,40 @@ Where the two sides met:
 Ordinary Task Accept still squash-merges (`pr_merge()`); this integration lands by merge commit.
 The four accepted PR 59 review minors and the PR 58 sensitivity-gate gap stay open and unchanged.
 Qualification is unchanged: nothing here is native, Azure or R evidence.
+
+### Upstream v3.1.32 merge
+
+`codex/upstream-v3.1.32-intake` merges released upstream v3.1.32 (`be647c82`, tag `v3.1.32`) into
+`integrate/upstream-v3.1.3` at `fbad5cb5` (PR 60's merge) with a merge commit: both are parents, nothing is
+squashed or rebased. Git's merge base is v3.1.31 (`6b8caac9`); upstream adds 6 commits and 31 files. U now
+names v3.1.32: every U path outside the phase table and the overrides is byte-identical to it, the six rows
+whose upstream file changed re-pin `upstream_blob` to v3.1.32, and each changed row's `sha256` is re-pinned to
+the merged content. `AFTER_Q` names the source paths no entry named yet (`MERGE-v3.1.32`), so Q's ledger keeps
+describing `d53e014b`. The gate's checks are unchanged and it still admits 116 rows.
+
+Where the two sides met:
+
+- `AGENTS.md` (in `OVERRIDES`): the fork's file is kept as it was; upstream's two developer notes stay in its
+  history.
+- SHEP-211 (switch ends the old agent before resuming its session, and nudges it on) met the fork's launch
+  admission (L2) in `commands.py`. Upstream ends the old agent before `start_again`; here a refused start must
+  change nothing, so `start_again` takes `before_launch`, called once admission passed and was claimed, just
+  before the launch, and switch ends the old agent there. An agent switching itself still ends after the new
+  one starts, as upstream has it. The switch nudge goes through the fork's `resumed_message`, so a resumed
+  session hears it and a new conversation (`--fresh`, missing history, another kind of agent) doesn't. A
+  failure after the old agent ended says so, keeping its launch id. `test_providers.py`'s `SwitchOrder` runs
+  the CLI with a stand-in hc whose old agent is live: kill before the start on a same-kind resume, nothing
+  killed or started when admission refuses, the caller ended after, and no nudge on a new conversation.
+  SHEP-211's own unit tests admit through a stand-in launch admission. `docs/migration/up32-sensitivity.json`
+  holds five guard-removal rows, run by its own Check step; the step after the ledgers checks every file
+  either ledger mutates and reruns `SwitchOrder`. A `switch --restart` of a Codex conversation now ends its
+  argv with the nudge, and its test says so.
+- SHEP-209's artifact media go through the service's existing `served()` (`service/media.ts`): a `Range` header
+  only shapes the body of a file the request gate already admitted (the private listener's and the tailnet's
+  alike), and the artifact's sandboxed content-security policy and `nosniff` stay on whole, partial and refused
+  answers. `served()`'s ranges are `service/media.test.ts`'s.
+- SHEP-210 (the web Back button) and the release's version strings come in as they are; the version is
+  upstream's provenance, not a fork release.
 
 ### A1 provider checkpoint
 
