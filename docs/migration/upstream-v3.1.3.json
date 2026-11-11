@@ -5,7 +5,7 @@
   "candidate_readiness": "blocked",
   "inputs": {
     "F": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
-    "U": "6b8caac946a5c3fae0543624e93a0a5553d3b214",
+    "U": "be647c825c72f559b8cbec6cd1f6479a2cf9fdc6",
     "P": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
     "B": "de8e17957efb4aa016d7e4d652f397aaa95f0880"
   },
@@ -13,20 +13,20 @@
     {
       "phase": "N1",
       "path": "docs/install.md",
-      "upstream_blob": "32ee9481aac2cc93d810c250fffec30b9384b2c8",
-      "sha256": "935386b5ab09e98a915027328e2f585527a74d356f75a0ec4977c5a6c9519251"
+      "upstream_blob": "e008f88ce2c9e6224b09d47917f76c9243c71e4d",
+      "sha256": "355c3bbe1bf172608fc129e1f1a236102071264f7f9202a932b687b048ef7144"
     },
     {
       "phase": "N1",
       "path": "bin/shepherdr",
-      "upstream_blob": "5bd7ce1f82628b9ae3d6acd9216c39bc9fb32e04",
-      "sha256": "4171b27056e35be8bce4fda7819529e725369de2def37888eff97ef9474c0c77"
+      "upstream_blob": "3f0fcb87f04be8ee844236b9a6650a47ef199c70",
+      "sha256": "fe88288249dc6f8627c9c8cf2212b2ff019b25678d19c2a983f36f398fb1057d"
     },
     {
       "phase": "N1",
       "path": "test/test_install.py",
-      "upstream_blob": "c7cab506f4ac148b5c1a4fdbdce3e93d03146d1f",
-      "sha256": "811ef64b7b24ddd5f3d76529e3fd887f1d37d701c91d96dde7c54841f3d9aac8"
+      "upstream_blob": "aa9357fc9d43876eb83b4fb2a6016e1be84dbec5",
+      "sha256": "4d22c78034a1547f214455f68aa738370e8b39f013d6b7dbdc9592575fb77bdf"
     },
     {
       "phase": "N1",
@@ -61,8 +61,8 @@
     {
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/commands.py",
-      "upstream_blob": "1f8a11c28d086ec2292fc25fc288e0b75da190e4",
-      "sha256": "8faaa8a8827e93f1fee8b4a2b2dcb523c9ab523a55211fc3cb633d4c0dafa4ad"
+      "upstream_blob": "b93bec12f3c7f0b610f4c45cfd6e9e75cc602b46",
+      "sha256": "5e84df77eb745f40a6d2c7038c554fb1493294a611f7b145dca7a411dc7425cc"
     },
     {
       "phase": "B1",
@@ -115,8 +115,8 @@
     {
       "phase": "L2",
       "path": "test/test_herdr_task.py",
-      "upstream_blob": "dda42467b776dbfee8038264bbd3be6f6f4a001c",
-      "sha256": "8f10237865a7d79d0785fc7258300ff6d068e4b2c48a704b17fcd278a6df43c5"
+      "upstream_blob": "86746b983b3d175592ac6f11b98c8a04985b3906",
+      "sha256": "57f32c35f3b5f8dfdaf3df14414614b3cefaae061a442eec63b367a971d62d94"
     },
     {
       "phase": "B2",
@@ -128,7 +128,7 @@
       "phase": "L2",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "6a47bc9a75f5f4d8b8ba72c135159214807011f2825b87c38791cf925fcddfbc"
+      "sha256": "34b1ca478acd3370a2a78495626b9618a94ac349b3b2080549495219a6373a06"
     },
     {
       "phase": "A2",
@@ -271,8 +271,8 @@
     {
       "phase": "A2",
       "path": "service/main.ts",
-      "upstream_blob": "6a5725405c30282ea05466a2a9aa4d9e28a36ca8",
-      "sha256": "7cd0a8f1354a91ef9d348cb0a4df0dccddf178c72c1f46c921a0fea07799951d"
+      "upstream_blob": "773579ecc210b824fd56b62386e06962f15ecf88",
+      "sha256": "4a28840d867f45476c18485cb823f0587241d24f8e00e60b9989b0b2764da7d1"
     },
     {
       "phase": "H1",
@@ -368,7 +368,7 @@
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/launch_admission.py",
       "upstream_blob": null,
-      "sha256": "9c7e90bede3dc9a6cc8d641b08e52fa9c777d232c3cdd8e3cf925d9c52cb1acd"
+      "sha256": "93fb7cf3fce163e4e4a0898f2a2504759e5da2fd24db012638683ff1638cfc63"
     },
     {
       "phase": "A2",
@@ -639,6 +639,30 @@
       "path": "web/src/kernel.ts",
       "upstream_blob": "a70bc6e8f7e1d49aecbcbf931e00766b2161e623",
       "sha256": "409f4c3489916624de8fb67eab2ebeb5a79eae808446a588c3ec1f8b85fdbc11"
+    },
+    {
+      "phase": "A2",
+      "path": "service/artifacts-remote.test.ts",
+      "upstream_blob": null,
+      "sha256": "a2c9141191ad2d9d5b23d8b89eb89c2682689b5e8a29f89b0bfd0219663f9ddd"
+    },
+    {
+      "phase": "A2",
+      "path": "service/artifacts.ts",
+      "upstream_blob": "3ac8f8ed7c9181b27c0dd8d9ac964b636cbab747",
+      "sha256": "80c10c38c6a1599305e29027017717bc80f3db87b7f78445722811674ad43ac3"
+    },
+    {
+      "phase": "A2",
+      "path": "web/src/back.test.tsx",
+      "upstream_blob": null,
+      "sha256": "2515abc4cfbd48183d075f03c61ff4513d043255391730cd2f18aa5424174381"
+    },
+    {
+      "phase": "A2",
+      "path": "web/src/ui.tsx",
+      "upstream_blob": "42709ded32c2ed3c0b5b60138f14668f0cc8bb9d",
+      "sha256": "28d79560b06c483ef9615b9703a590b88e1997d3fff79caeb2009d4fce2ad8c4"
     },
     {
       "phase": "A2",

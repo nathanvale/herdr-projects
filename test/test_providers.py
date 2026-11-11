@@ -613,7 +613,9 @@ class AzureStartsBound(unittest.TestCase):
         self.assertEqual(agent.count(f'model_provider="{ident}"'), 1)
         self.assertEqual(agent[1:3], ["-c", f'model_provider="{ident}"'])
         self.assertEqual((agent.count("-m"), agent[agent.index("-m") + 1]), (1, "code-deployment"))
-        self.assertEqual(agent[-5:], ["-c", 'model_reasoning_effort="high"', "-c", 'service_tier="fast"', "77777777-8888-4999-8aaa-bbbbbbbbbbbb"])
+        # Its effort, Fast and session last, then (v3.1.32's SHEP-211) the switch's first message to the resumed session.
+        self.assertEqual(agent[-6:-1], ["-c", 'model_reasoning_effort="high"', "-c", 'service_tier="fast"', "77777777-8888-4999-8aaa-bbbbbbbbbbbb"])
+        self.assertEqual(agent[-1], SWITCH_NUDGE)
         f.settle(2, tid=tid)
         # A new conversation after the default deployment changed: the old binding's table (in Shepherdr's own provider
         # namespace) comes off, and today's goes on once, on the new deployment.
@@ -1605,6 +1607,143 @@ class MissingHistory(unittest.TestCase):
                 self.assertTrue(agent[-1].startswith(TAKEOVER), agent[-1][:120])
                 self.assertNotIn("Shepherdr resumed your session", agent[-1])
                 self.assertEqual(agent[agent.index("-m" if extra[0] == "--agent" else "--model") + 1], model)
+                f.settle(2, tid=tid)
+
+
+# A stand-in hc with the task's old agent live in t1 (Claude Code at work there) until something kills t1; every call is
+# logged in order, as FAKE_HC's are.
+LIVE_HC = '''#!/usr/bin/env python3
+import json, os, sys
+log = os.environ["FAKE_HC_LOG"]
+try:
+    with open(log) as f:
+        calls = [json.loads(line) for line in f]
+except OSError:
+    calls = []
+with open(log, "a") as f:
+    f.write(json.dumps(sys.argv[1:]) + "\\n")
+verb = sys.argv[1] if len(sys.argv) > 1 else ""
+ended = ["kill", "t1"] in [c[:2] for c in calls]
+if verb == "run":
+    print(json.dumps({"address": "t%d" % (len(calls) + 1)}))
+elif verb == "ls":
+    print(json.dumps({"terminals": [] if ended else [{"address": "t1", "state": "live"}]}))
+elif verb == "get" and sys.argv[2:3] == ["t1"] and not ended:
+    print(json.dumps({"address": "t1", "state": "live", "status": {"state": "working"}, "foreground": {"name": "claude"},
+                      "labels": {"herdr.task.space": "sp1"}}))
+elif verb == "kill":
+    sys.exit(1 if os.environ.get("FAKE_HC_KILL") == "fail" else 0)
+else:
+    sys.exit(1)
+'''
+# What a session resumed by switch hears first (SHEP-211), written out apart from the code.
+SWITCH_NUDGE = ("Shepherdr restarted your session on a new agent (the task's agent, model or settings changed), which "
+                "stopped your last turn part-way. Nothing is wrong and nobody is waiting on you: carry on where you left "
+                "off (check what is already done with `herdr-task show` and git), then keep going with the task.")
+
+
+@ON_CI
+class SwitchOrder(unittest.TestCase):
+    """v3.1.32's SHEP-211 in the fork: herdr-task switch admits the new start first (launch admission, L2: a switch it
+    refuses changes nothing), then ends the old agent, then starts the new one, which may resume the same session; an
+    agent switching itself ends after. Through the real CLI, its launch admission and launch, with a stand-in hc whose
+    old agent is live in t1: the order is the hc log's."""
+
+    def started(self, f, provider, *extra):
+        f.provider(provider)
+        tid = f.add("--here")
+        f.ok("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now", *extra)
+        f.settle(tid=tid)
+        return tid
+
+    def live_old(self, f):
+        """From now on hc shows the task's old agent at work in t1."""
+        with open(os.path.join(f.tmp, "bin", "hc"), "w") as fh:
+            fh.write(LIVE_HC)
+        return len(f.calls())
+
+    def order(self, f, since):
+        """The kill of t1 and the agent starts hc was asked for since `since`, in order."""
+        out = []
+        for c in f.calls()[since:]:
+            if c[:2] == ["kill", "t1"]:
+                out.append("kill")
+            elif c[:1] == ["run"] and any(a.startswith("herdr.task=") for a in c):
+                out.append("run")
+        return out
+
+    def switch(self, f, tid, *extra):
+        return f.ok("switch", str(tid), "--folder", f.repo, "--space", "sp1", *extra)
+
+    def test_a_same_kind_switch_ends_the_old_agent_before_it_resumes_the_session(self):
+        f = Fixture(self)
+        tid = self.started(f, {"route": "personal"})
+        f.give_session(tid, "aaaaaaaa-1111-4222-8333-444444444444", address="t1")
+        since = self.live_old(f)
+        out = self.switch(f, tid)
+        self.assertEqual((out["resumed"], out["ended"]), (True, ["t1"]))
+        self.assertEqual(self.order(f, since), ["kill", "run"])
+        _, agent = f.agent_words(f.launches()[-1])
+        self.assertEqual(agent[agent.index("--resume") + 1], "aaaaaaaa-1111-4222-8333-444444444444")
+        self.assertEqual(agent[-1], SWITCH_NUDGE)
+        f.settle(2, tid=tid)
+
+    def test_a_refused_switch_leaves_the_old_agent_live_and_nothing_started(self):
+        f = Fixture(self)
+        azure = {"route": "azure-foundry", **CLAUDE, "claude_auth": "api-key"}
+        tid = self.started(f, azure)
+        f.give_session(tid, "bbbbbbbb-1111-4222-8333-444444444444", address="t1")
+        f.provider({"route": "personal"})
+        since = self.live_old(f)
+        before = f.snapshot()
+        why = f.refused("switch", str(tid), "--folder", f.repo, "--space", "sp1")
+        self.assertIn("conversation started on Azure Foundry example with API key", why)
+        self.assertIn(["get", "t1", "--json"], f.calls()[since:])  # the old agent was there, at work
+        self.assertEqual(self.order(f, since), [])
+        f.nothing_started(before)
+
+    def test_a_switch_whose_old_agent_doesnt_end_starts_nothing(self):
+        """hc kill failing leaves the old agent possibly at work in the same session: no new agent starts beside it."""
+        f = Fixture(self)
+        tid = self.started(f, {"route": "personal"})
+        f.give_session(tid, "eeeeeeee-1111-4222-8333-444444444444", address="t1")
+        since = self.live_old(f)
+        f.env["FAKE_HC_KILL"] = "fail"
+        why = f.refused("switch", str(tid), "--folder", f.repo, "--space", "sp1")
+        self.assertIn("t1 didn't end (hc kill exited 1), so no new agent was started", why)
+        self.assertEqual(self.order(f, since), ["kill"])
+
+    def test_a_switch_from_the_old_agents_own_terminal_ends_it_after(self):
+        f = Fixture(self)
+        tid = self.started(f, {"route": "personal"})
+        f.give_session(tid, "cccccccc-1111-4222-8333-444444444444", address="t1")
+        since = self.live_old(f)
+        f.env["HC_TERMINAL_ID"] = "t1"
+        out = self.switch(f, tid)
+        self.assertEqual((out["resumed"], out["ended"]), (True, ["t1"]))
+        self.assertEqual(self.order(f, since), ["run", "kill"])
+        f.settle(2, tid=tid)
+
+    def test_a_new_conversation_by_switch_hears_no_resume_nudge(self):
+        """--fresh and missing history (a recorded Claude Code log that is gone) start with a handoff: no switch nudge,
+        and the old agent still ends first."""
+        for case in ("--fresh", "missing history"):
+            with self.subTest(case=case):
+                f = Fixture(self)
+                tid = self.started(f, {"route": "personal"})
+                folder = os.path.join(f.tmp, "history", "projects", "repo")
+                os.makedirs(folder)
+                log = os.path.join(folder, "dddddddd-1111-4222-8333-444444444444.jsonl") if case != "--fresh" else None
+                f.give_session(tid, "dddddddd-1111-4222-8333-444444444444", address="t1", log=log)
+                since = self.live_old(f)
+                out = self.switch(f, tid, *(("--fresh",) if case == "--fresh" else ()))
+                self.assertEqual((out["resumed"], out.get("missing_history")), (False, None if case == "--fresh" else True))
+                self.assertEqual(self.order(f, since), ["kill", "run"])
+                _, agent = f.agent_words(f.launches()[-1])
+                self.assertNotIn("--resume", agent)
+                self.assertNotIn("Shepherdr restarted your session", agent[-1])
+                self.assertNotIn("Shepherdr resumed your session", agent[-1])
+                self.assertTrue(agent[-1].startswith(RESTART if case != "--fresh" else TAKEOVER), agent[-1][:120])
                 f.settle(2, tid=tid)
 
 
