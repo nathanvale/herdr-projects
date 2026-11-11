@@ -23,27 +23,36 @@ const page: Record<string, unknown> = {
     documentElement: { style: {}, dataset: {} }, activeElement: null, querySelector: () => null, createElement: () => ({}),
   },
 }
-const had = Object.keys(page).filter((k) => k in g)
-for (const k of Object.keys(page)) if (!had.includes(k)) g[k] = page[k]
+// This file's page while it runs. Another test file in the same run may have left its own stand-ins on globalThis (a
+// document with no documentElement, a matchMedia), so each name is this file's until its tests end, then back as it
+// was (absent: removed)
+const before = new Map<string, { had: boolean; value: unknown }>()
+function swap(k: string, v: unknown) {
+  if (!before.has(k)) before.set(k, { had: k in g, value: g[k] })
+  if (v === undefined) delete g[k]
+  else g[k] = v
+}
+afterAll(() => {
+  for (const [k, b] of before) {
+    if (b.had) g[k] = b.value
+    else delete g[k]
+  }
+})
+for (const [k, v] of Object.entries(page)) swap(k, v)
+// no device answer: not a touch screen (the touch test gives one); no window as the modules load (page-only work skips)
+swap('matchMedia', undefined)
+swap('window', undefined)
 // the server's socket, as a stand-in the test speaks for
 type Sock = { onopen?: () => void; onmessage?: (e: { data: string }) => void }
 const socks: Sock[] = []
-const realSocket = g.WebSocket
-const hadWindow = 'window' in g
-g.WebSocket = class { static OPEN = 1; readyState = 0; constructor() { socks.push(this as unknown as Sock) } send() {} close() {} }
-afterAll(() => {
-  for (const k of Object.keys(page)) if (!had.includes(k)) delete g[k]
-  g.WebSocket = realSocket
-  if (!hadWindow) delete g.window
-  delete g.matchMedia
-})
+swap('WebSocket', class { static OPEN = 1; readyState = 0; constructor() { socks.push(this as unknown as Sock) } send() {} close() {} })
 const { connect } = await import('@client/kernel.ts')
 const { Composer } = await import('./client.tsx')
 connect()
 const sock = socks.at(-1)!
 sock.onopen?.()
 // the snapshot handler reads the page's window (an add-on switched off): set once the modules have loaded
-g.window = globalThis
+swap('window', globalThis)
 
 const row = (value: 'on' | 'off') => ({ label: 'Suggested next message', key: 'agents.suggestions', value, options: ['on', 'off'] })
 const agents = (level: string, value: 'on' | 'off') => ({ name: 'Agents', level, rows: [row(value)] }) as SettingSection
