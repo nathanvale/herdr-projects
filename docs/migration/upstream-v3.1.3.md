@@ -153,17 +153,28 @@ Where the two sides met:
   Working on a merge that won't come), its Accept card says the checks are unknown, and its merge
   setting stays, so a later full read that passes still merges it by itself. That makes A2 the
   owner of `T/agents.py` (`ready_wait()`), beside `core/tasks.js`: its row pins v3.1.31's blob
-  `5acf2887` and the changed content, and the gate now admits 97 rows.
+  `5acf2887` and the changed content.
 - SHEP-188's `mid_turn()` joins `finish()` beside `kept_because()`: a folder stays while its agent
   or helper is mid-turn, and stays when the branch holds work that didn't merge.
 - SHEP-189's resume nudge goes through the fork's admitted `start_again()`; `--fresh` (a new conversation from
   the handoff) gets none, as it is no resume.
 - SHEP-202's caller-free shell send goes through the one revival owner: `bring_back()` passes
   `without_caller()`'s environment to `Admission.type_into()`.
+- SHEP-207's Codex process tree (`codex_working()`): a process list it can't read (no `ps`, one that
+  failed, even with some output, or an empty listing) is unknown, so the agent's log decides, as with
+  no pid. The tick goes on, and a task back at work is Ready again only once a listing it can read
+  shows nothing of its own running (PR 60's review).
 - SHEP-181's live model and effort switch runs only for a Personal agent in its own config folder.
   One with a recorded provider binding (`herdr.provider`, as `providerRefusal()` reads it), or
   another `CLAUDE_CONFIG_DIR` by its page or its own process (`folderRefusal()`, as `restart()`
-  asks), goes to `restart()`, whose launch owner keeps the binding or refuses.
+  asks), goes to `restart()`, whose launch owner keeps the binding or refuses. After PR 60's review, the
+  defaults a switch saves go back also when the CLI made its settings file just then (none before); a
+  file that can't be read, or a machine that can't be reached, refuses before anything is typed; and a
+  default that couldn't be put back fails the switch with words that say it switched (`switched`),
+  never a plain success. The service's home-file io says which: its `sh` exits 3 for no such file, and
+  any other failure, of a read or a write, is an error. That makes A2 the owner of `core/live-switch.js`
+  and its test, with the new `service/live-switch.test.ts` (named in `AFTER_Q` as `PR60-FIX`), and the
+  gate now admits 100 rows.
 - SHEP-191's cross-site page link (`pageLink()`) applies before the private listener's own checks.
   Writes, sockets and the API stay refused cross-site, and the private peer's owner and host rules
   are unchanged.

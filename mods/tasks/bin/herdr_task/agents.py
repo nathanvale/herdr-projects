@@ -817,15 +817,22 @@ def waits_on_own(task, address=None, ended=0):
 
 def codex_working(k):
     """Whether a Codex agent has a process of its own running under it: a background terminal or a
-    command of its code mode, but not its code-mode host (SHEP-207). Its pid unknown: True, so its
-    log decides as before. One `ps` for all processes, so it works on macOS too."""
+    command of its code mode, but not its code-mode host (SHEP-207). Its pid unknown, or the process
+    list unknown (no `ps` here, one that failed, even with some output, or listed nothing): True, so
+    its log decides as before. One `ps` for all processes, so it works on macOS too."""
     fg = k.get("foreground") or {}
     if not fg.get("pid") and k.get("address"):
         fg = detail(k).get("foreground") or {}
     if not fg.get("pid"):
         return True
+    try:
+        listed = run(["ps", "-axo", "pid=,ppid=,args="])
+    except OSError:
+        return True
+    if listed.returncode != 0 or not listed.stdout.strip():
+        return True
     children = {}
-    for line in run(["ps", "-axo", "pid=,ppid=,args="]).stdout.splitlines():
+    for line in listed.stdout.splitlines():
         parts = line.split(None, 2)
         if len(parts) >= 2 and parts[1].isdigit():
             children.setdefault(parts[1], []).append(parts)

@@ -7,7 +7,9 @@
 //   toggles and saves service_tier in ~/.codex/config.toml, put back the same way.
 // Another CLI or another permission mode still needs a restart (liveOK says which).
 // `io` is where it runs: { send(text), keys(...names), screen(), readFile(rel), writeFile(rel, text), sleep(ms) }, rel
-// under the agent's machine's home.
+// under the agent's machine's home. readFile resolves the file's text, or null when there is no such file, and throws
+// when it can't be read (or its machine can't be reached): then nothing is switched, as what a command saves there
+// couldn't be put back. writeFile throws when the write fails: the switch then says the default stayed.
 
 export const CLAUDE_SETTINGS = ".claude/settings.json";
 export const CODEX_CONFIG = ".codex/config.toml";
@@ -153,9 +155,42 @@ async function waitFor(io, test, ms = 8000) {
   return null;
 }
 
+/** What a file held before the commands: its text, "" when it didn't exist (a command may make it). One that can't be
+ *  read stops the switch here, before anything is typed. */
+async function prior(io, rel) {
+  try {
+    return (await io.readFile(rel)) ?? "";
+  } catch {
+    throw new Error(`Can't switch it in place: ~/${rel} couldn't be read, so the default a switch saves there couldn't be put back.`);
+  }
+}
+
+/** The keys the commands touched, put back (restore(before, now): the file's new text, or null when nothing changed). Its
+ *  words when that couldn't be done, else null. */
+async function putBack(io, rel, before, restore) {
+  // its save lands with its answer; a moment more, then the keys it touched go back
+  await io.sleep(300);
+  try {
+    const now = await io.readFile(rel);
+    const back = now === null ? null : restore(before, now);
+    if (back !== null) await io.writeFile(rel, back);
+    return null;
+  } catch {
+    return `~/${rel} couldn't be put back, so new sessions may start on this choice.`;
+  }
+}
+
+/** The switch's outcome: a command's failure (with the default not put back, said too), or a switch whose default stayed
+ *  (`switched`: what runs did change). */
+function outcome(failed, lost) {
+  if (failed) throw lost ? new Error(`${failed.message} Also, ${lost}`) : failed;
+  if (lost) throw Object.assign(new Error(`It switched, but ${lost}`), { switched: true });
+}
+
 /** Claude Code: the commands typed one by one, each waited for; its default put back. Resolves with what it ran. */
 async function claude(io, ch) {
-  const before = await io.readFile(CLAUDE_SETTINGS).catch(() => null);
+  const before = await prior(io, CLAUDE_SETTINGS);
+  let failed = null;
   try {
     for (const c of claudeCommands(ch)) {
       // an answer counts only after this command's own echo (the same command may be on screen from before)
@@ -174,24 +209,20 @@ async function claude(io, ch) {
       const bad = c.fail && !c.done.test(a) ? c.fail.exec(a) : null;
       if (bad) throw new Error(bad[0].trim());
     }
-  } finally {
-    if (before !== null) {
-      // its save lands with its answer; a moment more, then the keys it touched go back
-      await io.sleep(300);
-      const now = await io.readFile(CLAUDE_SETTINGS).catch(() => null);
-      const back = now === null ? null : claudeRestore(before, now);
-      if (back !== null) await io.writeFile(CLAUDE_SETTINGS, back);
-    }
+  } catch (e) {
+    failed = e;
   }
+  outcome(failed, await putBack(io, CLAUDE_SETTINGS, before, claudeRestore));
 }
 
 /** Codex: /model's two pickers (its level for this session only, "s"), then /fast; config.toml put back. */
 async function codex(io, ch, labels) {
-  const before = await io.readFile(CODEX_CONFIG).catch(() => null);
+  const before = await prior(io, CODEX_CONFIG);
   const pick = async (rows, n) => {
     for (const k of moveTo(rows, n)) await io.keys(k);
     await io.sleep(150);
   };
+  let failed = null;
   try {
     const CHANGED = /^\s*•\s*Model changed to /, TIER = /^\s*•\s*Service tier set to /;
     if (ch.model !== undefined || ch.effort !== undefined) {
@@ -239,18 +270,15 @@ async function codex(io, ch, labels) {
         await io.sleep(1000);
       }
     }
-  } finally {
-    if (before !== null) {
-      await io.sleep(300);
-      const now = await io.readFile(CODEX_CONFIG).catch(() => null);
-      const back = now === null ? null : codexRestore(before, now);
-      if (back !== null) await io.writeFile(CODEX_CONFIG, back);
-    }
+  } catch (e) {
+    failed = e;
   }
+  outcome(failed, await putBack(io, CODEX_CONFIG, before, codexRestore));
 }
 
 /** Switches the agent in place. `labels`: Codex's { names: { id: label }, model, effort } (the picker's words for
- *  its models, and what runs now). Throws with plain words when it can't. */
+ *  its models, and what runs now). Throws with plain words when it can't; `switched` on the error when it did switch but
+ *  the default it saved couldn't be put back. */
 export async function switchLive(io, kind, from, to, labels = {}) {
   const ch = liveChanges(from, to);
   if (!Object.keys(ch).length) return ch;

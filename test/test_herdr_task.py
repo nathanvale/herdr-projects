@@ -832,6 +832,60 @@ class BackToWork(unittest.TestCase):
             self.tick.tick_store(self.store, {"started": []})
             self.assertEqual(t["state"], "running", change)
 
+    def test_a_codex_job_keeps_it_working_while_its_process_list_is_unknown(self):
+        """PR 60 review (#10): a Ready task's Codex agent woke, started a background command and went
+        quiet. With no `ps`, a failed one or an empty listing the tick goes on and the task stays
+        Working (its log says the job runs); once a listing shows no process under it, Ready again."""
+        import datetime
+        from types import SimpleNamespace
+        wt = tempfile.mkdtemp()
+        log = os.path.join(wt, "rollout.jsonl")
+        at = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+        with open(log, "w") as f:
+            for item in ({"type": "response_item", "payload": {"type": "function_call", "call_id": "c1", "name": "exec_command",
+                                                                "arguments": json.dumps({"cmd": "gh run watch"})}},
+                         {"type": "response_item", "payload": {"type": "function_call_output", "call_id": "c1",
+                                                                "output": "Process running with session ID 42"}}):
+                f.write(json.dumps(dict(item, timestamp=at)) + "\n")
+        t = self.ready(mode="worktree", worktree=wt, branch="b", head="abc", agents=[{"address": "t1", "log": log}])
+        p = self.mock.patch.object(self.tick, "git", lambda cwd, *a: (True, "abc" if a[0] == "rev-parse" else "", ""))
+        p.start()
+        self.addCleanup(p.stop)
+        ps = {}
+
+        def ps_run(args, **kw):
+            self.assertEqual(args[0], "ps")
+            if ps.get("missing"):
+                raise FileNotFoundError(2, "No such file or directory", "ps")
+            return SimpleNamespace(stdout=ps.get("out", ""), returncode=ps.get("code", 0))
+        p = self.mock.patch.object(self.agents, "run", ps_run)
+        p.start()
+        self.addCleanup(p.stop)
+        codex = lambda st, turn: [dict(self.agent({"address": "t1", "status": st, "turn": turn, "role": "worker"}),
+                                       agent="codex", foreground={"pid": 100, "name": "codex"})]
+        self.live = codex("working", 5)
+        self.tick.tick_store(self.store, {"started": []})
+        self.assertEqual((t["state"], t["back"]["auto"]), ("running", True))
+        host_only = "100 1 codex\n101 100 codex-code-mode-host\n"
+        self.live = codex("idle", 6)
+        for name, how in (("no ps", {"missing": True}), ("ps failed", {"out": host_only, "code": 1}), ("nothing listed", {})):
+            ps.clear()
+            ps.update(how)
+            report = {"started": []}
+            self.tick.tick_store(self.store, report)  # never raises: the tick goes on
+            self.assertEqual(t["state"], "running", name)
+            self.assertNotIn("ready_again", report, name)
+        # a command still under it, read: still Working
+        ps.clear()
+        ps["out"] = host_only + "102 101 gh run watch\n"
+        self.tick.tick_store(self.store, {"started": []})
+        self.assertEqual(t["state"], "running")
+        # read, and nothing of its own runs: the job is over, Ready again
+        ps["out"] = host_only
+        report = {"started": []}
+        self.tick.tick_store(self.store, report)
+        self.assertEqual((t["state"], report.get("ready_again")), ("ready", ["SHEP-7"]))
+
     def test_a_fix_asked_for_is_never_undone(self):
         """herdr-task fix or resume took it back: Working until its agent says ready, idle or not."""
         t = self.ready(mode="worktree", worktree=tempfile.mkdtemp(), branch="b", head="abc")
@@ -1386,14 +1440,21 @@ class CodexCodeMode(unittest.TestCase):
     setUp = OwnBackgroundWork.setUp
     stamp, status = OwnBackgroundWork.stamp, OwnBackgroundWork.status
 
-    def setUp_ps(self, ps=""):
-        """The `ps` output codex_working() reads (the rest of the test's processes: none)."""
+    def setUp_ps(self, ps="", code=0, missing=False):
+        """The `ps` codex_working() runs (the rest of the test's processes: none): its output and exit
+        code, or no `ps` on this machine at all."""
         from types import SimpleNamespace
+
+        def ps_run(args, **kw):
+            self.assertEqual(args[0], "ps")
+            if self.ps_missing:
+                raise FileNotFoundError(2, "No such file or directory", "ps")
+            return SimpleNamespace(stdout=self.ps, returncode=self.ps_code)
         if not hasattr(self, "ps"):
-            p = self.mock.patch.object(self.agents, "run", lambda args, **kw: SimpleNamespace(stdout=self.ps), create=True)
+            p = self.mock.patch.object(self.agents, "run", ps_run, create=True)
             p.start()
             self.addCleanup(p.stop)
-        self.ps = ps
+        self.ps, self.ps_code, self.ps_missing = ps, code, missing
 
     def replay(self, n=None):
         with open(os.path.join(ROOT, "test", "fixtures", "codex-code-mode", "rollout-items.jsonl")) as f:
@@ -1457,6 +1518,22 @@ class CodexCodeMode(unittest.TestCase):
         self.stamp(-100_000, {"type": "response_item", "payload": {"type": "function_call_output", "call_id": "c2",
                               "output": "Process exited with code 0\nOutput:\nok"}})
         self.assertEqual(self.agents.background_jobs(self.log)[0], {})
+
+    def test_a_process_list_it_can_t_read_leaves_the_log_s_word(self):
+        """PR 60 review (#10): no `ps`, one that failed (even with some output), or one that listed
+        nothing says nothing about the agent's processes: its open job keeps it Working, as with no pid."""
+        host_only = "100 1 codex --no-daemon\n101 100 /usr/local/lib/codex/codex-code-mode-host\n"
+        self.replay(4)
+        live = self.codex()
+        for name, how in (("no ps", {"missing": True}), ("ps failed", {"ps": host_only, "code": 1}),
+                          ("nothing listed", {"ps": ""}), ("blank", {"ps": " \n"})):
+            self.setUp_ps(**how)
+            self.assertTrue(self.agents.codex_working(live[0]), name)
+            self.assertTrue(self.agents.own_work(self.task, live, ready=True), name)
+            self.assertEqual(self.status(live)[:2], ("working", None), name)
+        # the same listing, read: the job has no process, so it's over (test_a_code_mode_job_with_no_process_is_over)
+        self.setUp_ps(host_only)
+        self.assertFalse(self.agents.codex_working(live[0]))
 
     def test_codex_working_reads_the_process_tree(self):
         codex = {"foreground": {"pid": 100}}

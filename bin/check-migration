@@ -77,7 +77,8 @@ web/plugins/places/add.tsx'''.split()),
     # save-only new-start selectors for a task and an Assistant, each start's binding recorded and kept on resume, and
     # the L2 sites (restart, fork, a lost session, revival) refusing anything but Personal. Earlier owners it changes are
     # A2's from here.
-    'A2': frozenset('''core/agents.js core/agents.test.js core/chat-find.test.js core/settings.js core/tasks.js core/tasks.test.js
+    'A2': frozenset('''core/agents.js core/agents.test.js core/chat-find.test.js core/live-switch.js core/live-switch.test.js
+core/settings.js core/tasks.js core/tasks.test.js
 lib/COPIES lib/agent.js mods/chat-models/core/agents.js mods/chat/agent.js
 mods/chat/core/agents.js mods/chat/core/settings.js mods/chat/core/tasks.js mods/chat/main.js mods/coordinator/core/agents.js
 mods/coordinator/core/settings.js mods/coordinator/restart.sh mods/jump/core/tasks.js mods/newspace/agent.js mods/newspace/core/agents.js
@@ -86,7 +87,7 @@ mods/shepherdr-settings/core/settings.js mods/shepherdr-settings/main.js mods/sh
 mods/tasks/bin/herdr_task/agents.py mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py
 mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/revive.py
 mods/tasks/bin/herdr_task/settings.py mods/tasks-menu/main.js mods/tasks/core/tasks.js mods/tasks/local.js mods/tasks/main.js service/actions.ts service/agents.ts service/compat.ts service/launch-sites.test.ts
-service/main.ts service/selections.test.ts service/selections.ts service/settings.test.ts service/settings.ts
+service/live-switch.test.ts service/main.ts service/selections.test.ts service/selections.ts service/settings.test.ts service/settings.ts
 service/spaces.ts service/voice-data.ts service/watch.ts test/test_herdr_task.py test/test_launch_admission.py test/test_restart.py test/test_providers.py web/plugins/tasks/client.tsx
 web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx web/src/restart.tsx'''.split()),
     # Native restart and revival: revival, a lost session at its shell and every restart go through launch admission on
@@ -263,6 +264,8 @@ PROSE = frozenset('AGENTS.md CHANGELOG.md CLAUDE.md CODING_STANDARDS.md GLOSSARY
 # A unit merged after Q that changes a tracked path outside Q's own and prose names it here, under the unit's name
 # ({'MIG-10': 'path other/path'}). Its evidence is its own Check; Q's ledger keeps describing its candidate only.
 AFTER_Q = {
+    # PR 60's review of the live switch (A2): the switch in place across the service's own home-file io, a new test.
+    'PR60-FIX': 'service/live-switch.test.ts',
     # Upstream v3.1.31 merged into the fork (upstream 6b8caac9, lightweight tag v3.1.31; fork base 9b7ec505): every
     # tracked source path it changes. Its evidence is its own Check; Q's ledger keeps describing its candidate d53e014b.
     'MERGE-v3.1.31': (

@@ -92,7 +92,7 @@
       "phase": "L2",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "dda42467b776dbfee8038264bbd3be6f6f4a001c",
-      "sha256": "9741a6dad836e43ddd4deb064e39cea50f75f6f7fa2f76fa6a24e6477d16baba"
+      "sha256": "7ea57675c7ce7b6cea2e4990e82d23235ca5d4b05d2ad47102dd92e8ea549c78"
     },
     {
       "phase": "B2",
@@ -182,7 +182,7 @@
       "phase": "L2",
       "path": "service/agents.ts",
       "upstream_blob": "27f9e58ee26b3d2278c994d99fb9f3496586a105",
-      "sha256": "a651d51005134f6a9953408153d7be1ab6dc117f71a4dbc9cbc323871b6e4208"
+      "sha256": "ffb96a9c06e2f57fd6d5adf27439d157439e26055e81a74a0c3f0ee5904165a1"
     },
     {
       "phase": "L2",
@@ -584,7 +584,25 @@
       "phase": "A2",
       "path": "mods/tasks/bin/herdr_task/agents.py",
       "upstream_blob": "5acf28872653648f6ec0168b53009935b01ab014",
-      "sha256": "18f3e5ad86a63e822a0ceb58bc0c8e4880ca2301978ec83dc642b732055d5d5f"
+      "sha256": "c755d5144397f496ef62493e168fcb2cf20f0ed83654c4a4edc6152880d1ad72"
+    },
+    {
+      "phase": "A2",
+      "path": "core/live-switch.js",
+      "upstream_blob": "d870374deb11566c4c822d27d73a0949d2eacd85",
+      "sha256": "bf2bda1ac163adae6a2495fbea38cebb879d900fceb849db4b54e0d86d0ca77c"
+    },
+    {
+      "phase": "A2",
+      "path": "core/live-switch.test.js",
+      "upstream_blob": "252f81795d4fc44ad543c622339e4bcb09b869b8",
+      "sha256": "0031e307716785a56aed4b5cbb70a997a084d77df4b82314fc9b745f6ade4d78"
+    },
+    {
+      "phase": "A2",
+      "path": "service/live-switch.test.ts",
+      "upstream_blob": null,
+      "sha256": "71a03cb38d362b58755c6b4d7ed42e4b493a4ec4c716a761aac4fed15031a5d5"
     },
     {
       "phase": "L2",

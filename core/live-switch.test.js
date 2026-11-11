@@ -65,8 +65,9 @@ test("Codex's pickers read off its screen", () => {
   expect(codexEffortRow(levels, "ultra")).toBe("more");
 });
 
-/** A terminal that answers as the CLI would, and its home's files */
-function fakeTerm(answer, files) {
+/** A terminal that answers as the CLI would, and its home's files (a file in `unreadable` can't be read, one in
+ *  `readOnly` can't be written: as service/agents.ts's io says so) */
+function fakeTerm(answer, files, { unreadable = [], readOnly = [] } = {}) {
   let screen = "› \n";
   const sent = [], keys = [];
   return {
@@ -75,8 +76,8 @@ function fakeTerm(answer, files) {
       send: async (t) => { sent.push(t); screen += answer.send(t, files) ?? ""; },
       keys: async (...k) => { keys.push(...k); screen += answer.keys?.(k, files) ?? ""; },
       screen: async () => screen,
-      readFile: async (p) => { if (!(p in files)) throw new Error("none"); return files[p]; },
-      writeFile: async (p, t) => { files[p] = t; },
+      readFile: async (p) => { if (unreadable.includes(p)) throw new Error("unreadable"); return p in files ? files[p] : null; },
+      writeFile: async (p, t) => { if (readOnly.includes(p)) throw new Error("not written"); files[p] = t; },
       sleep: async () => {},
     },
   };
@@ -115,6 +116,54 @@ test("Claude Code: the same command again waits for its own answer, not the last
   const t = fakeTerm({ send: (text) => (++n === 1 ? `❯ ${text}\n  ⎿  Effort level set to low\n` : `❯ ${text}\n`) }, {});
   await switchLive(t.io, "claude", { model: "opus", effort: "high" }, { model: "opus", effort: "low" });
   await expect(switchLive(t.io, "claude", { model: "opus", effort: "high" }, { model: "opus", effort: "low" })).rejects.toThrow("didn't answer");
+});
+
+// PR 60 review (#1): a CLI with no settings file yet makes one with what it saved; those keys go all the same
+test("Claude Code: no settings file before, the one /model made loses the keys it touched", async () => {
+  const t = fakeTerm({
+    send: (text, f) => {
+      if (text.startsWith("/model")) f[".claude/settings.json"] = JSON.stringify({ model: "sonnet" }, null, 2) + "\n";
+      else f[".claude/settings.json"] = JSON.stringify({ model: "sonnet", effortLevel: "low" }, null, 2) + "\n";
+      return text.startsWith("/model") ? `❯ ${text}\n  ⎿  Set model to Sonnet 5.5 and saved as your default for new sessions\n`
+        : `❯ ${text}\n  ⎿  Set effort level to low (saved as your default for new sessions)\n`;
+    },
+  }, {});
+  await switchLive(t.io, "claude", { model: "opus", effort: "high" }, { model: "sonnet", effort: "low" });
+  expect(t.sent).toEqual(["/model sonnet", "/effort low"]);
+  expect(JSON.parse(t.files[".claude/settings.json"])).toEqual({});
+});
+
+test("Codex: Fast with no config.toml before, the tier it saved goes", async () => {
+  const t = fakeTerm({
+    send: (text, f) => { f[".codex/config.toml"] = 'service_tier = "fast"\n'; return "• Service tier set to fast\n"; },
+  }, {});
+  await switchLive(t.io, "codex", { model: "gpt-6-sol", effort: "high", fast: false }, { model: "gpt-6-sol", effort: "high", fast: true });
+  expect(t.sent).toEqual(["/fast"]);
+  expect(t.files[".codex/config.toml"]).not.toContain("service_tier");
+});
+
+// #1: a file that can't be read (or a machine that can't be reached) couldn't be put back: nothing is typed
+test("a settings file that can't be read: nothing typed, and it says why", async () => {
+  const claude = fakeTerm({ send: () => "" }, {}, { unreadable: [".claude/settings.json"] });
+  await expect(switchLive(claude.io, "claude", { model: "opus", effort: "high" }, { model: "sonnet", effort: "high" }))
+    .rejects.toThrow("~/.claude/settings.json couldn't be read");
+  expect([claude.sent, claude.keys]).toEqual([[], []]);
+  const codex = fakeTerm({ send: () => "" }, {}, { unreadable: [".codex/config.toml"] });
+  await expect(switchLive(codex.io, "codex", { model: "gpt-6-sol", effort: "high", fast: false }, { model: "gpt-6-sol", effort: "high", fast: true }))
+    .rejects.toThrow("~/.codex/config.toml couldn't be read");
+  expect([codex.sent, codex.keys]).toEqual([[], []]);
+});
+
+// #2: switched, but the default it saved couldn't be put back: no plain success
+test("a default that couldn't be put back is no success: it says it switched and that the default stayed", async () => {
+  const t = fakeTerm({
+    send: (text, f) => { f[".claude/settings.json"] = JSON.stringify({ theme: "dark", fastMode: true }); return `❯ ${text}\n  ⎿  Fast mode ON\n`; },
+  }, { ".claude/settings.json": JSON.stringify({ theme: "dark" }) }, { readOnly: [".claude/settings.json"] });
+  const err = await switchLive(t.io, "claude", { model: "opus", effort: "high", fast: false }, { model: "opus", effort: "high", fast: true }).then(() => null, (e) => e);
+  expect(t.sent).toEqual(["/fast on"]);
+  expect(err?.message).toBe("It switched, but ~/.claude/settings.json couldn't be put back, so new sessions may start on this choice.");
+  expect(err?.switched).toBe(true);
+  expect(JSON.parse(t.files[".claude/settings.json"]).fastMode).toBe(true);
 });
 
 test("Codex: its model picked, then its level for this session only (s, never Enter)", async () => {

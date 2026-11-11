@@ -180,18 +180,28 @@ export class Agents {
       },
       keys: async (...keys: string[]) => { await hc(["keys", addr, ...keys]); },
       screen: async () => (await hc(["read", addr, "--lines", "2000"])).out,
+      // no such file: null (a switch's command may make it, and its keys then go); one that can't be read, or a machine
+      // that can't be reached, throws, so nothing is switched (core/live-switch.js)
       readFile: async (rel: string) => {
-        const r = await sh(this.hub, 'cat "$HOME/$1"', ["read", rel], machine);
-        if (r.code !== 0) throw new Error("no file");
+        const r = await sh(this.hub, '[ -e "$HOME/$1" ] || [ -L "$HOME/$1" ] || exit 3; cat "$HOME/$1"', ["read", rel], machine);
+        if (r.code === 3) return null;
+        if (r.code !== 0) throw new Error("unreadable");
         return r.stdout;
       },
       writeFile: async (rel: string, text: string) => {
-        await sh(this.hub, 'printf %s "$2" > "$HOME/$1"', ["write", rel, text], machine);
+        const r = await sh(this.hub, 'printf %s "$2" > "$HOME/$1"', ["write", rel, text], machine);
+        if (r.code !== 0) throw new Error("not written");
       },
       sleep: (ms: number) => Bun.sleep(ms),
     };
     const names = Object.fromEntries(menuFor(kind, dflt, from.model || null).models.map((m: any) => [m.id, m.name]));
-    await LS.switchLive(io, kind, from, to, { names });
+    try {
+      await LS.switchLive(io, kind, from, to, { names });
+    } catch (e: any) {
+      // it switched, but the default it saved stayed: what runs changed all the same, and the error says both
+      if (e?.switched) { this.known.delete(`${machine ?? ""}|${kind}`); this.used(pick); }
+      throw e;
+    }
     this.known.delete(`${machine ?? ""}|${kind}`);
     this.used(pick);
     return { live: true };
