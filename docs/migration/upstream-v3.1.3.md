@@ -148,7 +148,10 @@ Where the two sides met:
   counts. Nathan chose the conservative policy (11 November 2026): unknown checks never merge by
   themselves. `merge_now(auto=True)` refuses them for the tick's merge (merge `auto` or `checks`,
   including an Accept made while checks ran) and for ready's merge `auto`; the person's own Accept
-  or merge is unchanged, and GitHub still refuses what its required checks block.
+  or merge is unchanged, and GitHub still refuses what its required checks block. A task held this
+  way is the person's: `ready_wait()` and `core/tasks.js` `readyWait()` show it Ready (never
+  Working on a merge that won't come), its Accept card says the checks are unknown, and its merge
+  setting stays, so a later full read that passes still merges it by itself.
 - SHEP-188's `mid_turn()` joins `finish()` beside `kept_because()`: a folder stays while its agent
   or helper is mid-turn, and stays when the branch holds work that didn't merge.
 - SHEP-189's resume nudge goes through the fork's admitted `start_again()`; `--fresh` (a new conversation from

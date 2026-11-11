@@ -2759,6 +2759,8 @@ class ChecksUnreadable(PrLooks):
         self.tick_once(t)
         self.assertFalse(self.asked_to_merge())
         self.assertEqual((t["state"], t["auto_merge"], t["pr"].get("checks_unknown")), ("ready", "checks", True))
+        # Held, so the person's: Ready (its Accept card says the checks are unknown), never Working on a merge that won't come.
+        self.assertEqual(self.agents.task_status(t, self.live)[0], "ready")
         self.assertEqual(self.commands.merge_now(self.store, t, auto=True), self.commands.CHECKS_UNKNOWN)
         self.assertFalse(self.asked_to_merge())
         self.github_says("CLEAN", runs=[{"name": "test", "status": "completed", "conclusion": "success"}])

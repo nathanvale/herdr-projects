@@ -123,7 +123,11 @@ export function readyWait(task, live = []) {
   if (task.merge_requested && live.length) return "Merging";
   if (task.merge_queued && task.pr) return "In GitHub's merge queue";
   // #743: waits calmly for a review GitHub requires.
-  if (task.auto_merge && task.pr && !task.merged) return task.pr.needs_approval ? "Merges once it's approved" : "Merges once its checks pass";
+  // Its checks unknown: it never merges by itself (herdr-task's merge_now(auto=True)), so it is the person's: Ready.
+  if (task.auto_merge && task.pr && !task.merged) {
+    if (task.pr.needs_approval) return "Merges once it's approved";
+    if (!task.pr.checks_unknown) return "Merges once its checks pass";
+  }
   return task.pr?.wait || null;
 }
 

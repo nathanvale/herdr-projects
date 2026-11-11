@@ -92,7 +92,7 @@
       "phase": "L2",
       "path": "test/test_herdr_task.py",
       "upstream_blob": "dda42467b776dbfee8038264bbd3be6f6f4a001c",
-      "sha256": "06d0447a15baa0e6a16bd267d9554a2fa04aaa281d3860e94ff1bd7d9e68e4be"
+      "sha256": "9741a6dad836e43ddd4deb064e39cea50f75f6f7fa2f76fa6a24e6477d16baba"
     },
     {
       "phase": "B2",
@@ -554,31 +554,31 @@
       "phase": "A2",
       "path": "core/tasks.js",
       "upstream_blob": "6f4cf10dc33d7a2ef977b89d93fef9e88c9bb4b1",
-      "sha256": "506a8390fbf02fdfbe1425ad0caa72018651fc8bcaa5cf65eebded69574cc87d"
+      "sha256": "fe814feba45024df7eb91d165d1f38b5316f021bbed47a2d68dea8c71a87f33c"
     },
     {
       "phase": "A2",
       "path": "core/tasks.test.js",
       "upstream_blob": "bb4e8cad408666f43ba8fc9b47698da695130db4",
-      "sha256": "2bc9524f626d38ef8f1d80b3f0512ebbd731342fe4152ca9852004879bdcde19"
+      "sha256": "1717c4e5754096c20c8f39041bdf392ef49e8345b01ce8b14b21999e452aceec"
     },
     {
       "phase": "A2",
       "path": "mods/chat/core/tasks.js",
       "upstream_blob": "6f4cf10dc33d7a2ef977b89d93fef9e88c9bb4b1",
-      "sha256": "506a8390fbf02fdfbe1425ad0caa72018651fc8bcaa5cf65eebded69574cc87d"
+      "sha256": "fe814feba45024df7eb91d165d1f38b5316f021bbed47a2d68dea8c71a87f33c"
     },
     {
       "phase": "A2",
       "path": "mods/jump/core/tasks.js",
       "upstream_blob": "6f4cf10dc33d7a2ef977b89d93fef9e88c9bb4b1",
-      "sha256": "506a8390fbf02fdfbe1425ad0caa72018651fc8bcaa5cf65eebded69574cc87d"
+      "sha256": "fe814feba45024df7eb91d165d1f38b5316f021bbed47a2d68dea8c71a87f33c"
     },
     {
       "phase": "A2",
       "path": "mods/tasks/core/tasks.js",
       "upstream_blob": "6f4cf10dc33d7a2ef977b89d93fef9e88c9bb4b1",
-      "sha256": "506a8390fbf02fdfbe1425ad0caa72018651fc8bcaa5cf65eebded69574cc87d"
+      "sha256": "fe814feba45024df7eb91d165d1f38b5316f021bbed47a2d68dea8c71a87f33c"
     },
     {
       "phase": "L2",

@@ -189,7 +189,12 @@ def ready_wait(task, live):
         return IN_QUEUE_LINE
     if task.get("auto_merge") and task.get("pr") and not task.get("merged"):
         # #743: waits calmly for a review GitHub requires
-        return APPROVAL_LINE if task["pr"].get("needs_approval") else MERGES_ITSELF
+        if task["pr"].get("needs_approval"):
+            return APPROVAL_LINE
+        # Its checks unknown: it never merges by itself (merge_now(auto=True)), so it is the person's: Ready, its
+        # Accept card says the checks can't be read. Its merge setting stays: a later full read that passes merges.
+        if not task["pr"].get("checks_unknown"):
+            return MERGES_ITSELF
     return (task.get("pr") or {}).get("wait") or None
 
 
