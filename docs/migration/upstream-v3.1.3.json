@@ -630,6 +630,12 @@
     },
     {
       "phase": "A2",
+      "path": "web/plugins/chat/markdown.tsx",
+      "upstream_blob": "2ded00d857ea092b4cba8b5442943e0329a46f0f",
+      "sha256": "acf093d8a232dcc555d71ff169fe39f9575d55cb7f89dec2a90c6a655f090497"
+    },
+    {
+      "phase": "A2",
       "path": "web/src/kernel.ts",
       "upstream_blob": "a70bc6e8f7e1d49aecbcbf931e00766b2161e623",
       "sha256": "409f4c3489916624de8fb67eab2ebeb5a79eae808446a588c3ec1f8b85fdbc11"
@@ -644,7 +650,7 @@
       "phase": "A2",
       "path": "service/chat-reach.test.ts",
       "upstream_blob": null,
-      "sha256": "b9947fe8cc72de244c35f1e843be60fea4bf7b9d0825e050aa652cd59ce2ba94"
+      "sha256": "4c8ef26419b157eaf90b37feb2e63e8730409559cc0cc8a9f0d4170b4ad48beb"
     },
     {
       "phase": "A2",

@@ -2,7 +2,7 @@
 // machine's reach map starts there; the window's own spaces (no machine) must go under this machine's herdr-core name,
 // with the route to it, never as the agent's machine's own; and a machine whose document the map read as empty still
 // lists the spaces the window knows there (SHEP-185).
-import { expect, mock, test } from "bun:test";
+import { afterAll, expect, mock, test } from "bun:test";
 import { fakeHerdr } from "./fake-herdr";
 import { fakeGpuiBase, fakeGpuiKit } from "./fake-gpui";
 
@@ -31,6 +31,14 @@ mock.module("herdr", () => fakeHerdr({ exec, hc, agents: () => [], panes: () => 
 mock.module("gpui-kit", () => fakeGpuiKit());
 mock.module("gpui-base", () => fakeGpuiBase());
 (globalThis as any).localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+
+// The window reads its spaces through its live.js, which keeps the spaces() of the first herdr stand-in it loaded with
+// (fake-herdr.ts: one per process), so another test file's may be the one there. While these tests run, live.js gives
+// this file's spaces; its own exports are put back after.
+const live = await import("../mods/chat/live.js");
+const kept = { ...live };
+mock.module("../mods/chat/live.js", () => ({ ...kept, spaces: () => SPACES }));
+afterAll(() => { mock.module("../mods/chat/live.js", () => kept); });
 
 const { default: Chat } = await import("../mods/chat/main.js");
 const rows = (list: any[]) => list.map((s) => [s.id, s.route, s.machine, s.target]);

@@ -81,7 +81,8 @@ web/plugins/places/add.tsx'''.split()),
     # the L2 sites (restart, fork, a lost session, revival) refusing anything but Personal. Earlier owners it changes are
     # A2's from here. Since PR 60's six-claim fix A2, the owner of the service's settings and main, also owns the chat's
     # suggested next message (per space, read by screen readers), the #-mention reach list's known spaces, and the
-    # kernel's store hooks' server snapshot that lets a test draw the real Composer as HTML.
+    # kernel's store hooks' server snapshot and markdown.tsx's DOM-only link hook, which let a test draw the real
+    # Composer as HTML.
     'A2': frozenset('''core/agents.js core/agents.test.js core/chat-find.test.js core/live-switch.js core/live-switch.test.js
 core/mentions.js core/mentions.test.js core/settings.js core/tasks.js core/tasks.test.js
 lib/COPIES lib/agent.js mods/chat-models/core/agents.js mods/chat/agent.js
@@ -94,7 +95,8 @@ mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/provider
 mods/tasks/bin/herdr_task/settings.py mods/tasks-menu/main.js mods/tasks/core/tasks.js mods/tasks/local.js mods/tasks/main.js service/actions.ts service/agents.ts service/compat.ts service/launch-sites.test.ts
 service/live-switch.test.ts service/main.ts service/selections.test.ts service/selections.ts service/settings.test.ts service/settings.ts service/chat-reach.test.ts
 service/spaces.ts service/voice-data.ts service/watch.ts test/test_herdr_task.py test/test_launch_admission.py test/test_restart.py test/test_providers.py web/plugins/tasks/client.tsx
-web/plugins/chat/client.tsx web/plugins/chat/composer.test.tsx web/plugins/chat/suggest.test.ts web/plugins/chat/suggest.ts
+web/plugins/chat/client.tsx web/plugins/chat/composer.test.tsx web/plugins/chat/markdown.tsx web/plugins/chat/suggest.test.ts
+web/plugins/chat/suggest.ts
 web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx web/src/kernel.ts web/src/restart.tsx'''.split()),
     # Native restart and revival: revival, a lost session at its shell and every restart go through launch admission on
     # the recorded binding (continued conversations) or today's settings (new ones, never onto another route), claimed

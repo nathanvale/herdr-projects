@@ -208,7 +208,8 @@ Where the two sides met:
     Send's description of the suggestion, its absence, the touch wording and the space's own setting
     at the call site. For that, the store's `useSyncExternalStore` hooks (`kernel.ts`, `restart.tsx`)
     pass their getter as the server snapshot too. The app mounts with `createRoot` and never hydrates,
-    so the browser never calls it.
+    so the browser never calls it. `markdown.tsx` adds DOMPurify's link hook only where DOMPurify works,
+    which is every browser; with no DOM it has no hooks to add.
   - The window's `loadReach` is tested with the native stand-ins (`fake-herdr`, `fake-gpui`). It now
     waits for this machine's herdr-core name before placing its spaces for a map that starts elsewhere.
   - The service's answer is `reachIn()` (`core/mentions.js`), tested directly. The one line in
@@ -219,10 +220,10 @@ Where the two sides met:
     reach maps across machines, a real AppArmor host or Chrome, and the installer on a real home.
 
   That makes A2 the owner of `core/mentions.js`, its test and its chat copy, of
-  `web/plugins/chat/client.tsx`, `suggest.ts` and its test, and of `web/src/kernel.ts`. A2 also owns the
+  `web/plugins/chat/client.tsx`, `markdown.tsx`, `suggest.ts` and its test, and of `web/src/kernel.ts`. A2 also owns the
   two new tests, which `AFTER_Q` names as `PR60-SIX`. N1 becomes the owner of `bin/herdr-browser` and
   `test/test_herdr_browser_libs.py`. The rest were already named in `AFTER_Q` by the v3.1.31 merge, and
-  the gate now admits 113 rows.
+  the gate now admits 114 rows.
 - SHEP-191's cross-site page link (`pageLink()`) applies before the private listener's own checks.
   Writes, sockets and the API stay refused cross-site, and the private peer's owner and host rules
   are unchanged.
