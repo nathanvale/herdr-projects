@@ -1,0 +1,141 @@
+# Shepherdr 3.0's check on GitHub's runners, on every pull request to main, foundry-base or an integration branch
+# (integrate/...) and every push to main (a merge). A task waits for its pull request's run before it merges. A branch
+# with no pull request can still be checked by hand: gh workflow run check.yml --ref <branch>.
+# candidate-readiness skips pull requests into an integration branch: it fails there by design, and a failing check
+# would hold every such pull request. It runs everywhere else, and by hand.
+#
+# One lean job (GitHub bills by the minute): the shared lib copies, every mod's JavaScript parsed, the TypeScript
+# helpers built, the service and web app typechecked, tested and built, the Python compiled, the repo's own rules (test_repo), the installer against throwaway roots
+# (test_install: install, again, update, clash, adopt, uninstall, dry run), herdr-task's commands and a report-only Fallow
+# maintainability report (docs/fallow.md).
+# herdr-app check needs Herdr's window runtime, which a runner doesn't have: mods are checked on a person's machine.
+name: Check
+
+on:
+  # no paths-ignore here: a docs-only pull request must report a check too, or it could never merge
+  pull_request:
+    branches: [main, foundry-base, 'integrate/**']
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # PR 60 at acf38bd5 hit 20 min (its Python suite took 882 s, 556 s the run before) before its last ledger rows and rerun
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: shared lib copies match lib/
+        run: python3 bin/sync-shared --check
+      - name: fixed-input source foundation and pending fork obligations
+        run: python3 bin/check-migration
+      - name: JavaScript parses
+        run: |
+          fail=0
+          for f in $(find mods lib core -name '*.js' 2>/dev/null); do
+            node --input-type=module --check < "$f" || { echo "::error file=$f::doesn't parse"; fail=1; }
+          done
+          exit $fail
+      - name: TypeScript helpers build
+        run: |
+          for f in $(find mods -name '*.ts'); do
+            bun build --no-bundle --target bun "$f" > /dev/null || exit 1
+          done
+      - name: JSON parses
+        run: for f in keys.json layouts/*.json lib/addons.json lib/features.json $(find mods -name '*.json'); do python3 -m json.tool "$f" > /dev/null || exit 1; done
+      - name: service, shared core and web app (types, tests, build)
+        run: |
+          bun install --frozen-lockfile
+          bun web/build-plugins.ts   # web/generated/ (not in git): the plugin list the app imports
+          bunx tsc --noEmit -p .
+          bun test service core web
+          bun run build
+      - name: shell scripts parse
+        # every script under plain bash (macOS's bash 3.2 is what people run; #908), and one whose first line says sh
+        # also under sh (dash here). test_repo's test_each_parses checks the same list.
+        run: |
+          for f in install.sh bin/herdr-browser guard/herdr-app $(find mods -name '*.sh'); do
+            bash -n "$f" || { echo "::error file=$f::doesn't parse under bash"; exit 1; }
+            case "$(head -1 "$f")" in *bash*) ;; *) sh -n "$f" || { echo "::error file=$f::doesn't parse under sh"; exit 1; } ;; esac
+          done
+      - name: tests (repo rules, installer, herdr-task)
+        run: python3 -m unittest discover -s test -v
+      - name: restored fork sensitivity checks (each guard removed, its regression must fail)
+        # Q: the fork proved its regressions by removing the guard (foundry.yml); the ported ones are the `ported`
+        # rows of docs/migration/q-reconciliation.json. Each source file is put back byte for byte after its run.
+        run: python3 bin/check-sensitivity
+      - name: PR 60 installer page guard sensitivity (each part removed, its installer regression must fail)
+        # PR 60 review #8: the same runner on its own ledger, apart from Q's; bin/shepherdr is put back byte for byte.
+        run: python3 bin/check-sensitivity --ledger docs/migration/pr60-sensitivity.json
+      - name: v3.1.32 switch order sensitivity (each part of the adapted SHEP-211 removed, its regression must fail)
+        # The v3.1.32 merge's own ledger, apart from Q's and PR 60's; commands.py is put back byte for byte.
+        run: python3 bin/check-sensitivity --ledger docs/migration/up32-sensitivity.json
+      - name: PR 60 after the last guard removal (every mutated file as checked out, its new regressions green again)
+        # check-sensitivity puts each file back byte for byte but runs nothing after its last row: here every file
+        # PR 60's and v3.1.32's ledgers mutate must match the checkout, and the resume nudge, missing history, switch
+        # order, revival and live switch regressions pass once more.
+        run: |
+          python3 -c "import json; print('\n'.join(sorted({r['mutation']['file'] for l in ('pr60', 'up32') for r in json.load(open(f'docs/migration/{l}-sensitivity.json'))['workflow_obligations']})))" > "$RUNNER_TEMP/pr60-files"
+          xargs git diff --exit-code -- < "$RUNNER_TEMP/pr60-files"
+          bun test ./service/live-switch.test.ts ./web/src/back.test.tsx ./service/artifacts-remote.test.ts
+          python3 -m unittest discover -s test -p test_providers.py -k ResumeNudge -k MissingHistory -k SwitchOrder -v
+          python3 -m unittest discover -s test -p test_native_restart.py -k test_a_log_revival_cant_find_here -k test_a_lost_agent_resumes_its_own_session_once -v
+      - name: installer into a brand-new throwaway home (dry run, install, doctor, uninstall)
+        run: |
+          root=$(mktemp -d)
+          ./install.sh --root "$root" --dry-run --yes
+          ./install.sh --root "$root" --yes
+          python3 bin/shepherdr doctor --root "$root"
+          python3 bin/shepherdr uninstall --root "$root"
+      - name: Fallow maintainability report (report-only)
+        # docs/fallow.md. Last, so it never stops the checks above; it reuses their node_modules and web/generated.
+        # Fallow exits 1 on findings: reported, never enforced here. 2 or above is a broken config or tool, which fails.
+        env:
+          BASE: origin/${{ github.base_ref }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          bun install --cwd tools/fallow --frozen-lockfile
+          fallow() {
+            code=0; tools/fallow/node_modules/.bin/fallow --root . "$@" || code=$?
+            if [ "$code" -ge 2 ]; then echo "::error::Fallow could not run ($*): exit $code" >&2; exit "$code"; fi
+          }
+          fallow --format github-summary --quiet >> "$GITHUB_STEP_SUMMARY"
+          if [ "$EVENT" = pull_request ]; then
+            fallow audit --base "$BASE" --format github-summary --quiet >> "$GITHUB_STEP_SUMMARY"
+            fallow audit --base "$BASE" --format github-annotations --quiet
+          fi
+
+  candidate-readiness:
+    name: candidate-readiness
+    if: github.event_name != 'pull_request' || !startsWith(github.base_ref, 'integrate/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: required fork ports and qualification block deployment readiness
+        run: python3 bin/check-migration --require-ready

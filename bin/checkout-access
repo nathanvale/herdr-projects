@@ -1,0 +1,274 @@
+#!/usr/bin/env python3
+"""Gives Claude Code sessions in this repository access to its checkouts.
+
+Claude Code resolves a relative additionalDirectories entry against each session's own folder, so
+no tracked value is right from both the main checkout and a worktree. The tracked contract,
+.claude/checkout-access.json, names folders relative to the main checkout. This writes their
+absolute paths to the main checkout's .claude/settings.local.json, which stays untracked and which
+sessions in every worktree of the repository read. It changes no other key, and no other file
+except its own record in the git directory, which says what rollback may remove.
+
+  bin/checkout-access preview    show what apply would do; changes nothing
+  bin/checkout-access apply      add the contract's folders; running it again changes nothing
+  bin/checkout-access rollback   remove only what apply added; other edits stay
+
+The file reaches every Claude session started in this repository, under any profile. Symbolic links
+in a folder's path are resolved, and a folder that leaves the repository is refused.
+"""
+import argparse
+import json
+import os
+import stat
+import subprocess
+import sys
+
+CONTRACT = os.path.join(".claude", "checkout-access.json")
+SETTINGS = os.path.join(".claude", "settings.local.json")
+RECORD = "checkout-access.json"
+CALLER_GIT = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE")
+
+
+class Refusal(Exception):
+    pass
+
+
+def git(folder, *args):
+    """Asks about folder itself: a caller's GIT_DIR would make two repositories look like one."""
+    env = {k: v for k, v in os.environ.items() if k not in CALLER_GIT}
+    result = subprocess.run(["git", "-C", folder, *args], capture_output=True, text=True, env=env)
+    return result.returncode, result.stdout.strip()
+
+
+def common_dir(folder):
+    code, out = git(folder, "rev-parse", "--git-common-dir")
+    return os.path.realpath(os.path.join(folder, out)) if code == 0 and out else None
+
+
+def main_checkout():
+    """(this script's checkout, the main checkout, the git directory they share). The caller must
+    be in the same repository: a different one has its own contract."""
+    here = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    shared = common_dir(here)
+    if shared is None or os.path.basename(shared) != ".git":
+        raise Refusal(f"{here} isn't a checkout with a .git folder.")
+    if common_dir(os.getcwd()) != shared:
+        raise Refusal(f"Run this inside the repository it belongs to: {os.path.dirname(shared)}.")
+    root = os.path.dirname(shared)
+    code, top = git(root, "rev-parse", "--show-toplevel")
+    own = git(here, "rev-parse", "--absolute-git-dir")[1]
+    if code != 0 or os.path.realpath(top) != root or (os.path.realpath(own) == shared and here != root):
+        raise Refusal(f"{root} isn't the checkout that {shared} belongs to.")
+    return here, root, shared
+
+
+def wanted(here, root):
+    """The contract's folders as absolute paths: strict subfolders of the main checkout that exist."""
+    try:
+        with open(os.path.join(here, CONTRACT)) as f:
+            contract = json.load(f)
+    except (OSError, ValueError) as e:
+        raise Refusal(f"{CONTRACT} can't be read: {e}.")
+    if not isinstance(contract, dict) or contract.get("version") != 1:
+        raise Refusal(f"{CONTRACT} isn't version 1.")
+    folders = contract.get("directories")
+    if not isinstance(folders, list) or not folders or not all(isinstance(d, str) and d for d in folders):
+        raise Refusal(f"{CONTRACT} needs a list of folders.")
+    out = []
+    for folder in folders:
+        parts = folder.split("/")
+        if os.path.isabs(folder) or folder.startswith("~") or ".." in parts or "." in parts:
+            raise Refusal(f"{folder} isn't a plain path relative to the main checkout.")
+        path = os.path.realpath(os.path.join(root, folder))
+        if not path.startswith(root + os.sep):
+            raise Refusal(f"{folder} leaves the repository, as {path}.")
+        if not os.path.isdir(path):
+            raise Refusal(f"{path} doesn't exist.")
+        out.append(path)
+    return out
+
+
+def settings_path(root):
+    """The file to write, once it's safe: a real file git neither tracks nor would add."""
+    folder, path = os.path.join(root, ".claude"), os.path.join(root, SETTINGS)
+    if os.path.islink(folder) or os.path.islink(path):
+        raise Refusal(f"{path} goes through a symbolic link, so Claude Code would treat it as the repository's.")
+    if git(root, "ls-files", "--error-unmatch", SETTINGS)[0] == 0:
+        raise Refusal(f"{path} is tracked. Its paths are this machine's, so it must stay untracked.")
+    if git(root, "check-ignore", "-q", SETTINGS)[0] != 0:
+        raise Refusal(f"Git doesn't ignore {path} in {root}, so it could be committed. "
+                      f"Merge .claude/.gitignore to the branch checked out there, or ignore the file another way.")
+    return path
+
+
+def read_settings(path):
+    """(its bytes, its parsed value, its additionalDirectories); a file that isn't there is empty.
+    Anything else that can't be understood is refused, so it is never overwritten."""
+    try:
+        with open(path, "rb") as f:
+            raw = f.read()
+    except FileNotFoundError:
+        return None, {}, []
+    except OSError as e:
+        raise Refusal(f"{path} can't be read: {e}. Nothing changed.")
+    try:
+        data = json.loads(raw.decode())
+    except ValueError as e:
+        raise Refusal(f"{path} isn't valid JSON: {e}. Nothing changed.")
+    if not isinstance(data, dict):
+        raise Refusal(f"{path} isn't a JSON object. Nothing changed.")
+    permissions = data.get("permissions", {})
+    listed = permissions.get("additionalDirectories", []) if isinstance(permissions, dict) else None
+    if not isinstance(listed, list):
+        raise Refusal(f"{path} has a permissions section this can't read. Nothing changed.")
+    return raw, data, listed
+
+
+def unchanged(path, raw):
+    if read_settings(path)[0] != raw:
+        raise Refusal(f"{path} changed while this ran. Nothing changed: run it again.")
+
+
+def replace(path, raw, data):
+    """Writes data atomically, keeping the file's mode, unless it changed since it was read."""
+    unchanged(path, raw)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    mode = 0o600 if raw is None else stat.S_IMODE(os.stat(path).st_mode)
+    temporary = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as f:
+            f.write(json.dumps(data, indent=2) + "\n")
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+
+
+def read_record(shared):
+    path = os.path.join(shared, RECORD)
+    try:
+        with open(path) as f:
+            record = json.load(f)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:
+        raise Refusal(f"This repository's record can't be read: {e}. Nothing changed.")
+    lists = isinstance(record, dict) and [record.get("added"), record.get("created")]
+    if not lists or record.get("version") != 1 or not isinstance(record.get("settings"), str) or not all(
+            isinstance(items, list) and all(isinstance(item, str) for item in items) for items in lists):
+        raise Refusal(f"{path} isn't a version 1 record. Nothing changed.")
+    return record
+
+
+def write_record(shared, record):
+    path = os.path.join(shared, RECORD)
+    with open(f"{path}.tmp", "w") as f:
+        json.dump(record, f)
+    os.replace(f"{path}.tmp", path)
+
+
+def restore_record(shared, previous):
+    if previous is None:
+        os.remove(os.path.join(shared, RECORD))
+    else:
+        write_record(shared, previous)
+
+
+def moved(shared, record, path):
+    """The record belongs to another path, so this can't tell what's safe to remove from this one."""
+    return Refusal(f"This repository's record names {record['settings']}, not {path}, so the repository moved. Nothing "
+                   f"changed. Remove these entries from {path} by hand: {', '.join(record['added'])}. "
+                   f"Then delete {os.path.join(shared, RECORD)}.")
+
+
+def plan():
+    here, root, shared = main_checkout()
+    folders = wanted(here, root)
+    path = settings_path(root)
+    raw, data, listed = read_settings(path)
+    return root, shared, path, raw, data, listed, [d for d in folders if d not in listed], [d for d in folders if d in listed]
+
+
+def preview(_):
+    root, _shared, path, raw, _data, _listed, add, present = plan()
+    print(f"Repository: {root}")
+    print(f"File: {path} ({'exists' if raw is not None else 'would be created'}, untracked)")
+    for folder in add:
+        print(f"Would add: {folder}")
+    for folder in present:
+        print(f"Already listed: {folder}")
+    print("Reaches every Claude session started in this repository, under any profile.")
+
+
+def apply(_):
+    root, shared, path, raw, data, listed, add, present = plan()
+    if not add:
+        print(f"Nothing to do: {path} already lists {', '.join(present)}.")
+        return
+    previous = read_record(shared)
+    record = previous or {"version": 1, "settings": path, "added": [], "created": []}
+    if record["settings"] != path:
+        raise moved(shared, record, path)
+    created = [name for name, missing in (("file", raw is None), ("permissions", "permissions" not in data),
+                                          ("additionalDirectories", "additionalDirectories" not in data.get("permissions", {})))
+               if missing and name not in record["created"]]
+    # The record goes first: after a crash here, rollback finds nothing of its own and changes nothing.
+    write_record(shared, {**record, "added": sorted({*record["added"], *add}), "created": record["created"] + created})
+    try:
+        replace(path, raw, {**data, "permissions": {**data.get("permissions", {}), "additionalDirectories": listed + add}})
+    except (Refusal, OSError):
+        restore_record(shared, previous)
+        raise
+    for folder in add:
+        print(f"Added: {folder}")
+    print(f"Saved in {path}, which stays untracked.")
+
+
+def rollback(_):
+    _here, _root, shared = main_checkout()
+    record = read_record(shared)
+    if record is None:
+        print("Nothing to roll back.")
+        return
+    path = os.path.join(os.path.dirname(shared), SETTINGS)
+    if record["settings"] != path:
+        raise moved(shared, record, path)
+    raw, data, listed = read_settings(path)
+    removed = [d for d in listed if d in record["added"]]
+    kept = [d for d in listed if d not in record["added"]]
+    if raw is not None:
+        permissions = {**data.get("permissions", {}), "additionalDirectories": kept}
+        if not kept and "additionalDirectories" in record["created"]:
+            del permissions["additionalDirectories"]
+        data = {**data, "permissions": permissions}
+        if not permissions and "permissions" in record["created"]:
+            del data["permissions"]
+        if not data and "file" in record["created"]:
+            unchanged(path, raw)
+            os.remove(path)
+        elif removed:
+            replace(path, raw, data)
+    os.remove(os.path.join(shared, RECORD))
+    for folder in removed:
+        print(f"Removed: {folder}")
+    print(f"Kept in {path}: everything else." if os.path.exists(path) else f"Removed {path}, which this had created.")
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="checkout-access", description=__doc__.split("\n", 1)[0])
+    commands = parser.add_subparsers(dest="command", required=True)
+    for name, run, words in (("preview", preview, "show what apply would do; changes nothing"),
+                             ("apply", apply, "add the contract's folders"),
+                             ("rollback", rollback, "remove only what apply added")):
+        commands.add_parser(name, help=words).set_defaults(run=run)
+    args = parser.parse_args()
+    try:
+        args.run(args)
+    except (Refusal, OSError) as e:
+        print(f"checkout-access: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

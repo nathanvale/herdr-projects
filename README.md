@@ -1,142 +1,168 @@
-<p align="center"><img src="https://img.shields.io/badge/Herdr%20Projects-Projects%20for%20Herdr-2ea44f?style=flat-square&labelColor=24292f" alt="Herdr Projects | Projects for Herdr" /></p>
+<p align="center"><img src="https://img.shields.io/badge/Shepherdr-Mission%20control%20for%20herdr--core-c2410c?style=flat-square&labelColor=09090b" alt="Shepherdr | Mission control for herdr-core" /></p>
 
-<h3 align="center">Run a whole project across your coding agents without handing each one its task or keeping track of who is doing what</h3>
+<h3 align="center">Manage hundreds of coding agents across your machines from one Herdr window, without the cognitive overload</h3>
 
-<p align="center">Herdr Projects lets you run a larger piece of work in <a href="https://herdr.dev">Herdr</a> when one agent isn't enough and managing five by hand is a job in itself. You talk to one coordinator agent. It starts a separate agent for each task on its own branch, gives every one of them the same goal, instructions and memory, and Herdr's own sidebar shows you which threads need you, which are ready for review and which are still working.</p>
+<p align="center">Shepherdr is mission control for <a href="https://herdr.dev">herdr-core</a>, as a layout for the Herdr app: your spaces in a sidebar, each with its own Assistant. You tell a space's Assistant what needs doing and it turns it into tasks. Every task runs as an ordinary herdr-core agent in its own git worktree, can be reviewed by fresh eyes before it merges, and asks you on a card when it needs a decision. The Tasks panel shows which need you, which are ready and which are still working.</p>
 
-<p align="center"><a href="https://github.com/eliasstravik/herdr-projects/blob/main/assets/herdr-projects-launch.mp4"><img src="assets/herdr-projects-launch.webp" width="88%" alt="Animation: you tell a coordinator what you want, it starts three threads that each work on their own branch, and an overview groups them as ready for review, waiting on you, and working" /></a></p>
+<p align="center"><a href="https://github.com/eliasstravik/shepherdr/blob/main/assets/shepherdr-launch.mp4"><img src="assets/shepherdr-launch.webp" width="88%" alt="Animation: Shepherdr on a desktop and a phone; you ask the gtm space's coordinator, it adds two tasks that run in parallel, each in its own worktree, reviewed and merged; then a voice call with the home space asks what needs you today" /></a></p>
 
-<p align="center"><a href="https://github.com/eliasstravik/herdr-projects/blob/main/docs/getting-started.md"><img src="assets/buttons/open-your-first-project.svg" alt="Open your first project" /></a></p>
+<p align="center"><a href="https://github.com/eliasstravik/shepherdr/blob/main/docs/install.md"><img src="assets/buttons/install-shepherdr.svg" alt="Install Shepherdr" /></a></p>
 
-<p align="center"><sub>✓&nbsp;Free,&nbsp;MIT&nbsp;licensed &nbsp; ✓&nbsp;Runs&nbsp;on&nbsp;your&nbsp;machines,&nbsp;no&nbsp;hosted&nbsp;service &nbsp; ✓&nbsp;macOS&nbsp;and&nbsp;Linux,&nbsp;Herdr&nbsp;0.9.1+</sub></p>
+<p align="center"><sub>✓&nbsp;Free,&nbsp;MIT&nbsp;licensed &nbsp; ✓&nbsp;Runs&nbsp;on&nbsp;your&nbsp;machines,&nbsp;inside&nbsp;the&nbsp;Herdr&nbsp;app &nbsp; ✓&nbsp;Shepherdr&nbsp;3.1.33,&nbsp;herdr-app&nbsp;0.1.12+</sub></p>
 
 <br />
 
-## Keep one conversation going while the work happens in parallel
+## Keep every project moving while you're away from the keyboard
 
-The coordinator never does the work itself, so it's always free to answer you. Each task runs in its own thread: a separate agent in its own git worktree and branch, or in its own folder when there's no repository. You read reports and answer the threads that need you instead of briefing every agent yourself.
+The Herdr app is the overview and the remote control; herdr-core is the engine. A space is a folder on a machine with its own Assistant, and each task gets its own agent on its own branch in a git worktree. Agents work outside your checkout, and it only gets main moved forward when a task merges. That's a rule agents follow, not a lock: an Assistant starts there and could still edit it. You answer the cards that need you and let the rest run, and the agents keep working in herdr-core when the window closes.
 
-## Choose between briefing each agent by hand, one long agent session, a cloud projects product, or a coordinator in Herdr
+## Choose between briefing each agent by hand, one long agent session, a cloud agents product, or mission control for herdr-core
 
-| | **Herdr Projects** | Briefing agents by hand | One long agent session | Cloud projects products |
+| | **Shepherdr** | Briefing agents by hand | One long agent session | Cloud agents products |
 |---|:---:|:---:|:---:|:---:|
 | **No extra software fee** | ✅ | ✅ | ✅ | ❌ |
 | **Parallel tasks on separate branches** | ✅ | ✅ | ❌ | ✅ |
-| **Same instructions and memory for every task** | ✅ | ❌ | ✅ | ✅ |
-| **One conversation that stays free to answer** | ✅ | ❌ | ❌ | ✅ |
-| **Threads grouped by what needs you** | ✅ | ❌ | ❌ | ✅ |
+| **Same rules for every agent** | ✅ | ❌ | ✅ | ✅ |
+| **Fresh eyes review each task before it merges (one setting)** | ✅ | ❌ | ❌ | ❌ |
+| **Questions reach you as cards and alerts** | ✅ | ❌ | ❌ | ✅ |
+| **Several machines from one screen** | ✅ | ❌ | ❌ | ✅ |
 | **Runs on your own machines** | ✅ | ✅ | ✅ | ❌ |
-| **Adopts an agent pane you already started** | ✅ | ✅ | ❌ | ❌ |
 | **Works with the agent CLI you already use** | ✅ | ✅ | ✅ | ❌ |
 | **Runs with no machine of yours switched on** | ❌ | ❌ | ❌ | ✅ |
 
-Keep your attention on decisions. Herdr Projects starts and tracks the threads, your agents do the work, and you choose what to review, answer, or merge.
+Keep your attention on decisions. Shepherdr starts, follows and puts away the tasks, your agents do the work, and you choose what to answer, approve, or merge.
 
-## Tell the coordinator what you want. See which thread needs you in the sidebar.
+## Tell the Assistant what you want. See which task needs you at a glance.
 
-### 📈 See every thread at a glance
+### 📈 See every task at a glance
 
-Each thread's sidebar row shows its id and title, and a line under it with what Herdr's own state word does not say (`review · PR #4`, `~40%`) and the agent's own activity. Agents and spaces are grouped by project: the project's home space and its coordinator head the group with the project's name in bold, then its threads with what needs you first and its other spaces as Herdr's own rows; everything else comes last. The tab bar says `projects: 2 need you`. `prefix+a` opens one popup with threads, tasks, inbox, routines and settings, where every thread's own list of next steps is a number key away.
+Each space's Assistant chat is in the middle and its tasks on the right, by what they need: `Needs you`, `Ready`, `Merging`, `Working`, `Queued`, `Scheduled`, `To do` and `Done`. A working task's dot fills like a pie with its % done and its minutes left, and its second line says what it is doing (`Fixing the two failing tests`). The sidebar groups your spaces by machine, with Pinned and sections of your own, and marks the ones that wait on you. A task opens in the panel with its chat, terminal, files, diff, pull request and browser; Herdr's own panes and splits work as always.
+
+### 🧩 Make it yours: everything is an add-on
+
+Tasks, Assistants, chat, artifacts, voice, reactions, the task browser, Autopilot, other machines: every part of Shepherdr is an add-on made of Herdr mods, listed in one file with what it needs. Switch Artifacts, Voice, Reactions, the Task browser, Autopilot, the sync to other machines or the web app off in Shepherdr settings → Window; the rest is always on in 3.1.33. Your own mods and layouts sit beside Shepherdr's in your Herdr folder and are never touched: an update replaces only the files it put there and you didn't change, and keeps a copy of anything it replaces. Herdr's themes and keys stay yours. [Add-ons](docs/addons.md) lists each one and its switch.
 
 ### ⚡ Stop briefing every agent yourself
 
-Say what you want once. The coordinator proposes threads and waits for your go-ahead, then each thread starts from a brief with the project's goal, your standing instructions, the project's memory and its task, on the agent you pick (Claude Code, Codex, OpenCode or any other kind Herdr runs). Lessons a thread reports under `## Remember` flow back into memory for the next one.
+Write what needs doing to a space's Assistant: it makes it a task or several with `herdr-task`, each with a brief and a Settings block that says how it is reviewed and merged. Each agent starts on Claude Code or Codex, in a worktree of its own, at once or as soon as the machine has room. Want more control? Ask for it "for later", "after SHE-12", or "ask me before merging". Turn on Autopilot in the Assistant's header and it works on its own between your messages, from a heartbeat you write, or add automations that start tasks on a schedule.
 
-### 💬 Know when a thread needs an answer
+### 💬 Know when a task needs an answer
 
-Agents report their own progress, so a thread that asked you something shows `needs you` even when it looks idle, and you get a notification that names the project and the thread. A background ticker follows pull requests: failing checks and review comments go back to the thread to fix, and a merged pull request resolves the thread and removes its worktree and branch once its agent has finished (it may still be tagging or deploying).
+An agent that asks you something, wants a permission or a plan approved shows under `Needs you`, and its question comes as a card you answer with a click, in its chat or from the Assistant's. Each task also shows its live terminal, files, diff, pull request and its own browser you can take over. Reports and draft screens come as artifacts you mark up beside the chat, the Accept card shows a task's proof before you approve it, and you can dictate or call an Assistant by voice.
 
-## Open your first project in three steps
+## Open Shepherdr in three steps
 
 <table>
 <tr>
-<td align="center" valign="top" width="33%"><h3>1️⃣</h3><b>Install and configure</b><br /><sub>Run <code>herdr plugin install eliasstravik/herdr-projects</code>, then <code>herdr-projects configure</code> once for the sidebar rows, the popup key, the progress hooks and the <code>/autoproject</code> skill.</sub></td>
-<td align="center" valign="top" width="33%"><h3>2️⃣</h3><b>Create and open a project</b><br /><sub>Run <code>herdr plugin action invoke new --plugin herdr-projects</code>, or <code>herdr-projects new "Billing" --repo ~/dev/app</code> then <code>herdr-projects open billing</code>. A coordinator agent starts in the project's folder and primes itself from its <code>AGENTS.md</code>.</sub></td>
-<td align="center" valign="top" width="33%"><h3>3️⃣</h3><b>Tell it what you want</b><br /><sub>Describe the work in the coordinator's pane. It suggests threads, you say go ahead, and the sidebar shows each thread's state as it works.</sub></td>
+<td align="center" valign="top" width="33%"><h3>1️⃣</h3><b>Install it into Herdr</b><br /><sub>With the Herdr app opened once, clone this repo and run <code>./install.sh --dry-run</code> to see what it does, then <code>./install.sh</code>. <code>./install.sh --web</code> installs the web app alone.</sub></td>
+<td align="center" valign="top" width="33%"><h3>2️⃣</h3><b>Check it and switch to it</b><br /><sub>Run <code>shepherdr doctor</code>. In Herdr, <code>Ctrl+Shift+L</code> picks the Shepherdr layout.</sub></td>
+<td align="center" valign="top" width="33%"><h3>3️⃣</h3><b>Write to an Assistant</b><br /><sub>Make a space for a folder (<code>Ctrl+Shift+N</code>) and say what needs doing. <code>Ctrl+K</code> jumps anywhere and <code>Ctrl+Shift+?</code> shows every key.</sub></td>
 </tr>
 </table>
+
+[The docs](docs/) have the full install, the add-ons, upgrading from 2.x and how to develop it.
 
 ## Get everything included, free
 
 <table align="center">
 <tr>
-<td align="center" valign="top"><sub>For developers who run coding agents in Herdr on macOS or Linux</sub><br /><h2>Free</h2><div align="left">&nbsp;&nbsp;&nbsp;✓&nbsp; A coordinator that delegates and never does the work itself<br />&nbsp;&nbsp;&nbsp;✓&nbsp; Threads on their own worktree and branch, or in a tab<br />&nbsp;&nbsp;&nbsp;✓&nbsp; Shared instructions and memory in every brief<br />&nbsp;&nbsp;&nbsp;✓&nbsp; What needs you, in the sidebar, the tab bar and one popup<br />&nbsp;&nbsp;&nbsp;✓&nbsp; Pull request follow-up, routines, cleanup after a merge<br />&nbsp;&nbsp;&nbsp;✓&nbsp; Threads on your saved SSH machines, reports copied home</div></td>
+<td align="center" valign="top"><sub>For developers who run coding agents with the Herdr app on macOS or Linux</sub><br /><h2>Free</h2><div align="left">&nbsp;&nbsp;&nbsp;✓&nbsp; An Assistant for every space that turns what you write into tasks<br />&nbsp;&nbsp;&nbsp;✓&nbsp; Every task on its own worktree and branch, with its own agent<br />&nbsp;&nbsp;&nbsp;✓&nbsp; A review by fresh eyes before it merges, through a pull request on GitHub<br />&nbsp;&nbsp;&nbsp;✓&nbsp; Cards, alerts, dictation and voice calls in the chat<br />&nbsp;&nbsp;&nbsp;✓&nbsp; Every machine you added to herdr-core, from one window<br />&nbsp;&nbsp;&nbsp;✓&nbsp; Your own mods, layouts and keys, kept through every update<br />&nbsp;&nbsp;&nbsp;✓&nbsp; Autopilot, automations, artifacts, secrets and a browser per task</div></td>
 </tr>
 <tr>
-<td align="center"><a href="https://github.com/eliasstravik/herdr-projects/blob/main/docs/getting-started.md"><img src="assets/buttons/open-your-first-project.svg" alt="Open your first project" /></a></td>
+<td align="center"><a href="https://github.com/eliasstravik/shepherdr/blob/main/docs/install.md"><img src="assets/buttons/install-shepherdr.svg" alt="Install Shepherdr" /></a></td>
 </tr>
 </table>
 
 ## Updating
 
-**Once, if you're on 0.2.2 or older** (`herdr-projects --version`), which has no `update` yet:
-
 ```bash
-herdr-projects ticker stop
-herdr plugin install eliasstravik/herdr-projects
-herdr-projects doctor --fix
-herdr-projects ticker start
+git pull --ff-only
+shepherdr update
+shepherdr doctor
 ```
 
-Herdr reinstalls the plugin in the same folder, and the plugin keeps your `~/.local/bin/herdr-projects` link pointing at it. If you linked a local checkout with `herdr plugin link` instead, run `git pull` and `sh scripts/install.sh` in it in place of the `herdr plugin install` line.
-
-**From then on:**
-
-```bash
-herdr-projects update           # fetch, install the new binary, doctor --fix, restart the ticker
-herdr-projects update --check   # only print the installed and the newest version
-```
-
-`update` works for both install types and changes nothing when you're already on the newest release. Its `doctor --fix` also links the `autoproject` skill for each harness you configured, so existing users don't need to run `configure` again. A linked checkout must be on `main` with no uncommitted changes, or `update` stops and says why. When the install fails, the old version stays installed and the ticker is restarted. `doctor` says when a newer version is out.
+Shepherdr doesn't update itself: it never follows main, so a merge can't change what runs. An update replaces only the files it put there that you haven't changed (yours stay, with the new copy beside them as `.new`, or in the backup when the mod file changed too), one mod at a time, and keeps a backup of anything it replaces. Agents keep running in herdr-core meanwhile. Until `shepherdr doctor` says the install is whole, your other machines don't get the new helpers. [Upgrading](docs/upgrading.md) has the details.
 
 ## Get your questions answered
 
 ### Do I need to know how to code?
 
-You need to be comfortable in a terminal. The plugin downloads its own prebuilt binary on install, and a project is a plain folder of Markdown and TOML files, but you never have to edit them: everything changes by asking the coordinator or from the popup. You'll need macOS or Linux, Herdr 0.9.1 or newer, Git, and an agent CLI Herdr can start, such as Claude Code. Rust/Cargo is needed only when there is no prebuilt binary for your machine. The [getting-started guide](docs/getting-started.md) covers the prerequisites.
+You need to be comfortable in a terminal for the install. After that everything happens in the Herdr window or the web app: you write to Assistants and answer cards, and Shepherdr settings holds the few defaults. You'll need macOS or Linux, the Herdr app 0.1.12 or newer with herdr-core 0.1.17 or newer, Python 3.8+, Git, and Claude Code or Codex, installed and signed in. `gh` (pull requests), agent-browser and Chrome for the task browser, and an ElevenLabs key for voice and dictation are optional; the web app needs Bun and Tailscale. [Install](docs/install.md) covers the prerequisites.
 
-### How do I check that Herdr Projects is running?
+### Can my coding agent install it for me?
 
-Run:
+Yes. Give it this, in the Herdr app's terminal or any agent session on that machine:
 
-```bash
-herdr plugin action invoke doctor --plugin herdr-projects
+```text
+Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/eliasstravik/shepherdr/tree/main
 ```
 
-The command checks the Herdr version, the tools it calls, the ticker, and each project's session. The [getting-started guide](docs/getting-started.md#check-your-setup) walks through a project that won't open, a thread that doesn't start, and a ticker that isn't running.
+### Can I use it without the Herdr app?
 
-### What permissions does the coordinator need?
+Yes: herdr-core runs the agents and the web app is your window, in a browser on your tailnet. Give your agent this:
 
-It runs the `herdr-projects` binary every turn, so you'll want to allow-list it in your agent **by subcommand, never the bare binary**. Allow reading and steering (`skill`, `context`, `report`, `inbox done`, `thread list`, `thread prompt`, `thread next`, `thread read`, `thread keys` and the like) and leave `thread resolve`, `sweep`, `delete`, `rename`, `routine approve` and `configure` on your agent's normal permission prompt. Leave `thread start` off the list too unless you've set `start_threads = "auto"`: then every thread start is a real confirmation. [Operations](docs/operations.md#the-allow-list-for-your-coordinator) has the exact patterns.
+```text
+Install herdr-core (https://herdr.dev), Tailscale (signed in), python3, git and Claude Code or Codex. Then clone https://github.com/eliasstravik/shepherdr, read its docs/install.md and docs/web.md, and install only the web app with ./install.sh --web. Check it with shepherdr doctor, then give me the link from shepherdr web status. Keep it private to my tailnet: never Tailscale Funnel.
+```
 
-### Does the plugin send my project to a hosted service?
+### How do I check that Shepherdr is installed right?
 
-No. A project is a folder on your machine, the plugin talks to your local Herdr session, and remote threads use your own SSH machines. Your agent CLI still uses its own service as usual.
+Run this: it checks every file it installed, the helper links, the shared copies and the programs it needs, and says what's missing.
+
+```bash
+shepherdr doctor
+```
+
+Shepherdr settings → Machines says how each machine is, and each machine shows its load, memory and disk in the sidebar.
+
+### What permissions do the agents get?
+
+**Codex and Claude Code start with your own permission settings**, so each machine decides; Shepherdr's installer adds only its hooks (with a backup, and `--no-hooks` leaves them out), and herdr-task allows its own commands. A permission prompt shows the task under `Needs you` (`Asks permission`), and a CLI's own startup screens (trusting a folder, signing in, Codex's hooks) come to the chat as a card. The brief's rules and the review are guidance, not a sandbox.
+
+### Does Shepherdr send my work to a hosted service?
+
+No. Shepherdr runs inside the Herdr app on your own machine, keeps its files there, talks to your local herdr-core, and reaches your other machines over herdr-core's remote and your own SSH. The web app is served from your own machine to your tailnet only. Your agent CLI still uses its own service as usual, `gh` talks to GitHub, and voice calls and dictation go through ElevenLabs if you set them up.
 
 ### Will it touch my branches or worktrees on its own?
 
-Only to clean up after a thread is resolved, which happens when you resolve it, when its pull request is merged, or after `auto_resolve_days` idle. Then it removes the thread's worktree (never with force, so uncommitted changes keep it) and, only if the pull request is merged, the local branch. The thread's report and files are copied home first and always kept. It never merges or pushes itself: a merge happens when you send a thread its own "Merge the PR" line and the thread does it with its own tools.
+Only the ones it made. Every task works in its own worktree, on its own branch `work/<n>-<slug>`, never in your checkout; a merge only moves your main forward (fast-forward, or a squash merge when there's no GitHub remote). By default a task asks you first: you accept it from the Tasks panel, which merges it; Shepherdr settings → Tasks → Merge can let it merge on its own, or say so for one task. On GitHub it merges through the task's pull request. When a task is done its worktree and branch are removed; one with uncommitted or unmerged work stays, and Shepherdr says so.
 
-### Where does my project live?
+### Where do my tasks live?
 
-In `~/.herdr-projects/<name>/` by default: `PROJECT.md` for your settings and standing instructions, `AGENTS.md` for priming the coordinator, `MEMORY.md` and `memory/` for what the coordinator remembers, `TASKS.md` for the task list the coordinator keeps for you (each task assigned to you, a person, an agent profile, another machine or both: [task owners](docs/operations.md#task-owners)), `uploads/` for files you give the threads, `threads/` for thread records and reports, and `library/` for files threads produced. The safety settings live outside it, in `~/.config/herdr-projects/config.toml`, where no agent works. [Operations](docs/operations.md#where-things-live) lists every file.
+In Shepherdr's own folders on each machine: tasks, artifacts, task worktrees and the secrets vault in `~/.local/share/shepherdr`, Shepherdr's settings in `~/.config/shepherdr`, task browsers and the service's files in `~/.local/state/shepherdr` (`shepherdr where` lists them; older ones stay in `~/.herdr`, which links there). The window's own state (chat drafts, attachments) is in your Herdr folder's `data/`. Uninstalling never touches either. [Develop](docs/develop.md) covers the code.
 
-### Do I have to start every thread through the coordinator?
+### Can I use several machines?
 
-No. Run `herdr-projects thread start` yourself, or take an agent pane you already started and make it a thread with `thread adopt`. The `herdr-projects adopt-workspace` command turns the workspace you're in into a project with its agent as the first thread.
+Yes. Shepherdr is installed once, in the Herdr app on your main machine. Every other machine you add to herdr-core (`hc machine add <ssh target>`, or Add machine in the sidebar) shows up in the sidebar on its own, with its spaces, tasks and Assistants. herdr-task copies itself, its helpers and the role instructions there, and keeps them current. It needs herdr-core, Python, Git and your agent CLI, and nothing of Shepherdr's installed by hand. The web app can be served from one of them that stays on (a Mac mini, a cloud VM): Shepherdr settings → Web → Serve from, or `shepherdr web serve-from <machine>`; [Web](docs/web.md) has how.
+
+### Do I have to start every task through an Assistant?
+
+Mostly. There's no new-task button: you ask a space's Assistant in your own words and it adds the task (`herdr-task add`), so every one gets a brief and the same rules. An automation adds tasks on a schedule or when something happens, such as a merge.
 
 ### What if the safety settings aren't enough?
 
-They are soft. By default the coordinator proposes threads and waits (until you turn on yolo mode in the popup), thread agents keep their normal permission prompts, which the coordinator answers for plainly in-task actions and brings to you otherwise (it may choose their model, never their launch flags), and routines may not run shell commands until you enable them and approve each command in a terminal. But agents have a shell: one that runs with skip-permission arguments can edit those files, a thread can prompt the coordinator pretending to be you, an approved routine command covers its text and not the scripts it calls, and whatever reaches memory is repeated in every later brief. [Operations](docs/operations.md#what-the-safety-settings-do-and-dont-stop) says plainly what each guard stops and what it doesn't.
+They are soft. A task's review, merge and rules are lines in its brief, and its agent follows them. Every agent has a shell, and a CLI's own sandbox doesn't make it a safe boundary: one can do anything you can, a review is another agent's judgement and not a proof, and Autopilot and automations run with nobody watching. Keep Merge on "ask me first" for a yes before anything lands, and keep Autopilot off where you want to decide every step.
 
 ### What does it cost?
 
-Herdr Projects is free and [MIT licensed](LICENSE). Your agent CLI's usual usage charges still apply: every thread is a full agent session, and the coordinator spends tokens each turn reading its digest.
+Shepherdr is free and [MIT licensed](LICENSE). Your agent CLI's usual usage charges still apply: every task is a full agent session (plus a review when it's on), each Assistant spends tokens on each message and on Autopilot's heartbeat, and voice calls use your ElevenLabs account.
 
-## Open your first project in three steps
+### What is herdr-core?
 
-<p align="center">Your first project starts with an install, a name, and one sentence about what you want. Herdr Projects starts the threads and keeps them in view. You choose what to review and what to merge.</p>
+The small engine under the Herdr app, with the `hc` command. It holds your agents' terminals, keeps them running when the window closes, and links your machines. The Herdr app is its desktop window, and Shepherdr is a layout and a set of mods inside that window.
 
-<p align="center"><a href="https://github.com/eliasstravik/herdr-projects/blob/main/docs/getting-started.md"><img src="assets/buttons/open-your-first-project.svg" alt="Open your first project" /></a></p>
+### How is 3.0 different from 2.1?
 
-<p align="center"><sub>✓&nbsp;Free,&nbsp;MIT&nbsp;licensed &nbsp; ✓&nbsp;Runs&nbsp;on&nbsp;your&nbsp;machines,&nbsp;no&nbsp;hosted&nbsp;service &nbsp; ✓&nbsp;macOS&nbsp;and&nbsp;Linux,&nbsp;Herdr&nbsp;0.9.1+</sub></p>
+2.1 was its own web app beside herdr-core, opened in a browser over your tailnet. 3.0 lives inside the Herdr desktop app: a layout and its mods, installed with `./install.sh` and listed on herdr.dev. The ideas are the same (spaces, an Assistant per space, tasks in worktrees, cards, artifacts, Autopilot), but it's a new build: 2.1's data in `~/.shepherdr` isn't carried over, and 2.1's plugins don't run in it. 3.1 brings back a web app for phone and tablet, on the same data as the window.
+
+### I'm on 2.1 or 2.0. Where did my version go?
+
+Nowhere: 2.1 is on the `v2.1` branch and 2.0 on the `v2.0` branch, each with its own README, and 3.0 never touches their data. Don't pull main into them or update them from main. [Upgrading](docs/upgrading.md) has the steps when you want 3.0.
+
+## Open Shepherdr in three steps
+
+<p align="center">Shepherdr starts with an install, one layout switch, and one sentence to an Assistant about what needs doing. It starts the agents, follows their work and brings what needs you to the top. You choose what to answer and what to merge.</p>
+
+<p align="center"><a href="https://github.com/eliasstravik/shepherdr/blob/main/docs/install.md"><img src="assets/buttons/install-shepherdr.svg" alt="Install Shepherdr" /></a></p>
+
+<p align="center"><sub>✓&nbsp;Free,&nbsp;MIT&nbsp;licensed &nbsp; ✓&nbsp;Runs&nbsp;on&nbsp;your&nbsp;machines,&nbsp;inside&nbsp;the&nbsp;Herdr&nbsp;app &nbsp; ✓&nbsp;Shepherdr&nbsp;3.1.33,&nbsp;herdr-app&nbsp;0.1.12+</sub></p>

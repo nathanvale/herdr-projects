@@ -1,0 +1,2662 @@
+{
+ "schema": 1,
+ "evidence_classes": {
+  "process-observed-in-ci": "At least one named test drives herdr-task as a process (its suite runs the CLI as a child with stand-ins), and every named test passed in the candidate CI run.",
+  "ci-executed": "Every named test passed in the candidate CI run, in-module or through a service or core module, not the public process.",
+  "held": "No native regression; the row says what is missing and who owns it (held_for)."
+ },
+ "about": "Q's reconciliation of the integrated candidate: every required behavior, every removed or changed fork test file's declared cases and every test step of the fork's workflows at F, each with the native regressions that now carry it or an explicit hold. bin/check-migration enforces its completeness; nothing here qualifies a requirement.",
+ "candidate": {
+  "commit": "d53e014bbaf74c0dfb3b750f402968d490eafcfb",
+  "tree": "d15892f9fc2ccd71e7d73c5ca22a4b8db9099c75",
+  "ci": {
+   "workflow": "Check",
+   "run": 42637636997,
+   "event": "pull_request",
+   "pull_request": 57,
+   "head": "4fa14d3c3ebbe882e9eaa209170d46cd679c7fb8",
+   "checked_out": "03b73159c6a89e78c78e76fa0191879706efa7f4",
+   "tree": "d15892f9fc2ccd71e7d73c5ca22a4b8db9099c75",
+   "check": "success",
+   "candidate_readiness": "skipped: a pull request into integrate/ (by design)",
+   "bun": {
+    "pass": 577,
+    "fail": 0,
+    "skip": 0,
+    "files": 71
+   },
+   "python": {
+    "ran": 715,
+    "skipped": 1,
+    "failures": 0,
+    "skip": "test_herdr_task's negative control at 8a44f942, absent after a squash merge; it ran on PR 29's own CI"
+   },
+   "check_migration": {
+    "phase": "L2",
+    "requirements": 40,
+    "file_dispositions": 121,
+    "native_files": 861,
+    "source_deltas": 94
+   }
+  }
+ },
+ "requirements": [
+  {
+   "id": "github-defaults",
+   "status": "reuse-unqualified",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_forge.py",
+     "tests": [
+      "test_a_legacy_pull_request_merges_on_github",
+      "test_with_gh_host_set_it_publishes_there"
+     ]
+    },
+    {
+     "path": "test/test_native_publication.py",
+     "tests": [
+      "test_an_equivalent_base_is_adopted_and_becomes_the_tasks"
+     ]
+    }
+   ],
+   "held_for": "native qualification on a real execution host",
+   "missing": "Reuse of native GitHub publication is unqualified: a real gh, account and repository on the execution host have not run Ready, Accept and merge on this candidate."
+  },
+  {
+   "id": "forge-identity",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_forge.py",
+     "tests": [
+      "test_another_providers_pull_request_reaches_no_host",
+      "test_one_saved_for_another_host_reaches_no_host",
+      "test_one_from_another_repository_or_host_is_never_recorded"
+     ]
+    },
+    {
+     "path": "test/test_bitbucket.py",
+     "tests": [
+      "test_a_provider_without_an_adapter_reaches_no_host",
+      "test_a_fork_or_another_repositorys_answer_is_not_this_pull_request"
+     ]
+    }
+   ],
+   "held_for": "native qualification on a real execution host",
+   "missing": "The service and window Pull request views are source-inspected only; Bitbucket and GitHub Enterprise identities have not been read from real hosts."
+  },
+  {
+   "id": "bitbucket-credentials",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_bitbucket.py",
+     "tests": [
+      "test_no_usable_answer_from_the_helper_sends_nothing",
+      "test_a_refused_token_is_never_retried_another_way",
+      "test_the_token_never_shows"
+     ]
+    }
+   ],
+   "held_for": "native qualification on a real execution host",
+   "missing": "A real Git credential helper, Bitbucket account and both execution hosts (native qualification)."
+  },
+  {
+   "id": "bitbucket-reads",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_bitbucket.py",
+     "tests": [
+      "test_every_page_of_its_heads_statuses_is_read_on_the_hosts_token",
+      "test_empty_pending_failed_and_passed_stay_apart",
+      "test_a_read_that_isnt_whole_counts_for_nothing",
+      "test_missing_moved_and_another_head_are_not_checks"
+     ]
+    }
+   ],
+   "held_for": "native qualification on a real execution host",
+   "missing": "Bitbucket's real answers (abbreviated hashes, the commit's repository field, status fields) against a real repository."
+  },
+  {
+   "id": "bitbucket-publication",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_bitbucket_publication.py",
+     "tests": [
+      "test_ready_pushes_opens_a_draft_and_prepares_it_keeping_what_people_set",
+      "test_preflight_refuses_before_any_effect",
+      "test_a_remote_changed_before_the_push_or_the_write_stops_it"
+     ]
+    }
+   ],
+   "held_for": "native qualification on a real execution host",
+   "missing": "A real push, draft and preparation on Bitbucket; the list query's q and branch encoding as Bitbucket answers them."
+  },
+  {
+   "id": "bitbucket-current-fields",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_bitbucket_publication.py",
+     "tests": [
+      "test_ready_pushes_opens_a_draft_and_prepares_it_keeping_what_people_set"
+     ]
+    }
+   ],
+   "held_for": "native qualification on a real execution host",
+   "missing": "Bitbucket's real draft, reviewer and close_source_branch fields and its title and description bounds."
+  },
+  {
+   "id": "bitbucket-push-facts",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_bitbucket_publication.py",
+     "tests": [
+      "test_a_push_url_git_would_rewrite_again_is_no_frozen_route",
+      "test_a_push_git_doesnt_answer_for_keeps_its_claim_and_is_settled_from_the_branch",
+      "test_a_refused_write_keeps_the_push_and_says_so",
+      "test_this_hosts_own_last_push_is_the_only_one_it_pushes_over"
+     ]
+    }
+   ],
+   "held_for": "native qualification on a real execution host",
+   "missing": "Bitbucket's own git server applying --force-with-lease as git's receive-pack does; a real push and credential."
+  },
+  {
+   "id": "bitbucket-uncertainty",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_bitbucket_publication.py",
+     "tests": [
+      "test_a_lost_reply_found_at_once_is_kept_under_its_own_id",
+      "test_a_lost_reply_is_reopened_without_sending_again_and_reconciled_under_the_same_id",
+      "test_an_empty_lookup_never_releases_or_resends_it",
+      "test_an_uncertain_preparation_holds_until_bitbucket_shows_it"
+     ]
+    }
+   ],
+   "held_for": "native qualification on a real execution host",
+   "missing": "A delayed write landing after its reconciliation, and real Bitbucket answers (native qualification)."
+  },
+  {
+   "id": "bitbucket-two-machine",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_bitbucket_publication.py",
+     "tests": [
+      "test_two_hosts_publishing_the_same_task_create_its_branch_and_pull_request_once",
+      "test_a_branch_claimed_by_another_task_or_machine_is_refused_before_anything_is_sent"
+     ]
+    }
+   ],
+   "held_for": "native qualification on a real execution host",
+   "missing": "Two real execution hosts against Bitbucket; the regression simulates both on one bare repository."
+  },
+  {
+   "id": "bitbucket-merge-refusal",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_bitbucket.py",
+     "tests": [
+      "test_accept_and_merge_send_no_merge_and_merge_no_other_way",
+      "test_the_ticks_auto_merge_sends_no_merge"
+     ]
+    },
+    {
+     "path": "test/test_bitbucket_publication.py",
+     "tests": [
+      "test_merge_stays_refused_once_published",
+      "test_a_bitbucket_folder_never_merges_here_or_by_an_agent"
+     ]
+    }
+   ],
+   "held_for": "native qualification on a real execution host",
+   "missing": "Native qualification on a real Bitbucket repository; the refusal itself is the approved contract."
+  },
+  {
+   "id": "public-cli-outcomes",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_bitbucket_publication.py",
+     "tests": [
+      "test_a_refused_write_keeps_the_push_and_says_so",
+      "test_a_claims_file_that_doesnt_read_refuses_and_is_kept"
+     ]
+    },
+    {
+     "path": "test/test_bitbucket.py",
+     "tests": [
+      "test_a_link_that_isnt_a_url_never_stops_a_command"
+     ]
+    }
+   ],
+   "held_for": "native qualification on a real execution host",
+   "missing": "The Tasks panel's display of publication outcomes (source-inspected) and native qualification."
+  },
+  {
+   "id": "approval-exact-head",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_herdr_task.py",
+     "tests": [
+      "test_adoption_records_the_head_it_verified",
+      "test_a_head_rebased_since_is_refused_naming_both"
+     ]
+    },
+    {
+     "path": "test/test_bitbucket.py",
+     "tests": [
+      "test_one_merged_at_another_head_keeps_the_branch"
+     ]
+    }
+   ],
+   "held_for": "native qualification on a real execution host",
+   "missing": "Accept's exact-head admission on a real forge; GitHub has no base guard on gh pr merge (known N1 gap)."
+  },
+  {
+   "id": "request-replay",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_bitbucket_publication.py",
+     "tests": [
+      "test_a_lost_reply_is_reopened_without_sending_again_and_reconciled_under_the_same_id"
+     ]
+    },
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_an_unconfirmed_reply_keeps_its_launch_id_and_is_never_retried",
+      "test_a_tick_start_whose_reply_was_lost_is_never_started_again"
+     ]
+    }
+   ],
+   "held_for": "R: installed runtime, rehearsal and rollback",
+   "missing": "herdr-core keeps no receipt for hc run or hc send; replay safety holds only for this application on one machine."
+  },
+  {
+   "id": "azure-personal",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_no_provider_setting_starts_the_cli_as_before",
+      "test_personal_with_a_half_filled_azure_setup_is_still_untouched",
+      "test_a_space_set_to_personal_wins_over_everywheres_azure"
+     ]
+    },
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_missing_settings_keep_personal"
+     ]
+    }
+   ],
+   "held_for": "native qualification on a real execution host",
+   "missing": "A real CLI started on Personal on this candidate; the Personal sensitivity step is ported for Claude Code only (the fork proved both CLIs)."
+  },
+  {
+   "id": "azure-claude-entra",
+   "status": "pending",
+   "evidence_class": "ci-executed",
+   "native": [
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_claude_on_foundry_by_each_sign_in",
+      "test_entra_id_is_the_default_sign_in_for_claude"
+     ]
+    }
+   ],
+   "held_for": "Q-B: real Azure, separately approved",
+   "missing": "Azure Codex/Claude product behavior on a real Foundry resource with the SDK default chain; empty settings env values blanking endpoint, credential and model variables (carried to Q from A1) is not proved."
+  },
+  {
+   "id": "azure-claude-key",
+   "status": "pending",
+   "evidence_class": "ci-executed",
+   "native": [
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_claude_on_foundry_by_each_sign_in",
+      "test_the_credential_check_runs_the_agent_only_when_its_variable_is_set"
+     ]
+    }
+   ],
+   "held_for": "Q-B: real Azure, separately approved",
+   "missing": "A real Foundry resource and key on the execution host; empty settings env values blanking other variables is not proved."
+  },
+  {
+   "id": "azure-claude-token",
+   "status": "pending",
+   "evidence_class": "ci-executed",
+   "native": [
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_claude_on_foundry_by_each_sign_in"
+     ]
+    }
+   ],
+   "held_for": "Q-B: real Azure, separately approved",
+   "missing": "A real supplied bearer token and its host renewal; empty settings env values blanking other variables is not proved."
+  },
+  {
+   "id": "azure-codex-key",
+   "status": "pending",
+   "evidence_class": "ci-executed",
+   "native": [
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_codex_on_azure_by_api_key",
+      "test_codex_starts_on_its_provider_table_with_openai_variables_blanked"
+     ]
+    }
+   ],
+   "held_for": "Q-B: real Azure, separately approved",
+   "missing": "Codex on a real Azure /openai/v1 Responses deployment (Azure Codex/Sol/Fast product behavior is required and unproved)."
+  },
+  {
+   "id": "azure-credential-custody",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_a_credential_put_in_settings_is_refused_and_never_repeated",
+      "test_a_credential_written_into_the_argv_is_refused_by_name",
+      "test_a_copy_of_the_settings_on_another_machine_never_starts_azure"
+     ]
+    },
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_a_serve_from_copy_refuses_azure_and_the_serving_machine_plans_it"
+     ]
+    }
+   ],
+   "held_for": "Q-B: real Azure, separately approved",
+   "missing": "Native qualification: a real credential on the execution host never reaching argv, settings, labels, logs or core overrides; the credential check runs after the terminal exists."
+  },
+  {
+   "id": "azure-discovery",
+   "status": "pending",
+   "evidence_class": "ci-executed",
+   "native": [
+    {
+     "path": "service/azure-deployments.test.ts",
+     "tests": [
+      "a refresh offers only ready deployments with the CLI's own format and capability, and picks none",
+      "a failed refresh clears the old choices, hides Azure CLI's words and leaves manual entry"
+     ]
+    },
+    {
+     "path": "service/settings.test.ts",
+     "tests": [
+      "Refresh's list is read only when asked, and a pick from a list read under another resource is refused"
+     ]
+    }
+   ],
+   "held_for": "Q-B: real Azure, separately approved",
+   "missing": "Discovery against a real Azure subscription with the Azure CLI on the execution host."
+  },
+  {
+   "id": "azure-discovery-scope",
+   "status": "pending",
+   "evidence_class": "ci-executed",
+   "native": [
+    {
+     "path": "service/azure-deployments.test.ts",
+     "tests": [
+      "an inventory belongs to its scope and to this run's memory only",
+      "discovery stays on this computer and Azure public cloud, and Everywhere needs exactly one machine"
+     ]
+    }
+   ],
+   "held_for": "Q-B: real Azure, separately approved",
+   "missing": "A real subscription and resource; the window's rows are source-inspected only."
+  },
+  {
+   "id": "azure-discovery-stale",
+   "status": "pending",
+   "evidence_class": "ci-executed",
+   "native": [
+    {
+     "path": "service/azure-deployments.test.ts",
+     "tests": [
+      "a response that lands after the configuration changed is dropped, and a second click joins the first",
+      "a refresh for a new endpoint replaces one still running, whose late answer can't overwrite it"
+     ]
+    }
+   ],
+   "held_for": "Q-B: real Azure, separately approved",
+   "missing": "Real Azure CLI timing on the execution host; the window's stale-pick refusal is source-inspected only."
+  },
+  {
+   "id": "azure-settings-surfaces",
+   "status": "pending",
+   "evidence_class": "ci-executed",
+   "native": [
+    {
+     "path": "service/settings.test.ts",
+     "tests": [
+      "the provider's fields are judged as herdr-task judges them, a refused one never repeated",
+      "Personal shows the route alone; Azure Foundry shows each CLI's connection, kept as the file's values"
+     ]
+    }
+   ],
+   "held_for": "native qualification on a real execution host",
+   "missing": "The window's Provider rows (mods/shepherdr-settings) need Herdr's window runtime, which CI lacks; the web page is not browser-tested."
+  },
+  {
+   "id": "azure-new-start",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_a_save_is_revision_bound_and_changes_nothing_else",
+      "test_a_choice_made_under_one_routing_refuses_under_another"
+     ]
+    },
+    {
+     "path": "service/selections.test.ts",
+     "tests": [
+      "a save carries the revision it was shown at, and a refusal comes back as herdr-task said it"
+     ]
+    },
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_an_azure_new_start_runs_the_owners_own_one_off_template_and_records_its_binding"
+     ]
+    }
+   ],
+   "held_for": "Q-B: real Azure, separately approved",
+   "missing": "The window's task row menu and chat pick (source-inspected) and a real Azure new start."
+  },
+  {
+   "id": "azure-bound-resume",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_resume_keeps_the_recorded_deployment_when_the_default_changes",
+      "test_codex_resume_keeps_its_provider_deployment_effort_and_fast",
+      "test_changed_routing_refuses_before_anything_changes"
+     ]
+    },
+    {
+     "path": "test/test_native_restart.py",
+     "tests": [
+      "test_a_task_agent_resumes_on_its_recorded_binding_not_todays_default",
+      "test_an_assistant_comes_back_on_its_starts_journal_record_and_never_on_personal"
+     ]
+    }
+   ],
+   "held_for": "Q-B: real Azure, separately approved",
+   "missing": "Both CLIs resuming a real Azure conversation after defaults change (Azure Codex/Sol/Fast product behavior is required and unproved)."
+  },
+  {
+   "id": "selection-effort-fast",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_the_agents_own_effort_fast_and_permissions_are_kept"
+     ]
+    },
+    {
+     "path": "test/test_native_restart.py",
+     "tests": [
+      "test_codex_resumes_with_its_provider_table_before_resume_and_its_effort_and_fast",
+      "test_a_model_its_recorded_deployment_would_replace_is_refused"
+     ]
+    }
+   ],
+   "held_for": "Q-B: real Azure, separately approved",
+   "missing": "Native Codex and Claude effort and Fast behavior on Azure: labels and argv don't prove the provider honours them."
+  },
+  {
+   "id": "settings-inheritance",
+   "status": "pending",
+   "evidence_class": "ci-executed",
+   "native": [
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_the_most_specific_layer_wins_field_by_field"
+     ]
+    },
+    {
+     "path": "service/settings.test.ts",
+     "tests": [
+      "a space inherits field by field; its empty value is its own, and Reset follows Everywhere again"
+     ]
+    }
+   ],
+   "held_for": "native qualification on a real execution host",
+   "missing": "The window's rows (source-inspected); empty env values as unset beyond provider selection is unproved."
+  },
+  {
+   "id": "ordinary-resume",
+   "status": "reuse-unqualified",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_native_restart.py",
+     "tests": [
+      "test_a_lost_agent_resumes_its_own_session_once_through_the_journal",
+      "test_its_own_claude_code_folder_comes_back_with_it"
+     ]
+    }
+   ],
+   "held_for": "R: installed runtime, rehearsal and rollback",
+   "missing": "A real CLI resuming after a real crash or reboot (reuse of native revival is unqualified)."
+  },
+  {
+   "id": "missing-history",
+   "status": "decision-held",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_native_restart.py",
+     "tests": [
+      "test_missing_history_is_a_new_conversation_never_reported_as_a_resume"
+     ]
+    }
+   ],
+   "held_for": "decision: Nathan's held choice",
+   "missing": "The held decision: whether a genuine missing-history case falls back to a new conversation or holds. Nathan's choice."
+  },
+  {
+   "id": "launch-uncertainty",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_a_start_is_claimed_sent_and_confirmed_under_one_launch_id",
+      "test_a_crash_after_dispatch_stays_uncertain_until_its_terminal_is_found",
+      "test_settings_changed_before_submission_cancel_the_claim"
+     ]
+    }
+   ],
+   "held_for": "R: installed runtime, rehearsal and rollback",
+   "missing": "herdr-core keeps no receipt for hc run; native qualification on a real core."
+  },
+  {
+   "id": "late-sender-fence",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_a_delayed_sender_is_fenced_after_recovery"
+     ]
+    },
+    {
+     "path": "test/test_native_restart.py",
+     "tests": [
+      "test_a_second_sender_that_planned_before_the_first_typed_types_nothing"
+     ]
+    }
+   ],
+   "held_for": "R: installed runtime, rehearsal and rollback",
+   "missing": "The journal fences only this application's senders on one machine; an unknown running process or another machine stays a held native gap."
+  },
+  {
+   "id": "one-revival-owner",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_native_restart.py",
+     "tests": [
+      "test_a_gone_session_starts_anew_once_whoever_asks",
+      "test_any_chats_agent_comes_back_under_its_own_identity"
+     ]
+    },
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_no_site_runs_hc_run_itself",
+      "test_a_restart_goes_through_the_journal"
+     ]
+    }
+   ],
+   "held_for": "R: installed runtime, rehearsal and rollback",
+   "missing": "A fork's own start (the window's tab.new) is not journalled; the window's paths are source-inspected only."
+  },
+  {
+   "id": "manual-recovery",
+   "status": "decision-held",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_a_second_recover_says_nothing_was_released_and_reconcile_points_at_recover",
+      "test_status_marks_what_is_unresolved_and_names_the_step"
+     ]
+    },
+    {
+     "path": "test/test_native_restart.py",
+     "tests": [
+      "test_a_send_hc_doesnt_confirm_stays_uncertain_and_holds_the_agent"
+     ]
+    }
+   ],
+   "held_for": "decision: Nathan's held choice",
+   "missing": "The held decision: releasing a submission-uncertain start without positive evidence, reboot evidence and exact revocation. No release command exists."
+  },
+  {
+   "id": "delivery-retries",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_native_restart.py",
+     "tests": [
+      "test_an_open_start_of_the_same_agent_holds_its_revival_until_released"
+     ]
+    },
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_a_tick_start_whose_reply_was_lost_is_never_started_again"
+     ]
+    }
+   ],
+   "held_for": "R: installed runtime, rehearsal and rollback",
+   "missing": "Message delivery (news.py's held sends) and provider retry lines are unchanged and unqualified; herdr-core keeps no turn or effect receipt."
+  },
+  {
+   "id": "task-lifecycle-holds",
+   "status": "pending",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_native_restart.py",
+     "tests": [
+      "test_a_finished_tasks_agent_stays_a_shell"
+     ]
+    },
+    {
+     "path": "test/test_herdr_task.py",
+     "tests": [
+      "test_accept_refuses_a_task_back_at_work",
+      "test_after_and_a_time_start_when_both_hold"
+     ]
+    }
+   ],
+   "held_for": "native qualification on a real execution host",
+   "missing": "Native qualification of queue, hold, approval and descendant cleanup on a real board."
+  },
+  {
+   "id": "screen-reconnect",
+   "status": "reuse-unqualified",
+   "evidence_class": "process-observed-in-ci",
+   "native": [
+    {
+     "path": "test/test_native_restart.py",
+     "tests": [
+      "test_the_line_takes_the_running_shells_syntax_not_the_launchs"
+     ]
+    }
+   ],
+   "held_for": "R: installed runtime, rehearsal and rollback",
+   "missing": "Reuse of native hub, screens and attach is unqualified: reconnect to a kept terminal on a real core, and stale screen identities, are untested."
+  },
+  {
+   "id": "protected-update",
+   "status": "decision-held",
+   "evidence_class": "held",
+   "native": [],
+   "held_for": "R: installed runtime, rehearsal and rollback",
+   "missing": "Decision-held for R: native has no protected operator; a cutover needs its own admission with no live or unconfirmed workers."
+  },
+  {
+   "id": "plugin-state-compatibility",
+   "status": "pending",
+   "evidence_class": "ci-executed",
+   "native": [
+    {
+     "path": "test/test_repo.py",
+     "tests": [
+      "test_every_mod_is_in_one_addon",
+      "test_addon_needs_exist"
+     ]
+    },
+    {
+     "path": "web/src/outbox.test.ts",
+     "tests": [
+      "one that didn't go through stays for Retry"
+     ]
+    }
+   ],
+   "held_for": "R: installed runtime, rehearsal and rollback",
+   "missing": "No native person-owned plugins (web/build-plugins.ts writes user: []), so last-good compilation, setup deadlines and the optional production-plugin build have nothing to run on; the fork's queued outbox, drafts, labels and 2.x state formats are not imported. A Q/R decision."
+  },
+  {
+   "id": "fork-ci-obligations",
+   "status": "pending",
+   "evidence_class": "ci-executed",
+   "native": [
+    {
+     "path": "service/azure-deployments.test.ts",
+     "tests": [
+      "a refresh offers only ready deployments with the CLI's own format and capability, and picks none"
+     ]
+    },
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_a_backup_the_provider_cant_plan_isnt_spent"
+     ]
+    }
+   ],
+   "held_for": "Q: a later repair or a decision to retire each held step and case by name",
+   "missing": "Four of the fork's sensitivity steps are ported (bin/check-sensitivity); the rest are held by name in this ledger. The backup takeover's provider gate has in-module proof only: public-process proof through herdr-task tick is still missing."
+  },
+  {
+   "id": "matching-state-rollback",
+   "status": "decision-held",
+   "evidence_class": "held",
+   "native": [],
+   "held_for": "R: installed runtime, rehearsal and rollback",
+   "missing": "Decision-held for R: exact executable, core and state pairing and no automatic 2.x carryover are a rehearsal and rollback decision."
+  }
+ ],
+ "test_obligations": [
+  {
+   "range": "fork",
+   "path": "test/core-forge.test.ts",
+   "declarations": 11,
+   "requirements": [
+    "forge-identity",
+    "github-defaults",
+    "approval-exact-head"
+   ],
+   "native": [
+    {
+     "path": "test/test_forge.py",
+     "tests": [
+      "test_github_answering_for_another_repository_merges_nothing",
+      "test_github_answering_for_another_repository_publishes_nothing",
+      "test_one_saved_for_another_host_reaches_no_host",
+      "test_another_providers_pull_request_reaches_no_host",
+      "test_a_legacy_pull_request_merges_on_github"
+     ]
+    },
+    {
+     "path": "test/test_native_publication.py",
+     "tests": [
+      "test_accept_refuses_a_head_pushed_since",
+      "test_accept_refuses_a_retargeted_pull_request_until_it_is_back",
+      "test_a_pull_request_gh_cant_read_is_never_replaced",
+      "test_another_forge_stays_local_with_gh_signed_out_and_never_asks_it"
+     ]
+    }
+   ],
+   "disposition": "partial",
+   "uncovered": [
+    "forge resolution preserves GitHub URL forms and aliases and identifies Bitbucket without reinterpreting legacy PRs",
+    "absent/local origins stay distinct from unsupported, multiple, contradictory and unavailable forge targets",
+    "publication reconciles a lost create reply into one qualified exact-head PR through the checked broker",
+    "ambiguous lookups and authentication failures refuse publication without another create",
+    "checks retain candidate identity and distinguish absent, pending, cancelled and incomplete observations",
+    "integration retains the source branch and exact source-head server precondition and confirms only observed merges",
+    "feedback includes later pages and hides pending review drafts through the same task-facing seam",
+    "an effective GitHub host rewrite retains a canonical saved GitHub link and routes to the effective host",
+    "T1 compatibility: qualified alias records use canonical identity without accepting foreign providers or repositories",
+    "the PR panel discloses incomplete checks while retaining the provider link"
+   ],
+   "held": "Only the changed head/destination/repository refusal before a GitHub write is proven natively. Native GitHub routing is gh's own (gh repo view plus GH_HOST), so URL-form parsing, effective-host rewrites and alias-qualified saved records have no native equivalent; native merge passes --delete-branch (the fork retained the source branch), another forge such as GitLab stays local instead of refusing, and no native test covers GitHub lost-create reconciliation, ambiguous branch lookups, cancelled/truncated check classification, paginated feedback or the PR panel's incomplete-checks disclosure."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-worktree.test.ts",
+   "declarations": 6,
+   "requirements": [
+    "forge-identity",
+    "fork-ci-obligations"
+   ],
+   "native": [],
+   "disposition": "held",
+   "uncovered": [
+    "native worktree files, literal paths, rename diff and path isolation",
+    "unreadable GitHub checks are not reported as no checks",
+    "contained file and diff panels use checked Git without executing host callbacks",
+    "public PR panel retains arbitrary GitHub Enterprise hosts and canonical links after SSH rewrites",
+    "T1 compatibility: public PR panels route recognized GitHub origins through effective aliases",
+    "T1 compatibility: public PR panels ignore fork pushurl while task operations retain write-target validation"
+   ],
+   "held": "No native regression runs the Files, Changes or Pull request views (service/worktree.ts, mods/task-files, mods/task-pr); core/worktree.test.js only checks shared words and the listing script. Path isolation, unreadable-check disclosure and Enterprise/alias panel routing are unproven, and the contained checked-Git broker has no native owner (the migration contract says native 3.x has no contained-repository owner)."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-github-pr.test.ts",
+   "declarations": 9,
+   "requirements": [
+    "delivery-retries",
+    "approval-exact-head",
+    "task-lifecycle-holds"
+   ],
+   "native": [
+    {
+     "path": "test/test_herdr_task.py",
+     "tests": [
+      "test_failing_checks_need_you_only_once_its_agent_stops_on_them"
+     ]
+    }
+   ],
+   "disposition": "held",
+   "uncovered": [
+    "published review time controls drafted line comments and pending drafts remain private",
+    "new comments and failed checks persist one actionable follow-up across reconstruction",
+    "checks-ready nudge preserves Ready and never grants ask-mode approval or accepts cancelled checks",
+    "check words never make unfinished or failed checks look green",
+    "the watch keeps the checks of the commit it read, for an open merge card",
+    "busy agents retain unseen comments and stale native launches cannot receive them",
+    "large comments are explicitly excerpted in the wake and remain fully readable",
+    "check-read denial cannot hide published feedback or produce a green-check merge nudge",
+    "a same-number PR identity replaced during observation cannot receive stale feedback"
+   ],
+   "held": "The native owner of pull request comment and check news is mods/tasks/bin/herdr_task/ghnews.py, and no native test calls it (pr_news is patched out where the tick is tested). The nearest test proves only that a failing check raises attention and clears once in progress; comment privacy, follow-up persistence across restart, nudge policy, excerpting, check-read denial and identity replacement are unproven."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-github.test.ts",
+   "declarations": 10,
+   "requirements": [
+    "fork-ci-obligations",
+    "delivery-retries"
+   ],
+   "native": [],
+   "disposition": "held",
+   "uncovered": [
+    "main verdict never calls missing, pending, unknown or truncated workflow results green",
+    "main-red persists one incident, native notice and rule event across restart; green re-arms it",
+    "unknown GitHub responses retain red and unsent news waits for an idle current coordinator",
+    "a changing base or removed space cannot publish stale main news",
+    "waiting main news is cancelled after a base change or a confirmed green result",
+    "a failed publication transaction does not swallow the red incident on retry",
+    "main-red title filters use a known task title, never a workflow name as a task title",
+    "newer pending branch commits do not hide an older failed commit, and only a confirmed green re-arms it",
+    "candidate order comes from verified base history; unrelated runs and pending results are not verdicts",
+    "a candidate becoming pending during confirmation never clears a saved red incident"
+   ],
+   "held": "Native main-branch CI news lives in ghnews.py (verdict, main_check, main_pass) and no native regression exercises it. The red-incident verdict, its persistence across restart, stale-news cancellation and candidate ordering have no native proof."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-github-logs.test.ts",
+   "declarations": 2,
+   "requirements": [
+    "forge-identity",
+    "fork-ci-obligations"
+   ],
+   "native": [],
+   "disposition": "held",
+   "uncovered": [
+    "failed logs stay on the configured GitHub host and remove terminal controls",
+    "invalid jobs and permission failures never trigger another authority or a misleading log tail"
+   ],
+   "held": "Native failed-log tails come from ghnews.log_tail via gh run view --log-failed with no host argument, and no native test covers it. Host pinning, terminal-control stripping and refusal of invalid job listings are unproven."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-github-merges.test.ts",
+   "declarations": 1,
+   "requirements": [
+    "task-lifecycle-holds",
+    "github-defaults"
+   ],
+   "native": [
+    {
+     "path": "test/test_herdr_task.py",
+     "tests": [
+      "test_the_tick_finds_a_squash_merged_pull_request",
+      "test_its_merged_pull_request_makes_it_done"
+     ]
+    },
+    {
+     "path": "test/test_forge.py",
+     "tests": [
+      "test_one_in_this_repository_finishes_the_task"
+     ]
+    }
+   ],
+   "disposition": "held",
+   "uncovered": [
+    "completed merges are observed without a live agent, bounded and throttled across reconstruction"
+   ],
+   "held": "Native tick tests prove that a merged pull request finishes its task, but none proves the per-scan bound, throttling across a restarted observer, or skipping when the machine is disconnected."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-git.test.ts",
+   "declarations": 3,
+   "requirements": [
+    "bitbucket-push-facts",
+    "approval-exact-head",
+    "request-replay"
+   ],
+   "native": [
+    {
+     "path": "test/test_bitbucket_publication.py",
+     "tests": [
+      "test_a_push_git_doesnt_answer_for_keeps_its_claim_and_is_settled_from_the_branch",
+      "test_this_hosts_own_last_push_is_the_only_one_it_pushes_over"
+     ]
+    },
+    {
+     "path": "test/test_native_publication.py",
+     "tests": [
+      "test_a_lease_refused_on_the_tracking_ref_says_so"
+     ]
+    }
+   ],
+   "disposition": "held",
+   "uncovered": [
+    "reopening a task checkout checks the saved branch/location and preserves occupied paths",
+    "a lost push reply only settles when the remote confirms the exact captured task commit",
+    "a checkout switch cannot change the task ref whose captured commit is pushed"
+   ],
+   "held": "Native has no worktree-reopen owner equivalent to CoreGit.ensureWorktree. The Bitbucket lost-push test proves only the not-landed settlement (branch still absent), not confirmation of a landed captured commit, and the GitHub push path has no lost-reply test. No test pins the pushed ref against a concurrent HEAD switch."
+  },
+  {
+   "range": "pr3",
+   "path": "test/core-bitbucket-cli.test.ts",
+   "declarations": 6,
+   "requirements": [
+    "public-cli-outcomes",
+    "bitbucket-publication",
+    "bitbucket-push-facts",
+    "bitbucket-uncertainty",
+    "request-replay"
+   ],
+   "native": [
+    {
+     "path": "test/test_bitbucket_publication.py",
+     "tests": [
+      "test_ready_pushes_opens_a_draft_and_prepares_it_keeping_what_people_set",
+      "test_an_empty_lookup_never_releases_or_resends_it",
+      "test_a_lost_reply_is_reopened_without_sending_again_and_reconciled_under_the_same_id",
+      "test_preflight_refuses_before_any_effect",
+      "test_a_remote_changed_before_the_push_or_the_write_stops_it"
+     ]
+    }
+   ],
+   "disposition": "partial",
+   "uncovered": [
+    "Bitbucket native CLI authenticated mailbox preflight refusal has no effects",
+    "Bitbucket native CLI reports route or task changes after actual push truthfully",
+    "Bitbucket native CLI binding change after provider create retains typed uncertainty and metadata",
+    "Bitbucket native CLI recovers authenticated journal response without redispatch"
+   ],
+   "held": "Native herdr-task runs directly, with no authenticated mailbox or request journal, so journal recovery without redispatch has no native equivalent. The payload-size preflight is not tested natively, and no test edits the task (description or report) during push or create to prove truthful post-effect facts and preserved metadata; only a remote change after the push is covered."
+  },
+  {
+   "range": "pr3",
+   "path": "test/core-bitbucket-contracts.test.ts",
+   "declarations": 9,
+   "requirements": [
+    "bitbucket-credentials",
+    "bitbucket-current-fields",
+    "bitbucket-push-facts"
+   ],
+   "native": [
+    {
+     "path": "test/test_bitbucket_publication.py",
+     "tests": [
+      "test_ready_pushes_opens_a_draft_and_prepares_it_keeping_what_people_set",
+      "test_a_remote_changed_before_the_push_or_the_write_stops_it",
+      "test_this_hosts_own_last_push_is_the_only_one_it_pushes_over",
+      "test_a_refused_write_keeps_the_push_and_says_so"
+     ]
+    },
+    {
+     "path": "test/test_bitbucket.py",
+     "tests": [
+      "test_no_usable_answer_from_the_helper_sends_nothing"
+     ]
+    }
+   ],
+   "disposition": "partial",
+   "uncovered": [
+    "Bitbucket public credential fill accepts private expiry refresh and unknown metadata",
+    "Bitbucket public real credential fill rejects duplicate malformed and negotiated replies",
+    "Bitbucket public readiness refuses missing or malformed omission preservation before PUT",
+    "Bitbucket public binding edits during push or create retain current metadata and confirmed push only",
+    "Bitbucket public harmless reports survive both awaited publication saves",
+    "Bitbucket public push receipt never resurrects replaces or retargets current ownership",
+    "Bitbucket public mismatched push receipt and stale observation stay unconfirmed"
+   ],
+   "held": "Native proves preserved title, reviewers, destination and close_source_branch on the ready PUT, and a confirmed push kept after a route change. It does not test credential answers carrying expiry, refresh or duplicate fields, malformed current fields refused before PUT, or concurrent task edits, deletion and retargeting during publication, so stale-overwrite protection and mismatched push receipts are unproven."
+  },
+  {
+   "range": "pr3",
+   "path": "test/core-bitbucket-preflight.test.ts",
+   "declarations": 5,
+   "requirements": [
+    "bitbucket-publication",
+    "bitbucket-uncertainty"
+   ],
+   "native": [
+    {
+     "path": "test/test_bitbucket_publication.py",
+     "tests": [
+      "test_preflight_refuses_before_any_effect",
+      "test_an_empty_lookup_never_releases_or_resends_it"
+     ]
+    }
+   ],
+   "disposition": "held",
+   "uncovered": [
+    "Bitbucket public complete payload preflight refuses oversized brief before effects and recovers after reopen",
+    "Bitbucket public complete payload preflight accepts exact title and brief boundaries",
+    "Bitbucket public complete payload preflight rejects all malformed create fields and encoded bounds",
+    "Bitbucket public complete payload preflight never releases an existing uncertain claim",
+    "Bitbucket shared complete payload validator retains strict request context and operation shapes"
+   ],
+   "held": "Native preflight tests cover missing base, conflicting pull requests and a missing token, but not payload bounds. The migration contract lists the 255-character title and 32000-character description bounds as not covered, and the fork accepted a 512-character title, so the bound itself differs. The mailbox request validator has no native counterpart, and no test drives a preflight refusal while an uncertain claim is held."
+  },
+  {
+   "range": "pr3",
+   "path": "test/core-bitbucket.test.ts",
+   "declarations": 34,
+   "requirements": [
+    "bitbucket-credentials",
+    "bitbucket-reads",
+    "bitbucket-publication",
+    "bitbucket-push-facts",
+    "bitbucket-uncertainty",
+    "bitbucket-two-machine",
+    "bitbucket-merge-refusal",
+    "approval-exact-head",
+    "forge-identity"
+   ],
+   "native": [
+    {
+     "path": "test/test_bitbucket_publication.py",
+     "tests": [
+      "test_ready_pushes_opens_a_draft_and_prepares_it_keeping_what_people_set",
+      "test_two_hosts_publishing_the_same_task_create_its_branch_and_pull_request_once",
+      "test_a_lost_reply_found_at_once_is_kept_under_its_own_id",
+      "test_an_empty_lookup_never_releases_or_resends_it",
+      "test_a_remote_changed_before_the_push_or_the_write_stops_it",
+      "test_a_branch_claimed_by_another_task_or_machine_is_refused_before_anything_is_sent"
+     ]
+    },
+    {
+     "path": "test/test_bitbucket.py",
+     "tests": [
+      "test_empty_pending_failed_and_passed_stay_apart",
+      "test_a_read_that_isnt_whole_counts_for_nothing",
+      "test_every_page_of_its_heads_statuses_is_read_on_the_hosts_token",
+      "test_missing_moved_and_another_head_are_not_checks",
+      "test_accept_and_merge_send_no_merge_and_merge_no_other_way"
+     ]
+    }
+   ],
+   "disposition": "partial",
+   "uncovered": [
+    "Bitbucket public real insteadOf rewrite after admission cannot redirect the frozen push",
+    "Bitbucket public real pushInsteadOf rewrite after admission cannot redirect the frozen push",
+    "Bitbucket public real insteadOf rewrite after a lost push reply cannot redirect reconciliation",
+    "Bitbucket public lost Git push reply reconciles the admitted destination after origin changes",
+    "Bitbucket public publication preserves a legacy uncertain machine-keyed record across another host and reopen",
+    "Bitbucket changed candidate cannot replace an uncertain publication operation",
+    "Bitbucket missing malformed and rejected host credentials refuse before a branch push without an account fallback",
+    "Bitbucket uses host Git account selection and keeps token and provider diagnostic text out of public records",
+    "Bitbucket readiness rejects a changed PR identity or candidate before updating readiness",
+    "Bitbucket readiness evidence is candidate-bound and an advanced local candidate invalidates the existing merge card",
+    "Bitbucket incomplete checks refuse readiness and the panel preserves its qualified PR link",
+    "Bitbucket refuses unsupported native merge and feedback capabilities without a helper or HTTP request",
+    "Bitbucket helper ignores hostile project dotenv and Bun preload configuration",
+    "Bitbucket admission refuses task and route changes while preparation is awaited before push or HTTP dispatch",
+    "core final exec admission runs after delayed route resolution and before the synchronous core call",
+    "Bitbucket create admission rejects a changed task or replaced core route after awaited route resolution without recording a dispatch",
+    "Bitbucket retained containment refuses its REST helper before publication or provider access",
+    "Bitbucket REST read compatibility does not imply PR write permission or permit a blind create retry",
+    "Bitbucket response and page limits cannot become a complete check observation",
+    "Bitbucket public official real and minimal status responses bind checks and readiness to the requested commit",
+    "Bitbucket public malformed status fields and mismatched or foreign commit links refuse readiness",
+    "Bitbucket public wrong candidate and incomplete pagination refuse readiness while empty evidence stays nongreen",
+    "Bitbucket public reopened publication rejects changed host route and credential context without releasing its claim"
+   ],
+   "held": "Mapped: payloads, the two-host single creation, lost-reply and empty-lookup reconciliation, pushurl change before the push, claim exclusion, check states, pagination and merge refusal. Not proven: mid-flight insteadOf/pushInsteadOf rewrites, landed-but-lost pushes, task edits during admission, account changes, checks gating readiness, malformed status fields (native drops a bad link and still counts the read whole), oversize and endless pages, and fork-only owners (core exec admission, containment, Bun helper, legacy store keys). Native also treats a 401/403 create as definite and posts again later, where the fork held it uncertain."
+  },
+  {
+   "range": "pr3",
+   "path": "test/core-forge-observer.test.ts",
+   "declarations": 1,
+   "requirements": [
+    "forge-identity",
+    "fork-ci-obligations"
+   ],
+   "native": [],
+   "disposition": "held",
+   "uncovered": [
+    "cold CoreSource GitHub observer retains checked runtime without agent rows and refuses contained Bitbucket before effects"
+   ],
+   "held": "The checked runtime bundle, contained-repository owner and CoreSource main watcher have no native counterpart, and native main-branch news (ghnews.py) has no regression. Nothing native proves a cold observer's red/green verdict or a contained Bitbucket refusal."
+  },
+  {
+   "range": "pr3",
+   "path": "test/core-worktree.test.ts",
+   "declarations": 6,
+   "requirements": [
+    "forge-identity",
+    "fork-ci-obligations"
+   ],
+   "native": [],
+   "disposition": "held",
+   "uncovered": [
+    "native worktree files, literal paths, rename diff and path isolation",
+    "unreadable GitHub checks are not reported as no checks",
+    "contained file and diff panels use checked Git without executing host callbacks",
+    "public PR panel retains arbitrary GitHub Enterprise hosts and canonical links after SSH rewrites",
+    "T1 compatibility: public PR panels route recognized GitHub origins through effective aliases",
+    "T1 compatibility: public PR panels ignore fork pushurl while task operations retain write-target validation"
+   ],
+   "held": "Same as the fork copy, which differs only in a fixture stub: no native regression runs the worktree Files, Changes or Pull request views. The migration contract records the service and window Pull request views as source-inspected with no test, and contained checked Git has no native owner."
+  },
+  {
+   "range": "pr3",
+   "path": "test/fixtures/bitbucket-credential-fill.ts",
+   "declarations": 2,
+   "requirements": [
+    "bitbucket-credentials"
+   ],
+   "native": [
+    {
+     "path": "test/test_bitbucket.py",
+     "tests": [
+      "test_no_usable_answer_from_the_helper_sends_nothing",
+      "test_every_page_of_its_heads_statuses_is_read_on_the_hosts_token"
+     ]
+    }
+   ],
+   "disposition": "partial",
+   "uncovered": [],
+   "held": "Native has an equivalent recording credential helper (FAKE_CREDENTIAL in test_bitbucket.py) that can return arbitrary answers, but no native test makes it return the duplicate username, expiry, refresh-token or unknown-metadata decorations this fixture appended after a real git credential fill."
+  },
+  {
+   "range": "pr3",
+   "path": "test/fixtures/bitbucket-fetch.ts",
+   "declarations": 1,
+   "requirements": [
+    "bitbucket-reads",
+    "bitbucket-publication"
+   ],
+   "native": [
+    {
+     "path": "test/test_bitbucket.py",
+     "tests": [
+      "test_every_page_of_its_heads_statuses_is_read_on_the_hosts_token",
+      "test_a_read_that_isnt_whole_counts_for_nothing"
+     ]
+    },
+    {
+     "path": "test/test_bitbucket_publication.py",
+     "tests": [
+      "test_ready_pushes_opens_a_draft_and_prepares_it_keeping_what_people_set"
+     ]
+    }
+   ],
+   "disposition": "covered",
+   "uncovered": [],
+   "held": ""
+  },
+  {
+   "range": "pr3",
+   "path": "test/fixtures/bitbucket-git-remote.ts",
+   "declarations": 1,
+   "requirements": [
+    "bitbucket-push-facts",
+    "bitbucket-credentials"
+   ],
+   "native": [
+    {
+     "path": "test/test_bitbucket_publication.py",
+     "tests": [
+      "test_a_push_url_git_would_rewrite_again_is_no_frozen_route",
+      "test_a_remote_changed_before_the_push_or_the_write_stops_it",
+      "test_two_hosts_publishing_the_same_task_create_its_branch_and_pull_request_once"
+     ]
+    }
+   ],
+   "disposition": "partial",
+   "uncovered": [],
+   "held": "Native routes pushes through an SSH alias rewrite and a test-owned SSH transport into a bare repository, which covers frozen-route and foreign-destination checks. Unlike this HTTPS remote helper, it never runs the host's git credential fill per push or records the transport username, so account-bound push transport is unproven."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-azure-deployments.test.ts",
+   "declarations": 6,
+   "requirements": [
+    "azure-discovery",
+    "azure-discovery-scope",
+    "azure-discovery-stale",
+    "fork-ci-obligations"
+   ],
+   "native": [
+    {
+     "path": "service/azure-deployments.test.ts",
+     "tests": [
+      "a refresh offers only ready deployments with the CLI's own format and capability, and picks none",
+      "the discovery subscription is named on every read, and the Azure CLI's own is never changed",
+      "a failed refresh clears the old choices, hides Azure CLI's words and leaves manual entry",
+      "a response that lands after the configuration changed is dropped, and a second click joins the first",
+      "discovery stays on this computer and Azure public cloud, and Everywhere needs exactly one machine",
+      "an empty inventory, an unreadable one and a resource that isn't uniquely there are different answers"
+     ]
+    },
+    {
+     "path": "service/settings.test.ts",
+     "tests": [
+      "Refresh's list is read only when asked, and a pick from a list read under another resource is refused"
+     ]
+    },
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_codex_on_azure_by_api_key"
+     ]
+    }
+   ],
+   "disposition": "covered",
+   "uncovered": [],
+   "held": ""
+  },
+  {
+   "range": "fork",
+   "path": "test/core-providers.test.ts",
+   "declarations": 15,
+   "requirements": [
+    "azure-personal",
+    "azure-claude-entra",
+    "azure-claude-key",
+    "azure-claude-token",
+    "azure-codex-key",
+    "azure-credential-custody",
+    "azure-bound-resume",
+    "azure-new-start",
+    "settings-inheritance",
+    "fork-ci-obligations"
+   ],
+   "native": [
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_no_provider_setting_starts_the_cli_as_before",
+      "test_a_personal_conversation_is_never_moved_to_azure",
+      "test_resume_keeps_the_recorded_deployment_when_the_default_changes",
+      "test_codex_resume_keeps_its_provider_deployment_effort_and_fast",
+      "test_changed_routing_refuses_before_anything_changes",
+      "test_a_choice_made_under_one_routing_refuses_under_another"
+     ]
+    },
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_the_fields_as_both_sides_judge_them",
+      "test_codex_with_entra_id_is_unsupported",
+      "test_an_incomplete_or_unknown_binding_is_refused",
+      "test_a_save_is_revision_bound_and_changes_nothing_else",
+      "test_a_workers_own_deployment_wins_over_the_clis",
+      "test_a_model_menus_restart_carries_the_recorded_binding"
+     ]
+    },
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_a_chats_choice_is_bound_to_the_routing_it_was_made_under"
+     ]
+    },
+    {
+     "path": "service/settings.test.ts",
+     "tests": [
+      "the provider's fields are judged as herdr-task judges them, a refused one never repeated"
+     ]
+    },
+    {
+     "path": "service/selections.test.ts",
+     "tests": [
+      "two spaces' picks saved from the same snapshot both stay; an older menu can't overwrite or clear a newer pick"
+     ]
+    }
+   ],
+   "disposition": "partial",
+   "uncovered": [
+    "provider and authentication choices persist with machine and space inheritance and reset",
+    "Azure Claude ${auth} composes native routing, credential references and lifecycle hooks",
+    "Azure Codex launches Responses with only an environment key reference and preserves hooks",
+    "missing ${variable} refuses before grant, files, launch records or terminal creation",
+    "Azure remote and Autopilot starts refuse before credentials, grants or terminal creation",
+    "child launches cannot change provider route"
+   ],
+   "held": "Native moved the credential presence check into the agent's shell after the terminal exists (A2), so no regression proves refusal before terminal creation, and no native test asserts lifecycle hooks in an Azure launch, a machine-level provider layer, Autopilot refusing Azure, or a child agent refusing a route change (no native child-launch path)."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-settings.test.ts",
+   "declarations": 20,
+   "requirements": [
+    "azure-settings-surfaces",
+    "settings-inheritance",
+    "fork-ci-obligations"
+   ],
+   "native": [
+    {
+     "path": "service/settings.test.ts",
+     "tests": [
+      "Personal shows the route alone; Azure Foundry shows each CLI's connection, kept as the file's values",
+      "a space inherits field by field; its empty value is its own, and Reset follows Everywhere again"
+     ]
+    }
+   ],
+   "disposition": "held",
+   "uncovered": [
+    "settings follow stable machine and space identities, including an explicit empty private override",
+    "restart defaults save only the chosen role and scope; invalid changes roll back atomically",
+    "private rules are role-scoped and excluded from ordinary command output",
+    "a changed CLI never inherits a foreign model, including from another scope",
+    "browser idle settings keep minute units, bounds and off across scopes",
+    "machine limits support fractional cores and percentages only at machine or Everywhere scope",
+    "Done archiving keeps familiar scoped defaults, off and inherited reset",
+    "Autopilot access and limits snapshot scoped choices without widening normal agent defaults",
+    "Autopilot restart choices validate before effects and save atomically",
+    "fresh devices can enroll alerts Everywhere, while device names and delivery failures remain visible from every scope",
+    "global scheduling remains visible from every scope and familiar Browser and private-rule pages remain",
+    "reviewer and backup default to a CLI that is installed and signed in, not to Codex",
+    "Everywhere warns only of the machines without a backup: each space follows its own",
+    "a running task keeps a real backup when its space default changes after it started",
+    "Everywhere warns when neither CLI works, by what each machine would use",
+    "a check that fails says so on the row, and goes quiet once one succeeds",
+    "a saved reviewer or backup stays, and its row says where that CLI is unusable",
+    "an answer it cannot read proves nothing: never picked, never warned about, never blocking",
+    "Autopilot says why it cannot run: home space, not Linux, no sandbox, or its CLI unusable",
+    "the machine check names no account: only a yes or no leaves the CLI"
+   ],
+   "held": "The fork changed one assertion here (the Agents page's Connection and Azure Foundry groups), which the native provider rows test proves; the other assertions are upstream 2.x server/core settings behaviour (machine check, idle close, archiving, private rules, Autopilot snapshot, alerts) that upstream 3.x replaced, and no native regression asserts them through a comparable interface."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-provider-retries.test.ts",
+   "declarations": 9,
+   "requirements": [
+    "delivery-retries",
+    "task-lifecycle-holds",
+    "fork-ci-obligations"
+   ],
+   "native": [],
+   "disposition": "held",
+   "uncovered": [
+    "native provider cutoffs retry at 1/2/4/8 minutes once each across a controller restart, then need the human",
+    "an explicit message resets retries without immediately rediscovering the same old cutoff",
+    "incomplete logs, background work, paused tasks, reviewers, replaced launches and unknown machine identity never get a retry",
+    "lasting failures ask immediately and an ended successful turn clears the retry record",
+    "backup records one-shot intent before replacing the old agent and preserves handover across capacity holds",
+    "contained tasks never switch provider automatically and interrupted takeover needs an explicit restart",
+    "native blocked provider failure can hand over, but blocked or incomplete work without an ended error cannot",
+    "boot recovery ${scope} hold preserves a due provider retry without nudging",
+    "boot recovery coordinator hold prevents provider fallback intent and notification"
+   ],
+   "held": "Native tick.py retry_pass and takeover exist, but every native tick test stubs retry_pass and the backup tests call takeover() in-module only, so no regression proves the 1/2/4/8 cadence, reset, exclusions or handover; the fork's boot-recovery holds have no native counterpart (L1/L2 journal holds do not gate provider retries in any test)."
+  },
+  {
+   "range": "fork",
+   "path": "test/layout-azure-admission.test.ts",
+   "declarations": 1,
+   "requirements": [
+    "azure-settings-surfaces",
+    "launch-uncertainty",
+    "fork-ci-obligations"
+   ],
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_settings_changed_before_submission_cancel_the_claim",
+      "test_settings_changed_before_recording_records_nothing"
+     ]
+    }
+   ],
+   "disposition": "held",
+   "uncovered": [
+    "a connection edit invalidates an admitted start and requires fresh validation"
+   ],
+   "held": "The owner rule (a settings change after admission refuses the start) is proven only through the herdr-task process with a written settings file; native has no browser test of a Settings edit invalidating an admitted start, so the browser interface is unproven."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-agents.test.ts",
+   "declarations": 9,
+   "requirements": [
+    "launch-uncertainty",
+    "selection-effort-fast",
+    "task-lifecycle-holds",
+    "fork-ci-obligations"
+   ],
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_an_unconfirmed_reply_keeps_its_launch_id_and_is_never_retried",
+      "test_an_unconfirmed_assistant_start_keeps_its_launch_id",
+      "test_a_lost_reply_is_confirmed_by_its_own_launch_label",
+      "test_shutdown_before_dispatch_cancels_its_own_claim"
+     ]
+    }
+   ],
+   "disposition": "partial",
+   "uncovered": [
+    "late hooks cannot overwrite a replacement agent or erase its confirmed terminal",
+    "the end of a session that never began leaves its start unfinished",
+    "terminal confirmation preserves hooks received while terminal.run was pending",
+    "read-only Codex reviewers capture native JSON events without bypassing hook trust",
+    "a picked speed reaches each CLI in its own words, for that launch only",
+    "ordinary replacement preserves both private launch identities for later descendant cleanup",
+    "${kind} coordinator launch includes house rules, full role guide and authoritative core routing"
+   ],
+   "held": "The fork's two cases (lost start reply, shutdown before dispatch) map to launch admission; the rest are upstream 2.x CoreAgents behaviour (hook ingestion, reviewer JSON capture, per-launch speed words, private launch identities, coordinator guide) with no native regression on a comparable interface (Fast is only checked in argv_for unit form)."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-coordinator-restart.test.ts",
+   "declarations": 9,
+   "requirements": [
+    "azure-bound-resume",
+    "azure-new-start",
+    "launch-uncertainty",
+    "fork-ci-obligations"
+   ],
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_a_refused_restart_changes_nothing_and_says_why",
+      "test_an_azure_started_assistant_whose_binding_is_gone_is_never_resumed_personal"
+     ]
+    },
+    {
+     "path": "test/test_native_restart.py",
+     "tests": [
+      "test_a_new_conversation_is_never_moved_to_another_route",
+      "test_a_model_its_recorded_deployment_would_replace_is_refused",
+      "test_settings_changed_between_its_check_and_its_start_refuse_before_anything_starts"
+     ]
+    },
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_changed_routing_refuses_before_anything_changes",
+      "test_a_model_menus_restart_carries_the_recorded_binding",
+      "test_a_save_is_revision_bound_and_changes_nothing_else"
+     ]
+    }
+   ],
+   "disposition": "partial",
+   "uncovered": [
+    "regular restart waits for confirmed exact exit, blocks concurrent changes and leaves task children alive",
+    "invalid settings and disconnected identity refuse before stopping the coordinator",
+    "a changed finished process identity cannot confirm a coordinator restart",
+    "lost core state and shutdown prevent replacement; a failed launch does not save new defaults",
+    "task restart validates settings before revocation and checks identity even for a finished old root",
+    "task restart refuses a substituted exit and saves defaults only after a successful native start",
+    "stale ${role} preflight and concurrent restart cannot interrupt the old worker",
+    "new ${role} selection saves without starting, preserves holds and rejects stale or already-started choices"
+   ],
+   "held": "Only Azure preflight refusal before interruption is proven for both roles; the stale-preflight case is proven for the Assistant (restart.sh) but not for a task's switch --restart with a live old worker, the coordinator pick's lock once started has no test, and the upstream 2.x exact-exit, identity-change and save-after-success restart cases have no native regression."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-launch-admission.test.ts",
+   "declarations": 28,
+   "requirements": [
+    "launch-uncertainty",
+    "late-sender-fence",
+    "request-replay",
+    "manual-recovery",
+    "delivery-retries",
+    "azure-bound-resume",
+    "azure-new-start",
+    "fork-ci-obligations"
+   ],
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_settings_changed_before_recording_records_nothing",
+      "test_settings_changed_before_submission_cancel_the_claim",
+      "test_shutdown_before_dispatch_cancels_its_own_claim",
+      "test_a_delayed_sender_is_fenced_after_recovery",
+      "test_competing_start_after_a_crash_before_dispatch_waits_for_recover",
+      "test_a_crash_after_dispatch_stays_uncertain_until_its_terminal_is_found"
+     ]
+    },
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_a_lost_reply_is_confirmed_by_its_own_launch_label",
+      "test_an_unconfirmed_reply_keeps_its_launch_id_and_is_never_retried",
+      "test_its_assistant_changing_while_it_prepares_refuses_before_dispatch",
+      "test_a_tick_start_refused_after_its_claim_keeps_the_task_queued"
+     ]
+    },
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_an_incomplete_or_unknown_binding_is_refused",
+      "test_the_tick_keeps_a_queued_task_it_cant_plan_and_starts_it_once_it_can"
+     ]
+    },
+    {
+     "path": "service/selections.test.ts",
+     "tests": [
+      "showing a task's choice only asks herdr-task select; each CLI's list has what Refresh found and the saved ones"
+     ]
+    },
+    {
+     "path": "core/agents.test.js",
+     "tests": [
+      "an Azure list offers each deployment as found, the saved ones first, efforts only for a known model"
+     ]
+    }
+   ],
+   "disposition": "partial",
+   "uncovered": [
+    "task restart replaces a finished coordinator without stale parent admission (${route}, ${timing})",
+    "task selection reset restores brief overrides and current role defaults (${explicit ? 'explicit' : 'inherited'})",
+    "task restart survives unrelated settings edits while awaiting worker exit (${route})",
+    "launch admission detects inherited settings changed away and back at ${scope}",
+    "launch admission refuses ${change} changed after admission",
+    "launch admission commits uncertainty and dispatches before a queued settings edit",
+    "launch admission excludes a competing start while preflight is pending",
+    "launch admission checks required coordinator before checkout creation",
+    "launch admission refuses a changed parent before task worktree effects",
+    "launch admission protects the initial task-add path before addWorktree",
+    "local non-submission releases only its own launch (${previous ? 'resume' : 'new'})",
+    "task restart validates required coordinator before interrupting worker (${finished ? 'finished' : 'missing'})",
+    "task start retains a finished Azure coordinator binding and native session after defaults change",
+    "task start replaces a coordinator that finishes during ${timing} (${route})",
+    "launch delivery acknowledges exact native prompt (${kind}, ${role}, ${resume ? 'resume' : 'fresh'})",
+    "launch delivery reconciles lost reply after reopening (${kind}, ${role})",
+    "launch delivery is not resurrected by a late lost reply (${kind})",
+    "launch delivery does not acknowledge ${reason}"
+   ],
+   "held": "Native admission refuses a finished or replaced Assistant instead of relaunching it and has no required-coordinator check, content revisions deliberately miss settings changed away and back, and there is no launch-id envelope delivery receipt; preflight-pending exclusion, refusal before worktree effects, a per-task choice saved after admission and the resume variant of a pre-send failure are also unasserted."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-commands.test.ts",
+   "declarations": 5,
+   "requirements": [
+    "azure-credential-custody",
+    "azure-settings-surfaces",
+    "fork-ci-obligations"
+   ],
+   "native": [],
+   "disposition": "held",
+   "uncovered": [
+    "regular settings preserve inheritance, use private machine scope and never echo private instructions",
+    "settings refuse worker mutation, forged or stale identity, and unknown controls; model reads stay in scope",
+    "coordinator connection changes require human settings and preserve persisted revisions",
+    "heartbeat settings return plain schedule words and plans do not enter settings routing",
+    "main-home task alerts keep current question actions while core reconnects without widening mutation scope"
+   ],
+   "held": "Native herdr-task has no agent-facing settings set/unset/show command, so the fork's refusal of agent writes to connection fields holds only structurally (no command writes the provider section) with no regression asserting it; the upstream 2.x agent settings, heartbeat and alert command cases have no native counterpart tested."
+  },
+  {
+   "range": "fork",
+   "path": "test/layout-restart.test.ts",
+   "declarations": 7,
+   "requirements": [
+    "azure-new-start",
+    "azure-settings-surfaces",
+    "selection-effort-fast",
+    "fork-ci-obligations"
+   ],
+   "native": [
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_a_save_is_revision_bound_and_changes_nothing_else"
+     ]
+    },
+    {
+     "path": "service/selections.test.ts",
+     "tests": [
+      "a save carries the revision it was shown at, and a refusal comes back as herdr-task said it"
+     ]
+    }
+   ],
+   "disposition": "held",
+   "uncovered": [
+    "Settings mismatches show no banner and do not restart either role",
+    "a task's ⋯ opens the sheet: Settings' CLI picked, another CLI offers its models; Restart posts the card",
+    "/model in a chat opens Restart for this agent, its model picked; nothing reaches the CLI",
+    "the sheet fits a phone, and Cancel leaves the agent as it was",
+    "saving defaults is optional, scoped to the role, and sent only when selected",
+    "machine-qualified task IDs retain their header PR and restart menu",
+    "task and coordinator pickers save without restarting; existing conversations are locked"
+   ],
+   "held": "Native has no browser layout tests: the web's restart sheet, model menu and new-start selector (restart.tsx, select.tsx) are source-inspected only per docs/azure-selectors.md, so the save-only and lock rules are proven through herdr-task and the service, not the browser interface."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-client.test.ts",
+   "declarations": 12,
+   "requirements": [
+    "launch-uncertainty",
+    "fork-ci-obligations"
+   ],
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_an_unconfirmed_reply_keeps_its_launch_id_and_is_never_retried",
+      "test_a_crash_after_dispatch_stays_uncertain_until_its_terminal_is_found",
+      "test_shutdown_before_dispatch_cancels_its_own_claim"
+     ]
+    }
+   ],
+   "disposition": "held",
+   "uncovered": [
+    "local transport refusals prove no submission without classifying remote replies"
+   ],
+   "held": "The 11 cases identical to B test upstream's old TypeScript CoreClient framing/version protocol, which native 3.x replaced with the hc CLI (upstream-owned). The one fork-added case (a local queue-full, closed or unserializable call is proven not submitted, while a remote refusal is never classified that way) has no native counterpart: native launch admission has no CoreNotSubmitted classification and treats any hc failure after its claim as submission-uncertain, so the listed tests prove only the conservative half."
+  },
+  {
+   "range": "pr3",
+   "path": "test/core-client.test.ts",
+   "declarations": 12,
+   "requirements": [
+    "launch-uncertainty",
+    "fork-ci-obligations"
+   ],
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_an_unconfirmed_reply_keeps_its_launch_id_and_is_never_retried"
+     ]
+    }
+   ],
+   "disposition": "held",
+   "uncovered": [],
+   "held": "P's 12 cases are identical to F's; P only moved the wire helpers into test/core-wire.ts, so this range adds no obligation beyond the fork row. That row's fork-added not-submitted classification case stays held (no native counterpart), and the other 11 are upstream-owned CoreClient protocol cases replaced by the hc CLI."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-failed-starts.test.ts",
+   "declarations": 22,
+   "requirements": [
+    "missing-history",
+    "manual-recovery",
+    "task-lifecycle-holds",
+    "fork-ci-obligations"
+   ],
+   "native": [
+    {
+     "path": "test/test_native_restart.py",
+     "tests": [
+      "test_missing_history_is_a_new_conversation_never_reported_as_a_resume",
+      "test_a_gone_session_starts_anew_once_whoever_asks"
+     ]
+    }
+   ],
+   "disposition": "held",
+   "uncovered": [
+    "a recovered ${role} never becomes a fresh session when native resume is missing",
+    "cold hook completion reconciles a successful ${kind} ${role} without a false failure",
+    "cold hook completion keeps ${reason} capture unconfirmed",
+    "cold hook completion does not hide a nonzero failed start",
+    "cold hook completion refuses ${change} during capture",
+    "cold hook completion keeps an unreadable capture unconfirmed",
+    "cold hook completion does not hide a captured native error on clean exit",
+    "cold hook completion refuses a terminal that no longer matches the recorded PID",
+    "cold hook completion preserves ${action} task settlement without a complete capture",
+    "boot recovery held ${role} preserves a missing native session${duringRead ? ' across screen read' : ''}"
+   ],
+   "held": "The 12 cases identical to B test upstream's old server failed-start convenience (a resume with no session starts anew, failed starts reported), which native revival reimplements as missing history (upstream-owned; listed native tests). Every fork-added case is unproven natively: native has no failed-start screen detection or cold SessionEnd hook reconciliation, no boot-recovered agent, and its missing-history behaviour is the opposite fresh fallback (missing-history decision held)."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-operator.test.ts",
+   "declarations": 25,
+   "requirements": [
+    "manual-recovery",
+    "late-sender-fence",
+    "azure-bound-resume",
+    "selection-effort-fast",
+    "delivery-retries",
+    "task-lifecycle-holds",
+    "fork-ci-obligations"
+   ],
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_a_delayed_sender_is_fenced_after_recovery",
+      "test_a_crash_after_dispatch_stays_uncertain_until_its_terminal_is_found"
+     ]
+    },
+    {
+     "path": "test/test_native_restart.py",
+     "tests": [
+      "test_a_send_hc_doesnt_confirm_stays_uncertain_and_holds_the_agent",
+      "test_a_model_its_recorded_deployment_would_replace_is_refused"
+     ]
+    }
+   ],
+   "disposition": "held",
+   "uncovered": [
+    "boot recovery arm and same-boot refusal preserve the exact uncertain launch and grant",
+    "boot recovery settlement preserves current native bindings and never replays old delivery",
+    "boot recovery hold survives a persisted reopen and holds task starts and queued messages",
+    "boot recovery refuses replaced ${replacement} without changing state",
+    "boot recovery final admission fences a preflight admitted before the hold",
+    "boot recovery refuses an in-flight application sender before arming",
+    "boot recovery retains a late confirmed identity and holds a queued task after explicit resume",
+    "boot recovery interruption after revocation leaves an armed durable hold for exact retry",
+    "boot recovery refuses unsupported proof, remote execution and expired operator authority",
+    "boot recovery real operator peer loss during host observation cannot commit",
+    "boot recovery rejects legacy EOF requests before reading host evidence",
+    "boot recovery public task Restart refuses changed ${Object.keys(selection)[0]} before effects",
+    "boot recovery normal coordinator task start recognizes settled execution without a terminal",
+    "boot recovery public continuation with a missing native session refuses a fresh fallback",
+    "boot recovery human executable routes to private operator and exposes no HTTP or agent action",
+    "boot recovery implicit task ${entry} keeps the retained Azure deployment",
+    "boot recovery explicit task ${entry} still refuses a different Azure deployment",
+    "boot recovery task start preserves metadata when ${scope} is held ${timing}",
+    "boot recovery task ${entry} refuses a coordinator hold before mutation",
+    "boot recovery task ${entry} cleans up after replacing the terminal-less recovered launch",
+    "boot recovery coordinator resume cancels owned descendant queues and preserves uncertain and unrelated work",
+    "boot recovery final task admission fences a newly held coordinator place",
+    "boot recovery task delivery rechecks a coordinator hold after its asynchronous label",
+    "boot recovery task backup rechecks its coordinator hold after reading handover context"
+   ],
+   "held": "All 24 fork-added cases test the operator boot-fenced launch recovery (recover-launch arm/settle/resume across a verified host reboot), which has no native implementation: ADR 0003 is only proposed and manual-recovery is decision-held. The listed native tests prove only the analogous ordinary-launch fence and uncertainty hold, not this path; the one case identical to B (private operator socket secret write) is upstream-owned."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-pilot-commands.test.ts",
+   "declarations": 11,
+   "requirements": [
+    "task-lifecycle-holds",
+    "fork-ci-obligations"
+   ],
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_a_refused_restart_changes_nothing_and_says_why"
+     ]
+    }
+   ],
+   "disposition": "held",
+   "uncovered": [
+    "task restart refuses a disconnected or changed process without launching a replacement"
+   ],
+   "held": "The fork added no case here; it only adapted fixtures (a fake route and a space record) so its restart route preflight still reaches the disconnected or changed-PID refusal. No native restart regression proves refusal on a disconnected machine or replaced process, and the contained-pilot cases identical to B are upstream-owned with no native contained mode."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-protected-update.test.ts",
+   "declarations": 15,
+   "requirements": [
+    "protected-update",
+    "fork-ci-obligations"
+   ],
+   "native": [],
+   "disposition": "held",
+   "uncovered": [
+    "protected operator refuses ${state} worker without changing state or stopping",
+    "protected operator preserves ${kind} ${'state' in value ? value.state : 'approval'}",
+    "protected operator admits confirmed idle workers and owns the shutdown",
+    "protected operator deadline revokes a delayed observation before it can stop the app",
+    "protected operator cannot reopen or repeat an independent ordinary shutdown",
+    "protected operator commits shutdown before a queued change after final validation",
+    "protected operator closes admission during its fresh observation and rechecks new permissions",
+    "protected operator refuses a worker appearing in fresh core inventory",
+    "protected operator refuses stale boot, failed observation and unsupported older protocol",
+    "protected startup refuses before permission cleanup, notice delivery or subscriptions",
+    "protected flag is explicit and ordinary configurations retain their defaults",
+    "protected launcher refuses through the executable without signaling the app process",
+    "protected startup observes core before accepting an apparently idle home",
+    "protected operator leaves the app running while a public action awaits",
+    "protected operator refuses a finished native start that could trigger session recovery"
+   ],
+   "held": "The whole file is fork-added protected preview update admission (idle-worker cutover, pending effects preserved, operator-owned shutdown). Native has no protected update path and the protected-update requirement is decision-held; native restart is not idle-safe update proof."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-screens.test.ts",
+   "declarations": 31,
+   "requirements": [
+    "screen-reconnect",
+    "manual-recovery"
+   ],
+   "native": [
+    {
+     "path": "core/screens.test.js",
+     "tests": [
+      "two matching reads put a card up; a press on it presses the choice"
+     ]
+    }
+   ],
+   "disposition": "held",
+   "uncovered": [
+    "boot recovery screen choice is refused${duringRead ? ' after its read' : ' while held'}"
+   ],
+   "held": "The 30 cases identical to B are upstream's screen-card behaviour, reimplemented natively in core/screens.js (upstream-owned; screen-reconnect stays reuse-unqualified). The fork-added case refuses a screen answer under a boot-recovery hold, a feature with no native implementation (manual-recovery decision-held)."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-source.test.ts",
+   "declarations": 20,
+   "requirements": [
+    "delivery-retries",
+    "manual-recovery",
+    "late-sender-fence"
+   ],
+   "native": [],
+   "disposition": "held",
+   "uncovered": [
+    "boot recovery coordinator hold keeps ${chat} delivery queued",
+    "boot recovery direct ${input} refuses a held task terminal",
+    "boot recovery direct text rechecks a hold after attaching and closes the unused stream",
+    "boot recovery coordinator hold arriving after one delivery retains the next queued message"
+   ],
+   "held": "The 16 cases identical to B are upstream's old CoreSource delivery behaviour (upstream-owned). Every fork-added case enforces a boot-recovery hold on delivery and direct terminal input; native has no launch-recovery hold, so no native regression proves it (manual-recovery decision-held)."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-task-processes.test.ts",
+   "declarations": 7,
+   "requirements": [
+    "task-lifecycle-holds",
+    "manual-recovery"
+   ],
+   "native": [],
+   "disposition": "held",
+   "uncovered": [
+    "boot recovery cleanup recognizes exact historical proof without treating the current worker as a child",
+    "boot recovery cleanup refuses historical ${mismatch} proof",
+    "boot recovery cleanup still follows a live historical root and its children despite journal proof"
+   ],
+   "held": "The 4 cases identical to B are upstream's descendant-cleanup behaviour (upstream-owned). The fork-added cases accept or refuse cleanup on boot-recovery journal proof, which does not exist natively; native descendant cleanup ownership is pending (task-lifecycle-holds) and manual-recovery is decision-held."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-tasks.test.ts",
+   "declarations": 63,
+   "requirements": [
+    "github-defaults",
+    "forge-identity",
+    "approval-exact-head",
+    "bitbucket-merge-refusal",
+    "public-cli-outcomes",
+    "fork-ci-obligations"
+   ],
+   "native": [
+    {
+     "path": "test/test_native_publication.py",
+     "tests": [
+      "test_ready_refuses_and_leaves_the_task_as_it_was"
+     ]
+    },
+    {
+     "path": "test/test_forge.py",
+     "tests": [
+      "test_ready_refuses_when_a_saved_pull_request_cannot_be_read_and_nothing_merges",
+      "test_github_answering_for_another_repository_publishes_nothing",
+      "test_its_open_pull_request_is_kept_and_told",
+      "test_a_legacy_pull_request_merges_on_github",
+      "test_one_from_another_repository_or_host_is_never_recorded"
+     ]
+    },
+    {
+     "path": "test/test_bitbucket_publication.py",
+     "tests": [
+      "test_a_bitbucket_folder_never_merges_here_or_by_an_agent",
+      "test_merge_stays_refused_once_published"
+     ]
+    }
+   ],
+   "disposition": "partial",
+   "uncovered": [
+    "a merge card never shows the checks of another commit",
+    "Ready promotes only its confirmed exact-head draft PR and records the final body before the ready card",
+    "observed GitHub merge requires the saved PR URL, exact Ready head and base before recording Done",
+    "public pr command reconciles one draft, preserves its qualified identity on reopen and keeps chat history",
+    "public ready accepts legacy GitHub PR records and binds the merge card to its source and destination",
+    "public checks binds complete observations to the candidate and incomplete checks cannot authorize integration",
+    "public merge records only verified exact-identity integration and preserves the source branch",
+    "an unknown public merge result retains pending state and never performs local integration",
+    "a saved forge identity changed after approval requires fresh readiness before a public merge",
+    "T1 compatibility: public task records survive transport rewrite removal and change after reopening",
+    "T1 compatibility: bare relative filesystem origins retain public local integration with real history",
+    "T1 compatibility: unchanged legacy re-publication preserves reopened readiness and approval snapshots",
+    "T1 compatibility: legacy re-publication cannot preserve approval for a changed candidate, destination or identity"
+   ],
+   "held": "Cases identical to B are upstream task behaviour (upstream-owned). Mapped: a PR lookup failure never publishing, a foreign same-number PR refused, and Bitbucket merge refusal. Uncovered: native GitHub has no draft PR, public pr/checks commands, merge-card approval snapshot or durable merging state; native merge passes --delete-branch where the fork preserved the source branch; and no native test changes a saved identity, an insteadOf alias or a relative filesystem origin after reopening."
+  },
+  {
+   "range": "fork",
+   "path": "test/core-terminal.test.ts",
+   "declarations": 9,
+   "requirements": [
+    "screen-reconnect",
+    "manual-recovery",
+    "late-sender-fence"
+   ],
+   "native": [],
+   "disposition": "held",
+   "uncovered": [
+    "boot recovery browser ${type} refuses a held terminal but watching remains available",
+    "boot recovery browser text rechecks the hold after attaching before writing bytes"
+   ],
+   "held": "The 7 cases identical to B are upstream's browser terminal bridge (upstream-owned; native service/terminal.ts has no Bun regression). The fork-added cases refuse browser input under a boot-recovery hold, which has no native implementation (manual-recovery decision-held)."
+  },
+  {
+   "range": "pr3",
+   "path": "test/core-mailbox.test.ts",
+   "declarations": 6,
+   "requirements": [
+    "request-replay",
+    "fork-ci-obligations"
+   ],
+   "native": [],
+   "disposition": "held",
+   "uncovered": [],
+   "held": "P's 6 cases are identical to F's and to B's; P only moved the Documents helper into test/mailbox-documents.ts, so there is no pr3 or fork obligation beyond upstream's. They test the old server's sealed core-document mailbox (issued scopes, forged credentials, crash-uncertain claimed requests, encrypted responses), which native 3.x does not have, so no native regression proves them."
+  }
+ ],
+ "workflow_obligations": [
+  {
+   "workflow": "check.yml",
+   "job": "test",
+   "step": "bun run test --shard=${{ matrix.shard }}/3 --map=screen-map.json",
+   "requirements": [
+    "fork-ci-obligations"
+   ],
+   "disposition": "suite",
+   "native": [],
+   "held": "The fork's whole suite at F in three shards with its browser tests. Each changed test file is reconciled under test_obligations; native Check runs its own suites instead (577 Bun and 715 Python tests on the candidate). Browser layout tests and the screen map have no native counterpart in Check."
+  },
+  {
+   "workflow": "core-rewrite.yml",
+   "job": "core",
+   "step": "bun test test/core-*.test.ts test/artifacts.test.ts test/models.test.ts test/activity.test.ts test/order.test.ts test/health.test.ts test/plugins.test.ts test/search.test.ts test/attention.test.ts",
+   "requirements": [
+    "fork-ci-obligations",
+    "plugin-state-compatibility"
+   ],
+   "disposition": "suite",
+   "native": [],
+   "held": "The 2.1 rewrite branch's core suite. Its fork-changed core files are reconciled under test_obligations; the other files are upstream 2.x's own and not fork obligations in the inventory."
+  },
+  {
+   "workflow": "core-rewrite.yml",
+   "job": "task-layout",
+   "step": "bun test test/layout-restart.test.ts test/layout-keyboard.test.ts test/layout-activity.test.ts test/layout-pr-checks.test.ts test/layout-places.test.ts test/layout-sections.test.ts test/layout-automations.test.ts test/layout-voice.test.ts test/layout-search.test.ts test/layout-unread.test.ts test/layout-attention.test.ts test/layout-cards.test.ts test/browser.test.ts test/voice.test.ts",
+   "requirements": [
+    "fork-ci-obligations"
+   ],
+   "disposition": "suite",
+   "native": [],
+   "held": "Browser layout tests of the 2.1 screen. layout-restart is reconciled under test_obligations; native Check runs no browser test, so the web screen's layout is unproved."
+  },
+  {
+   "workflow": "core-rewrite.yml",
+   "job": "production-plugin",
+   "step": "bun test --isolate test/core-plugin-production.test.ts",
+   "requirements": [
+    "plugin-state-compatibility"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The optional real production-plugin build (SHEPHERDR_REAL_PLUGIN_BUILD=1). Native 3.x builds no person-owned plugin (web/build-plugins.ts writes user: []), so there is nothing to build; default Check green does not stand in for this proof."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove the default-preservation regression detects a provider override",
+   "requirements": [
+    "azure-personal"
+   ],
+   "disposition": "ported",
+   "native": [
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_no_provider_setting_starts_the_cli_as_before"
+     ]
+    }
+   ],
+   "held": "Ported at a task start's Personal guard (launch.py: Personal adds no variable to the agent's shell), as the fork's step targeted Personal launches; the regression's start must export nothing of a provider's. Claude Code only, where the fork's step checked both CLIs. compose()'s Personal branch, which provider plan and revival read, has native regressions but no guard-removal proof; an Assistant's Personal start skips compose() in launch_admission.py.",
+   "mutation": {
+    "runner": "unittest",
+    "file": "mods/tasks/bin/herdr_task/launch.py",
+    "before": "    penv = {}\n    if plan[\"route\"] != PERSONAL:\n        cmd, penv = compose(plan, cmd)",
+    "after": "    penv = {\"OPENAI_BASE_URL\": \"https://invalid.example\"}\n    if plan[\"route\"] != PERSONAL:\n        cmd, penv = compose(plan, cmd)",
+    "test_file": "test/test_providers.py",
+    "test": "test_no_provider_setting_starts_the_cli_as_before"
+   }
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove discovery rejects incompatible inventory",
+   "requirements": [
+    "azure-discovery"
+   ],
+   "disposition": "ported",
+   "native": [
+    {
+     "path": "service/azure-deployments.test.ts",
+     "tests": [
+      "a refresh offers only ready deployments with the CLI's own format and capability, and picks none"
+     ]
+    }
+   ],
+   "held": "",
+   "mutation": {
+    "runner": "bun",
+    "file": "service/azure-deployments.ts",
+    "before": "if (p.provisioningState !== \"Succeeded\" || model.format !== format || !(can === \"true\" || can === true)) continue;",
+    "after": "if (p.provisioningState !== \"Succeeded\" || model.format !== format) continue;",
+    "test_file": "service/azure-deployments.test.ts",
+    "test": "a refresh offers only ready deployments"
+   }
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove preflight refusal precedes interruption",
+   "requirements": [
+    "azure-bound-resume",
+    "one-revival-owner"
+   ],
+   "disposition": "held",
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_a_refused_restart_changes_nothing_and_says_why"
+     ]
+    },
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_changed_routing_refuses_before_anything_changes"
+     ]
+    }
+   ],
+   "held": "Native regressions assert the behavior, but no Check step removes the guard to prove they detect its loss."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove Codex resume retains its recorded deployment",
+   "requirements": [
+    "azure-bound-resume",
+    "selection-effort-fast"
+   ],
+   "disposition": "ported",
+   "native": [
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_codex_resume_keeps_its_provider_deployment_effort_and_fast"
+     ]
+    }
+   ],
+   "held": "",
+   "mutation": {
+    "runner": "unittest",
+    "file": "mods/tasks/bin/herdr_task/providers.py",
+    "before": "now = launch_plan(kind, {**binding, f\"{kind}_deployment\": rec.get(\"deployment\") or \"\"})",
+    "after": "now = launch_plan(kind, binding)",
+    "test_file": "test/test_providers.py",
+    "test": "test_codex_resume_keeps_its_provider_deployment_effort_and_fast"
+   }
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove the final revision guard detects a settings race",
+   "requirements": [
+    "launch-uncertainty",
+    "request-replay"
+   ],
+   "disposition": "ported",
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_settings_changed_before_submission_cancel_the_claim"
+     ]
+    }
+   ],
+   "held": "",
+   "mutation": {
+    "runner": "unittest",
+    "file": "mods/tasks/bin/herdr_task/launch_admission.py",
+    "before": "if self.revise() != self.revision:\n                rec.update(state=CANCELLED, reason=\"settings changed before it was sent\", updated=now())",
+    "after": "if False:\n                rec.update(state=CANCELLED, reason=\"settings changed before it was sent\", updated=now())",
+    "test_file": "test/test_launch_admission.py",
+    "test": "test_settings_changed_before_submission_cancel_the_claim"
+   }
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove unrelated settings cannot cancel an admitted replacement",
+   "requirements": [
+    "launch-uncertainty"
+   ],
+   "disposition": "held",
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_unrelated_settings_edits_do_not_refuse"
+     ]
+    }
+   ],
+   "held": "Native regressions assert the behavior, but no Check step removes the guard to prove they detect its loss."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove local non-submission cannot strand a conversation",
+   "requirements": [
+    "launch-uncertainty",
+    "manual-recovery"
+   ],
+   "disposition": "held",
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_shutdown_before_dispatch_cancels_its_own_claim",
+      "test_competing_start_after_a_crash_before_dispatch_waits_for_recover"
+     ]
+    }
+   ],
+   "held": "Native regressions assert the behavior, but no Check step removes the guard to prove they detect its loss."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove required coordinator validation precedes worker interruption",
+   "requirements": [
+    "task-lifecycle-holds",
+    "one-revival-owner"
+   ],
+   "disposition": "held",
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_its_assistant_changing_while_it_prepares_refuses_before_dispatch"
+     ]
+    }
+   ],
+   "held": "The fork validated a task restart's required coordinator before ending the worker. Native regressions assert the behavior, but no Check step removes the guard to prove they detect its loss."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove late parent liveness is rechecked",
+   "requirements": [
+    "task-lifecycle-holds"
+   ],
+   "disposition": "held",
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_its_assistant_changing_while_it_prepares_refuses_before_dispatch"
+     ]
+    }
+   ],
+   "held": "The fork rechecked its coordinator's liveness late in a task start. Native rechecks the task's Assistant before dispatch; no guard-removal proof is ported."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove protected stop refuses live workers",
+   "requirements": [
+    "protected-update"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "Protected update is decision-held (R): native has no protected operator to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove expired operator requests cannot stop the app later",
+   "requirements": [
+    "protected-update"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "Protected update is decision-held (R): native has no protected operator to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove protected admission preserves an independent shutdown",
+   "requirements": [
+    "protected-update"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "Protected update is decision-held (R): native has no protected operator to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove agents cannot redirect connection credentials",
+   "requirements": [
+    "azure-credential-custody"
+   ],
+   "disposition": "held",
+   "native": [
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_a_credential_put_in_settings_is_refused_and_never_repeated"
+     ]
+    }
+   ],
+   "held": "The fork refused a coordinator command changing connection settings. Native refuses a credential put in settings; whether any agent-reachable command can write provider connection fields is source-inspected only, and no guard-removal proof is ported."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove task restart rebinds only its owned coordinator replacement",
+   "requirements": [
+    "task-lifecycle-holds",
+    "one-revival-owner"
+   ],
+   "disposition": "held",
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_a_restart_goes_through_the_journal"
+     ]
+    }
+   ],
+   "held": "The fork's task restart rebound its own coordinator replacement only. Native regressions assert the behavior, but no Check step removes the guard to prove they detect its loss."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove task selection reset preserves brief requirements",
+   "requirements": [
+    "azure-new-start"
+   ],
+   "disposition": "held",
+   "native": [
+    {
+     "path": "test/test_providers.py",
+     "tests": [
+      "test_a_save_is_revision_bound_and_changes_nothing_else"
+     ]
+    }
+   ],
+   "held": "Native regressions assert the behavior, but no Check step removes the guard to prove they detect its loss."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "bun test test/core-launch-admission.test.ts --test-name-pattern 'launch delivery'",
+   "requirements": [
+    "delivery-retries"
+   ],
+   "disposition": "held",
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_a_start_is_claimed_sent_and_confirmed_under_one_launch_id"
+     ]
+    }
+   ],
+   "held": "The fork acknowledged delivery of the exact native prompt. Native confirms a start from hc's reply or its launch label; herdr-core keeps no delivery receipt (held core gap)."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove native delivery regression detects the premature restart filter",
+   "requirements": [
+    "delivery-retries"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "No native delivery acknowledgement exists to filter; herdr-core keeps no delivery receipt (held core gap)."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "bun test test/core-failed-starts.test.ts --test-name-pattern 'cold hook completion'",
+   "requirements": [
+    "launch-uncertainty",
+    "ordinary-resume"
+   ],
+   "disposition": "held",
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_a_lost_reply_is_confirmed_by_its_own_launch_label"
+     ]
+    }
+   ],
+   "held": "Cold hook completion (readiness from the agent's own start hook) is the fork's convenience; native confirms a start from hc's reply or its launch label. Held for conditional retirement, a human choice."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove cold hook regression detects premature startup failure",
+   "requirements": [
+    "launch-uncertainty"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "Cold hook completion has no native owner; held for conditional retirement, a human choice."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove readiness reconciliation rejects a changed worker PID",
+   "requirements": [
+    "launch-uncertainty",
+    "late-sender-fence"
+   ],
+   "disposition": "held",
+   "native": [
+    {
+     "path": "test/test_launch_admission.py",
+     "tests": [
+      "test_a_lost_reply_is_confirmed_by_its_own_launch_label"
+     ]
+    }
+   ],
+   "held": "Native reconciles a start by its launch label, not a worker PID; no guard-removal proof is ported."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove capture cannot strand a closed or archived task",
+   "requirements": [
+    "task-lifecycle-holds"
+   ],
+   "disposition": "held",
+   "native": [
+    {
+     "path": "test/test_native_restart.py",
+     "tests": [
+      "test_a_finished_tasks_agent_stays_a_shell"
+     ]
+    }
+   ],
+   "held": "Native regressions assert the behavior, but no Check step removes the guard to prove they detect its loss."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Establish passing recovery cases before removing guards",
+   "requirements": [
+    "manual-recovery"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The fork's boot recovery (operator boot fence, ADR 0003) has no native owner; manual recovery, reboot evidence and exact revocation are decision-held, so this guard has nothing native to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove recovery refuses settlement in the same host boot",
+   "requirements": [
+    "manual-recovery"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The fork's boot recovery (operator boot fence, ADR 0003) has no native owner; manual recovery, reboot evidence and exact revocation are decision-held, so this guard has nothing native to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove recovery rejects a different execution host",
+   "requirements": [
+    "manual-recovery"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The fork's boot recovery (operator boot fence, ADR 0003) has no native owner; manual recovery, reboot evidence and exact revocation are decision-held, so this guard has nothing native to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove final admission respects an armed recovery hold",
+   "requirements": [
+    "manual-recovery",
+    "launch-uncertainty"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The fork's boot recovery (operator boot fence, ADR 0003) has no native owner; manual recovery, reboot evidence and exact revocation are decision-held, so this guard has nothing native to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove recovered selection is checked before task effects",
+   "requirements": [
+    "manual-recovery",
+    "selection-effort-fast"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The fork's boot recovery (operator boot fence, ADR 0003) has no native owner; manual recovery, reboot evidence and exact revocation are decision-held, so this guard has nothing native to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove missing recovered sessions cannot start fresh",
+   "requirements": [
+    "manual-recovery",
+    "missing-history"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The fork's boot recovery (operator boot fence, ADR 0003) has no native owner; manual recovery, reboot evidence and exact revocation are decision-held, so this guard has nothing native to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove real operator peer loss revokes recovery admission",
+   "requirements": [
+    "manual-recovery"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The fork's boot recovery (operator boot fence, ADR 0003) has no native owner; manual recovery, reboot evidence and exact revocation are decision-held, so this guard has nothing native to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove coordinator holds fence descendant delivery and retries",
+   "requirements": [
+    "manual-recovery",
+    "delivery-retries"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The fork's boot recovery (operator boot fence, ADR 0003) has no native owner; manual recovery, reboot evidence and exact revocation are decision-held, so this guard has nothing native to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove recovery input gates reject instructions before and after awaits",
+   "requirements": [
+    "manual-recovery",
+    "screen-reconnect"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The fork's boot recovery (operator boot fence, ADR 0003) has no native owner; manual recovery, reboot evidence and exact revocation are decision-held, so this guard has nothing native to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove held missing-session fallback retains its native binding",
+   "requirements": [
+    "manual-recovery",
+    "missing-history",
+    "azure-bound-resume"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The fork's boot recovery (operator boot fence, ADR 0003) has no native owner; manual recovery, reboot evidence and exact revocation are decision-held, so this guard has nothing native to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove recovery queue disposition includes descendants and late holds",
+   "requirements": [
+    "manual-recovery",
+    "task-lifecycle-holds"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The fork's boot recovery (operator boot fence, ADR 0003) has no native owner; manual recovery, reboot evidence and exact revocation are decision-held, so this guard has nothing native to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove historical reboot evidence permits replacement cleanup",
+   "requirements": [
+    "manual-recovery"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The fork's boot recovery (operator boot fence, ADR 0003) has no native owner; manual recovery, reboot evidence and exact revocation are decision-held, so this guard has nothing native to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove historical cleanup refuses mismatched recovery identities",
+   "requirements": [
+    "manual-recovery"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The fork's boot recovery (operator boot fence, ADR 0003) has no native owner; manual recovery, reboot evidence and exact revocation are decision-held, so this guard has nothing native to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove implicit recovery keeps the effective Azure deployment",
+   "requirements": [
+    "manual-recovery",
+    "azure-bound-resume"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The fork's boot recovery (operator boot fence, ADR 0003) has no native owner; manual recovery, reboot evidence and exact revocation are decision-held, so this guard has nothing native to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Prove task holds precede mutation and asynchronous dispatch",
+   "requirements": [
+    "manual-recovery",
+    "task-lifecycle-holds"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The fork's boot recovery (operator boot fence, ADR 0003) has no native owner; manual recovery, reboot evidence and exact revocation are decision-held, so this guard has nothing native to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "Restore and recheck the complete recovery baseline",
+   "requirements": [
+    "manual-recovery"
+   ],
+   "disposition": "held",
+   "native": [],
+   "held": "The fork's boot recovery (operator boot fence, ADR 0003) has no native owner; manual recovery, reboot evidence and exact revocation are decision-held, so this guard has nothing native to prove against."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "bun test test/core-providers.test.ts test/core-settings.test.ts test/core-agents.test.ts test/core-azure-deployments.test.ts test/core-coordinator-restart.test.ts test/core-tasks.test.ts test/core-launch-admission.test.ts test/core-client.test.ts test/core-mailbox.test.ts test/core-launcher.test.ts test/core-operator.test.ts test/core-protected-update.test.ts test/core-commands.test.ts test/core-failed-starts.test.ts",
+   "requirements": [
+    "fork-ci-obligations",
+    "azure-personal",
+    "launch-uncertainty"
+   ],
+   "disposition": "suite",
+   "native": [],
+   "held": "The Foundry contract suite. Each fork-changed file is reconciled under test_obligations (core-launcher.test.ts is not a fork change in the inventory)."
+  },
+  {
+   "workflow": "foundry.yml",
+   "job": "contract",
+   "step": "bun test test/layout-restart.test.ts test/layout-azure-admission.test.ts",
+   "requirements": [
+    "fork-ci-obligations",
+    "azure-new-start"
+   ],
+   "disposition": "suite",
+   "native": [],
+   "held": "Browser layout tests; both files are reconciled under test_obligations. Native Check runs no browser test."
+  }
+ ]
+}

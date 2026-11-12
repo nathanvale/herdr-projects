@@ -1,0 +1,691 @@
+#!/usr/bin/env python3
+"""Validate the source checkpoint contract without starting or installing anything."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parent.parent
+INPUTS = {
+    'F': '4f0236f03a88c5e9fa344475d90d3a20ef418481',
+    # U is the exact upstream parent the native foundation equals: v3.1.33 since its merge (v3.1.32 be647c82 before,
+    # v3.1.29 e41ea9d2 before that, v3.1.16 57302497 before that; S0 merged v3.1.3, dc018f2a).
+    'U': 'ef3be074dd3e28942149b7a5183ab2e2d4207954',
+    'P': '074dec5ea0bf0a057f520fa50497bf9e1b696ad9',
+    'B': 'de8e17957efb4aa016d7e4d652f397aaa95f0880',
+}
+REQUIRED = frozenset('''github-defaults forge-identity bitbucket-credentials
+bitbucket-reads bitbucket-publication bitbucket-current-fields bitbucket-push-facts
+bitbucket-uncertainty bitbucket-two-machine bitbucket-merge-refusal public-cli-outcomes
+approval-exact-head request-replay azure-personal azure-claude-entra azure-claude-key
+azure-claude-token azure-codex-key azure-credential-custody azure-discovery
+azure-discovery-scope azure-discovery-stale azure-settings-surfaces azure-new-start
+azure-bound-resume selection-effort-fast settings-inheritance ordinary-resume
+missing-history launch-uncertainty late-sender-fence one-revival-owner manual-recovery
+delivery-retries task-lifecycle-holds screen-reconnect protected-update
+plugin-state-compatibility fork-ci-obligations matching-state-rollback'''.split())
+OVERRIDES = {'AGENTS.md', 'docs/develop.md', '.github/workflows/check.yml'}
+# Reviewed source phases, in order, and the owner paths each may change. The manifest pins each
+# admitted path's content; this table, not the manifest, decides what a phase may touch.
+PHASES = {
+    'S0': frozenset(),
+    'A1': frozenset('''mods/tasks/bin/herdr_task/__init__.py mods/tasks/bin/herdr_task/automations.py
+mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py
+mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/takeover.py service/azure-deployments.test.ts
+service/azure-deployments.ts test/azure-binding.cases.json test/test_providers.py'''.split()),
+    # N1 owns the installer beside its docs/install.md since PR 60's review #8: an update from a source with no
+    # built page keeps the page installed before, and its record rows. Since PR 60's six-claim fix it owns the task
+    # browser's helper the installer runs too: a Chrome that can't start ends `--install` on a line that says so.
+    'N1': frozenset('''bin/herdr-browser bin/shepherdr docs/install.md mods/tasks/bin/herdr_task/cli.py
+mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/tick.py
+test/test_herdr_browser_libs.py test/test_herdr_task.py test/test_install.py test/test_native_publication.py'''.split()),
+    'C1': frozenset('''core/agents.js core/chat-find.test.js core/chat-log.js mods/chat/core/agents.js
+mods/chat/core/chat-log.js mods/chat/main.js mods/coordinator/core/agents.js mods/newspace/core/agents.js
+mods/shepherdr-settings/core/agents.js mods/tasks/bin/herdr_task/news.py mods/tasks/bin/herdr_task/sessions.py
+service/actions.ts service/agents.ts service/watch.ts test/test_session_discovery.py mods/chat-models/core/agents.js
+service/chats.test.ts'''.split()),
+    'W1': frozenset('docs/web.md service/jobs-flags.test.ts service/jobs.ts'.split()),
+    'H1': frozenset('''.github/workflows/private-domain.yml docs/adr/0004-private-custom-domain.md docs/private-domain.md
+docs/web.md scripts/private-domain-proof.ts service/auth.ts service/main.ts service/private-domain.test.ts
+service/private-domain.ts'''.split()),
+    # The forge seam: commands, the tick and the Accept card reach a pull request only through forge.py,
+    # and github.py is its GitHub adapter. Its owners that earlier phases admitted are S1's from here.
+    'S1': frozenset('''mods/tasks/bin/herdr_task/__init__.py mods/tasks/bin/herdr_task/commands.py
+mods/tasks/bin/herdr_task/forge.py mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/proof.py
+mods/tasks/bin/herdr_task/tick.py test/test_forge.py test/test_herdr_task.py test/test_native_publication.py'''.split()),
+    # Bitbucket reads: a saved Bitbucket pull request and its head's complete checks, through the forge's
+    # second adapter on the execution host's own Git credentials. S1's owners it changes are B1's from here.
+    'B1': frozenset('''mods/tasks/bin/herdr_task/__init__.py mods/tasks/bin/herdr_task/bitbucket.py
+mods/tasks/bin/herdr_task/bitbucket_http.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/forge.py
+mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/proof.py mods/tasks/bin/herdr_task/tick.py
+mods/task-pr/main.js service/worktree.ts test/test_bitbucket.py'''.split()),
+    # Bitbucket publication: Ready pushes on a frozen route, opens the draft and prepares it under this host's
+    # durable claims, reconciled by operation id. B1's owners it changes are B2's from here.
+    'B2': frozenset('''mods/tasks/bin/herdr_task/__init__.py mods/tasks/bin/herdr_task/bitbucket.py
+mods/tasks/bin/herdr_task/bitbucket_http.py mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py
+mods/tasks/bin/herdr_task/forge.py mods/tasks/bin/herdr_task/publications.py test/test_bitbucket.py
+test/test_bitbucket_publication.py test/test_native_publication.py'''.split()),
+    # Launch admission: every task and Assistant start goes through one owner with a durable launch journal,
+    # and the five Assistant start sites run `herdr-task launch run`. Earlier owners it changes are L1's from here.
+    'L1': frozenset('''mods/chat/main.js mods/coordinator/restart.sh mods/tasks/bin/herdr_task/automations.py
+mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py
+mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/settings.py
+mods/tasks/bin/herdr_task/takeover.py mods/tasks/bin/herdr_task/tick.py service/actions.ts service/launch-sites.test.ts
+service/main.ts service/spaces.ts test/test_herdr_task.py test/test_launch_admission.py test/test_providers.py
+web/plugins/places/add.tsx'''.split()),
+    # Azure selectors and bound starts: the person's Provider settings (desktop and web) with Refresh and manual entry,
+    # save-only new-start selectors for a task and an Assistant, each start's binding recorded and kept on resume, and
+    # the L2 sites (restart, fork, a lost session, revival) refusing anything but Personal. Earlier owners it changes are
+    # A2's from here. Since PR 60's six-claim fix A2, the owner of the service's settings and main, also owns the chat's
+    # suggested next message (per space, read by screen readers), the #-mention reach list's known spaces, and the
+    # kernel's store hooks' server snapshot and markdown.tsx's DOM-only link hook, which let a test draw the real
+    # Composer as HTML. Since PR 60's reach proof it owns service/reach.ts too: the service's # list, out of main.ts so a
+    # test runs it with a stand-in herdr-core.
+    'A2': frozenset('''core/agents.js core/agents.test.js core/chat-find.test.js core/live-switch.js core/live-switch.test.js
+core/mentions.js core/mentions.test.js core/settings.js core/tasks.js core/tasks.test.js
+lib/COPIES lib/agent.js mods/chat-models/core/agents.js mods/chat/agent.js
+mods/chat/core/agents.js mods/chat/core/mentions.js mods/chat/core/settings.js mods/chat/core/tasks.js mods/chat/main.js mods/coordinator/core/agents.js
+mods/coordinator/core/settings.js mods/coordinator/restart.sh mods/jump/core/tasks.js mods/newspace/agent.js mods/newspace/core/agents.js
+mods/newspace/core/settings.js mods/shepherdr-settings/agent.js mods/shepherdr-settings/core/agents.js
+mods/shepherdr-settings/core/settings.js mods/shepherdr-settings/main.js mods/shepherdr-settings/provider-section.js
+mods/tasks/bin/herdr_task/agents.py mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py
+mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/revive.py
+mods/tasks/bin/herdr_task/settings.py mods/tasks-menu/main.js mods/tasks/core/tasks.js mods/tasks/local.js mods/tasks/main.js service/actions.ts service/agents.ts service/compat.ts service/launch-sites.test.ts
+service/live-switch.test.ts service/main.ts service/selections.test.ts service/selections.ts service/settings.test.ts service/settings.ts service/chat-reach.test.ts
+service/reach.test.ts service/reach.ts
+service/spaces.ts service/voice-data.ts service/watch.ts test/test_herdr_task.py test/test_launch_admission.py test/test_restart.py test/test_providers.py web/plugins/tasks/client.tsx
+service/artifacts-remote.test.ts service/artifacts.ts web/src/back.test.tsx web/src/ui.tsx
+web/plugins/chat/client.tsx web/plugins/chat/composer.test.tsx web/plugins/chat/markdown.tsx web/plugins/chat/suggest.test.ts
+web/plugins/chat/suggest.ts
+web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx web/src/kernel.ts web/src/restart.tsx'''.split()),
+    # Native restart and revival: revival, a lost session at its shell and every restart go through launch admission on
+    # the recorded binding (continued conversations) or today's settings (new ones, never onto another route), claimed
+    # in the journal before anything is typed or started. Earlier owners it changes are L2's from here.
+    'L2': frozenset('''core/chat-find.test.js lib/agent.js service/actions.ts mods/chat/agent.js mods/chat/main.js mods/coordinator/restart.sh
+mods/newspace/agent.js mods/shepherdr-settings/agent.js mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py
+mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/revive.py
+service/agents.ts service/watch.ts test/test_herdr_task.py test/test_launch_admission.py test/test_native_restart.py
+test/test_providers.py test/test_session_discovery.py'''.split()),
+    # Q, the exact-candidate reconciliation: it changes no runtime owner. Its ledger and sensitivity runner are named
+    # below; the source it reconciles is the candidate the ledger names (validate_reconciliation).
+    'Q': frozenset(),
+}
+# The shared table's second half (PR 19 decision D5, issue #7): what accepted changes add beyond exact
+# U and outside every phase's owners, admitted by name and left to review for content. With U's paths
+# and the admitted owners above, these are the only paths a commit here may hold.
+NAMED = {
+    'S0': '''CODING_STANDARDS.md GLOSSARY.md bin/check-migration docs/adr/0001-protected-preview-update-admission.md
+docs/adr/0002-bitbucket-rest-transport.md docs/adr/0003-operator-boot-fenced-launch-recovery.md docs/agents/README.md
+docs/agents/domain.md docs/agents/issue-tracker.md docs/agents/triage-labels.md docs/azure-foundry.md
+docs/core/launch-recovery.md docs/forge-adapter-reference.md docs/forge-adapters.md docs/forge-bitbucket-transport.md
+docs/forge-review-map.md docs/migration/upstream-v3.1.3-files.json docs/migration/upstream-v3.1.3.json
+docs/migration/upstream-v3.1.3.md test/test_migration.py''',
+    'A1': 'docs/azure-launch-plans.md',
+    'L1': 'docs/launch-admission.md',
+    'A2': 'docs/azure-selectors.md',
+    'L2': 'docs/native-restart.md',
+    'Q': 'bin/check-sensitivity docs/migration/q-reconciliation.json',
+    # PR 60 review #8: the installer page guard's removal proofs, which Check runs through bin/check-sensitivity.
+    'PR60-FIX8': 'docs/migration/pr60-sensitivity.json',
+    # v3.1.32's merge: SHEP-211's switch order, adapted to launch admission, and its removal proofs, which Check runs
+    # through bin/check-sensitivity.
+    'UP32-SWITCH': 'docs/migration/up32-sensitivity.json',
+    'PR 20': '.claude/.gitignore .claude/checkout-access.json bin/checkout-access test/test_checkout_access.py',
+    # MIG-12, a tooling unit outside every phase: the report-only Fallow setup (docs/fallow.md). Its pinned tool
+    # package lives apart from U's package.json and bun.lock, which stay exact U.
+    'MIG-12': '''.fallowrc.json docs/fallow.md fallow-baselines/dead-code.json fallow-baselines/dupes.json
+fallow-baselines/health.json test/test_fallow_config.py tools/fallow/bun.lock tools/fallow/package.json''',
+}
+
+
+def git(*args):
+    result = subprocess.run(['git', '-C', str(ROOT), *args], capture_output=True)
+    if result.returncode:
+        raise ValueError('Required fixed Git object unavailable; Root must provide F/U/P/B history for CI')
+    return result.stdout
+
+
+def admitted(phase):
+    """{path: phase} for every owner path the phases up to `phase` may change."""
+    order = list(PHASES)
+    return {path: name for name in order[:order.index(phase) + 1] for path in PHASES[name]}
+
+
+def validate_deltas(contract):
+    rows = contract.get('source_deltas')
+    if not isinstance(rows, list):
+        raise ValueError('Source deltas are missing')
+    owners = admitted(contract['phase'])
+    paths = [row.get('path') for row in rows]
+    if len(paths) != len(set(paths)) or set(paths) != set(owners):
+        raise ValueError('Source deltas differ from the admitted owners of phase ' + contract['phase'])
+    upstream = {line.split('\t')[1]: line.split()[2] for line in git('ls-tree', '-r', INPUTS['U']).decode().splitlines()}
+    for row in rows:
+        if row.get('phase') != owners[row['path']] or row.get('upstream_blob') != upstream.get(row['path']):
+            raise ValueError('Source delta phase or upstream provenance changed at ' + row['path'])
+        if not isinstance(row.get('sha256'), str) or len(row['sha256']) != 64:
+            raise ValueError('Source delta lacks its admitted content hash at ' + row['path'])
+    return {row['path']: row['sha256'] for row in rows}
+
+
+def validate_contract(contract):
+    if contract.get('schema') != 1 or contract.get('inputs') != INPUTS:
+        raise ValueError('Fixed inputs or contract schema changed')
+    if contract.get('phase') not in PHASES or (contract.get('architecture'), contract.get('candidate_readiness')) != (
+            'full-upstream-3.x', 'blocked'):
+        raise ValueError('The checkpoint must remain a blocked full-upstream source phase')
+    rows = contract.get('requirements', [])
+    if len(rows) != len(REQUIRED) or {row.get('id') for row in rows} != REQUIRED:
+        raise ValueError('Required behavior inventory is incomplete or duplicated')
+    for row in rows:
+        if row.get('status') not in {'pending', 'reuse-unqualified', 'decision-held'}:
+            raise ValueError('A source checkpoint cannot claim a required port is qualified')
+        if not all(row.get(key) for key in ('phase', 'requirement', 'owners', 'source_paths', 'evidence')):
+            raise ValueError('Requirement lacks owner, proof source or disposition')
+        if row.get('port_source') != INPUTS['P']:
+            raise ValueError('Required port source changed')
+    return validate_deltas(contract)
+
+
+def validate_inventory(inventory):
+    if inventory.get('schema') != 1 or inventory.get('inputs') != INPUTS:
+        raise ValueError('File inventory inputs or schema changed')
+    rows = inventory.get('files', [])
+    actual = {(row['range'], row['path'], row['change']) for row in rows}
+    expected = set()
+    for label, before, after in [('fork', INPUTS['B'], INPUTS['F']), ('pr3', INPUTS['F'], INPUTS['P'])]:
+        for line in git('diff', '--no-renames', '--name-status', before, after).decode().splitlines():
+            status, path = line.split('\t')
+            expected.add((label, path, status))
+    if len(actual) != len(rows) or actual != expected:
+        raise ValueError('File dispositions do not cover every B..F and F..P path')
+    for row in rows:
+        if not row.get('disposition') or not row.get('phase') or row.get('parity') != 'not-qualified':
+            raise ValueError('File disposition or pending proof obligation missing')
+        endpoints = (INPUTS['B'], INPUTS['F']) if row['range'] == 'fork' else (INPUTS['F'], INPUTS['P'])
+        for side, commit in zip(('before', 'after'), endpoints):
+            snapshot = row.get(side)
+            absent = side == 'before' and row['change'] == 'A' or side == 'after' and row['change'] == 'D'
+            if absent:
+                if snapshot is not None:
+                    raise ValueError('Unexpected snapshot for absent source path')
+                continue
+            data = git('show', commit + ':' + row['path'])
+            blob = git('rev-parse', commit + ':' + row['path']).decode().strip()
+            if not snapshot or snapshot.get('commit') != commit or snapshot.get('git_blob') != blob:
+                raise ValueError('Original source provenance changed')
+            if snapshot.get('sha256') != hashlib.sha256(data).hexdigest():
+                raise ValueError('Original source hash changed')
+    return len(rows)
+
+
+def validate_foundation(deltas):
+    files = git('ls-tree', '-r', INPUTS['U']).decode().splitlines()
+    upstream = {line.split('\t')[1] for line in files}
+    for path, digest in deltas.items():
+        target = ROOT / path
+        # U has no symbolic link, and a phase adds none: a link to the same content is not the file.
+        if target.is_symlink():
+            raise ValueError('Admitted source path is a symbolic link at ' + path)
+        if not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+            raise ValueError('Source differs from its admitted phase content at ' + path)
+        # An admitted U path keeps exact U's mode (below); one a phase adds is a plain file.
+        if path not in upstream and target.stat().st_mode & 0o111:
+            raise ValueError('Admitted source path is executable at ' + path)
+    for line in files:
+        metadata, path = line.split('\t')
+        if path in OVERRIDES:
+            continue
+        mode, kind, blob = metadata.split()
+        if kind != 'blob':
+            raise ValueError('Unexpected upstream tree entry')
+        target = ROOT / path
+        if target.is_symlink():
+            raise ValueError('Native foundation path is a symbolic link at ' + path)
+        if path not in deltas and (not target.is_file() or target.read_bytes() != git('cat-file', 'blob', blob)):
+            raise ValueError('Native foundation differs from exact U at ' + path)
+        if bool(target.stat().st_mode & 0o111) != (mode == '100755'):
+            raise ValueError('Native executable mode differs at ' + path)
+    for folder in ('server', 'helper'):
+        if any(path.is_file() for path in (ROOT / folder).rglob('*')):
+            raise ValueError('Legacy server/helper owner was reintroduced')
+    expected_hc = {line.split('\t')[1] for line in files if '\tservice/hc/' in line}
+    actual_hc = {path.relative_to(ROOT).as_posix() for path in (ROOT / 'service/hc').rglob('*') if path.is_file()}
+    if actual_hc != expected_hc:
+        raise ValueError('Old product modules were relocated into native core transport')
+    # Every path a commit here could hold (tracked, or new and not ignored) is in the shared table
+    # (D5, issue #7): U's, an admitted owner's or a named addition. Any other refuses, by name.
+    held = set(git('ls-files', '-z', '--cached', '--others', '--exclude-standard').decode().split('\0')) - {''}
+    named = {path for paths in NAMED.values() for path in paths.split()}
+    unadmitted = sorted(held - upstream - set(deltas) - named)
+    if unadmitted:
+        raise ValueError('Path outside the shared table of U, admitted owners and named additions: ' + ', '.join(unadmitted))
+    return len(files)
+
+
+# Q's reconciliation (docs/migration/q-reconciliation.json): every required behavior, every removed test file's
+# declared cases and every test step of the fork's workflows at F is in the ledger, with the native regressions that
+# now carry it (each named test must be in its file) or an explicit hold. Nothing in it qualifies a requirement:
+# readiness stays blocked until native qualification. Its evidence is bound to one candidate commit: the tree here may
+# differ from it only in Q's own paths, its documents and what a later unit names in AFTER_Q, so a later source change
+# is either named (its own Check is its evidence; Q's record stays the candidate's) or refused, never silently covered.
+Q_OWN = frozenset(NAMED['Q'].split()) | frozenset('''.github/workflows/check.yml bin/check-migration
+docs/migration/upstream-v3.1.3.json test/test_migration.py'''.split())
+# Prose no command reads: docs/ and these. Markdown the runtime reads (templates/*.md, mods/artifacts/ARTIFACTS.md,
+# lib/UI.md) is source.
+PROSE = frozenset('AGENTS.md CHANGELOG.md CLAUDE.md CODING_STANDARDS.md GLOSSARY.md README.md RECIPE.md'.split())
+# A unit merged after Q that changes a tracked path outside Q's own and prose names it here, under the unit's name
+# ({'MIG-10': 'path other/path'}). Its evidence is its own Check; Q's ledger keeps describing its candidate only.
+AFTER_Q = {
+    # Upstream v3.1.33 (ef3be074) imported without new runtime qualification; Q keeps its original candidate.
+    'MERGE-v3.1.33': (
+        'CHANGELOG.md README.md RECIPE.md bin/shepherdr docs/addons.md docs/install.md lib/addons.json lib/features.json mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py mods/tasks/bin/herdr_task/templates.py package.json templates/worker.md test/test_herdr_task.py test/test_install.py test/test_repo.py'
+    ),
+    # PR 60's review of the live switch (A2): the switch in place across the service's own home-file io, a new test.
+    'PR60-FIX': 'service/live-switch.test.ts',
+    # PR 60's six-claim fix: the window's reach list and the real Composer's HTML, two new tests.
+    'PR60-SIX': 'service/chat-reach.test.ts web/plugins/chat/composer.test.tsx',
+    # PR 60's reach proof: the service's # list in its own module, and its test with a stand-in herdr-core.
+    'PR60-REACH': 'service/reach.test.ts service/reach.ts',
+    # Upstream v3.1.32 merged into the fork (upstream be647c82, tag v3.1.32; fork base fbad5cb5), with SHEP-211 adapted to
+    # launch admission: every tracked source path they change that no other entry names. Its evidence is its own
+    # Check; Q's ledger keeps describing d53e014b.
+    'MERGE-v3.1.32': (
+        'core/recipe.test.js mods/artifacts/recipe-view.js mods/tasks/bin/herdr_task/launch_admission.py '
+        'service/artifacts-remote.test.ts test/test_herdr_artifact_media.py web/src/back.test.tsx web/src/screens/Recipe.tsx'
+    ),
+    # Upstream v3.1.31 merged into the fork (upstream 6b8caac9, lightweight tag v3.1.31; fork base 9b7ec505): every
+    # tracked source path it changes. Its evidence is its own Check; Q's ledger keeps describing its candidate d53e014b.
+    'MERGE-v3.1.31': (
+        'bin/herdr-browser bin/shepherdr core/agents.js core/chat-log.js core/chat-log.test.js '
+        'core/live-switch.js core/live-switch.test.js core/mentions.js core/mentions.test.js core/settings.js '
+        'core/settings.test.js core/tasks.js core/tasks.test.js layouts/shepherdr.json lib/addons.json '
+        'lib/coordinator.js lib/features.json mods/artifacts/bin/herdr-artifact mods/chat-models/core/agents.js '
+        'mods/chat/attach.js mods/chat/core/agents.js mods/chat/core/chat-log.js mods/chat/core/mentions.js '
+        'mods/chat/core/settings.js mods/chat/core/tasks.js mods/chat/main.js mods/coordinator/coordinator.js '
+        'mods/coordinator/core/agents.js mods/coordinator/core/settings.js mods/jump/core/tasks.js '
+        'mods/menu-tasks/coordinator.js mods/new-menu-tasks/coordinator.js mods/newspace/coordinator.js '
+        'mods/newspace/core/agents.js mods/newspace/core/settings.js mods/newspace/main.js '
+        'mods/shepherdr-settings/coordinator.js mods/shepherdr-settings/core/agents.js '
+        'mods/shepherdr-settings/core/settings.js mods/spaces-chat/coordinator.js mods/tabs-tasks/coordinator.js '
+        'mods/tasks/bin/herdr_task/agents.py mods/tasks/bin/herdr_task/assistant_settings.py '
+        'mods/tasks/bin/herdr_task/autopilot.py mods/tasks/bin/herdr_task/base.py '
+        'mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/github.py '
+        'mods/tasks/bin/herdr_task/machine.py mods/tasks/bin/herdr_task/machines.py '
+        'mods/tasks/bin/herdr_task/proof.py mods/tasks/bin/herdr_task/revive.py '
+        'mods/tasks/bin/herdr_task/settings.py mods/tasks/bin/herdr_task/takeover.py '
+        'mods/tasks/bin/herdr_task/templates.py mods/tasks/bin/herdr_task/tick.py mods/tasks/coordinator.js '
+        'mods/tasks/core/tasks.js mods/tasks/main.js package.json service/actions.ts service/agents.ts '
+        'service/auth.test.ts service/auth.ts service/compat.ts service/layout-scripts.ts service/main.ts '
+        'service/newspace-folder-list.test.ts service/settings.test.ts service/settings.ts '
+        'service/terminal.test.ts service/terminal.ts service/watch.ts templates/assistant.md '
+        'templates/worker.md test/fixtures/codex-code-mode/rollout-items.jsonl test/test_chat_refocus.py '
+        'test/test_chat_view_size.py test/test_herdr_artifact_publish.py test/test_herdr_browser_libs.py '
+        'test/test_herdr_task.py test/test_install.py test/test_repo.py web/plugins/chat/client.tsx '
+        'web/plugins/chat/suggest.test.ts web/plugins/chat/suggest.ts web/plugins/tasks/client.tsx '
+        'web/plugins/voice/client.tsx web/shared/types.ts web/src/App.tsx web/src/groups.test.ts '
+        'web/src/groups.ts web/src/kernel.ts web/src/restart.tsx web/src/ui.tsx'
+    ),
+    # Upstream v3.1.29 merged into the fork (merge commit 2d612fdf, upstream e41ea9d2): every tracked source path
+    # it changes. Its evidence is its own Check; Q's ledger keeps describing c9bc734f.
+    'MERGE-v3.1.29': (
+        '.fallowrc.json NOTICE bin/herdr-browser bin/herdr-browser-view bin/herdr-secret bin/shepherdr '
+        'bin/sync-shared core/accept.js core/agents.js core/asks.js core/audio.js core/audio.test.js '
+        'core/autopilot.cases.json core/autopilot.js core/chat-media.test.js core/chat-view.js '
+        'core/chat-view.test.js core/clean-env.js core/clean-env.test.js core/grace.cases.json core/host.js '
+        'core/host.test.js core/machines.js core/mentions.js core/menus.js core/needs.js core/newspace.js '
+        'core/paths.js core/recipe.js core/screen.test.js core/secrets.js core/settings.js core/settings.test.js '
+        'core/spaces.js core/spaces.test.js core/tasklists.js core/tasks.js core/tasks.test.js core/usage.js '
+        'core/usage.test.js core/voice-key.test.js core/voice-spec.test.js core/voice-usage.test.js '
+        'core/voice.js core/worktree.js core/worktree.test.js layouts/shepherdr.json lib/COPIES lib/addons.js '
+        'lib/addons.json lib/agent.js lib/bridge.js lib/coordinator.js lib/dirs.js lib/features.json '
+        'lib/inbox.js lib/keyholder.js lib/local.js lib/machines.js lib/parked.js lib/secrets.js lib/settings.js '
+        'lib/taskwhere.js lib/unread.js lib/usage.js mods/accept-card/addons.js mods/accept-card/core/accept.js '
+        'mods/accept-card/core/paths.js mods/accept-card/core/usage.js mods/accept-card/dirs.js '
+        'mods/accept-card/main.js mods/accept-card/usage.js mods/artifacts/ARTIFACTS.md mods/artifacts/addons.js '
+        'mods/artifacts/bin/herdr-artifact mods/artifacts/core/paths.js mods/artifacts/core/recipe.js '
+        'mods/artifacts/core/usage.js mods/artifacts/dirs.js mods/artifacts/main.js mods/artifacts/markup.js '
+        'mods/artifacts/usage.js mods/chat-call/main.js mods/chat-models/core/agents.js '
+        'mods/chat-models/core/paths.js mods/chat-models/dirs.js mods/chat-models/main.js '
+        'mods/chat-react/main.js mods/chat/addons.js mods/chat/agent.js mods/chat/ask-hook.sh '
+        'mods/chat/attach.js mods/chat/audio.ts mods/chat/call-screen.js mods/chat/cards.js '
+        'mods/chat/core/agents.js mods/chat/core/asks.js mods/chat/core/audio.js mods/chat/core/chat-view.js '
+        'mods/chat/core/clean-env.js mods/chat/core/host.js mods/chat/core/mentions.js mods/chat/core/needs.js '
+        'mods/chat/core/paths.js mods/chat/core/recipe.js mods/chat/core/secrets.js mods/chat/core/settings.js '
+        'mods/chat/core/spaces.js mods/chat/core/tasks.js mods/chat/core/usage.js mods/chat/core/voice.js '
+        'mods/chat/dirs.js mods/chat/key.ts mods/chat/keyholder.js mods/chat/local.js mods/chat/mac-audio.swift '
+        'mods/chat/main.js mods/chat/panel.js mods/chat/parked.js mods/chat/phone-x.svg mods/chat/play.svg '
+        'mods/chat/secrets.js mods/chat/settings.js mods/chat/strips.js mods/chat/unread.js mods/chat/usage.js '
+        'mods/chat/voice.ts mods/coordinator/coordinator.js mods/coordinator/core/agents.js '
+        'mods/coordinator/core/host.js mods/coordinator/core/menus.js mods/coordinator/core/paths.js '
+        'mods/coordinator/core/settings.js mods/coordinator/core/spaces.js mods/coordinator/dirs.js '
+        'mods/coordinator/restart.sh mods/jump/addons.js mods/jump/core/asks.js mods/jump/core/needs.js '
+        'mods/jump/core/paths.js mods/jump/core/spaces.js mods/jump/core/tasklists.js mods/jump/core/tasks.js '
+        'mods/jump/core/usage.js mods/jump/dirs.js mods/jump/main.js mods/jump/usage.js '
+        'mods/menu-tasks/coordinator.js mods/menu-tasks/core/menus.js mods/menu-tasks/core/paths.js '
+        'mods/menu-tasks/core/spaces.js mods/menu-tasks/dirs.js mods/new-menu-tasks/coordinator.js '
+        'mods/new-menu-tasks/core/menus.js mods/new-menu-tasks/core/paths.js mods/new-menu-tasks/core/spaces.js '
+        'mods/new-menu-tasks/dirs.js mods/newspace/agent.js mods/newspace/coordinator.js '
+        'mods/newspace/core/agents.js mods/newspace/core/host.js mods/newspace/core/newspace.js '
+        'mods/newspace/core/paths.js mods/newspace/core/settings.js mods/newspace/core/spaces.js '
+        'mods/newspace/dirs.js mods/newspace/keyholder.js mods/newspace/main.js mods/newspace/settings.js '
+        'mods/pane-chat/addons.js mods/pane-chat/autopilot.js mods/pane-chat/core/autopilot.js '
+        'mods/pane-chat/core/menus.js mods/pane-chat/core/paths.js mods/pane-chat/core/spaces.js '
+        'mods/pane-chat/dirs.js mods/pane-chat/main.js mods/shepherdr-settings/addons.js '
+        'mods/shepherdr-settings/agent.js mods/shepherdr-settings/autopilot-section.js '
+        'mods/shepherdr-settings/coordinator.js mods/shepherdr-settings/core/agents.js '
+        'mods/shepherdr-settings/core/autopilot.js mods/shepherdr-settings/core/host.js '
+        'mods/shepherdr-settings/core/machines.js mods/shepherdr-settings/core/paths.js '
+        'mods/shepherdr-settings/core/secrets.js mods/shepherdr-settings/core/settings.js '
+        'mods/shepherdr-settings/core/spaces.js mods/shepherdr-settings/core/usage.js '
+        'mods/shepherdr-settings/dirs.js mods/shepherdr-settings/layout.js mods/shepherdr-settings/local.js '
+        'mods/shepherdr-settings/machines-section.js mods/shepherdr-settings/machines.js '
+        'mods/shepherdr-settings/main.js mods/shepherdr-settings/secrets.js mods/shepherdr-settings/settings.js '
+        'mods/shepherdr-settings/usage.js mods/shepherdr-settings/web-section.js mods/spaces-chat/addons.js '
+        'mods/spaces-chat/arrow-down.svg mods/spaces-chat/arrow-up.svg mods/spaces-chat/coordinator.js '
+        'mods/spaces-chat/core/asks.js mods/spaces-chat/core/machines.js mods/spaces-chat/core/menus.js '
+        'mods/spaces-chat/core/needs.js mods/spaces-chat/core/paths.js mods/spaces-chat/core/spaces.js '
+        'mods/spaces-chat/dirs.js mods/spaces-chat/icon.js mods/spaces-chat/inbox.js '
+        'mods/spaces-chat/machines.js mods/spaces-chat/main.js mods/spaces-chat/parked.js '
+        'mods/spaces-chat/popups.js mods/spaces-chat/unread.js mods/tabs-tasks/addons.js '
+        'mods/tabs-tasks/bridge.js mods/tabs-tasks/coordinator.js mods/tabs-tasks/core/asks.js '
+        'mods/tabs-tasks/core/menus.js mods/tabs-tasks/core/needs.js mods/tabs-tasks/core/paths.js '
+        'mods/tabs-tasks/core/secrets.js mods/tabs-tasks/core/spaces.js mods/tabs-tasks/core/usage.js '
+        'mods/tabs-tasks/dirs.js mods/tabs-tasks/inbox.js mods/tabs-tasks/local.js mods/tabs-tasks/main.js '
+        'mods/tabs-tasks/parked.js mods/tabs-tasks/secrets.js mods/tabs-tasks/tick.js mods/tabs-tasks/usage.js '
+        'mods/task-browser/core/paths.js mods/task-browser/dirs.js mods/task-browser/main.js '
+        'mods/task-browser/taskwhere.js mods/task-changes/core/worktree.js mods/task-changes/main.js '
+        'mods/task-changes/mod.json mods/task-changes/taskwhere.js mods/task-changes/ui.js '
+        'mods/task-files/chevron-down.svg mods/task-files/chevron-right.svg mods/task-files/file.svg '
+        'mods/task-files/folder.svg mods/task-files/main.js mods/task-files/mod.json '
+        'mods/task-files/taskwhere.js mods/task-files/ui.js mods/task-pr/core/worktree.js '
+        'mods/task-pr/taskwhere.js mods/tasks-menu/core/menus.js mods/tasks-menu/main.js '
+        'mods/tasks/bin/herdr-task mods/tasks/bin/herdr_task/__init__.py mods/tasks/bin/herdr_task/agents.py '
+        'mods/tasks/bin/herdr_task/automations.py mods/tasks/bin/herdr_task/autopilot.py '
+        'mods/tasks/bin/herdr_task/base.py mods/tasks/bin/herdr_task/browsers.py '
+        'mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py '
+        'mods/tasks/bin/herdr_task/forge.py mods/tasks/bin/herdr_task/ghnews.py '
+        'mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/home.py '
+        'mods/tasks/bin/herdr_task/launch.py mods/tasks/bin/herdr_task/layout.py '
+        'mods/tasks/bin/herdr_task/machines.py mods/tasks/bin/herdr_task/news.py '
+        'mods/tasks/bin/herdr_task/output.py mods/tasks/bin/herdr_task/proof.py '
+        'mods/tasks/bin/herdr_task/queues.py mods/tasks/bin/herdr_task/revive.py '
+        'mods/tasks/bin/herdr_task/settings.py mods/tasks/bin/herdr_task/star.py '
+        'mods/tasks/bin/herdr_task/store.py mods/tasks/bin/herdr_task/takeover.py '
+        'mods/tasks/bin/herdr_task/templates.py mods/tasks/bin/herdr_task/tick.py mods/tasks/coordinator.js '
+        'mods/tasks/core/asks.js mods/tasks/core/menus.js mods/tasks/core/needs.js mods/tasks/core/paths.js '
+        'mods/tasks/core/spaces.js mods/tasks/core/tasklists.js mods/tasks/core/tasks.js mods/tasks/dirs.js '
+        'mods/tasks/inbox.js mods/tasks/keyholder.js mods/tasks/local.js mods/tasks/main.js '
+        'mods/toasts/addons.js mods/toasts/core/asks.js mods/toasts/core/needs.js mods/toasts/core/paths.js '
+        'mods/toasts/core/usage.js mods/toasts/dirs.js mods/toasts/main.js mods/toasts/usage.js '
+        'mods/workspace-chrome-shepherdr/addons.js mods/workspace-chrome-shepherdr/audio-lines.svg '
+        'mods/workspace-chrome-shepherdr/main.js mods/workspace-chrome-shepherdr/mic-off.svg '
+        'mods/workspace-chrome-shepherdr/mic.svg mods/workspace-chrome-shepherdr/phone-x.svg '
+        'mods/workspace-status-chat/core/asks.js mods/workspace-status-chat/core/needs.js '
+        'mods/workspace-status-chat/core/paths.js mods/workspace-status-chat/core/spaces.js '
+        'mods/workspace-status-chat/dirs.js mods/workspace-status-chat/inbox.js '
+        'mods/workspace-status-chat/parked.js package.json service/actions.ts service/agents.ts '
+        'service/app-home-guard.test.ts service/artifacts.ts service/asks.test.ts service/asks.ts '
+        'service/attach.test.ts service/auth.test.ts service/auth.ts service/browser-session.test.ts '
+        'service/browser.ts service/chat-ended-task.test.ts service/chat-zoom.test.ts service/chats.test.ts '
+        'service/chats.ts service/compat.ts service/dictate.ts service/emoji-pick.test.ts service/fake-gpui.ts '
+        'service/fake-herdr.ts service/host.ts service/jobs.ts service/live.ts service/local.test.ts '
+        'service/machines.ts service/main.ts service/media.test.ts service/media.ts '
+        'service/model-menu-perms.test.ts service/model.ts service/newspace-folder-list.test.ts '
+        'service/newspace-keys.test.ts service/parked-sweep.test.ts service/paths.ts service/peer.ts '
+        'service/push.ts service/saved-spaces.test.ts service/saved-spaces.ts service/secrets-move.ts '
+        'service/secrets.ts service/serve-from.ts service/settings-guard.test.ts service/settings.ts '
+        'service/show.test.ts service/show.ts service/sock-path.test.ts service/spaces-sidebar.test.ts '
+        'service/sync.ts service/tailscale.test.ts service/tailscale.ts service/tasks-open-chat.test.ts '
+        'service/usage.test.ts service/usage.ts service/voice-call.test.ts service/voice-data.test.ts '
+        'service/voice-data.ts service/voice-hear.test.ts service/voice-hear.ts service/voice-tools.test.ts '
+        'service/voice-tools.ts service/voice.ts service/watch.ts service/window.ts service/worktrees.ts '
+        'templates/assistant.md templates/reviewer.md templates/worker.md test/fixtures/install-3.1.26.py '
+        'test/home_guard.py test/preload.ts test/test_ask_hook.py test/test_bitbucket.py '
+        'test/test_bitbucket_publication.py test/test_checkout_access.py test/test_fallow_config.py '
+        'test/test_forge.py test/test_herdr_artifact.py test/test_herdr_artifact_preview.py '
+        'test/test_herdr_artifact_publish.py test/test_herdr_artifact_show.py test/test_herdr_task.py '
+        'test/test_install.py test/test_launch_admission.py test/test_layout.py test/test_native_publication.py '
+        'test/test_native_restart.py test/test_providers.py test/test_repo.py test/test_restart.py '
+        'test/test_secret_main.py test/test_session_discovery.py test/test_sync_hold.py test/test_usage.py '
+        'tsconfig.json web/plugins/artifacts/client.tsx web/plugins/browser/client.tsx '
+        'web/plugins/chat/client.tsx web/plugins/chat/markdown.tsx web/plugins/chat/rows.tsx '
+        'web/plugins/places/client.tsx web/plugins/places/drag.ts web/plugins/reactions/client.tsx '
+        'web/plugins/reactions/leave.test.ts web/plugins/reactions/leave.ts web/plugins/tasks/client.tsx '
+        'web/plugins/terminal/client.tsx web/plugins/terminal/shown.test.ts web/plugins/terminal/shown.ts '
+        'web/plugins/voice/call.test.ts web/plugins/voice/call.ts web/plugins/voice/client.tsx '
+        'web/plugins/voice/screen.ts web/plugins/worktree/client.tsx web/shared/alerts.ts web/shared/files.ts '
+        'web/shared/types.ts web/src/App.tsx web/src/Frame.tsx web/src/Panel.tsx web/src/Settings.tsx '
+        'web/src/Stack.tsx web/src/copy.test.ts web/src/copy.ts web/src/dictation.ts web/src/enter.test.ts '
+        'web/src/enter.ts web/src/groups.test.ts web/src/groups.ts web/src/kernel.ts web/src/nav.items.test.ts '
+        'web/src/nav.ts web/src/no-spaces.test.ts web/src/restart.tsx web/src/rowmenu.tsx '
+        'web/src/screens/Accept.tsx web/src/screens/AddMachine.tsx web/src/sidebars.ts web/src/status.tsx '
+        'web/src/styles.css web/src/ui.tsx web/src/usage.test.ts web/src/usage.ts web/viewer/index.html '
+        'web/viewer/viewer.tsx web/vite.viewer.config.ts'
+    ),
+}
+TEST_DISPOSITIONS = frozenset({'covered', 'partial', 'held'})
+STEP_DISPOSITIONS = frozenset({'ported', 'suite', 'held'})
+WORKFLOWS = ('check.yml', 'core-rewrite.yml', 'foundry.yml')
+
+
+def steps_of(text):
+    """A workflow's steps as [job, its name or else its run line, its lines], read by indentation (jobs at two
+    spaces, steps at six), which every workflow here keeps."""
+    steps, job, current, in_jobs = [], None, None, False
+    for line in text.splitlines():
+        if line.startswith('jobs:'):
+            in_jobs = True
+            continue
+        named = re.match(r'^  ([A-Za-z0-9_-]+):\s*$', line)
+        if in_jobs and named:
+            job, current = named.group(1), None
+            continue
+        step = re.match(r'^      - (?:name: (.*)|run: (.*)|uses: .*)$', line)
+        if job and step:
+            current = [job, (step.group(1) or step.group(2) or '').strip(), line]
+            steps.append(current)
+        elif current:
+            current[2] += '\n' + line
+    return steps
+
+
+def workflow_steps():
+    """Every step of the fork's workflows at F that runs Bun's tests, as (workflow, job, its name or else its run line)."""
+    found = set()
+    for workflow in WORKFLOWS:
+        steps = steps_of(git('show', INPUTS['F'] + ':.github/workflows/' + workflow).decode())
+        found |= {(workflow, j, s) for j, s, body in steps if re.search(r'\bbun (run )?test\b', body)}
+    return found
+
+
+def runs_sensitivity():
+    """Whether Check's check job has a step that runs bin/check-sensitivity as its command, with no condition and
+    no continue-on-error, so its failure fails the check (a commented line or a skipped step is not running it)."""
+    for job, _, body in steps_of((ROOT / '.github/workflows/check.yml').read_text()):
+        lines = body.splitlines()
+        if job == 'check' and any(re.match(r'^(?:      - |        )run: python3 bin/check-sensitivity\s*$', line) for line in lines) \
+                and not any(re.match(r'^(?:      - |        )(?:if|continue-on-error):', line) for line in lines):
+            return True
+    return False
+
+
+def declares(text, path, name, prefix=False):
+    """Whether a test file declares a test by exactly this name: a Python `def name(` at a line's start, else a Bun
+    `test(` or `it(` whose quoted title is the name (prefix: begins with it, as Bun's -t selects). A quoted string
+    elsewhere is not a declaration."""
+    if path.endswith('.py'):
+        return re.search(r'^[ \t]*def ' + re.escape(name) + r'\(', text, re.M) is not None
+    title = re.escape(name) + ('' if prefix else r'\1')
+    return re.search(r'(?<![\w.$])(?:test|it)\s*\(\s*(["\'`])' + title, text) is not None
+
+
+def grounded(refs, what):
+    """Each native regression a row names is a file here declaring every test name it gives."""
+    for ref in refs:
+        path = ref.get('path') or ''
+        target = ROOT / path
+        if not path or not target.is_file() or not ref.get('tests'):
+            raise ValueError(what + ' names a native regression that is not here: ' + path)
+        text = target.read_text()
+        for name in ref['tests']:
+            if not isinstance(name, str) or not name or not declares(text, path, name):
+                raise ValueError(what + ' names a test ' + path + ' does not hold: ' + str(name))
+
+
+def required_ids(row, what):
+    ids = row.get('requirements')
+    if not ids or not set(ids) <= REQUIRED:
+        raise ValueError(what + ' names no required behavior, or one outside the inventory')
+
+
+def validate_mutation(row):
+    spec = row.get('mutation') or {}
+    what = 'Sensitivity ' + row['step']
+    target, tests = ROOT / str(spec.get('file')), ROOT / str(spec.get('test_file'))
+    if spec.get('runner') not in ('unittest', 'bun') or not target.is_file() or not tests.is_file():
+        raise ValueError(what + ' lacks its runner, guarded file or regression file')
+    before, after, test = spec.get('before'), spec.get('after'), spec.get('test')
+    if not before or not isinstance(after, str) or after == before or target.read_text().count(before) != 1:
+        raise ValueError(what + ' does not remove exactly one guard in ' + spec['file'])
+    # Bun's -t takes a title's prefix; a unittest name is a whole test.
+    bun = spec['runner'] == 'bun'
+    if not test or not declares(tests.read_text(), spec['test_file'], test, prefix=bun):
+        raise ValueError(what + ' names a regression ' + spec['test_file'] + ' does not hold')
+    own = [name for ref in row.get('native') or [] if ref.get('path') == spec['test_file'] for name in ref.get('tests') or []]
+    if not any(name.startswith(test) if bun else name == test for name in own):
+        raise ValueError(what + ' removes a guard for a regression that is not one of its own native regressions')
+
+
+def validate_reconciliation(contract, inventory, ledger):
+    if ledger.get('schema') != 1 or list(PHASES).index(contract['phase']) < list(PHASES).index('Q'):
+        raise ValueError('Reconciliation schema changed, or the manifest names a phase before Q')
+    # The exact candidate the evidence is for, and nothing since outside Q's own paths, prose and what AFTER_Q names.
+    candidate = ledger.get('candidate') or {}
+    commit = candidate.get('commit') or ''
+    try:
+        tree = git('rev-parse', '--verify', commit + '^{tree}').decode().strip() if re.fullmatch('[0-9a-f]{40}', commit) else ''
+    except ValueError:
+        tree = ''
+    if not tree or tree != candidate.get('tree') or (candidate.get('ci') or {}).get('tree') != tree:
+        raise ValueError('Reconciled candidate commit, tree or CI tree differs from the ledger')
+    if not all(isinstance(paths, str) and paths.split() for paths in AFTER_Q.values()):
+        raise ValueError("AFTER_Q names each later unit's paths as one space-separated string: {'MIG-10': 'path other/path'}")
+    later = {path for paths in AFTER_Q.values() for path in paths.split()}
+    drift = sorted(path for path in git('diff', '--name-only', '--no-renames', commit).decode().splitlines()
+                   if path not in Q_OWN | PROSE | later and not path.startswith('docs/'))
+    if drift:
+        raise ValueError('Source differs from the reconciled candidate outside Q: ' + ', '.join(drift)
+                         + ' (a later unit names its paths in AFTER_Q)')
+    # Every required behavior, with its inventory status, native regressions and what proof is still missing.
+    statuses = {row['id']: row['status'] for row in contract['requirements']}
+    rows = ledger.get('requirements') or []
+    ids = [row.get('id') for row in rows]
+    if len(ids) != len(set(ids)) or set(ids) != REQUIRED:
+        raise ValueError('Reconciliation lacks or repeats a required behavior')
+    for row in rows:
+        what = 'Requirement ' + row['id']
+        if row.get('status') != statuses[row['id']]:
+            raise ValueError(what + ' has another status than the inventory')
+        if not row.get('missing'):
+            raise ValueError(what + ' is unqualified but names no missing proof')
+        if not row.get('native') and row['status'] != 'decision-held':
+            raise ValueError(what + ' names no native regression and is not a held decision')
+        if row.get('evidence_class') not in ledger.get('evidence_classes', {}) or (row['evidence_class'] == 'held') != (not row.get('native')):
+            raise ValueError(what + ' has an evidence class its regressions do not support')
+        if not row.get('held_for'):
+            raise ValueError(what + ' names no owner for its missing proof')
+        grounded(row.get('native') or [], what)
+    # Every removed or changed test file's declared cases: carried natively, or held by name.
+    declared = {}
+    for row in inventory['files']:
+        side = row['before'] if row['change'] == 'D' else row['after']
+        if side and side.get('static_test_declarations'):
+            declared[(row['range'], row['path'])] = side['static_test_declarations']
+    rows = ledger.get('test_obligations') or []
+    keys = [(row.get('range'), row.get('path')) for row in rows]
+    if len(keys) != len(set(keys)) or set(keys) != set(declared):
+        raise ValueError('Reconciliation lacks or repeats a removed test obligation')
+    uncovered = 0
+    for row in rows:
+        what = 'Test obligation ' + row['range'] + ':' + row['path']
+        if row.get('declarations') != declared[(row['range'], row['path'])]:
+            raise ValueError(what + ' changed its declared case count')
+        required_ids(row, what)
+        cases = row.get('uncovered') or []
+        if row.get('disposition') not in TEST_DISPOSITIONS:
+            raise ValueError(what + ' has no disposition')
+        if (row['disposition'] == 'covered' and (cases or row.get('held'))) or (row['disposition'] != 'covered' and not row.get('held')):
+            raise ValueError(what + ' is covered only with nothing held, and partial or held only with its hold said')
+        if row['disposition'] != 'held' and not row.get('native'):
+            raise ValueError(what + ' claims native coverage without naming it')
+        grounded(row.get('native') or [], what)
+        if cases:
+            source = git('show', INPUTS['F' if row['range'] == 'fork' else 'P'] + ':' + row['path']).decode()
+            missing = [case for case in cases if not isinstance(case, str) or not case or case not in source]
+            if missing:
+                raise ValueError(what + ' holds a case its fixed source does not declare: ' + str(missing[0]))
+        uncovered += len(cases)
+    # Every test step of the fork's workflows: ported as a sensitivity check Check runs, a suite whose files are
+    # reconciled above, or held.
+    rows = ledger.get('workflow_obligations') or []
+    keys = [(row.get('workflow'), row.get('job'), row.get('step')) for row in rows]
+    if len(keys) != len(set(keys)) or set(keys) != workflow_steps():
+        raise ValueError('Reconciliation lacks or repeats a fork workflow test step')
+    for row in rows:
+        what = 'Workflow step ' + row['workflow'] + ' ' + row['step']
+        required_ids(row, what)
+        if row.get('disposition') not in STEP_DISPOSITIONS or (row['disposition'] != 'ported' and not row.get('held')):
+            raise ValueError(what + ' is ported, or says what holds it')
+        if row['disposition'] == 'ported':
+            validate_mutation(row)
+            # A ported check counts only while Check runs it: dropping the step would discharge it silently.
+            if not runs_sensitivity():
+                raise ValueError('Check no longer runs bin/check-sensitivity unconditionally, so ' + what + ' would not be proved')
+        elif 'mutation' in row:
+            raise ValueError(what + ' carries a mutation it does not run')
+        grounded(row.get('native') or [], what)
+    count = lambda kind, value: sum(row['disposition'] == value for row in ledger[kind])
+    return {'candidate': commit, 'requirements_unqualified': len(ledger['requirements']),
+            'test_obligations': len(ledger['test_obligations']), 'declared_cases': sum(declared.values()),
+            'tests_covered': count('test_obligations', 'covered'), 'tests_partial': count('test_obligations', 'partial'),
+            'tests_held': count('test_obligations', 'held'), 'cases_held_by_name': uncovered,
+            'workflow_steps': len(rows), 'sensitivity_ported': count('workflow_obligations', 'ported'),
+            'steps_suite': count('workflow_obligations', 'suite'), 'steps_held': count('workflow_obligations', 'held')}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--manifest', type=Path, default=ROOT / 'docs/migration/upstream-v3.1.3.json')
+    parser.add_argument('--inventory', type=Path, default=ROOT / 'docs/migration/upstream-v3.1.3-files.json')
+    parser.add_argument('--ledger', type=Path, default=ROOT / 'docs/migration/q-reconciliation.json')
+    parser.add_argument('--require-ready', action='store_true', help='refuse a source-only checkpoint as a deployable candidate')
+    args = parser.parse_args()
+    try:
+        contract = json.loads(args.manifest.read_text())
+        inventory = json.loads(args.inventory.read_text())
+        ledger = json.loads(args.ledger.read_text())
+        deltas = validate_contract(contract)
+        count = validate_inventory(inventory)
+        native = validate_foundation(deltas)
+        reconciled = validate_reconciliation(contract, inventory, ledger)
+    except (ValueError, KeyError, TypeError, AttributeError, OSError) as error:
+        print(json.dumps({'source_validation': 'failed', 'candidate_readiness': 'blocked', 'error': str(error)}))
+        return 1
+    print(json.dumps({'source_validation': 'passed', 'candidate_readiness': 'blocked', 'phase': contract['phase'],
+                      'requirements': len(REQUIRED), 'file_dispositions': count, 'native_files': native,
+                      'source_deltas': len(deltas), 'reconciliation': reconciled}))
+    if args.require_ready:
+        print(contract['phase'] + ' reconciles every obligation on its candidate, but ' + str(reconciled['requirements_unqualified'])
+              + ' required behaviors lack native qualification and ' + str(reconciled['cases_held_by_name']) + ' removed test cases and '
+              + str(reconciled['steps_held']) + ' fork workflow steps stay held. Complete required ports, Root CI and native '
+              'qualification before candidate readiness.', file=sys.stderr)
+        return 3
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

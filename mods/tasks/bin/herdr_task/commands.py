@@ -1,0 +1,1673 @@
+"""The task commands: add, start, status, ready, accept, merge and the rest."""
+
+import argparse
+import copy
+import functools
+import json
+import os
+import re
+import secrets
+import shlex
+import subprocess
+import sys
+import time
+
+from .base import Fail, git, guard, now, run, STORE, stop_note, VERSION
+from .settings import (
+    agent_argv, agent_key, bare, merge_policy, review_limits, set_opts, settings_block, settings_for, space_base,
+    task_settings, worker_argv, worktrees_on,
+)
+from .agents import (
+    agent_log, agent_running, background_jobs, busy_again, detail, fit, LINE_MAX, live_agents, ready_turns, STATUSES, SUMMARY_MAX,
+    WORKING_AGAIN,
+)
+from .sessions import refresh_sessions
+from .launch_admission import admit_task
+from .github import (
+    base_commit, drop_branch, finish, GH_ACCESS, GhFailed, local_base, merge_into_branch, merged_here, needs_approval, NO_ASK,
+    note_checks, own_work, plain, remote_of, STAYS, update_main, watch_main,
+)
+from .github import CHECKS_RUNNING as PR_CHECKS_RUNNING
+from .forge import (
+    GITHUB, admit, adopt_existing, already_merged, integrate, merge_reach, name_of, no_local_merge, no_merge, pr_adopt,
+    pr_open, pr_pending, pr_problem, pr_read, pr_view, provider_of, publishing_repository, repair_of, repository,
+)
+from .publications import facts as publication_facts
+from .launch import (
+    base_ref, brief, caller_labels, caller_space, current_base, default_space, folder_for, handoff, launch, name_tabs,
+    own_path, resume_argv, retag_tabs, set_branch, tab_title, task_tabs,
+)
+from .store import is_task_list, locate, open_store, prefixes_in_use, read_list, Store, store_files
+from .queues import after_refs, parse_after, queue_reason, set_after
+from .archive import unarchive
+from .output import line, minutes, say, view
+from .scheduler import ensure_scheduler
+from .proof import evidence, find_proof
+from .when import when_from
+
+
+# ---- commands -------------------------------------------------------------------------------
+
+def for_the_person(fn):
+    """A command the person (or their Assistant) runs: gh's failure says what to repair, where an
+    agent's ready is told to hand it over."""
+    @functools.wraps(fn)
+    def command(args):
+        try:
+            return fn(args)
+        except GhFailed as e:
+            e.args = (e.person,)
+            raise
+    return command
+
+
+def cmd_where(args):
+    loc = locate(args.folder)
+    with Store(loc, write="try") as st:  # makes ~/.herdr/tasks and moves old lists in, where it can (#900)
+        pass
+    slug, path = st.slug, st.path
+    say(args, {**loc, "slug": slug, "store": path, "prefix": st.prefix, "version": VERSION}, f"{loc['folder']}\n{path}")
+
+
+def cmd_list(args):
+    if args.all:
+        folders = [d["folder"] for d in map(read_list, store_files()) if is_task_list(d)]
+    else:
+        folders = [locate(args.folder)["folder"]]
+    groups = []
+    for folder in folders:
+        if not os.path.isdir(folder):
+            continue
+        with Store(locate(folder), write="try") as s:
+            out = []
+            archived = sum(1 for t in s.data["tasks"] if t.get("archived"))
+            for t in s.data["tasks"]:
+                if bool(t.get("archived")) != args.archived:
+                    continue
+                mine = live_agents(s.key(t)) if t["state"] in ("running", "ready") else []
+                if mine:
+                    refresh_sessions(s, t, mine)
+                v = view(s, t, [detail(k) for k in mine] if mine else [])
+                if t["state"] == "queued":
+                    v["reason"] = queue_reason(s, t)
+                out.append(v)
+            if args.archived:
+                out.sort(key=lambda v: -(v.get("archived") or 0))
+            groups.append({"folder": s.loc["folder"], "name": s.loc["name"], "kind": s.loc["kind"], "tasks": out,
+                           **({} if args.archived else {"archived": archived})})
+    if args.json:
+        print(json.dumps(groups if args.all else groups[0]))
+        return
+    for g in groups:
+        if args.all:
+            print(f"{g['name']}  {g['folder']}")
+        for v in g["tasks"]:
+            if v["state"] != "done" or args.all or args.archived:
+                print(("  " if args.all else "") + line(v))
+        hidden = sum(1 for v in g["tasks"] if v["state"] == "done") if not args.archived else 0
+        more = [f"{hidden} done"] if hidden and not args.all else []
+        if g.get("archived") and not args.all:
+            more.append(f"{g['archived']} archived: --archived lists them")
+        if more:
+            print(f"({'; '.join(more)})")
+        elif not g["tasks"] and not args.all:
+            print("No archived tasks." if args.archived else "No tasks.")
+
+
+def cmd_add(args):
+    prompt = args.prompt or ""
+    if args.prompt_file:
+        with open(args.prompt_file) as f:
+            prompt = f.read()
+    at = scheduled_at(args)  # refused before anything is added
+    with open_store(args) as s:
+        repo = s.loc["kind"] == "repo"
+        if args.worktree and not repo:
+            raise Fail("Worktrees need a git repo; this folder isn't one.")
+        # The person's setting wins: worktrees off for this repo means in the folder, --worktree or not.
+        mode = "here" if args.here or not worktrees_on(s) else "worktree"
+        t = s.new(args.title.strip(), prompt, mode)
+        set_opts(t, args)
+        space = bare(args.space) if args.space else caller_space()
+        set_base(s, t, args.base, space, new=True)
+        set_branch(s, t, getattr(args, "branch", None))
+        set_notes(t, args)
+        if args.after:
+            set_after(s, t, *parse_after(s, args.after))
+        if at:
+            # Started later by the scheduler, with no caller to ask: its space is kept now.
+            schedule(s, t, at, {"space": space or default_space()})
+        v = view(s, t)
+    if at:
+        ensure_scheduler_quietly()
+    say(args, v, s.ref(t) + (f": {v['why']}" if at else ""))
+
+
+# ---- scheduled (SHEP-38) -----------------------------------------------------------------------
+# A task that starts by itself at a time (--at "fri 9:00", --in 6h): state "scheduled" with
+# scheduled_for (ms) and what start would use (queue: argv, space, parent). The scheduler's tick
+# (tick.py's due_pass) queues it once that time comes, also a time passed while the machine was
+# off, and the queue starts it as any queued task (after its --after tasks, when there's room).
+
+def scheduled_at(args):
+    """--at / --in as a moment (ms), or None when neither was given."""
+    at, within = getattr(args, "at", None), getattr(args, "in_", None)
+    if at is None and within is None:
+        return None
+    return when_from(at, within)
+
+
+def schedule(s, t, at, plan=None):
+    if t["state"] not in ("todo", "scheduled", "queued"):
+        raise Fail(f"{s.ref(t)} has already started ({STATUSES.get(t['state'], t['state'])}); only a task not started yet can be scheduled.")
+    t["state"], t["scheduled_for"] = "scheduled", at
+    if plan is not None:
+        t["queue"] = plan
+    for k in ("queued_at", "held"):
+        t.pop(k, None)
+    s.dirty = True
+
+
+def unschedule(t):
+    """Back to To do, as if never scheduled (a task that isn't scheduled is left as it is)."""
+    if t["state"] != "scheduled":
+        return
+    t["state"] = "todo"
+    for k in ("scheduled_for", "queue", "queued_at", "held"):
+        t.pop(k, None)
+
+
+def ensure_scheduler_quietly():
+    try:
+        ensure_scheduler(quiet=True)
+    except Exception:
+        pass
+
+
+def set_base(s, t, base, space=None, new=False):
+    """--base: the branch a worktree task branches from and merges into (its pull request's base).
+    Without it a new task takes its space's base branch (Shepherdr settings > Tasks > Base branch,
+    as Shepherdr's space.base: captured when added, so a later change only touches new tasks);
+    unset, the folder's current branch, kept unmarked. "" goes back to the folder's."""
+    if base is None:
+        own = space_base(s, space) if new and t.get("mode") == "worktree" else ""
+        main = s.loc["folder"]
+        if own and own != current_base(main):
+            try:
+                base_ref(main, own)
+            except Fail as e:
+                raise Fail(f"This space's base branch is {own} (Shepherdr settings > Tasks > Base branch), but: {e} "
+                           "Change the setting, or pass --base.")
+            t["base"], t["base_set"], t["base_by"] = own, True, "space"
+        return
+    t.pop("base_by", None)
+    base = base.strip()
+    if t.get("worktree"):
+        raise Fail(f"{s.ref(t)} already has its worktree from {t.get('base')}; its base can't change now.")
+    if not base:
+        t.pop("base", None)
+        t.pop("base_set", None)
+        return
+    if t.get("mode") != "worktree":
+        raise Fail("--base is for tasks in a worktree; this one works in the folder itself.")
+    main = s.loc["folder"]
+    base_ref(main, base)
+    if base == current_base(main):
+        t.pop("base", None)
+        t.pop("base_set", None)
+    else:
+        t["base"], t["base_set"] = base, True
+
+
+def set_notes(t, args):
+    """--start-notes / --finish-notes: this task's own, replacing its folder's ("" goes back to the folder's)."""
+    for which in ("start", "finish"):
+        v = getattr(args, f"{which}_notes", None)
+        if v is not None and v.strip():
+            t[f"{which}_notes"] = v.strip()
+        elif v is not None:
+            t.pop(f"{which}_notes", None)
+
+
+def cmd_show(args):
+    with open_store(args, write="try") as s:
+        t = s.find(args.id)
+        live = [detail(k) for k in live_agents(s.key(t))]
+        refresh_sessions(s, t, live)
+        # Back at work since it said ready: saved at once, so the Accept card (which reads this)
+        # says it's Working, not Ready.
+        if busy_again(t, live):
+            back_to_work(s, t, "its agent is at work again")
+        v = view(s, t, live)
+        if t["state"] == "queued":
+            v["reason"] = queue_reason(s, t)
+        v["settings"] = task_settings(s, t)
+        on, rounds = review_limits(s, t)
+        if on:
+            v["review_rounds"] = {"used": rounds_used(t), "of": rounds, "added": int(t.get("review_rounds_added") or 0)}
+        v["after_refs"] = after_refs(s, t)
+        block = settings_block(s, t)
+        if getattr(args, "evidence", False):
+            # What the Accept card shows: commits, files, checks and the proof (proof.py).
+            v["evidence"] = evidence(s, t)
+        # A Bitbucket publication's claim on this machine: what was pushed, opened and prepared, and
+        # any step whose answer didn't come back (uncertain), by its operation id.
+        pub = publication_facts(s, t)
+        if pub:
+            v["publication"] = pub
+    text = [line(v), f"folder: {v['folder']}"]
+    if v.get("worktree"):
+        text.append(f"worktree: {v['worktree']} (branch {v['branch']}, base {v.get('base')})")
+    elif v.get("branch") and v.get("mode") == "worktree":
+        text.append(f"branch: {v['branch']} (set for this task)")
+    if v.get("base_set"):
+        text.append(f"merges into: {v['base']} (" + {"space": "its space's base branch", "pull-request": "its pull request's base"}.get(v.get("base_by"), "set for this task") + ")")
+    if v.get("adopted_from"):
+        text.append(f"was based on: {v['adopted_from']['base']} (until pull request #{v['adopted_from']['pr']} was adopted)")
+    if v.get("after_refs"):
+        text.append("comes after: " + ", ".join(v["after_refs"]))
+    if v.get("review_rounds"):
+        r = v["review_rounds"]
+        text.append(f"review rounds: {r['used']} of {r['of']} used" + (f" ({r['added']} added by the assistant)" if r["added"] else "")
+                    + (" (ready refused: out of rounds)" if v.get("review_out") else ""))
+    if v.get("agents_md"):
+        text.append(f"for AGENTS.md: {v['agents_md']}")
+    if v.get("pr"):
+        text.append(f"pull request: #{v['pr']['number']} {v['pr']['url']}")
+    if (v.get("publication") or {}).get("unreadable"):
+        text.append(f"publication: {v['publication']['unreadable']}")
+    elif v.get("publication"):
+        p = v["publication"]
+        steps = [f"{name} {p[name]['state']} ({p[name]['operation']})" for name in ("push", "draft", "ready") if p.get(name)]
+        pushed = f"pushed {p['pushed']['head'][:7]}" if p.get("pushed") else "not pushed"
+        text.append(f"publication: {', '.join([pushed, *steps])}")
+    if v.get("why") and v["status"] == "needs":
+        text.append(f"needs the person: {v['why']}")
+    if v.get("kept"):
+        text.append(f"kept: {v['kept']}")
+    if v.get("proof"):
+        text.append(f"proof: {v['proof']['title']} ({v['proof']['id']})")
+    if v.get("archived"):
+        text.append(f"archived: {time.strftime('%Y-%m-%d %H:%M', time.localtime(v['archived'] / 1000))} (still kept; writing to it brings it back)")
+    for k in v["live"]:
+        text.append(f"agent: {k['address']} {k['status'] or ''}")
+    if v.get("prompt"):
+        text.append("\n" + v["prompt"].strip())
+    text.append("\n" + block)
+    say(args, v, "\n".join(text))
+
+
+# A task's worktree, once made, stays its own even when the start that made it didn't send.
+MADE = ("worktree", "branch", "base", "start")
+
+
+def begin(s, t, argv, space, parent=None, admission=None, select=None, folder=None):
+    """Starts the task's first agent. Returns its record. admission: its preflight (admit_task),
+    else made here, for the tick: folder is then its queued plan's Claude Code folder (None:
+    inherit), and a confirmed start its task list lost is put back on it (the tick saves it);
+    select: how its argv is chosen from settings again (None: as given)."""
+    # Before its state or worktree changes: launch admission (its provider route, an open earlier
+    # start, its Assistant) refuses here.
+    adm = admission or admit_task(s, t, argv, space, parent, select=select, folder=folder, repair=True)
+    before = copy.deepcopy(t)
+    try:
+        # Claimed (never-submitted) before the first effect; a failure before it is sent cancels it.
+        with adm.claimed():
+            t["state"], t["started"] = "running", now()
+            # Its brief teaches `reviewed`: ready waits for a review of its final commit (review_refusal).
+            t["review_gate"] = True
+            for k in ("queue", "queued_at", "attention", "held", "scheduled_for"):
+                t.pop(k, None)
+            if t.get("mode") == "worktree" and not t.get("worktree") and not worktrees_on(s, space):
+                t["mode"] = "here"
+            folder_for(s, t)
+            if t.get("mode") != "worktree" and s.loc["kind"] == "repo":
+                # The folder's commit as it starts: still there, and nothing tracked changed, at ready means
+                # it changed nothing, so there is nothing to review (review_refusal, #744).
+                t["folder_start"] = git(s.loc["folder"], "rev-parse", "HEAD")[1] or None
+            return launch(s, t, argv, space, brief(s, t, adm.parent, space, argv), parent=adm.parent, admission=adm)
+    except BaseException:
+        # Sent (submission uncertain, or confirmed and then failing): it may run, so the task keeps
+        # its started state and the tick never starts it again; a reconcile puts its agent on it.
+        if adm.sent:
+            raise
+        # Never sent: the task keeps its queue, hold and state, as before the start, so a tick that
+        # saves it after a refusal never drops what was queued.
+        made = {k: t[k] for k in MADE if k in t}
+        t.clear()
+        t.update(before)
+        t.update(made)
+        raise
+
+
+def cmd_start(args):
+    with open_store(args) as s:
+        t = s.find(args.id)
+        live = [k for k in map(detail, live_agents(s.key(t))) if agent_running(k)]
+        if live:
+            raise Fail(f"{s.ref(t)} is already running ({live[0]['address']}). Use switch or resume.")
+        if t["state"] == "done":
+            raise Fail(f"{s.ref(t)} is done. Reopen it first.")
+        if args.here:
+            t["mode"] = "here"
+        elif args.worktree and worktrees_on(s):
+            t["mode"] = "worktree"
+        set_branch(s, t, getattr(args, "branch", None))
+        q = t.get("queue") or {}
+        space = bare(args.space) if args.space else (q.get("space") or default_space())
+        argv = agent_argv(None, args.argv) if args.argv else worker_argv(s, t, space, args.agent) if args.agent else \
+            (q.get("argv") or worker_argv(s, t, space))
+        fixed = bool(args.argv) or (not args.agent and bool(q.get("argv")))
+        parent = args.parent or q.get("parent")
+        # Before it is queued too: launch admission refuses here, before anything changes.
+        adm = admit_task(s, t, argv, space, parent, select=None if fixed else (lambda: worker_argv(s, t, space, args.agent)))
+        # Its Claude Code folder goes with a queued or scheduled plan: the tick runs it on that one, not its own.
+        plan = {"argv": argv, "space": space, "parent": parent, "config_dir": adm.config_dir, **({"custom": True} if args.argv else {})}
+        at = scheduled_at(args)
+        if at:
+            # start --at / --in: it starts by itself then, as this start would now.
+            schedule(s, t, at, plan)
+            v = view(s, t)
+            reason = "scheduled"
+        # A queued task started again goes now; otherwise it waits its turn. A scheduled one
+        # started now waits only for the queue (start --now: not even that).
+        elif (reason := None if (t["state"] == "queued" or args.now) else queue_reason(s, t)):
+            t["state"], t["queued_at"] = "queued", now()
+            t.pop("scheduled_for", None)
+            t["queue"] = plan
+            s.dirty = True
+            v = view(s, t)
+        else:
+            a = begin(s, t, argv, space, parent, admission=adm)
+            v = view(s, t)
+    # The scheduler starts queued tasks and tells the Assistant its tasks' news.
+    try:
+        ensure_scheduler(quiet=True)
+    except Exception:
+        pass
+    if reason == "scheduled":
+        say(args, v, f"{s.ref(t)} is scheduled: {v['why']}. It starts by itself then.")
+        return
+    if reason:
+        say(args, {**v, "queued": True, "reason": reason}, f"{s.ref(t)} is queued ({reason}). It starts by itself when it can.")
+        return
+    out = {**v, "terminal": a["address"], "space": space, "parent": a.get("parent")}
+    say(args, out, f"{s.ref(t)} started: {a['address']} in {folder_desc(t, s)}")
+
+
+def folder_desc(t, s):
+    return f"{t['worktree']} ({t['branch']})" if t.get("worktree") else s.loc["folder"]
+
+
+def ready_words(args):
+    """The ready summary in one line, refused past SUMMARY_MAX (as Shepherdr's) before anything
+    changes; --details, any length, as written."""
+    said = " ".join(str(args.summary or "").split())
+    if len(said) > SUMMARY_MAX:
+        raise Fail(f"That summary is {len(said)} characters: write a shorter one, {SUMMARY_MAX} at most, in plain words on "
+                   f"what the person now sees or can do (no file names, flags or jargon). Put the detail in --details \"…\" "
+                   f"(a few short bullets in plain words, folded in the Accept card) or in your proof, then run ready again.")
+    return said, str(args.details or "").strip()
+
+
+def cmd_ready(args):
+    said, details = ready_words(args)
+    with open_store(args) as s:
+        t = s.find(args.id)
+        me = os.environ.get("HC_TERMINAL_ID")
+        if me and any(a["address"] == me for a in t["agents"]):
+            refresh_sessions(s, t, [k for k in live_agents(s.key(t)) if k["address"] == me])
+        if t["state"] == "done":
+            raise Fail(f"{s.ref(t)} is already done.")
+        worktree_here(s, t)
+        # A saved pull request no forge adapter here reaches refuses first, before any read, fetch or
+        # finish: nothing is asked of any host and the task stays as it was.
+        admit(t)
+        wt = t.get("worktree") if t.get("mode") == "worktree" else None
+        if wt and os.path.isdir(wt):
+            if git(wt, "status", "--porcelain", "--untracked-files=no")[1]:
+                raise Fail(f"{wt} has uncommitted changes. Commit them, then run ready again.")
+            t["head"] = git(wt, "rev-parse", "HEAD")[1]
+            own_work(s, t)
+        refused = review_refusal(s, t, wt)
+        if refused:
+            # Kept (the task's line says why it waits); refused after the store is saved.
+            s.dirty = True
+        else:
+            if said:
+                t["summary"] = said
+                # A new summary brings its own details (or none): an older one's would be stale.
+                if details:
+                    t["details"] = details
+                else:
+                    t.pop("details", None)
+            elif details:
+                t["details"] = details
+            # Its proof artifact (--proof <id>, else its newest one titled "... · Proof"), linked from
+            # the person's Accept card.
+            proof = find_proof(s, t, getattr(args, "proof", None))
+            if proof:
+                t["proof"] = proof
+            else:
+                t.pop("proof", None)
+            asked = next((x["value"] for x in task_settings(s, t) if x["label"] == "Proof"), False)
+            note = " ".join(str(args.agents_md or "").split())
+            if note:
+                # "For AGENTS.md": what the next agent would need about setting up or testing this
+                # repo; the Assistant decides whether it goes into the repo's AGENTS.md.
+                t["agents_md"] = note[:300]
+            for k in ("attention", "attention_at", "handed_at", "fix_requested", "progress", "retry", "review_out", "back"):
+                t.pop(k, None)
+            # Its agents' turns now: a later turn of theirs takes it back to work (busy_again()).
+            t["ready_turns"] = ready_turns(live_agents(s.key(t)))
+            s.dirty = True
+            # One saved step with the above: a refusal (finalize()'s publication) leaves the task as
+            # it was. Its review is the agent's own, as its brief's Settings block says (herdr-task
+            # starts no reviewers). A worktree branch with nothing beyond its base (none of its own,
+            # or only its base caught up with: a research or artifact-only task) still waits in Ready
+            # for the person's Accept, its summary, details and artifacts on the card (SHEP-96); no
+            # pull request, and Accept just marks it done and cleans up its worktree.
+            nothing = wt and t.get("start") and in_base(s, t) and not merged_here(s, t)
+            if nothing:
+                t["nothing_to_merge"] = True
+            else:
+                t.pop("nothing_to_merge", None)
+            # Its work already in its base (SHEP-59: its pull request squash-merged): done at once,
+            # never a second pull request. finish() still removes its branch only at what merged
+            # (PR 19). An adopted pull request is never finished here (PR 19): publication refuses
+            # (pr_open()), and the tick finishes it on its base or holds it off it (merged_elsewhere()).
+            adopted = (t.get("pr") or {}).get("adopted")
+            gone = already_merged(s, t) if wt and t.get("start") and not nothing and not adopted else None
+            if gone is not None:
+                t["merged"] = True
+                if gone:
+                    watch_main(s, t, (gone.get("mergeCommit") or {}).get("oid"))
+                    update_main(s, t)
+                finish(s, t, even_if_busy=True)
+                how = f"pull request #{gone['number']} is merged" if gone else f"its work is already in {t.get('base') or 'main'}"
+                msg = f"{s.ref(t)}: {how}; done."
+            else:
+                msg = finalize(s, t)
+                # Its own background work still running (SHEP-148): the task shows Working until it ends.
+                log = agent_log(t, me) if me else None
+                jobs = background_jobs(log)[0] if log else {}
+                if jobs and t["state"] == "ready":
+                    msg += (f" {len(jobs)} background job{'s' if len(jobs) > 1 else ''} of yours still run{'' if len(jobs) > 1 else 's'}: "
+                            "the task shows Working until they end, then Ready. Stop any you don't need (a server, a watcher).")
+                if proof:
+                    msg += f" Proof: {proof['title']}."
+                elif asked:
+                    msg += (" No proof artifact found, and your Settings block asks for one: publish it (herdr-artifact), "
+                            "then run ready again with --proof <its id>.")
+            v = view(s, t)
+    if refused:
+        raise Fail(refused)
+    say(args, {**v, "message": msg}, msg)
+    if msg.startswith(f"{s.ref(t)} {READY_BUT}"):
+        sys.exit(1)  # its push or pull request failed: not ready the way it meant (#795)
+
+
+REVIEWED = ("report", "pass", "changes")  # a recorded review round (report: the agent's own reviewed)
+
+
+def rounds_used(t):
+    return sum(1 for r in t.get("reviews") or [] if r.get("result") in REVIEWED)
+
+
+def review_refusal(s, t, wt):
+    """Why ready is refused for review (as Shepherdr's: `ready` waits for a review of the final
+    commit), or None. Only tasks whose brief taught `reviewed` (review_gate) and whose Settings
+    block says Review: on. A worktree task's final commit must be one a round was recorded on; a
+    task in the folder itself needs a round recorded since it started. Out of rounds, only the
+    Assistant adds one (review-more): the task then waits, saying so (review_out)."""
+    on, rounds = review_limits(s, t)
+    if not on or not t.get("review_gate"):
+        return None
+    if wt and t.get("start") and in_base(s, t):
+        return None  # no commits of its own: nothing to review (nothing to merge)
+    if not wt and t.get("folder_start") and unchanged_folder(s, t):
+        return None  # in the folder itself, and it changed nothing (#744: a run that only reads)
+    revs = [r for r in t.get("reviews") or [] if r.get("result") in REVIEWED and (r.get("at") or 0) >= (t.get("started") or 0)]
+    head = t.get("head") if wt else None
+    if (any(r.get("head") == head for r in revs) if wt else bool(revs)):
+        return None
+    if wt and head and base_merges_only(s, t, wt, {r.get("head") for r in revs if r.get("head")}, head):
+        return None
+    ref, ht, folder = s.ref(t), own_path(), shlex.quote(s.loc["folder"])
+    what = f"your final commit {head[:7]}" if head else "this task's work"
+    seen = sorted({r["head"][:7] for r in revs if r.get("head")}) if wt else []
+    if seen:
+        what += f" (rounds are recorded on {', '.join(seen)})"
+    if rounds_used(t) >= rounds:
+        t["review_out"] = now()
+        return (f"All {rounds} review rounds are used and {what} isn't reviewed. Say why in your chat, set your status line to "
+                f"it, and end your turn: only your Assistant can add a round (herdr-task review-more {ref}).")
+    return (f"Review is on and {what} isn't reviewed. Have it reviewed as your brief says, fix what must be fixed, record the "
+            f"round with `{ht} reviewed {ref} --folder {folder} --report \"<findings, a line>\"` (on the commit you'd say "
+            f"ready at), then run ready again. {rounds - rounds_used(t)} of {rounds} rounds left.")
+
+
+def unchanged_folder(s, t):
+    """A task in the folder itself left it as it started: on the same commit, nothing tracked changed."""
+    folder = s.loc["folder"]
+    ok, head, _ = git(folder, "rev-parse", "HEAD")
+    clean, changed, _ = git(folder, "status", "--porcelain", "--untracked-files=no")
+    return ok and head == t["folder_start"] and clean and not changed
+
+
+def base_merges_only(s, t, wt, reviewed, head):
+    """#741: everything after a reviewed commit (along the branch's first parents) is clean merges
+    from its base branch (here or on its remote): each merge's other parent is in the base, and its
+    tree is exactly what git's own merge of its two parents gives. Nothing of its own to review; a
+    merge with conflicts, or with anything changed beyond the plain merge, still needs a round."""
+    main, base = s.loc["folder"], t.get("base") or "main"
+    bases = [base, f"refs/remotes/{remote_of(main)}/{base}"]
+    c = head
+    for _ in range(100):
+        if c in reviewed:
+            return c != head
+        ok, line, _ = git(wt, "rev-list", "--parents", "-n", "1", c)
+        parts = line.split() if ok else []
+        if len(parts) != 3:
+            return False  # a commit of its own (or an octopus): reviewed as usual
+        _, first, other = parts
+        if not any(git(wt, "merge-base", "--is-ancestor", other, b)[0] for b in bases):
+            return False
+        ok, tree, _ = git(wt, "merge-tree", "--write-tree", first, other)
+        if not ok or not tree or tree.split()[0] != git(wt, "rev-parse", f"{c}^{{tree}}")[1]:
+            return False
+        c = first
+    return False
+
+
+def cmd_reviewed(args):
+    """A task's agent records one review round of its current commit (its own review: a helper agent
+    it started as its hc child, as its brief says). Uses one of its Review rounds; `ready` then accepts that
+    commit. Out of rounds it is refused: only the Assistant adds one (review-more)."""
+    with open_store(args) as s:
+        t = s.find(args.id)
+        if t["state"] not in ("running", "ready"):
+            raise Fail(f"{s.ref(t)} isn't being worked on ({STATUSES.get(t['state'], t['state'])}).")
+        on, rounds = review_limits(s, t)
+        if not on:
+            raise Fail(f"Review is off for {s.ref(t)}: there is no round to record.")
+        used = rounds_used(t)
+        if used >= rounds:
+            raise Fail(f"All {rounds} review rounds of {s.ref(t)} are used. Say why in your chat and end your turn: only your "
+                       f"Assistant can add a round (herdr-task review-more {s.ref(t)}).")
+        wt = t.get("worktree") if t.get("mode") == "worktree" else None
+        head = None
+        where = wt if wt and os.path.isdir(wt) else (s.loc["folder"] if s.loc["kind"] == "repo" else None)
+        named = getattr(args, "commit", None)
+        if named:
+            # The commit the round reviewed (#797), fixes perhaps committed since: one on this branch.
+            ok, head, _ = git(where, "rev-parse", "--verify", "--quiet", f"{named}^{{commit}}") if where else (False, "", "")
+            if not ok or not head:
+                raise Fail(f"--commit {named} isn't a commit here.")
+            if not git(where, "merge-base", "--is-ancestor", head, "HEAD")[0]:
+                raise Fail(f"--commit {named} isn't on this task's branch (HEAD or before it).")
+        elif wt and os.path.isdir(wt):
+            if git(wt, "status", "--porcelain", "--untracked-files=no")[1]:
+                raise Fail(f"{wt} has uncommitted changes: a review is of a commit. Commit first, then review it "
+                           "(or name the commit it reviewed with --commit).")
+            head = git(wt, "rev-parse", "HEAD")[1]
+        elif s.loc["kind"] == "repo":
+            head = git(s.loc["folder"], "rev-parse", "HEAD")[1] or None
+        text = " ".join(str(args.report or "").split())[:2000]
+        t.setdefault("reviews", []).append({"round": used + 1, "result": "report", "text": text, "at": now(), "head": head,
+                                            "by": os.environ.get("HC_TERMINAL_ID")})
+        t.pop("review_out", None)
+        s.dirty = True
+        v = view(s, t)
+    on_what = f" for commit {head[:7]}" if head else ""
+    say(args, {**v, "round": used + 1, "rounds": rounds}, f"{s.ref(t)}: review round {used + 1} of {rounds} recorded{on_what}.")
+
+
+def cmd_review_more(args):
+    """The Assistant gives a task exactly one more review round (as Shepherdr's `task review-more`):
+    only once all its rounds are used. The limit stops an agent reviewing for ever, so the task's
+    own agent can never raise it. Its agent is told."""
+    labels = caller_labels()
+    with open_store(args) as s:
+        t = s.find(args.id)
+        if labels.get("herdr.task") == s.key(t) or labels.get("herdr.role") == "reviewer":
+            raise Fail("A task's own agent can't add review rounds: say why in your chat and end your turn; your Assistant decides.")
+        on, rounds = review_limits(s, t)
+        if not on:
+            raise Fail(f"Review is off for {s.ref(t)}.")
+        if t["state"] == "done":
+            raise Fail(f"{s.ref(t)} is already done; it needs no more review.")
+        used = rounds_used(t)
+        if used < rounds:
+            raise Fail(f"{s.ref(t)} has used {used} of {rounds} review rounds; add one only when they are all used.")
+        t["review_rounds_added"] = int(t.get("review_rounds_added") or 0) + 1
+        t.pop("review_out", None)
+        s.dirty = True
+        live = workers(s, t)
+        told = None
+        if live:
+            ht, folder = own_path(), shlex.quote(s.loc["folder"])
+            from .news import send_or_hold
+            r = send_or_hold(live[-1]["address"],
+                     f"Your Assistant added one review round to {s.ref(t)}: {rounds + 1} in all. Have your final commit reviewed, "
+                     f"record it with `{ht} reviewed {s.ref(t)} --folder {folder} --report \"<findings, a line>\"`, then run ready again.")
+            told = live[-1]["address"] if r else None
+        v = view(s, t)
+    say(args, {**v, "rounds": rounds + 1, "told": told},
+        f"{s.ref(t)} may now use {rounds + 1} review rounds" + (f"; told {told}." if told else "; no agent is running to tell."))
+
+
+def parse_left(text):
+    """Time left as an agent writes it: 5m, 90s, 1h, 1h30m, 2 (minutes); in ms."""
+    t = str(text).strip().lower().replace(" ", "")
+    if re.fullmatch(r"\d+(?:\.\d+)?", t):
+        return int(float(t) * 60000)
+    parts = re.findall(r"(\d+(?:\.\d+)?)(h|hr|hrs|hours?|m|min|mins|minutes?|s|sec|secs|seconds?)", t)
+    if not parts or "".join(a + b for a, b in parts) != t:
+        raise Fail(f"--left takes a time like 5m, 90s or 1h30m, not \"{text}\".")
+    return int(sum(float(n) * {"h": 3600000, "m": 60000, "s": 1000}[u[0]] for n, u in parts))
+
+
+def cmd_status(args):
+    """A task agent says what it's doing, how far along it is and the time left, at the start, at
+    each natural step and at least every 5 minutes (as Shepherdr's `shepherdr status`). Herdr guesses nothing: it shows
+    what the agent said and counts the minutes down while it works."""
+    text = " ".join(str(args.text or "").split())
+    if not text:
+        raise Fail("Say what you're doing: herdr-task status <id> \"Fixing the two failing tests\" --done 40 --left 5m")
+    if args.done is not None and not 0 <= args.done <= 100:
+        raise Fail("--done is a percentage, 0 to 100.")
+    left = parse_left(args.left) if args.left else None
+    with open_store(args) as s:
+        t = s.find(args.id)
+        if t["state"] not in ("running", "ready"):
+            raise Fail(f"{s.ref(t)} isn't being worked on ({STATUSES.get(t['state'], t['state'])}); nothing to report.")
+        shown = fit(text)
+        # set: when it was said ("at" moves on while it waits, for the minutes left).
+        t["progress"] = {"text": shown, "at": now(), "set": now(), **({"done": args.done} if args.done is not None else {}),
+                         **({"left": left} if left is not None else {})}
+        s.dirty = True
+        v = view(s, t, [detail(k) for k in live_agents(s.key(t))])
+    note = f" Cut to {LINE_MAX} characters: \"{shown}\". Keep it shorter next time." if shown != text else ""
+    # Every status gives the time left, a rough guess beats none (SHEP-13): one without it asks for it.
+    if left is None:
+        note += " Add --left with your best guess of the time left (like 20m) to every status."
+    say(args, {**v, "cut": shown != text}, f"{s.ref(t)}: {shown}" + (f" · {args.done}%" if args.done is not None else "")
+        + (f" · ~{minutes(round(left / 60000))} left" if left is not None else "") + "." + note)
+
+
+ALERT = "herdr.alert"
+
+
+def cmd_alert(args):
+    """An agent tells the person something that can't wait (as Shepherdr's `shepherdr alert`): a
+    toast and a sound in every Herdr window. Never asks permission. A task's agent (or an alert
+    --task names) always reaches the person; an Assistant's follows its space's Notify (Off:
+    nothing). It sets the core label herdr.alert on the caller's own terminal, which every Herdr
+    client sees at once, here or on another machine; Herdr shows each new one once (inbox.js)."""
+    title, body = " ".join(str(args.title or "").split()), " ".join(str(args.body or "").split())
+    if not title:
+        raise Fail("Say what can't wait: herdr-task alert \"Deploy is down\" --body \"Checks fail on main since 12:40\"")
+    if len(title) > 240 or len(body) > 4000:
+        raise Fail("Keep an alert short: a title and a line or two of why.")
+    me = os.environ.get("HC_TERMINAL_ID")
+    if not me:
+        raise Fail("Run it from an agent's own terminal (there's no HC_TERMINAL_ID here).")
+    labels = caller_labels()
+    ref = None
+    if args.task:
+        with open_store(argparse.Namespace(folder=args.folder, id=args.task), write=False) as s:
+            ref = s.ref(s.find(args.task))
+    elif labels.get("herdr.task"):
+        # Its own task: "<slug>#<n>" -> HERD-44, from that list's prefix.
+        slug, _, n = labels["herdr.task"].rpartition("#")
+        try:
+            with open(os.path.join(STORE, f"{slug}.json")) as f:
+                pre = json.load(f).get("prefix")
+        except (OSError, ValueError):
+            pre = None
+        ref = f"{pre}-{n}" if pre else None
+    # The label holds what a toast shows (inbox.js cuts it again to fit).
+    alert = {"id": secrets.token_hex(4), "at": now(), "title": title[:120], "body": body[:300],
+             **({"task": ref} if ref else {}), **({"about": True} if args.task else {})}
+    r = run(["hc", "label", me, f"{ALERT}={json.dumps(alert, ensure_ascii=False, separators=(',', ':'))}"])
+    if r.returncode != 0:
+        raise Fail((r.stderr or r.stdout).strip() or "hc label failed")
+    say(args, alert, "Alert sent.")
+
+
+def back_to_work(s, t, why, said=WORKING_AGAIN, auto=False):
+    """A Ready task taken back to work (herdr-task fix or resume, or its agent at work again):
+    Working, its status line saying so until its agent reports, and no Accept until its next
+    ready. why: what took it back, for its Assistant's news ("SHEP-7 is working again: why").
+    auto: only its agent's own turn took it back (a message, a background job's notice), not a
+    fix asked for: Ready again when that turn changed nothing (tick's settle_back())."""
+    if t["state"] != "ready":
+        return False
+    t["state"] = "running"
+    for k in ("ready_turns", "merge_requested"):
+        t.pop(k, None)
+    t["back"] = {"at": now(), "why": why, **({"auto": True, "progress": t.get("progress")} if auto else {})}
+    # by: Herdr's words, not its agent's (on_it() counts only an agent's own line).
+    t["progress"] = {"text": fit(said), "at": now(), "set": now(), "by": "herdr"}
+    s.dirty = True
+    return True
+
+
+READY_BUT = "is ready, but:"  # finalize() couldn't push or open its pull request
+
+
+def worktree_here(s, t):
+    """Refuses (Fail) a worktree task whose folder is gone: nothing can be published from it, and
+    without one gh would never be asked whether the repo merges through a pull request."""
+    wt = t.get("worktree")
+    if t.get("mode") == "worktree" and wt and not os.path.isdir(wt):
+        raise Fail(f"{s.ref(t)}'s worktree {wt} is gone, so it can't be published or merged. {STAYS}: say why "
+                   "in your chat and end your turn.")
+
+
+def finalize(s, t):
+    """Ready: on GitHub its pull request opens; then the merge policy in Settings decides who
+    merges: auto (now), checks (once its checks pass) or ask (the person). An adopted pull request
+    always asks: ready never merges it. Publishing comes first, and gh or git failing there refuses
+    (Fail): on GitHub, Ready means published. Returns what to say."""
+    worktree_here(s, t)
+    # A saved pull request no forge adapter here reaches refuses before any host is asked anything:
+    # Ready means published (on Bitbucket too: pushed, its draft opened and prepared for review).
+    admit(t)
+    worktree = t.get("mode") == "worktree" and t.get("worktree")
+    publish = worktree and not t.get("nothing_to_merge")
+    where = publishing_repository(s) if publish else None
+    if publish and not where and getattr(s, "github_saved", False):
+        # A saved "not on GitHub" is asked again (as no_local_merge() does): Ready decides publication,
+        # and a refusal saves nothing, so a stale no would keep it from publishing for up to an hour.
+        where = publishing_repository(s, fresh=True)
+    pr = pr_open(s, t, where, t.get("summary")) if where else None
+    t["state"], t["ready_at"] = "ready", now()
+    for k in ("attention", "merge_requested", "review"):
+        t.pop(k, None)
+    (t.get("pr") or {}).pop("wait", None)
+    s.dirty = True
+    msg = f"{s.ref(t)} is ready."
+    if not worktree or t.get("nothing_to_merge"):
+        # Nothing to merge (in the folder itself, or no commits beyond its base): it waits in Ready
+        # for the person's Accept, whatever the merge setting; no pull request (SHEP-96).
+        t.pop("auto_merge", None)
+        return msg + (" Nothing to merge (no commits beyond its base)." if t.get("nothing_to_merge") else "") + \
+            " The person accepts it in the Tasks panel."
+    if pr:
+        pr["checked"] = 0
+        # Working until its checks are done and GitHub knows it can merge (the tick: pr_wait()); GitHub's only.
+        if provider_of(pr) == "github":
+            pr["wait"] = PR_CHECKS_RUNNING
+        msg = (f"{s.ref(t)} is ready: pull request #{pr['number']}, {pr['url']}. It shows Working until its checks "
+               "pass and GitHub says it can merge; a failing check or a conflict comes back to you to fix.")
+    policy = "ask" if (t.get("pr") or {}).get("adopted") else merge_policy(s, t)
+    refusal = no_merge(t) if t.get("pr") else None
+    if refusal:
+        # A pull request herdr-task never merges (Bitbucket's): whatever Settings say, nothing waits to merge
+        # by itself; the person merges it on its forge, and the tick finishes the task then.
+        t.pop("auto_merge", None)
+        return f"{msg} {refusal}"
+    if policy in ("auto", "checks"):
+        t["auto_merge"] = policy
+        if t.get("pr"):
+            if policy == "auto":
+                err = merge_now(s, t, auto=True)
+                return msg + (f" Merging it waits: {err}" if err else " Merged; done.")
+            return msg + " It merges by itself once its checks pass."
+        no_local_merge(s, t)
+        try:
+            merge_into_branch(s, t)
+            sent, started = tell(s, t, local_merge_msg(s, t), None)
+            t["merge_requested"] = now()
+            return msg + " Settings say merge it right away: the next message says how."
+        except Fail as e:
+            t["attention"] = f"{NO_ASK}: {e}"
+    else:
+        t.pop("auto_merge", None)
+    return msg + " The person accepts it in the Tasks panel, which merges it."
+
+
+def cmd_review(args):
+    """A reviewer's verdict: --pass (on to merging) or --changes (back to the worker). Only for
+    reviewers herdr-task started before task agents ran their own review: kept so they finish."""
+    if bool(args.passed) == bool(args.changes or args.changes_file):
+        raise Fail("Say --pass, or --changes with what must be fixed.")
+    text = args.changes or ""
+    if args.changes_file:
+        with open(args.changes_file) as f:
+            text = f.read()
+    refused = None
+    with open_store(args) as s:
+        t = s.find(args.id)
+        rv = t.pop("review", None) or {}
+        cfg = settings_for(s, t.get("space"))["tasks"]
+        of = rv.get("of") or int(cfg.get("review_rounds") or 1)
+        n = rv.get("round") or len(t.get("reviews") or []) + 1
+        rec = {"round": n, "result": "pass" if args.passed else "changes", "text": (text or args.notes or "").strip(),
+               "at": now(), "head": t.get("head"), "by": os.environ.get("HC_TERMINAL_ID")}
+        t.setdefault("reviews", []).append(rec)
+        s.dirty = True
+        if args.passed:
+            # Refused (publication): the round stays recorded and the reviewer still ends, as
+            # finalize() changed nothing; with its reviewer gone the refusal waits on the task for
+            # the person, saying so. Refused after the store is saved.
+            try:
+                msg = f"{s.ref(t)}: review round {n} passed. " + finalize(s, t)
+            except Fail as e:
+                said = f"Review round {n} is recorded"
+                t["attention"] = str(e).replace(STAYS, said) if STAYS in str(e) else f"{e} {said}."
+                e.args, refused = (t["attention"],), e
+        else:
+            last = n >= of
+            if t["state"] == "ready":
+                t["state"] = "running"
+            sent, _ = tell(s, t, (f"Review round {n} of {of} for {s.ref(t)} found what must be fixed before it can merge:\n{text.strip()}\n\n"
+                                     f"Fix these, commit, then run `herdr-task ready {s.ref(t)} --folder {shlex.quote(s.loc['folder'])}` again"
+                                     + (" (that was the last review round)." if last else " for the next round.")), None)
+            msg = f"{s.ref(t)}: findings sent to {sent}."
+        v = view(s, t)
+    # This reviewer is finished: it ends a moment after this command returns.
+    me = os.environ.get("HC_TERMINAL_ID")
+    if me and rv.get("reviewer") == me:
+        guard(["hc"])
+        subprocess.Popen(["sh", "-c", 'sleep 4; hc kill "$1" >/dev/null 2>&1; sleep 2; hc rm "$1" >/dev/null 2>&1', "x", me],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    if refused:
+        raise refused
+    say(args, v, msg)
+
+
+def cmd_state(args, state):
+    with open_store(args) as s:
+        t = s.find(args.id)
+        if state == "reopen":
+            state = "running" if t.get("started") and t["state"] not in ("queued", "scheduled") else "todo"
+            # #844: reopened after its pull request merged: it stays open (the tick would find that
+            # pull request merged and close it again at once) until its agent says ready.
+            if t["state"] == "done" and t.get("merged"):
+                t["kept_open"] = True
+            for k in ("reviews", "review", "auto_merge", "merged", "nothing_to_merge", "accepted_at", "merge_queued", "merged_head", "kept", "landed"):
+                t.pop(k, None)
+        if state == "done" and t.get("worktree") and merged_here(s, t):
+            t["merged"] = True
+        t["state"] = state
+        t[{"done": "done_at", "running": "reopened_at", "todo": "reopened_at"}[state]] = now()
+        if state != "done":
+            unarchive(s, t)
+        for k in ("merge_requested", "attention", "queue", "queued_at", "progress", "retry", "scheduled_for", "held") if state != "running" else ("attention", "scheduled_for"):
+            t.pop(k, None)
+        s.dirty = True
+        v = view(s, t)
+    say(args, v, f"{s.ref(t)} is done." if state == "done" else f"{s.ref(t)} is {state}.")
+
+
+def cmd_unarchive(args):
+    with open_store(args) as s:
+        t = s.find(args.id)
+        was = bool(t.get("archived"))
+        unarchive(s, t)
+        v = view(s, t)
+    say(args, v, f"{s.ref(t)} is back in its list." if was else f"{s.ref(t)} isn't archived.")
+
+
+def cmd_edit(args):
+    with open_store(args) as s:
+        t = s.find(args.id)
+        old = t["title"]
+        if args.title is not None:
+            t["title"] = args.title.strip() or t["title"]
+        if args.prompt is not None:
+            t["prompt"] = args.prompt
+        if args.prompt_file:
+            with open(args.prompt_file) as f:
+                t["prompt"] = f.read()
+        pick = [t.get(k) for k in ("agent", "model", "effort")]
+        set_opts(t, args)
+        if [t.get(k) for k in ("agent", "model", "effort")] != pick:
+            # The next agent started for it runs on the new choice (start_again), a queued one too.
+            t["pick_at"] = now()
+            q = t.get("queue") or {}
+            if q.get("argv") and not q.get("custom"):
+                q["argv"] = worker_argv(s, t, q.get("space"))
+        set_base(s, t, args.base)
+        set_notes(t, args)
+        if args.after is not None:
+            set_after(s, t, *parse_after(s, args.after))
+        at = scheduled_at(args) if (args.at or "").strip() or args.in_ is not None else None
+        if at:
+            schedule(s, t, at)
+        elif args.at is not None:
+            unschedule(t)  # --at "": back to To do
+        if args.here or args.worktree:
+            if t["state"] not in ("todo", "scheduled", "queued"):
+                raise Fail("Where a task works can only change before it starts.")
+            if args.worktree and s.loc["kind"] != "repo":
+                raise Fail("Worktrees need a git repo.")
+            t["mode"] = "here" if args.here else "worktree"
+        if t["mode"] != "worktree" and not t.get("worktree"):
+            t.pop("branch", None)
+        set_branch(s, t, getattr(args, "branch", None))
+        s.dirty = True
+        tabs = task_tabs(s, t) if t["title"] != old else []
+        v = view(s, t)
+    left = name_tabs([(tab, tab_title(s, t)) for tab in tabs])
+    if at:
+        ensure_scheduler_quietly()
+    say(args, {**v, "rename": left}, f"{s.ref(t)} saved" + (f": {v['why']}." if v["status"] == "scheduled" else "."))
+
+
+# ---- a task's save-only new-start selection (A2) -------------------------------------------------
+# The CLI, Azure deployment and effort a task's first agent starts on, saved before it starts. Saving starts nothing,
+# sends no prompt and changes no hold, queue place, schedule, dependency or state. Once the task has a recorded agent
+# (a running, waiting or stopped conversation) its selection is locked: that conversation keeps its binding.
+
+def selection_of(s, t, space):
+    """What `select` shows for task t: its own choice, whether it can still change, the route its CLIs would run on,
+    and the revision a save must quote (its choice, a save counter, its recorded agents and the routing in force)."""
+    from .providers import binding_for, KINDS, selection_revision, selection_view
+    binding = binding_for(s, space)
+    shown = selection_view(binding, "worker")
+    locked = bool(t.get("agents") or t.get("reviewers")) or t["state"] not in ("todo", "queued", "scheduled")
+    rev = hashlib_digest({"agent": t.get("agent"), "deployment": t.get("deployment"), "model": t.get("model"), "effort": t.get("effort"),
+                          "saves": t.get("select_rev") or 0, "agents": len(t.get("agents") or []),
+                          "routing": {k: selection_revision(binding, k) for k in KINDS}})
+    # What the task follows without a choice of its own: Settings' Workers CLI here (Claude Code when unset).
+    inherit = {"agent": (settings_for(s, space).get("worker") or {}).get("agent") or "claude"}
+    return {"id": t["id"], "ref": s.ref(t), "state": t["state"], "locked": locked, "route": shown["route"], "inherit": inherit,
+            "selection": {"agent": t.get("agent"), "deployment": t.get("deployment"), "model": t.get("model"), "effort": t.get("effort")},
+            "clis": shown["clis"], "revision": rev}
+
+
+def hashlib_digest(parts):
+    import hashlib
+    return hashlib.sha256(json.dumps(parts, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
+
+
+SELECT_LOCKED = ("{} has a recorded conversation (or has started), so its choice is locked: resuming it keeps the "
+                 "provider, deployment and effort it started on. Nothing was changed. Start a new conversation with "
+                 "`herdr-task switch {} --fresh` to use another.")
+SELECT_STALE = ("{}'s choice or its provider settings changed since this selector was opened (revision {}), so this "
+                "save would replace something you didn't see. Nothing was changed; open it again.")
+
+
+def cmd_select(args):
+    """`select`: show or save a task's new-start choice. Without a change it only shows (inspect). A change needs the
+    revision shown (--revision), and saves only the choice itself."""
+    from .launch_admission import open_start, task_identity
+    from .providers import binding_for, clean, selection_revision
+    from .settings import EFFORTS
+    change = args.default or any(v is not None for v in (args.agent, args.deployment, args.model, args.effort))
+    with open_store(args) as s:
+        t = s.find(args.id)
+        # Its space's settings when it has one (a queued or scheduled task keeps it in its plan, where its start reads
+        # it), else the folder's own layers: an inspect and a save need no terminal.
+        space = bare(args.space) if args.space else (t.get("space") or (t.get("queue") or {}).get("space") or None)
+        cur = selection_of(s, t, space)
+        if not change:
+            v = cur
+        else:
+            if args.revision != cur["revision"]:
+                raise Fail(SELECT_STALE.format(s.ref(t), args.revision or "none"))
+            if cur["locked"]:
+                raise Fail(SELECT_LOCKED.format(s.ref(t), s.ref(t)))
+            # A start of it that is still open (claimed or maybe sent) is a conversation in the making: locked too.
+            open_start(task_identity(s, t), s.ref(t), t)
+            if args.default:
+                for k in ("agent", "deployment", "model", "effort", "selection_routing"):
+                    t.pop(k, None)
+            else:
+                agent = args.agent if args.agent is not None else t.get("agent")
+                # An effort alone can follow the configured CLI; a deployment or model belongs to one CLI.
+                if agent not in ("claude", "codex") and (agent is not None or args.deployment or args.model):
+                    raise Fail("Choose the CLI it starts on: --agent claude or --agent codex.")
+                if args.agent is not None and t.get("agent") and args.agent != t["agent"]:
+                    # Another CLI than the task's own: that CLI's deployment, model and effort don't carry over. (A task
+                    # with no CLI of its own keeps an effort saved alone.)
+                    for k in ("deployment", "model", "effort"):
+                        t.pop(k, None)
+                if agent:
+                    t["agent"] = agent
+                if args.deployment is not None:
+                    dep = clean(f"{agent}_deployment", args.deployment)
+                    if dep and cur["route"] != "azure-foundry":
+                        # A deployment means nothing on Personal: kept, it would be ignored now and refused later.
+                        raise Fail("A deployment is chosen on Azure Foundry only, and Provider is Personal here. Nothing was "
+                                   "changed; choose the CLI and effort, or set Provider to Azure Foundry first.")
+                    if dep:
+                        t["deployment"] = dep
+                    else:
+                        t.pop("deployment", None)
+                if args.model is not None:
+                    m = args.model.strip()
+                    if m and m.lower() != "default" and cur["route"] == "azure-foundry":
+                        raise Fail("On Azure Foundry the deployment is the model: choose --deployment instead. Nothing was changed.")
+                    if not m or m.lower() == "default":
+                        t.pop("model", None)
+                    elif not re.fullmatch(r"[\w.\[\]:-]{1,128}", m):
+                        raise Fail("A model is its id or alias (letters, digits, dots, dashes, underscores and brackets).")
+                    else:
+                        t["model"] = m
+                if args.effort is not None:
+                    e = args.effort.strip().lower()
+                    if e in ("", "default"):
+                        t.pop("effort", None)
+                    elif e not in EFFORTS:
+                        raise Fail(f"effort is one of {', '.join(sorted(EFFORTS))} (or default).")
+                    else:
+                        t["effort"] = e
+                # A deployment or a model is bound to the routing it was chosen under: under another one its start
+                # refuses (launch_admission), never reinterpreted. Only a save that chooses one (its CLI, deployment or
+                # model) binds anew; one that changes the effort alone keeps the older binding, so it still refuses.
+                if not (agent and (t.get("deployment") or t.get("model"))):
+                    t.pop("selection_routing", None)
+                elif args.agent is not None or args.deployment is not None or args.model is not None or "selection_routing" not in t:
+                    t["selection_routing"] = selection_revision(binding_for(s, space), agent)
+            t["select_rev"] = (t.get("select_rev") or 0) + 1
+            t["pick_at"] = now()
+            q = t.get("queue") or {}
+            if q.get("argv") and not q.get("custom"):
+                # Its place in the queue stays; only what it starts with follows the choice.
+                q["argv"] = worker_argv(s, t, q.get("space"))
+            s.dirty = True
+            v = selection_of(s, t, space)
+    sel = v["selection"]
+    words = (f"{v['ref']}: " + ("locked, its recorded conversation keeps its binding. " if v["locked"] else "")
+             + (f"{sel['agent']}" if sel["agent"] else "the configured defaults")
+             + (f", deployment {sel['deployment']}" if sel.get("deployment") else "")
+             + (f", model {sel['model']}" if sel.get("model") else "")
+             + (f", effort {sel['effort']}" if sel.get("effort") else "")
+             + (". Saved for its first start; nothing was started." if change else ".")
+             + f" Revision {v['revision']}.")
+    say(args, v, words)
+
+
+def cmd_config(args):
+    with open_store(args) as s:
+        cfg = s.data.setdefault("config", {})
+        tabs = False
+        if args.prefix is not None:
+            new = args.prefix.strip().upper()
+            if not re.fullmatch(r"[A-Z]{2,5}", new):
+                raise Fail("A prefix is 2 to 5 letters, like HAT.")
+            owner = prefixes_in_use(s.path).get(new)
+            if owner:
+                raise Fail(f"{new} is taken by {owner}.")
+            if new != s.prefix:
+                s.data["prefix"] = new
+                s.dirty = tabs = True
+        out = {"folder": s.loc["folder"], "prefix": s.prefix, "max_running": s.max_running(), "settings": settings_for(s),
+               "worktrees": worktrees_on(s)}
+    out["rename"] = retag_tabs(s) if tabs else []
+    n = out["max_running"]
+    where = "a worktree each" if out["worktrees"] else "in the folder itself"
+    say(args, out, f"{out['folder']}: tasks {out['prefix']}-n, at most {n} at once, {where}.")
+
+
+def cmd_rm(args):
+    with open_store(args) as s:
+        t = s.find(args.id)
+        s.data["tasks"].remove(t)
+        for o in s.data["tasks"]:
+            if t["id"] in (o.get("after") or []):
+                o["after"] = [i for i in o["after"] if i != t["id"]]
+        s.dirty = True
+    note = f" Its worktree {t['worktree']} is still there." if t.get("worktree") and os.path.isdir(t["worktree"]) else ""
+    say(args, {"id": t["id"], "removed": True}, f"{s.ref(t)} removed.{note}")
+
+
+def last_agent(t):
+    return t["agents"][-1] if t["agents"] else None
+
+
+def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None, fresh=False, restart=False,
+                resumed_message=None, before_send=None):
+    """Starts an agent for the task: the last agent's own session when it's the same kind of agent
+    and the session is known (unless fresh: a new conversation with a handoff); else a fresh one
+    with a handoff. `message` goes after either; `resumed_message` only after the resumed session (a handoff
+    is a new conversation, never called a resume). A resumed session keeps the provider binding its
+    conversation recorded (providers.plan_of_record): today's defaults never reroute it, and
+    changed routing refuses here, before anything changes. restart: a model menu's Restart or
+    Switch agent (the window's or the web's); since L2 it goes the same way as resume and switch (its
+    recorded binding when it continues the conversation, today's settings for a new one), and only a
+    model it names that the recorded deployment would replace refuses (RESTART_MODEL).
+    Missing history (revive.history_of): the Claude Code session it would resume has a recorded log that is positively
+    gone here, so the CLI is expected to find no conversation to continue (a Codex rollout missing from its recorded
+    path isn't judged so: Codex finds a thread by its id). A new conversation then, on that conversation's recorded
+    binding (never today's settings: a binding they can't carry refuses before anything changes), opening with the
+    handover that says its
+    earlier session is gone (revive.lost_message), then the handoff and `message`; never `resumed_message`.
+    before_send: run by launch admission's submit() once nothing can refuse the start any more (admitted, claimed,
+    its revision and Assistant checked, recorded as being sent), just before hc runs: switch ends the old agent
+    there (SHEP-211), so a start that is refused changes nothing. A Fail from it cancels the start.
+    Returns (its record, resumed); after missing history the record returned is a copy that also says missing_history
+    and previous_session (the task's own row doesn't)."""
+    from .providers import AZURE, PERSONAL_RECORD, restart_route, RESTART_MODEL, same_model
+    from .revive import GONE, history_of, lost_message
+    prev = last_agent(t)
+    # The last agent's argv again, unless the task's agent, model or effort changed since (edit).
+    keep = prev and prev.get("argv") and (t.get("pick_at") or 0) <= (prev.get("at") or 0)
+    argv = agent_argv(None, argv_json) if argv_json else worker_argv(s, t, space, key) if key else \
+        (prev["argv"] if keep else worker_argv(s, t, space))
+    fixed = bool(argv_json) or (not key and bool(keep))
+    same = prev and agent_key(argv) == prev.get("agent")
+    resuming = bool(same and prev.get("session") and not fresh)
+    gone = resuming and history_of(prev.get("log"), prev.get("address"), agent_key(argv)) == GONE
+    resuming = resuming and not gone
+    # Before anything changes: launch admission (its plan, from the recorded binding when it resumes or its history is
+    # missing; an open earlier start; its Assistant) refuses here.
+    adm = admit_task(s, t, argv, space, parent or (prev or {}).get("parent"),
+                     select=None if fixed else (lambda: worker_argv(s, t, space, key)), prev=prev,
+                     bound=(prev.get("provider") or PERSONAL_RECORD) if resuming or gone else None)
+    if restart and not (resuming or gone):
+        # A new conversation takes today's settings, never onto another route than the agent it replaces (L2).
+        was = (prev or {}).get("provider") or PERSONAL_RECORD
+        restart_route(was["route"], was, adm.binding, agent_key(argv), s.ref(t))
+    if restart and (resuming or gone) and adm.plan["route"] == AZURE and \
+            not same_model(argv, prev.get("argv"), adm.plan["deployment"]):
+        # A recorded conversation keeps its deployment (A2): a model picked in the menu would be replaced silently.
+        raise Fail(RESTART_MODEL.format(who=s.ref(t), deployment=adm.plan["deployment"]))
+    unarchive(s, t)
+    parent = adm.parent
+    res = resume_argv(argv, prev["session"]) if resuming else None
+    with adm.claimed():
+        adm.before_send = before_send
+        if res:
+            first = "\n\n".join(m for m in (resumed_message, message) if m) or None
+            return launch(s, t, argv, space, first, parent=parent, resume=res, admission=adm), True
+        # Missing history: no pointer to the log that is gone (the handoff says none was left).
+        text = handoff(s, t, dict(prev, log=None) if gone else prev, parent, argv)
+        text = lost_message() + "\n\n" + text if gone else text
+        text += ("\n\n" + message) if message else ""
+        t["review_gate"] = True
+        a = launch(s, t, argv, space, text, parent=parent, admission=adm)
+        return (dict(a, missing_history=True, previous_session=prev["session"]) if gone else a), False
+
+
+# SHEP-189: what a resumed agent hears first. Its session comes back with no message, so without this
+# it sat idle until someone wrote to it.
+RESUME_NUDGE = ("Shepherdr resumed your session because your agent had stopped. Carry on where you left off: check "
+                "what is already done with `herdr-task show`, then keep going with the task.")
+
+
+def cmd_resume(args):
+    with open_store(args) as s:
+        t = s.find(args.id)
+        live = [k for k in map(detail, live_agents(s.key(t))) if agent_running(k)]
+        if live:
+            raise Fail(f"{s.ref(t)} still has an agent ({live[0]['address']}). Use switch to replace it.")
+        if t["state"] in ("todo", "scheduled", "queued"):
+            raise Fail(f"{s.ref(t)} hasn't started. Use start.")
+        space = bare(args.space) if args.space else (t.get("space") or default_space())
+        if t["state"] == "done":
+            t["state"] = "running"
+        back_to_work(s, t, "resumed")
+        fresh = getattr(args, "fresh", False)
+        # The nudge says the session resumed: only after the recorded session itself, never with a handoff (--fresh, no
+        # session recorded, its recorded log gone, or another kind of agent: a new conversation, PR 60).
+        a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=fresh,
+                                 resumed_message=RESUME_NUDGE)
+        v = view(s, t)
+    out = {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed}
+    gone = {k: a[k] for k in ("missing_history", "previous_session") if k in a}
+    how = "resumed its session" if resumed else "started with a handoff" + (MISSING_WORDS if gone else "")
+    say(args, {**out, **gone}, f"{s.ref(t)} {how}: {a['address']}")
+
+
+# Said after a start whose recorded session's log is gone (revive.history_of): a new conversation, never a resume.
+MISSING_WORDS = " (missing history: its earlier session's log is gone, so this is a new conversation)"
+
+
+# SHEP-211: what a session resumed by switch hears first. Without it the new agent sat idle on the old one's
+# interrupted turn ("Interrupted · What should Claude do instead?") and the task showed a false "needs you".
+SWITCH_NUDGE = ("Shepherdr restarted your session on a new agent (the task's agent, model or settings changed), "
+                "which stopped your last turn part-way. Nothing is wrong and nobody is waiting on you: carry on "
+                "where you left off (check what is already done with `herdr-task show` and git), then keep going "
+                "with the task.")
+
+
+def end_agent(s, t, address, check=False):
+    """Ends a task's agent (its terminal, shell and all); hc kill returns once it's gone. check: refuse when hc says it
+    didn't (an agent switching itself isn't checked: the kill ends this command too)."""
+    stop_note("switch-kill", task=s.ref(t), terminal=address, by="switch")
+    r = run(["hc", "kill", address])
+    if check and r.returncode != 0:
+        raise Fail(f"{address} didn't end (hc kill exited {r.returncode}), so no new agent was started: the old one may "
+                   f"still be at work there.")
+
+
+def cmd_switch(args):
+    with open_store(args) as s:
+        t = s.find(args.id)
+        live = [k for k in map(detail, live_agents(s.key(t))) if agent_running(k)]
+        refresh_sessions(s, t, live)
+        old = live[-1] if live else None
+        labels = (old or {}).get("labels") or {}
+        # A given --space wins: the task moves there (#837); else the old agent's own space.
+        space = ((bare(args.space) if args.space else None) or labels.get("herdr.task.space") or labels.get("herdr.space")
+                 or t.get("space") or default_space())
+        if t["state"] in ("todo", "scheduled", "queued", "done"):
+            t["state"] = "running"
+            t.setdefault("started", now())
+            t.pop("queue", None)
+            t.pop("scheduled_for", None)
+        ended = []
+        # An agent switching itself can't end first: that would end this command too.
+        me = os.environ.get("HC_TERMINAL_ID")
+        own = bool(old and me and old["address"].split("/")[-1] == me)
+
+        def end_old():
+            # SHEP-211, adapted to launch admission (L2): only once nothing can refuse the new start (a switch it
+            # refuses leaves the old agent at work), the old agent ends before the new one starts. The new one may
+            # resume the same session, and ending the old one after that cut the session's turn short under the new
+            # agent, which then sat on "Interrupted" with nothing to do. Its worktree and session stay for the new one.
+            if old and not args.keep and not own:
+                end_agent(s, t, old["address"], check=True)
+                ended.append(old["address"])
+        try:
+            a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=getattr(args, "fresh", False),
+                                     restart=getattr(args, "restart", False), resumed_message=SWITCH_NUDGE,
+                                     before_send=end_old)
+        except Fail as e:
+            if ended:
+                # Its own words, its launch id kept (a start that may have been sent): said in place, not replaced.
+                e.args = (f"{e} The old agent {ended[0]} already ended: its work is kept, and `herdr-task resume "
+                          f"{s.ref(t)}` starts an agent again.",)
+            raise
+        v = view(s, t)
+    if own and not args.keep:
+        end_agent(s, t, old["address"])
+        ended.append(old["address"])
+    gone = {k: a[k] for k in ("missing_history", "previous_session") if k in a}
+    say(args, {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed, "ended": ended, **gone},
+        f"{s.ref(t)}: {a['agent']} {a['address']} {'resumed its session' if resumed else 'took over'}"
+        + (MISSING_WORDS if gone else "") + (f", {old['address']} ended" if ended else ""))
+
+
+def workers(s, t):
+    """The task's agents at work, reviewers left out (hc get's records, oldest first)."""
+    return [k for k in map(detail, live_agents(s.key(t)))
+            if agent_running(k) and (k.get("labels") or {}).get("herdr.role") != "reviewer"]
+
+
+def tell(s, t, msg, args):
+    """Sends the task's worker a message, or starts one with it when none is left.
+    Returns (terminal, started)."""
+    unarchive(s, t)
+    live = workers(s, t)
+    if live:
+        # While the person writes to it, the message waits for them (news.py's held_pass).
+        from .news import send_or_hold
+        if not send_or_hold(live[-1]["address"], msg):
+            raise Fail(f"hc send to {live[-1]['address']} failed")
+        return live[-1]["address"], False
+    space = bare(args.space) if getattr(args, "space", None) else (t.get("space") or default_space())
+    a, _ = start_again(s, t, space, getattr(args, "agent", None), getattr(args, "argv", None), message=msg)
+    return a["address"], True
+
+
+def local_merge_msg(s, t):
+    main, wt, br, base = s.loc["folder"], t["worktree"], t["branch"], t.get("base") or "main"
+    q = shlex.quote
+    return (f"Merge task {s.ref(t)} \"{t['title']}\" now:\n"
+            f"1. In {wt}: commit any remaining work, then rebase {br} onto {base} (git rebase {base}) and resolve conflicts.\n"
+            f"2. Run the project's checks (tests, build, lint) and fix what fails.\n"
+            f"3. Merge into {base}: git -C {q(main)} merge --ff-only {br} when {main} has {base} checked out, else git -C {q(main)} fetch . {br}:{base}. If {main} has uncommitted changes in the way, or another worktree has {base} checked out, stop and tell the person; don't stash or reset their work.\n"
+            f"4. Clean up: git -C {q(main)} worktree remove {q(wt)} && git -C {q(main)} branch -d {br}\n"
+            f"5. Run: herdr-task done {s.ref(t)} --folder {q(main)}")
+
+
+MERGE_FAILED = "GitHub didn't merge it"  # a merge that failed: never in the way of the next try
+CHECKS_RUNNING = "Checks are still running."
+WAITS_APPROVAL = "It waits for an approving review."  # #743: not a problem, it merges once approved
+IN_QUEUE = "It is in GitHub's merge queue."  # #802: merging, done once GitHub merged it
+# Its GitHub checks unknown (SHEP-179, C0): never merged by itself (Nathan's conservative policy); the person's own
+# Accept or merge still merges, and GitHub still refuses what its required checks block.
+CHECKS_UNKNOWN = ("Its GitHub checks can't all be read here, so it doesn't merge by itself until they can and pass; "
+                  "or the person checks them on GitHub and accepts it.")
+QUEUE_DAY = 24 * 3600000  # how long a base branch's merge queue is remembered
+
+
+def uses_queue(s, base):
+    q = (s.data.get("merge_queue") or {}).get(base)
+    return bool(q) and now() - q < QUEUE_DAY
+
+
+UNREACHED = "Couldn't reach pull request"  # merge_now()'s words when gh can't read it
+MOVED = "Adopted pull request"  # adopted_moved()'s words: the tick clears them once it's put back
+
+
+def adopted_moved(s, t, v):
+    """What moved on an adopted pull request since adoption verified it, for the person; None when
+    nothing did, or it wasn't adopted. Its base must still be the task's, and its head and the
+    branch's tip here both the head adoption verified and recorded (adopted_head): what merges is
+    what was verified, not whatever the pull request holds now. Only adopting again records another
+    (adopt_existing()); one adopted before heads were recorded refuses until then. Accept and the
+    tick both read it, so a move shows at once and goes once it's put back."""
+    if not t["pr"].get("adopted"):
+        return None
+    n, base, tip, verified = t["pr"]["number"], t.get("base") or "main", branch_tip(s, t), t["pr"].get("adopted_head")
+    again = f"`herdr-task adopt {s.ref(t)} --pr {n}`"
+    if v.get("baseRefName") != base:
+        return f"{MOVED} #{n} now targets {v.get('baseRefName')}, not {base}, which adoption verified. Retarget it to {base}, then accept again."
+    if not verified:
+        return (f"{MOVED} #{n} has no head recorded from its adoption, so what merges can't be checked against what was verified. "
+                f"Run {again} to verify it, then accept again.")
+    there, br, ok = str(v.get("headRefOid")), t.get("branch"), verified[:7]
+    if there != verified and tip != verified:
+        where = (f"#{n} and {br} here are both at {there[:7]}" if there == tip else
+                 f"#{n} is at {there[:7]} and {br} is at {str(tip)[:7]} here")
+        return (f"{MOVED} {where}, which isn't what adoption verified ({ok}). Bring them back to {ok}, or bring them to the "
+                f"same commit and run {again} to verify that one, then accept again.")
+    if there != verified:
+        return (f"{MOVED} #{n} is at {there[:7]} on GitHub, which isn't what adoption verified ({ok}); {br} here still is. "
+                f"Bring the pull request back to {ok}, or bring {br} to {there[:7]} and run {again} to verify that one, then "
+                "accept again.")
+    if tip != verified:
+        return (f"{MOVED} #{n} is still at {ok}, but {br} is at {str(tip)[:7]} here, which isn't what adoption verified. "
+                f"Bring {br} back to {ok}, or publish it (ready) and run {again} to verify that one, then accept again.")
+    return None
+
+
+def merged_elsewhere(s, t, v):
+    """Why a merged pull request doesn't finish its task, for the person; None when it does, hasn't
+    merged, or wasn't adopted. An adopted one finishes only on a merge into the task's base, the one
+    adoption verified, as finishing takes the worktree and branch. GitHub keeps a merged pull
+    request's base, so this never goes: the tick and Accept both read it and say the same each time.
+    An answer that doesn't say where holds too, until one does."""
+    if v.get("state") != "MERGED" or not t["pr"].get("adopted"):
+        return None
+    n, ref, base, into = t["pr"]["number"], s.ref(t), t.get("base") or "main", v.get("baseRefName")
+    if into == base:
+        return None
+    said, stays = f"Pull request #{n}, adopted for {ref}, merged", "so the task isn't finished and its worktree and branch stay."
+    if not (into and isinstance(into, str)):
+        return f"{said}, and gh's answer doesn't say into which branch, {stays} The tick looks again, and finishes it if that was {base}."
+    return (f"{said} into {into}, not {base}, {stays} Its base can't be changed back. Once the work is where you want it, "
+            f"`herdr-task done {ref}` marks the task done and leaves the worktree and branch for you to remove.")
+
+
+def merge_now(s, t, auto=False):
+    """Merges the task's pull request on GitHub (squash) and tidies up here. Returns why it
+    couldn't, or why one already merged doesn't finish the task (merged_elsewhere()); None when
+    it's merged (and the task done). A base branch with GitHub's merge queue (#742, #801, #802):
+    the pull request joins the queue and the task stays Merging until GitHub merged it (the tick
+    finishes it then, and deletes its branch there). auto: a merge nobody asked for just now (merge
+    auto or checks, an Accept made while its checks ran): never while this read's checks are
+    unknown (CHECKS_UNKNOWN); it stays as set and the next look tries again."""
+    n = str(t["pr"]["number"])
+    # The folder's host first (forge.reach()): on another host, or none named, nothing is read as this
+    # task's and nothing merges or changes. gh failing to place the folder is gh failing to reach it.
+    try:
+        merge_reach(s, t)
+    except GhFailed as e:
+        return f"{UNREACHED} #{n} on GitHub ({e.reason or 'no answer'}). Nothing merged. Repair {GH_ACCESS}, then try again."
+    except Fail as e:
+        return str(e)
+    v, why = pr_read(t)
+    s.dirty = True
+    matched = None  # the head GitHub was asked to merge (--match-head-commit)
+    if not v:
+        return (f"{UNREACHED} #{n} on {name_of(t['pr'])} ({plain(why or 'no answer')}). Nothing merged. "
+                f"{repair_of(t['pr'], why)}")
+    if provider_of(t["pr"]) == GITHUB and not v.get("refused"):
+        note_checks(s, t, v)  # SHEP-179: GitHub's checks read or not, for doctor and the Accept card
+    queue = False
+    if v.get("state") != "MERGED":
+        problem = pr_problem(v) or adopted_moved(s, t, v)
+        if problem:
+            t["attention"], t["attention_at"] = problem, now()
+            t.pop("merge_queued", None)
+            return problem
+        if t.get("merge_queued"):
+            return IN_QUEUE
+        # A forge that can't merge at the head read (Bitbucket's): never asked, and never merged another
+        # way, even once its checks pass. One merged by hand finishes as any (above and the tick).
+        refusal = no_merge(t)
+        if refusal:
+            t["attention"], t["attention_at"] = refusal, now()
+            return refusal
+        if pr_pending(v):
+            return CHECKS_RUNNING
+        if needs_approval(v):
+            t["pr"]["needs_approval"] = True
+            return WAITS_APPROVAL
+        t["pr"].pop("needs_approval", None)
+        if auto and v.get("checks_unknown"):
+            return CHECKS_UNKNOWN
+        base = t.get("base") or "main"
+        matched = v.get("headRefOid") or ""
+        queue = uses_queue(s, base)
+        ok, err = integrate(t, v, queue)
+        if not ok and not queue and "merge queue" in (err or ""):
+            # gh refuses --delete-branch on a merge queue: asked again without it, which queues it.
+            s.data.setdefault("merge_queue", {})[base] = now()
+            queue = True
+            ok, err = integrate(t, v, queue)
+        # Merged, or only queued (or set to merge by itself)? Asked again; a one-off GitHub error can
+        # also come after the merge went through.
+        again = pr_view(t)
+        if (again or {}).get("state") == "MERGED":
+            v = again
+        elif ok:
+            t["merge_queued"] = now()
+            t.pop("attention", None)
+            t["pr"]["checked"] = 0
+            return IN_QUEUE
+        else:
+            t["attention"], t["attention_at"] = f"{MERGE_FAILED}: {plain(err)}", now()
+            # The next tick reads the pull request at once (merged by hand meanwhile: done).
+            t["pr"]["checked"] = 0
+            return t["attention"]
+    held = merged_elsewhere(s, t, v)
+    if held:
+        t["attention"] = held
+        return held
+    watch_main(s, t, ((v.get("mergeCommit") or {}).get("oid")) if v.get("state") == "MERGED" else None)
+    update_main(s, t)
+    if queue or t.get("merge_queued"):
+        drop_branch(s, t)
+    t["merged"] = True
+    # What merged, for finish(): as gh says it merged when its answer says MERGED (merged by hand, or a
+    # merge that erred and went through), else the head GitHub merged on --match-head-commit. Never the
+    # squash commit. (gh, given --repo, deletes only GitHub's branch: gh 2.101 source, read, not run.)
+    head = v.get("headRefOid") if v.get("state") == "MERGED" else matched
+    if isinstance(head, str) and head:
+        t["merged_head"] = head
+    finish(s, t, even_if_busy=True)
+    return None
+
+
+def merge_refused(args, v, error):
+    """Accept or merge stopped at merge_now(): why, and with --json whether gh was the cause."""
+    github = provider_of(v.get("pr")) == "github"
+    cause = {"cause": "gh"} if github and error.startswith((UNREACHED, MERGE_FAILED)) else {}
+    say(args, {**v, "error": error, **cause}, None) if args.json else print(f"herdr-task: {error}", file=sys.stderr)
+    sys.exit(1)
+
+
+@for_the_person
+def cmd_merge(args):
+    error = None
+    with open_store(args) as s:
+        t = s.find(args.id)
+        if t.get("mode") != "worktree" or not t.get("worktree"):
+            raise Fail(f"{s.ref(t)} works in the folder itself; there is nothing to merge.")
+        sent, started, how = None, False, "agent"
+        if t.get("pr"):
+            # On GitHub: Herdr merges the pull request itself (squash), then tidies up here.
+            how = "github"
+            error = merge_now(s, t)
+            if error == IN_QUEUE:
+                how, error = "queue", None
+            elif error == CHECKS_RUNNING:
+                error += " Merge again when they pass."
+            elif error == WAITS_APPROVAL:
+                error += " Merge again once it's approved."
+        else:
+            no_local_merge(s, t)
+            merge_into_branch(s, t)
+            t["merge_requested"] = now()
+            s.dirty = True
+            sent, started = tell(s, t, local_merge_msg(s, t), args)
+        v = view(s, t)
+    if error:
+        merge_refused(args, v, error)
+    kept = f" {t['kept']}" if t.get("kept") else ""
+    text = f"{s.ref(t)}: pull request #{t['pr']['number']} merged; done.{kept}" if how == "github" else \
+        f"{s.ref(t)}: pull request #{t['pr']['number']} is in GitHub's merge queue; done once GitHub merges it." if how == "queue" else \
+        f"{s.ref(t)}: merge asked of {sent}" + (" (a new agent)" if started else "")
+    say(args, {**v, "terminal": sent, "new_agent": started, "merged": how == "github", "queued": how == "queue"}, text)
+
+
+def branch_tip(s, t):
+    """The task branch's last commit here (else the one it said ready at), or None."""
+    ok, tip, _ = git(s.loc["folder"], "rev-parse", "--verify", "--quiet", f"refs/heads/{t.get('branch')}")
+    return (tip if ok and tip else None) or t.get("head") or None
+
+
+def in_base(s, t):
+    """Its branch holds nothing its base branch doesn't, here or on its remote: no commits of its
+    own, or it only caught up with its base (`git merge --ff-only main` or `git rebase origin/main`
+    while the local main is behind: SHEP-23, #737). Nothing to merge, and never merged."""
+    tip, main, base = branch_tip(s, t), s.loc["folder"], t.get("base") or "main"
+    return bool(tip) and (tip == t.get("start") or any(
+        git(main, "merge-base", "--is-ancestor", tip, ref)[0] for ref in (base_commit(main, base), f"refs/remotes/{remote_of(main)}/{base}")))
+
+
+def ff_merge(s, t):
+    """Lands a task's branch in its base branch here when that is a fast-forward (the base is
+    checked out in the main folder and the branch already holds it: exactly the tested work, no
+    new combination). Returns the tip it landed (finish() removes the branch only at that tip), or
+    None; git refuses to touch uncommitted files. Both go by their full names, as a same-named tag
+    would otherwise be what lands."""
+    main, br, base = s.loc["folder"], t.get("branch"), t.get("base") or "main"
+    head, target = f"refs/heads/{br}", f"refs/heads/{base}"
+    ok, cur, _ = git(main, "symbolic-ref", "HEAD")
+    tip_ok, tip, _ = git(main, "rev-parse", "--verify", "--quiet", head)
+    if not (br and tip_ok and tip and git(main, "merge-base", "--is-ancestor", local_base(base), head)[0]):
+        return None
+    if ok and cur == target:
+        landed = git(main, "merge", "--ff-only", head)[0]
+    else:
+        # A base not checked out here (a task's own --base): its branch moves forward to the task's
+        # (git refuses unless it's a fast-forward, or when another worktree has it checked out).
+        landed = git(main, "fetch", ".", f"{head}:{target}")[0]
+    return tip if landed else None
+
+
+@for_the_person
+def cmd_accept(args):
+    """The person's Accept on a Ready task (the one thing they do in the Tasks panel): Done at
+    once when there is nothing to merge, else merged first, as the merge settings say how: a pull
+    request is squash-merged on GitHub (or merges once its checks pass); a local branch is
+    fast-forwarded when it can be, else its agent merges it (rebase, checks) and marks it done."""
+    error, how, sent, started, back = None, "done", None, False, False
+    with open_store(args) as s:
+        t = s.find(args.id)
+        if t["state"] != "ready":
+            raise Fail(f"{s.ref(t)} isn't ready ({t['state']}); only a Ready task can be accepted.")
+        # Its agent at work again since it said ready: never accepted half done. Working again
+        # (saved), and refused after the store is.
+        if busy_again(t, [detail(k) for k in live_agents(s.key(t))]):
+            back = back_to_work(s, t, "its agent is at work again", auto=True)
+        # One its agent opened itself, which ready couldn't open again ("already exists"): adopted.
+        elif (not t.get("pr") and "already exists" in (t.get("attention") or "")
+              and (where := repository(s)) and pr_adopt(t, where)):
+            t.pop("attention", None)
+            s.dirty = True
+        # A pull request's problems are read fresh (merge_now()): one fixed since, or a merge that
+        # failed once, doesn't stand in the way. Without one, only a failed try doesn't.
+        elif t.get("attention") and not t.get("pr") and not t["attention"].startswith((NO_ASK, MERGE_FAILED)):
+            raise Fail(f"{s.ref(t)} needs attention first: {t['attention']}")
+    if back:
+        raise Fail(f"{s.ref(t)} is working again: its agent took up more work after it said ready. Accept it once it says ready again.")
+    with open_store(args) as s:
+        t = s.find(args.id)
+        if t["state"] != "ready":
+            raise Fail(f"{s.ref(t)} isn't ready ({t['state']}); only a Ready task can be accepted.")
+        t.pop("attention", None)
+        wt = t.get("worktree") if t.get("mode") == "worktree" else None
+        s.dirty = True
+        if not wt:
+            # Worked in the folder itself: nothing to merge.
+            finish(s, t)
+        elif t.get("pr"):
+            how = "github"
+            error = merge_now(s, t)
+            if error == IN_QUEUE:
+                how, error = "queue", None
+            elif error in (CHECKS_RUNNING, WAITS_APPROVAL):
+                # Accepted: it merges by itself once they pass, or once it's approved (Merging).
+                t["auto_merge"], how, error = "checks", "checks" if error == CHECKS_RUNNING else "approval", None
+        elif merged_here(s, t) or in_base(s, t):
+            # Its own work already in the base branch, or none of its own: nothing to merge.
+            t["merged"] = merged_here(s, t)
+            if not t["merged"]:
+                t["nothing_to_merge"] = True
+            finish(s, t, even_if_busy=True)
+        else:
+            # A real merge, with no pull request: only in a repo not on GitHub, into a branch.
+            no_local_merge(s, t)
+            merge_into_branch(s, t)
+            landed = ff_merge(s, t)
+            if landed:
+                how = "merged"
+                t["merged"], t["merged_head"] = True, landed
+                finish(s, t, even_if_busy=True)
+            else:
+                how = "agent"
+                t["merge_requested"] = now()
+                sent, started = tell(s, t, local_merge_msg(s, t), args)
+        if not error:
+            # The person accepted it: done, merged, waiting on its checks or asked of its agent. A
+            # refusal (merge_refused()) never counts.
+            t["accepted_at"] = now()
+        v = view(s, t)
+    if error:
+        merge_refused(args, v, error)
+    text = {"done": f"{s.ref(t)} accepted: done.",
+            "merged": f"{s.ref(t)} accepted: merged into {t.get('base') or 'main'}; done.",
+            "github": f"{s.ref(t)} accepted: pull request #{(t.get('pr') or {}).get('number')} merged; done.",
+            "checks": f"{s.ref(t)} accepted: it merges once its checks pass.",
+            "approval": f"{s.ref(t)} accepted: it merges once it's approved.",
+            "queue": f"{s.ref(t)} accepted: pull request #{(t.get('pr') or {}).get('number')} is in GitHub's merge queue; done once GitHub merges it.",
+            "agent": f"{s.ref(t)} accepted: merge asked of {sent}" + (" (a new agent)" if started else "")}[how]
+    if t.get("kept") and t["state"] == "done":
+        text += f" {t['kept']}"
+    say(args, {**v, "accepted": how, "terminal": sent, "new_agent": started}, text)
+
+
+@for_the_person
+def cmd_adopt(args):
+    """Records a pull request that already exists on a started task, by hand: for one whose worktree
+    took another base, which ready can't adopt by itself. All the checks are adopt_existing()'s."""
+    with open_store(args) as s:
+        t = s.find(args.id)
+        adopted = adopt_existing(s, t, args.pr)
+        v = view(s, t)
+    pr, was = v["pr"], (v.get("adopted_from") or {}).get("base")
+    moved = f"its base moves from {was} to {v['base']}" if was else f"its base stays {v.get('base')}"
+    say(args, {**v, "adopted": adopted}, f"{s.ref(t)}: pull request #{pr['number']} " +
+        (f"adopted; {moved}, and it merges there on the person's Accept. {pr['url']}" if adopted else f"is already recorded. {pr['url']}"))
+
+
+def cmd_fix(args):
+    with open_store(args) as s:
+        t = s.find(args.id)
+        if t.get("mode") != "worktree" or not t.get("worktree"):
+            raise Fail(f"{s.ref(t)} works in the folder itself; tell its agent what to fix.")
+        problem = args.reason or t.get("attention") or "The pull request can't merge yet."
+        main, wt, br, base = s.loc["folder"], t["worktree"], t["branch"], t.get("base") or "main"
+        msg = (f"Task {s.ref(t)} \"{t['title']}\" can't merge yet: {problem}\n"
+               f"Fix it in {wt}: for conflicts, rebase {br} onto {base}; for failing checks, find out why and fix them. "
+               f"Run the checks, commit, then run `herdr-task ready {t['id']} --folder {shlex.quote(main)}` to push the fix.")
+        # Handed the problem: someone is on it while its agent starts (on_it()).
+        t["fix_requested"] = t["handed_at"] = now()
+        s.dirty = True
+        sent, started = tell(s, t, msg, args)
+        back_to_work(s, t, f"asked to fix: {problem}", f"Fixing: {problem}")
+        v = view(s, t)
+    say(args, {**v, "terminal": sent, "new_agent": started},
+        f"{s.ref(t)}: asked {sent} to fix it" + (" (a new agent)" if started else ""))
