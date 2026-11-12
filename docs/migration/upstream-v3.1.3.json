@@ -5,7 +5,7 @@
   "candidate_readiness": "blocked",
   "inputs": {
     "F": "4f0236f03a88c5e9fa344475d90d3a20ef418481",
-    "U": "be647c825c72f559b8cbec6cd1f6479a2cf9fdc6",
+    "U": "ef3be074dd3e28942149b7a5183ab2e2d4207954",
     "P": "074dec5ea0bf0a057f520fa50497bf9e1b696ad9",
     "B": "de8e17957efb4aa016d7e4d652f397aaa95f0880"
   },
@@ -13,20 +13,20 @@
     {
       "phase": "N1",
       "path": "docs/install.md",
-      "upstream_blob": "e008f88ce2c9e6224b09d47917f76c9243c71e4d",
-      "sha256": "355c3bbe1bf172608fc129e1f1a236102071264f7f9202a932b687b048ef7144"
+      "upstream_blob": "acd6b3e3215376d5fe059be583ee004951eab43c",
+      "sha256": "3529459bfd8f0b45246827b877b9d639c36cbe069d9d7bec50e9f337dcbf9e57"
     },
     {
       "phase": "N1",
       "path": "bin/shepherdr",
-      "upstream_blob": "3f0fcb87f04be8ee844236b9a6650a47ef199c70",
-      "sha256": "fe88288249dc6f8627c9c8cf2212b2ff019b25678d19c2a983f36f398fb1057d"
+      "upstream_blob": "0b9817b9fac7920d1ba1b91d6cb286d41b3531d8",
+      "sha256": "adbe069a6412febd852dc85fceaf09c6228e269d4bebadc244c4181b0daf495e"
     },
     {
       "phase": "N1",
       "path": "test/test_install.py",
-      "upstream_blob": "aa9357fc9d43876eb83b4fb2a6016e1be84dbec5",
-      "sha256": "4d22c78034a1547f214455f68aa738370e8b39f013d6b7dbdc9592575fb77bdf"
+      "upstream_blob": "32743c3231c336ddaf4bab57f70fec7d257ab750",
+      "sha256": "9ae323131eed7bd621aefd8e4907b85d85f0007d7b52d761362d18b9920e78b5"
     },
     {
       "phase": "N1",
@@ -55,14 +55,14 @@
     {
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/cli.py",
-      "upstream_blob": "edb0e16ba2cef61cee7770019e3f81ea3101241a",
-      "sha256": "146cdf99625a04d35a7190c6d2c4bf16694f96dfeb44b7bdaac60d37277b817c"
+      "upstream_blob": "3d3547707affa610a30f2217e933a4a145ea9ae7",
+      "sha256": "76fc899f190a0a2856e31af002bc1134bbdfb68c646fd58de63d3b30952a8b07"
     },
     {
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/commands.py",
-      "upstream_blob": "b93bec12f3c7f0b610f4c45cfd6e9e75cc602b46",
-      "sha256": "5e84df77eb745f40a6d2c7038c554fb1493294a611f7b145dca7a411dc7425cc"
+      "upstream_blob": "d0d48cd966a05930946b37375c2e4cbaa9129c99",
+      "sha256": "1845287ab08f36c50a6d84cb9c14e72f108a7ef836e9be47207597ec10260f3a"
     },
     {
       "phase": "B1",
@@ -73,8 +73,8 @@
     {
       "phase": "A2",
       "path": "mods/tasks/bin/herdr_task/launch.py",
-      "upstream_blob": "de1cf79d0ff7fb843aea23bf12f1819f2a397c06",
-      "sha256": "fd583bfd419ab8ab5f684484680912311ae7915204a21f0aff06dc90f59a3e54"
+      "upstream_blob": "db2d5e95e155f65de8444ab4f01bf0aaacc23467",
+      "sha256": "11de3ec87019cb4e5089393dffe1f9c226150a55ca71f0c2296d0219069e5473"
     },
     {
       "phase": "L2",
@@ -115,8 +115,8 @@
     {
       "phase": "L2",
       "path": "test/test_herdr_task.py",
-      "upstream_blob": "86746b983b3d175592ac6f11b98c8a04985b3906",
-      "sha256": "57f32c35f3b5f8dfdaf3df14414614b3cefaae061a442eec63b367a971d62d94"
+      "upstream_blob": "ad13842ef9bfb4628f24713218bdd0847ad082fc",
+      "sha256": "5a636384080f1c0c900f52ba9615232233b623b064233095ce8edf9a365a21b5"
     },
     {
       "phase": "B2",
@@ -1241,7 +1241,7 @@
         "server/core/providers.ts",
         "test/core-azure-deployments.test.ts"
       ],
-      "evidence": "A2 source: Settings › Agents › Provider in the window (provider-section.js) and the web (service/settings.ts, Settings.tsx), checked by core/settings.js providerValue against the shared field table; the coordinator launch-site prerequisite is met (new starts plan through the owner, restarts Personal only); authored regressions; CI and native qualification pending"
+      "evidence": "A2 source: Settings \u203a Agents \u203a Provider in the window (provider-section.js) and the web (service/settings.ts, Settings.tsx), checked by core/settings.js providerValue against the shared field table; the coordinator launch-site prerequisite is met (new starts plan through the owner, restarts Personal only); authored regressions; CI and native qualification pending"
     },
     {
       "id": "azure-new-start",

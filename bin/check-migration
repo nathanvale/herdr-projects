@@ -11,9 +11,9 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 INPUTS = {
     'F': '4f0236f03a88c5e9fa344475d90d3a20ef418481',
-    # U is the exact upstream parent the native foundation equals: v3.1.32 since its merge (v3.1.31 6b8caac9 before,
+    # U is the exact upstream parent the native foundation equals: v3.1.33 since its merge (v3.1.32 be647c82 before,
     # v3.1.29 e41ea9d2 before that, v3.1.16 57302497 before that; S0 merged v3.1.3, dc018f2a).
-    'U': 'be647c825c72f559b8cbec6cd1f6479a2cf9fdc6',
+    'U': 'ef3be074dd3e28942149b7a5183ab2e2d4207954',
     'P': '074dec5ea0bf0a057f520fa50497bf9e1b696ad9',
     'B': 'de8e17957efb4aa016d7e4d652f397aaa95f0880',
 }
@@ -280,6 +280,10 @@ PROSE = frozenset('AGENTS.md CHANGELOG.md CLAUDE.md CODING_STANDARDS.md GLOSSARY
 # A unit merged after Q that changes a tracked path outside Q's own and prose names it here, under the unit's name
 # ({'MIG-10': 'path other/path'}). Its evidence is its own Check; Q's ledger keeps describing its candidate only.
 AFTER_Q = {
+    # Upstream v3.1.33 (ef3be074) imported without new runtime qualification; Q keeps its original candidate.
+    'MERGE-v3.1.33': (
+        'CHANGELOG.md README.md RECIPE.md bin/shepherdr docs/addons.md docs/install.md lib/addons.json lib/features.json mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py mods/tasks/bin/herdr_task/templates.py package.json templates/worker.md test/test_herdr_task.py test/test_install.py test/test_repo.py'
+    ),
     # PR 60's review of the live switch (A2): the switch in place across the service's own home-file io, a new test.
     'PR60-FIX': 'service/live-switch.test.ts',
     # PR 60's six-claim fix: the window's reach list and the real Composer's HTML, two new tests.

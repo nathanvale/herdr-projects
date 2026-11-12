@@ -18,12 +18,31 @@ Required Azure and lifecycle ports are pending, and no Azure, Bitbucket or lifec
 `candidate-readiness` job intentionally refuses it even when native source checks
 pass. Imported installer/service code is source input, not authority to run it.
 
+## Current source line: main
+
+Nathan selected `main` as the fork's continuing source branch on 12 November 2026.
+The source promotion preserves the complete `integrate/upstream-v3.1.3` ancestry at
+`8a601a9fe87bfd5a17f851a9278354aa27977deb`, then merges upstream v3.1.33
+(`ef3be074dd3e28942149b7a5183ab2e2d4207954`) without squashing or rebasing either history.
+The old integration branch remains a recovery reference; future upstream intake targets `main`.
+This changes the source destination only. All existing qualification, installation, state,
+provider, publication and runtime activation holds remain. `candidate-readiness` still refuses
+unqualified application deployment, including on `main`; a green source check is not readiness.
+The independent `foundry-base` pull request and its Bitbucket merge decision are unchanged.
+
+The v3.1.33 merge is conflict-free. Its two upstream commits add the five-minute worker status
+instruction and release version text across 17 paths. The seven changed admitted rows re-pin
+both their upstream blobs and merged content hashes. F, P, B, all 120 admitted paths, 121 file
+dispositions, 40 requirements and Q's original proof candidate stay fixed. `AFTER_Q` names
+this import's paths; it supplies no new native proof. Source CI remains required before merge.
+
 ## Inputs and source ownership
 
 | Input | Exact commit |
 | --- | --- |
 | F, reserved fork parent | `4f0236f03a88c5e9fa344475d90d3a20ef418481` |
-| U, upstream v3.1.32 parent (since its merge; v3.1.31's `6b8caac9` before) | `be647c825c72f559b8cbec6cd1f6479a2cf9fdc6` |
+| U, upstream v3.1.33 parent (since its merge) | `ef3be074dd3e28942149b7a5183ab2e2d4207954` |
+| Upstream v3.1.32, U before this merge (history) | `be647c825c72f559b8cbec6cd1f6479a2cf9fdc6` |
 | Upstream v3.1.29, U before the v3.1.31 merge (history) | `e41ea9d2c0a273a5c7b6aebf51cf2e4d112a1d1e` |
 | Upstream v3.1.16, U before the v3.1.29 merge (history) | `57302497117183a1772464b31751da12a1c03e4a` |
 | Upstream v3.1.3, S0's U (history) | `dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc` |
