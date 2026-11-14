@@ -168,6 +168,62 @@ own shell checks that the plan's credential variable is set and not empty before
 and names it when it isn't. That runs after the terminal exists, because herdr-task's environment
 is not the terminal's. Presence does not prove sign-in.
 
+### A pushed credential (MIG-13, opt-in, source only)
+
+A machine whose terminals can't inherit the plan's credential can take it pushed instead, right
+before the CLI starts. Why: every terminal gets herdr-core's environment, and herdr-core started long
+before the credential existed. A value put in `terminal.run`'s `env` is kept in core's restart state,
+so it is not a transport.
+
+- **Opt-in:** Settings > Machines' `machine` layer, set by hand: `"credential_delivery": "push"`
+  (Everywhere's, or a machine's own under `machines.<key>.machine`, which wins). Unset or any other
+  value: nothing changes. No settings row shows it yet.
+- **Applies to:** an Azure plan that names a credential variable: Claude `api-key` or
+  `bearer-token`, Codex `api-key`. Personal and Claude Entra ID name none, so they never ask. The
+  person's `claude_auth` choice decides the variable; push never changes the sign-in method.
+- **In the agent's shell, before the presence check:** the inherited variable is unset, then
+  `herdr-task launch receive NAME` runs in a command substitution. Its value is exported for the CLI.
+  The existing check then runs unchanged. Nothing arrived means it stays unset, the check refuses
+  with "needs NAME pushed …", and nothing starts. After the CLI ends, the kept shell unsets it.
+  fish keeps it local to one `begin … end` block.
+- **The request (nonsecret):** in a new `0700` folder `shepherdr-credential-<nonce>` in the
+  receiver's temporary directory (`TMPDIR`, else `/tmp`), `request.json` (`0600`) holds
+  `{version: 1, nonce, credential, terminal, pid, parent, start_ticks, uid, pipe_device, pipe_inode}`,
+  beside `value.pipe` (a `0600` FIFO). Its path is said on stderr.
+- **The push:** a 4-byte big-endian length, then that many UTF-8 bytes. It must be one value of at
+  most 65536 bytes, with no NUL, CR or LF. This is the same framing as the Personal push prototype.
+  Both files are removed before `receive` returns, whatever happened.
+- **Bounds:** 300 seconds by default (`--wait`, 1 to 3600). An alarm also bounds a writer that
+  stalls. `receive` refuses before creating anything for a name that isn't a plan credential
+  variable, with no `HC_TERMINAL_ID`, or when stdout is a terminal. It never retries; a new start
+  asks again.
+- **Never carries the value:** argv, `hc` words, labels, settings, the journal, task records,
+  one-off templates, typed revival lines and stdout/stderr messages hold the name only.
+
+**What Shepherdr does not do (the adapter boundary).** A request is not authorization and grants
+nothing. The deployment's credential custody, outside this repository and not part of this change,
+must do all of this:
+
+1. find the request;
+2. verify it against the live process (`pid` and `start_ticks`, `uid`, the FIFO's device and inode,
+   and the process being inside `terminal`'s process tree);
+3. verify it against the terminal's own labels from herdr-core (`herdr.task`, `herdr.task.space` or
+   `herdr.role`, `herdr.launch`, `herdr.agent`, `herdr.provider=azure-foundry`);
+4. decide the approved task, process, account and binding;
+5. obtain a fresh token on the host that holds the sign-in;
+6. write the frame.
+
+Shepherdr opens no vault, holds no credential and runs no broker or proxy. Until that adapter exists
+and is qualified, turning the option on makes every Azure start on that machine wait and then refuse.
+
+| Path | Covered by this change | Not covered |
+| --- | --- | --- |
+| Task start, new conversation or new-terminal resume (`launch.py`'s `in_shell`, POSIX, fish, other shells) | asks before the check | |
+| Assistant new start and restart through its one-off template (`launch_admission.write_one_off`) | asks before the check | |
+| Kept-shell revival (`revive.shell_line`, typed by the one revival owner) | asks before the check, unsets after | |
+| A CLI already running | | never refreshed: a token that expires mid-session fails there. The next start, resume or revival receives a fresh one. |
+| A tab agent or fork | | Personal only, unchanged |
+
 ## Discovery
 
 `AzureDeployments.refresh()` runs three read-only Azure CLI commands on this computer:
@@ -258,6 +314,13 @@ Authored, not run locally (repository policy allows only `bun run typecheck`). R
   another machine's refresh during a local one, sanitized failures, bounds and timeout.
 - `test/azure-binding.cases.json`: one field table both suites judge.
 - `test/test_migration.py`: the source checkpoint (below).
+- MIG-13, authored and not yet run (CI): `test/test_providers.py`. `PushedCredential` covers the
+  composed words in a real `/bin/sh`, the real `launch receive` and a stand-in custody's frame: the
+  push wins over a stale inherited value and is gone from the kept shell; a cut-short push and a
+  timeout start nothing; refusals happen before anything is made. The opt-in rule and the words being
+  byte-identical when off are tested in `Binding`. `herdr-task start` asking before the check is in
+  `AzureStartsBound`. The Assistant's one-off template is in `test/test_launch_admission.py`, and
+  kept-shell revival is in `test/test_native_restart.py`.
 
 These stand-ins do not prove Azure sign-in, inference, a real launch or the real Azure CLI.
 
@@ -282,3 +345,16 @@ Route: maintain and extend the existing native Python CLI, complex profile. `pro
 `{"error": ...}` and exits 1, and without `--json` a refusal goes to stderr. Contract Core 2.0 envelopes,
 typed exit classes, a station catalogue, `--discover` and LogTape are not adopted; those remain
 separate, unapproved work and are recorded here as known gaps.
+
+`launch receive` (MIG-13) has no `--json`. Its stdout is the received value for one shell's command
+substitution, so it can't also carry an envelope. Every refusal goes to stderr, exits 1 and prints
+nothing on stdout. Its stations are:
+
+- refused before any effect: name, terminal, TTY stdout or `--wait`;
+- received;
+- not pushed in time;
+- push malformed or cut short;
+- stopped by an interrupt;
+- couldn't wait.
+
+Every station except "received" leaves no file behind and is never retried.

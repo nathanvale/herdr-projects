@@ -421,6 +421,33 @@ class RevivalOnAzure(unittest.TestCase):
         self.assertNotIn("new-default", line)
         self.assertEqual(f.revivals()[0]["provider"], bound)
 
+    def test_a_kept_shell_revival_asks_for_a_pushed_credential_before_its_check(self):
+        """MIG-13: on a machine whose settings say "credential_delivery": "push", the line typed into the agent's kept
+        shell receives the plan's credential before the presence check, inside one group the `cd … &&` guards, and
+        unsets it after; a value the kept shell holds from before never starts it. The line holds the name only."""
+        f = Fixture(self)
+        d = json.loads(json.dumps(la.PERSONAL))
+        d["everywhere"]["provider"] = {"route": "azure-foundry", **CLAUDE, "claude_auth": "bearer-token"}
+        d["everywhere"]["machine"]["credential_delivery"] = "push"
+        f.write_settings(d)
+        bound = f.binding()
+        f.worker(labels={"herdr.provider": "azure-foundry"}, provider=bound)
+        f.env["ANTHROPIC_FOUNDRY_AUTH_TOKEN"] = "marker-foundry-token-91bc"
+        f.revive()
+        [send] = f.sends()
+        line = send[2]
+        shell_ok(self, line)
+        need = "ANTHROPIC_FOUNDRY_AUTH_TOKEN"
+        group = line[line.index(f"{{ unset {need}; "):]
+        if " cd " in line:
+            self.assertIn(f" && {{ unset {need}; ", line)
+        self.assertTrue(group.startswith(f"{{ unset {need}; {need}=$("), group)
+        self.assertIn(f" launch receive {need}) && export {need}; if [ -z \"${{{need}:-}}\" ]", group)
+        self.assertLess(group.index("launch receive"), group.index(f"--resume {SESSION}"))
+        self.assertTrue(group.endswith(f"fi; unset {need}; }}"), group)
+        self.assertEqual(f.revivals()[0]["provider"], bound)
+        self.assertNotIn("marker-foundry-token-91bc", json.dumps(f.calls()) + json.dumps(f.journal()))
+
     def test_changed_routing_holds_it_with_the_reason(self):
         f = Fixture(self)
         f.provider({"route": "azure-foundry", **CLAUDE})

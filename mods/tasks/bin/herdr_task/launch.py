@@ -313,29 +313,80 @@ def clean_env(argv):
 # whether it is there and not empty is looked at, in the agent's shell, never its value; that isn't a sign-in check.
 NO_CREDENTIAL = ("Azure Foundry needs {} in this machine's environment for this agent, and it isn't set here, so the "
                  "agent wasn't started. Set it where this machine's terminals get their environment, then resume the task.")
+NO_PUSHED = ("Azure Foundry needs {} pushed to this agent by this machine's credential delivery, and none arrived, so the "
+             "agent wasn't started. Check the delivery where the credential is kept, then resume the task.")
 
 
-def provider_words(env=None, need=None):
+# ---- a pushed credential (MIG-13): opt-in, per machine -----------------------------------------
+# A machine whose terminals can't inherit an Azure plan's credential (its herdr-core started long before, and a value
+# put in hc's run environment is kept in core's restart state) can take it pushed instead, right before the agent
+# starts: Settings > Machines' "machine" layer, set by hand, "credential_delivery": "push". Off (unset or any other
+# value) nothing changes. On, an Azure start whose plan names a credential variable runs `herdr-task launch receive
+# NAME` in the agent's own shell before the presence check: it leaves a nonsecret request beside a private one-way
+# pipe and waits; the deployment's credential custody, outside Shepherdr, decides from that request and the
+# terminal's own labels whether to push, and writes the value into the pipe. Asking grants nothing: no push, no start.
+# The value goes from the pipe to that shell's command substitution and on to the agent's environment; never argv,
+# settings, labels, the journal, a file or the screen, and the kept shell unsets it once the agent ends. A running
+# CLI never gets a new one: a later start, resume or revival receives a fresh one. docs/azure-launch-plans.md.
+PUSH_OPTION, PUSH = "credential_delivery", "push"
+PUSH_WAIT, PUSH_WAIT_MAX, PUSH_LIMIT = 300, 3600, 65536
+PUSH_PREFIX = "shepherdr-credential-"
+
+
+def push_names():
+    """The variables a push may fill: an Azure plan's own credential variables, nothing else."""
+    from .providers import CLAUDE_AUTH, CODEX_AUTH
+    return {v for v in (*CLAUDE_AUTH.values(), *CODEX_AUTH.values()) if v}
+
+
+def pushed(need):
+    """Whether this start receives `need` pushed (above): a plan's credential variable, and this machine's settings
+    opt in. Personal and Entra ID name no variable, so they never do."""
+    from .settings import machine_option
+    return bool(need) and need in push_names() and machine_option(PUSH_OPTION) == PUSH
+
+
+def receive_words(need):
+    """POSIX words that put a pushed `need` in the shell, exported for the agent: an inherited one is dropped first,
+    so only the push counts; nothing arrived leaves it unset for the presence check after."""
+    return f"unset {need}; {need}=$({shlex.quote(ENTRY)} launch receive {need}) && export {need}; "
+
+
+def fish_guard(need, run_it, push=False):
+    """fish's presence check around run_it; push: `need` received first (receive_words), local to the block."""
+    if push:
+        return (f"begin; set -lx {need} ({shlex.quote(ENTRY)} launch receive {need}); if test -n \"${need}\"; {run_it}; "
+                f"else; echo {shlex.quote(NO_PUSHED.format(need))} >&2; end; end")
+    return f'if test -n "${need}"; {run_it}; else; echo {shlex.quote(NO_CREDENTIAL.format(need))} >&2; end'
+
+
+def provider_words(env=None, need=None, push=False):
     """(before, after) POSIX shell words around the agent's command: before exports a plan's nonsecret variables
     (names fixed by the planner, values "" or plain) and, with its credential variable `need`, runs the command only
-    when that is set and not empty (else says so); after closes that."""
+    when that is set and not empty (else says so); after closes that. push (pushed(need)): `need` is first received
+    from this machine's credential delivery (receive_words), never taken from the inherited environment, and is
+    unset again once the agent ends, so the kept shell never holds it."""
     out = "".join(f"export {k}={shlex.quote(v)}; " for k, v in (env or {}).items() if re.fullmatch(r"[A-Z][A-Z0-9_]*", k))
     if need and re.fullmatch(r"[A-Z][A-Z0-9_]*", need):
+        if push:
+            return (out + receive_words(need) + f'if [ -z "${{{need}:-}}" ]; then printf "%s\\n" '
+                    f'{shlex.quote(NO_PUSHED.format(need))} >&2; else ', f"fi; unset {need}; ")
         return out + f'if [ -z "${{{need}:-}}" ]; then printf "%s\\n" {shlex.quote(NO_CREDENTIAL.format(need))} >&2; else ', "fi; "
     return out, ""
 
 
-def in_shell(argv, config_dir=None, env=None, need=None):
+def in_shell(argv, config_dir=None, env=None, need=None, push=False):
     """Runs the agent in the person's interactive shell, as Herdr does: their functions and
     aliases apply (claude() adding flags), and the shell stays when the agent exits. config_dir:
     a Claude Code folder exported in that shell after its startup files, so they can't change it
     and a claude() function still runs (launch_admission.config_dir_for). env, need: an Azure
     plan's nonsecret variables, exported there the same way, and the credential variable that must
-    be set for the agent to start (provider_words): missing, it says so and the shell stays."""
+    be set for the agent to start (provider_words): missing, it says so and the shell stays.
+    push: `need` is received from this machine's credential delivery first (pushed())."""
     sh = os.environ.get("SHELL") or "/bin/sh"
     name = os.path.basename(sh)
     flag = "-lic" if sys.platform == "darwin" else "-ic"
-    words, tail = provider_words(env, need)
+    words, tail = provider_words(env, need, push)
     if name in ("bash", "zsh", "sh", "ksh", "dash"):
         if config_dir:
             return [sh, flag, f'export CLAUDE_CONFIG_DIR="$1"; shift; {words}"$@"; {tail}exec "$0" -i', sh, config_dir] + argv
@@ -345,13 +396,115 @@ def in_shell(argv, config_dir=None, env=None, need=None):
         own += "".join(f"set -gx {k} {shlex.quote(v)}; " for k, v in (env or {}).items() if re.fullmatch(r"[A-Z][A-Z0-9_]*", k))
         run_it = " ".join(shlex.quote(a) for a in argv)
         if need and re.fullmatch(r"[A-Z][A-Z0-9_]*", need):
-            run_it = f'if test -n "${need}"; {run_it}; else; echo {shlex.quote(NO_CREDENTIAL.format(need))} >&2; end'
+            run_it = fish_guard(need, run_it, push)
         return [sh, flag, own + run_it + "; exec fish -i"]
     # Another shell isn't run: no function to keep, so env sets it (and sh checks the credential).
     pre = ["env", *([f"CLAUDE_CONFIG_DIR={config_dir}"] if config_dir else []), *[f"{k}={v}" for k, v in (env or {}).items()]]
     if words:
         return ["sh", "-c", f'{words}exec "$@"; {tail}exit 1', "herdr-azure", *(pre if len(pre) > 1 else []), *argv]
     return [*pre, *argv] if len(pre) > 1 else argv
+
+
+def _exactly(fd, size):
+    got = bytearray()
+    while len(got) < size:
+        part = os.read(fd, size - len(got))
+        if not part:
+            raise ValueError("cut short")
+        got.extend(part)
+    return bytes(got)
+
+
+def _start_ticks(pid):
+    """The process's start time in clock ticks (/proc), so custody can tell it from a later one with its pid."""
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            return f.read().rsplit(") ", 1)[1].split()[19]
+    except (OSError, IndexError):
+        return None
+
+
+def receive(need, wait=PUSH_WAIT):
+    """`launch receive NAME`: one pushed value of NAME, written to stdout for the agent's shell to take (receive_words).
+    In a private folder in this process's temporary directory it makes a one-way pipe and a nonsecret request beside
+    it: {version, nonce, credential (NAME), terminal (HC_TERMINAL_ID), pid, parent, start_ticks, uid, pipe_device,
+    pipe_inode}. The custody pushes a 4-byte big-endian length, then that many bytes of UTF-8: one value, at most
+    PUSH_LIMIT bytes, no NUL, CR or LF. Both are removed before it returns, whatever happened. Refused (exit 1, nothing
+    on stdout): a name that isn't a plan's credential variable, stdout a terminal (the value would be on screen), no
+    Herdr terminal, or no complete push within `wait` seconds. Never retried here: a new start asks again."""
+    import signal
+    import struct
+    import tempfile
+    import uuid
+    if need not in push_names():
+        raise Fail(f"launch receive takes an Azure plan's credential variable ({', '.join(sorted(push_names()))}), "
+                   "not that. Nothing was received.")
+    if os.isatty(1):
+        raise Fail("launch receive gives its value only to the agent's shell, never to a screen. Nothing was received.")
+    terminal = os.environ.get("HC_TERMINAL_ID")
+    if not terminal:
+        raise Fail("launch receive runs only in an agent's own Herdr terminal (no HC_TERMINAL_ID here). Nothing was received.")
+    if not 1 <= wait <= PUSH_WAIT_MAX:
+        raise Fail(f"--wait is 1 to {PUSH_WAIT_MAX} seconds. Nothing was received.")
+    os.umask(0o077)
+    nonce = uuid.uuid4().hex
+    folder = os.path.join(tempfile.gettempdir(), PUSH_PREFIX + nonce)
+    pipe, request = os.path.join(folder, "value.pipe"), os.path.join(folder, "request.json")
+
+    def expired(*_):
+        raise TimeoutError
+
+    old = signal.signal(signal.SIGALRM, expired)
+    try:
+        os.mkdir(folder, 0o700)
+        os.mkfifo(pipe, 0o600)
+        info = os.stat(pipe)
+        ask = {"version": 1, "nonce": nonce, "credential": need, "terminal": terminal, "pid": os.getpid(),
+               "parent": os.getppid(), "start_ticks": _start_ticks(os.getpid()), "uid": os.getuid(),
+               "pipe_device": info.st_dev, "pipe_inode": info.st_ino}
+        fd = os.open(request, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(ask, f)
+        print(f"Waiting up to {wait} seconds for {need} to be pushed to this agent ({request}).", file=sys.stderr, flush=True)
+        signal.alarm(wait)
+        # Opening blocks until the custody opens its end; the alarm bounds that and a push that stalls.
+        fd = os.open(pipe, os.O_RDONLY)
+        try:
+            size = struct.unpack("!I", _exactly(fd, 4))[0]
+            if not 0 < size <= PUSH_LIMIT:
+                raise ValueError("size")
+            value = _exactly(fd, size).decode("utf-8")
+            if any(c in value for c in "\0\r\n"):
+                raise ValueError("shape")
+        finally:
+            os.close(fd)
+    except TimeoutError:
+        raise Fail(f"No {need} was pushed to this agent within {wait} seconds. Nothing was received.") from None
+    except KeyboardInterrupt:
+        raise Fail(f"Waiting for {need} was stopped. Nothing was received.") from None
+    except (ValueError, UnicodeError):
+        raise Fail(f"The push for {need} wasn't one value of at most {PUSH_LIMIT} bytes on one line. Nothing was "
+                   "received; a new start asks again.") from None
+    except OSError as e:
+        raise Fail(f"Couldn't wait for {need} to be pushed ({e.strerror or 'an error'}). Nothing was received.") from None
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old)
+        for path in (request, pipe):
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+        try:
+            os.rmdir(folder)
+        except OSError:
+            pass
+    sys.stdout.write(value)
+    sys.stdout.flush()
+
+
+def cmd_receive(args):
+    return receive(args.name, args.wait)
 
 
 # ---- workers run at low priority (HERD-61) ---------------------------------------------------
@@ -737,6 +890,7 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
     penv = {}
     if plan["route"] != PERSONAL:
         cmd, penv = compose(plan, cmd)
+    need = plan.get("credential")
     if message:
         cmd = cmd + [message]
     labels = ["--label", f"herdr.task={key}", "--label", f"herdr.task.space={bare(space)}",
@@ -769,7 +923,7 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
     made = {k: task[k] for k in ("mode", "worktree", "branch", "base", "start") if task.get(k) not in (None, "")}
     job = {"folder": s.loc["folder"], "id": task["id"], "space": bare(space), "role": role, "agent": dict(a), "made": made}
     out = admission.submit(["run", "--bg", "--json", "--keep", "--cwd", folder, "--name", name, *labels, *rel, "--",
-                            *low_priority(clean_env(["env", f"HERDR_BROWSER_TASK={key}", *in_shell(cmd, admission.config_dir, penv, plan.get("credential"))]), name)],
+                            *low_priority(clean_env(["env", f"HERDR_BROWSER_TASK={key}", *in_shell(cmd, admission.config_dir, penv, need, pushed(need))]), name)],
                            parent_live=live_parent, record={"task": job})
     a = {"address": out["address"], **a, "launch": out["launch"]}
     s.dirty = True

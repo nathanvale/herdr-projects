@@ -280,6 +280,13 @@ PROSE = frozenset('AGENTS.md CHANGELOG.md CLAUDE.md CODING_STANDARDS.md GLOSSARY
 # A unit merged after Q that changes a tracked path outside Q's own and prose names it here, under the unit's name
 # ({'MIG-10': 'path other/path'}). Its evidence is its own Check; Q's ledger keeps describing its candidate only.
 AFTER_Q = {
+    # MIG-13: an opt-in pushed Azure credential, received in the agent's shell before its presence check at a task
+    # start, an Assistant's one-off template and a kept-shell revival. Source only; no native qualification.
+    'MIG-13': (
+        'mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/launch.py '
+        'mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/revive.py '
+        'test/test_herdr_task.py test/test_launch_admission.py test/test_native_restart.py test/test_providers.py'
+    ),
     # Upstream v3.1.33 (ef3be074) imported without new runtime qualification; Q keeps its original candidate.
     'MERGE-v3.1.33': (
         'CHANGELOG.md README.md RECIPE.md bin/shepherdr docs/addons.md docs/install.md lib/addons.json lib/features.json mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/launch.py mods/tasks/bin/herdr_task/templates.py package.json templates/worker.md test/test_herdr_task.py test/test_install.py test/test_repo.py'

@@ -10,7 +10,7 @@ import sys
 
 from .base import bundle, Fail, guard, run, STORE, sync_held, VERSION
 from .agents import LINE_MAX, SUMMARY_MAX
-from .launch import cmd_allow, name_tabs
+from .launch import cmd_allow, name_tabs, PUSH_WAIT, PUSH_WAIT_MAX
 from .commands import (
     cmd_accept, cmd_add, cmd_adopt, cmd_alert, cmd_config, cmd_edit, cmd_fix, cmd_list, cmd_merge, cmd_ready,
     cmd_resume, cmd_review, cmd_review_more, cmd_reviewed, cmd_rm, cmd_select, cmd_show, cmd_start, cmd_state, cmd_status,
@@ -507,6 +507,17 @@ def main():
     c.add_argument("identity", metavar="PID", help="the agent's process id")
     c.add_argument("--json", action="store_true")
     c.set_defaults(fn=cmd_launch)
+    receive_help = ("an Azure start's credential, pushed: run by the agent's own shell before its presence check when "
+                    "this machine's settings say \"credential_delivery\": \"push\" (Settings > Machines' machine layer). "
+                    "Leaves a nonsecret request beside a private one-way pipe in the temporary directory, waits for the "
+                    "credential custody to push one value, removes both and writes the value to stdout for that shell "
+                    "only (refused when stdout is a terminal). Asking grants nothing: nothing pushed, nothing started")
+    c = la.add_parser("receive", help=receive_help, description=receive_help)
+    c.add_argument("name", help="the plan's credential variable (ANTHROPIC_FOUNDRY_AUTH_TOKEN, ANTHROPIC_FOUNDRY_API_KEY "
+                                "or AZURE_OPENAI_API_KEY)")
+    c.add_argument("--wait", type=int, default=PUSH_WAIT,
+                   help=f"seconds to wait for the push, 1 to {PUSH_WAIT_MAX} (default {PUSH_WAIT})")
+    c.set_defaults(fn=cmd_launch, json=False)
     revive_help = ("type an agent back into its own kept terminal, through launch admission: an Assistant's or a task "
                    "agent's session resumed on its recorded provider binding, or with --lost (its screen says the session "
                    "is gone) a new conversation for any chat's agent, that says so. Claimed in the journal before anything is typed; a send hc doesn't "

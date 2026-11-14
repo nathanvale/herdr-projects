@@ -987,6 +987,20 @@ It is source and CI qualification only (Stage Q-A): no provider, Azure or agent 
 - Not a required port's completion: no requirement changes status. Native inference, state
   conversion and cutover stay held; candidate readiness stays blocked.
 
+### MIG-13 pushed credential (after Q, source only)
+
+- Change: an opt-in (`"credential_delivery": "push"` in Settings > Machines' machine layer) under
+  which an Azure start, an Assistant's one-off template and a kept-shell revival receive the plan's
+  credential variable from the deployment's custody. It arrives through `herdr-task launch receive`
+  in the agent's own shell, before the unchanged presence check. Off by default: Personal and every
+  existing start are byte-identical. Detail, the request contract and the adapter boundary are in
+  [Azure launch plans](../azure-launch-plans.md#a-pushed-credential-mig-13-opt-in-source-only).
+- `AFTER_Q` names its paths under `MIG-13`. Its changed admitted rows re-pin their content
+  `sha256` only; phases, upstream blobs, requirement statuses and Q's ledger stay as they were.
+- Not qualified or held: the custody adapter (not in this repository), any native start, a
+  real push, refresh inside a running CLI (unsupported), and installation or activation. Bitbucket's
+  repository-bound `git credential fill` is unchanged.
+
 ### Bitbucket contract
 
 Port P's behavior into native owners, not its old server paths. GitHub retains

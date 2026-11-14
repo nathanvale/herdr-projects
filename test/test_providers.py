@@ -449,6 +449,41 @@ class AzureStartsBound(unittest.TestCase):
                 f.settle(tid=tid)
                 f.no_secret()
 
+    def test_a_machine_that_takes_its_credential_pushed_asks_for_it_before_the_check(self):
+        """MIG-13, through `herdr-task start`: with this machine's "credential_delivery": "push", a start whose plan
+        names a credential variable asks for it in the agent's shell before the presence check, by name only. Personal
+        and Entra ID (no variable) start exactly as without it; the binding recorded is the same either way."""
+        push = {"machine": {"credential_delivery": "push"}}
+        for provider, need in (({"route": "azure-foundry", **CLAUDE, "claude_auth": "bearer-token"}, "ANTHROPIC_FOUNDRY_AUTH_TOKEN"),
+                               ({"route": "azure-foundry", **CODEX}, "AZURE_OPENAI_API_KEY"),
+                               ({"route": "azure-foundry", **CLAUDE}, None),
+                               ({"route": "personal"}, None)):
+            with self.subTest(provider=provider):
+                scripts, records = [], []
+                for also in (None, push):
+                    f = Fixture(self)
+                    f.provider(provider, also=also)
+                    tid = f.add("--here")
+                    f.ok("start", str(tid), "--folder", f.repo, "--space", "sp1", "--now",
+                         *(["--agent", "codex"] if "codex_endpoint" in provider else []))
+                    [run] = f.launches()
+                    scripts.append(f.agent_words(run)[0].replace(f.tmp, "<tmp>"))
+                    records.append(f.task(tid)["agents"][0].get("provider"))
+                    f.settle(tid=tid)
+                    f.no_secret()
+                off, on = scripts
+                self.assertEqual(records[0], records[1])
+                self.assertNotIn("launch receive", off)
+                if need:
+                    asks = f"unset {need}; {need}=$("
+                    self.assertIn(asks, on)
+                    self.assertIn(f" launch receive {need}) && export {need}; ", on)
+                    self.assertLess(on.index(asks), on.index(f'if [ -z "${{{need}:-}}" ]'))
+                    self.assertIn("pushed to this agent by this machine's credential delivery", on)
+                    self.assertIn(f"fi; unset {need}; exec ", on)
+                else:
+                    self.assertEqual(on, off)
+
     def test_codex_starts_on_its_provider_table_with_openai_variables_blanked(self):
         f = Fixture(self)
         tid = self.start(f, {"route": "azure-foundry", **CODEX}, "--agent", "codex")
@@ -1319,6 +1354,164 @@ class Binding(unittest.TestCase):
                 self.assertEqual("agent-ran" in r.stdout, ran, r.stdout + r.stderr)
                 self.assertEqual("Azure Foundry needs AZURE_OPENAI_API_KEY" in r.stderr, not ran)
                 self.assertNotIn("marker-azure-openai-key-52de", r.stdout + r.stderr)
+
+    def test_only_the_machine_layers_exact_push_takes_a_credential_pushed(self):
+        """MIG-13's opt-in: Settings > Machines' "machine" layer saying "push", for a plan's own credential variable.
+        Unset, any other word, Personal and Entra ID (no variable) leave every start as it was."""
+        from herdr_task.launch import pushed
+        for settings, need, on in (({}, "ANTHROPIC_FOUNDRY_AUTH_TOKEN", False),
+                                   ({"everywhere": {"machine": {"credential_delivery": "push"}}}, "ANTHROPIC_FOUNDRY_AUTH_TOKEN", True),
+                                   ({"machines": {"local": {"machine": {"credential_delivery": "push"}}}}, "AZURE_OPENAI_API_KEY", True),
+                                   ({"everywhere": {"machine": {"credential_delivery": "push"}},
+                                     "machines": {"local": {"machine": {"credential_delivery": "off"}}}}, "ANTHROPIC_FOUNDRY_API_KEY", False),
+                                   ({"everywhere": {"machine": {"credential_delivery": "Push"}}}, "ANTHROPIC_FOUNDRY_AUTH_TOKEN", False),
+                                   ({"everywhere": {"machine": {"credential_delivery": "push"}}}, None, False),
+                                   ({"everywhere": {"machine": {"credential_delivery": "push"}}}, "OPENAI_API_KEY", False)):
+            with self.subTest(settings=settings, need=need):
+                with open(self.file, "w") as f:
+                    json.dump({"version": 1, **settings}, f)
+                self.assertIs(pushed(need), on)
+        from herdr_task.launch import in_shell
+        p = self.mock.patch.dict(os.environ, {"SHELL": "/bin/sh"})
+        p.start()
+        self.addCleanup(p.stop)
+        # Off, the words are exactly the ones before MIG-13: the inherited variable, checked by name.
+        self.assertEqual(in_shell(["claude"], None, {}, "ANTHROPIC_FOUNDRY_AUTH_TOKEN")[2],
+                         'if [ -z "${ANTHROPIC_FOUNDRY_AUTH_TOKEN:-}" ]; then printf "%s\\n" \'Azure Foundry needs '
+                         'ANTHROPIC_FOUNDRY_AUTH_TOKEN in this machine\'"\'"\'s environment for this agent, and it isn\'"\'"\'t '
+                         'set here, so the agent wasn\'"\'"\'t started. Set it where this machine\'"\'"\'s terminals get their '
+                         'environment, then resume the task.\' >&2; else "$@"; fi; exec "$0" -i')
+        self.assertEqual(in_shell(["claude"], None, {}, None, True)[2], '"$@"; exec "$0" -i')
+
+
+PUSHED = "marker-pushed-token-3c5e"
+
+
+@ON_CI
+class PushedCredential(unittest.TestCase):
+    """MIG-13: an Azure start on a machine that takes its credential pushed. The words in_shell() composes run in a real
+    POSIX shell; that shell runs the real `herdr-task launch receive`; the test stands in for the deployment's custody
+    and writes into the pipe as the Personal push design does (a 4-byte big-endian length, then the value). It proves
+    the handoff interface only: no custody, no sign-in, no Azure request and no real terminal exist here."""
+
+    NAME = "ANTHROPIC_FOUNDRY_AUTH_TOKEN"
+
+    def setUp(self):
+        from unittest import mock
+        sys.path.insert(0, BIN)
+        self.f = Fixture(self)
+        self.tmp = os.path.join(self.f.tmp, "tmp")
+        os.makedirs(self.tmp)
+        # The inherited value is a stale one (the fixture's SECRETS marker): a push must win over it.
+        self.env = dict(self.f.env, HC_TERMINAL_ID="t9", TMPDIR=self.tmp, SHEPHERDR_NO_MIGRATE="1")
+        p = mock.patch.dict(os.environ, {"SHELL": "/bin/sh"})
+        p.start()
+        self.addCleanup(p.stop)
+
+    def shell(self):
+        """The agent's shell, as a task start composes it with push on; its kept shell replaced by a line that says
+        whether the variable outlived the agent, so the test's shell ends."""
+        from herdr_task.launch import in_shell
+        agent = ["sh", "-c", 'printf "agent:%s\\n" "${' + self.NAME + ':-unset}"']
+        words = in_shell(agent, None, {"CLAUDE_CODE_USE_FOUNDRY": "1"}, self.NAME, True)
+        self.assertIn(f"launch receive {self.NAME}) && export {self.NAME}; if [ -z ", words[2])
+        script = words[2].replace('exec "$0" -i', 'printf "kept:%s\\n" "${' + self.NAME + ':-unset}"')
+        return subprocess.Popen(["/bin/sh", "-c", script, "sh", *agent], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, env=self.env)
+
+    def request(self):
+        """The receiver's folder, once its request is whole."""
+        for _ in range(300):
+            for d in os.listdir(self.tmp):
+                try:
+                    with open(os.path.join(self.tmp, d, "request.json")) as fh:
+                        json.load(fh)
+                    return os.path.join(self.tmp, d)
+                except (OSError, ValueError):
+                    pass
+            time.sleep(0.1)
+        self.fail("no request appeared")
+
+    def push(self, folder, value):
+        import struct
+        fd = os.open(os.path.join(folder, "value.pipe"), os.O_WRONLY)
+        try:
+            if value is not None:
+                os.write(fd, struct.pack("!I", len(value)) + value)
+        finally:
+            os.close(fd)
+
+    def test_a_push_reaches_the_agent_before_its_check_and_leaves_with_it(self):
+        import stat
+        sh = self.shell()
+        folder = self.request()
+        self.assertEqual(stat.S_IMODE(os.stat(folder).st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(os.stat(os.path.join(folder, "request.json")).st_mode), 0o600)
+        pipe = os.stat(os.path.join(folder, "value.pipe"))
+        self.assertTrue(stat.S_ISFIFO(pipe.st_mode))
+        self.assertEqual(stat.S_IMODE(pipe.st_mode), 0o600)
+        with open(os.path.join(folder, "request.json")) as fh:
+            text = fh.read()
+        ask = json.loads(text)
+        self.assertEqual(sorted(ask), ["credential", "nonce", "parent", "pid", "pipe_device", "pipe_inode", "start_ticks",
+                                       "terminal", "uid", "version"])
+        self.assertEqual((ask["version"], ask["credential"], ask["terminal"], ask["uid"]), (1, self.NAME, "t9", os.getuid()))
+        self.assertEqual((ask["pipe_device"], ask["pipe_inode"]), (pipe.st_dev, pipe.st_ino))
+        self.assertTrue(folder.endswith("shepherdr-credential-" + ask["nonce"]))
+        self.assertNotIn(SECRETS[self.NAME], text)
+        self.push(folder, PUSHED.encode())
+        out, err = sh.communicate(timeout=60)
+        # The agent got the pushed value, not the inherited one; the kept shell no longer holds either.
+        self.assertIn(f"agent:{PUSHED}\n", out)
+        self.assertIn("kept:unset\n", out)
+        self.assertNotIn(SECRETS[self.NAME], out + err)
+        self.assertNotIn(PUSHED, err)
+        self.assertIn(f"Waiting up to 300 seconds for {self.NAME} to be pushed to this agent", err)
+        self.assertEqual(os.listdir(self.tmp), [])
+
+    def test_a_cut_short_push_starts_nothing_even_with_a_value_inherited(self):
+        sh = self.shell()
+        self.push(self.request(), None)
+        out, err = sh.communicate(timeout=60)
+        self.assertNotIn("agent:", out)
+        self.assertIn("kept:unset\n", out)
+        self.assertIn(f"The push for {self.NAME} wasn't one value", err)
+        self.assertIn(f"Azure Foundry needs {self.NAME} pushed to this agent by this machine's credential delivery", err)
+        self.assertNotIn(SECRETS[self.NAME], out + err)
+        self.assertEqual(os.listdir(self.tmp), [])
+
+    def receive(self, *args, env=None, stdout=subprocess.PIPE):
+        return subprocess.run([sys.executable, os.path.join(BIN, "herdr-task"), "launch", "receive", *args], stdout=stdout,
+                              stderr=subprocess.PIPE, text=True, env=env or self.env, timeout=60)
+
+    def test_no_push_within_its_wait_receives_nothing(self):
+        r = self.receive(self.NAME, "--wait", "1")
+        self.assertEqual((r.returncode, r.stdout), (1, ""))
+        self.assertIn(f"No {self.NAME} was pushed to this agent within 1 seconds. Nothing was received.", r.stderr)
+        self.assertEqual(os.listdir(self.tmp), [])
+
+    def test_it_refuses_before_asking_anything(self):
+        import pty
+        no_terminal = {k: v for k, v in self.env.items() if k != "HC_TERMINAL_ID"}
+        for args, env, why in ((("OPENAI_API_KEY",), None, "takes an Azure plan's credential variable"),
+                               ((self.NAME,), no_terminal, "runs only in an agent's own Herdr terminal"),
+                               ((self.NAME, "--wait", "0"), None, "--wait is 1 to 3600 seconds"),
+                               ((self.NAME, "--wait", "3601"), None, "--wait is 1 to 3600 seconds")):
+            with self.subTest(args=args):
+                r = self.receive(*args, env=env)
+                self.assertEqual((r.returncode, r.stdout), (1, ""))
+                self.assertIn(why, r.stderr)
+                self.assertEqual(os.listdir(self.tmp), [])
+        # Its stdout a terminal: the value would be on screen, so it isn't asked for.
+        main, side = pty.openpty()
+        try:
+            r = self.receive(self.NAME, "--wait", "1", stdout=side)
+        finally:
+            os.close(side)
+            os.close(main)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("never to a screen", r.stderr)
+        self.assertEqual(os.listdir(self.tmp), [])
 
 
 # What a resumed session hears first (SHEP-189), written out here apart from the code.

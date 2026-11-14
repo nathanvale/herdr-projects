@@ -685,6 +685,9 @@ def cmd_launch(args):
         return launch_run(args, say)
     if args.launch == "folder":
         return launch_folder(args, say)
+    if args.launch == "receive":
+        from .launch import cmd_receive
+        return cmd_receive(args)
     if args.launch == "revive":
         from .revive import cmd_revive
         return cmd_revive(args, say)
@@ -865,10 +868,11 @@ def write_one_off(source, body, argv, env, need, lid, config_dir=None):
     that clears a parent Claude Code session's markers (launch.CLEAN_ENV), exports the plan's nonsecret variables (and
     config_dir, the Claude Code folder a restart carries, as CLAUDE_CONFIG_DIR), starts the agent only when its
     credential variable is set (launch.provider_words), then execs the planned argv. Named for its launch; removed once
-    hc has run. Gives its name."""
+    hc has run. Gives its name. On a machine whose settings take the credential pushed (launch.pushed), the command
+    receives it first; the template holds only the words that ask for it, never a value."""
     import shlex
-    from .launch import CLEAN_ENV, provider_words
-    before, after = provider_words(env, need)
+    from .launch import CLEAN_ENV, provider_words, pushed
+    before, after = provider_words(env, need, pushed(need))
     if config_dir:
         before = f"export CLAUDE_CONFIG_DIR={shlex.quote(config_dir)}; {before}"
     words = " ".join(one_line_word(a) for a in argv)

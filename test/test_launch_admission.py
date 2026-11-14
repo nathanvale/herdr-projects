@@ -1052,6 +1052,38 @@ class AssistantStarts(unittest.TestCase):
                 self.assertFalse(os.path.exists(os.path.join(f.tmp, "templates", name + ".md")))
                 self.assertNotIn("marker-foundry-key-7f3a", json.dumps(f.calls()) + json.dumps(f.journal()) + p.stdout + p.stderr)
 
+    def test_an_azure_new_start_on_a_machine_taking_its_credential_pushed_asks_for_it_first(self):
+        """MIG-13: the Assistant's one-off template, on a machine whose settings say "credential_delivery": "push",
+        receives the plan's credential in its own shell before the presence check; the template and everything kept
+        hold its name only. Entra ID (no variable) writes the same command as without it."""
+        for auth, credential in (("bearer-token", "ANTHROPIC_FOUNDRY_AUTH_TOKEN"), ("entra-id", None)):
+            with self.subTest(auth=auth):
+                commands = []
+                for push in (False, True):
+                    f = Fixture(self)
+                    self.template(f)
+                    d = json.loads(json.dumps(PERSONAL))
+                    d["everywhere"]["provider"] = {**AZURE, "claude_auth": auth}
+                    if push:
+                        d["everywhere"]["machine"]["credential_delivery"] = "push"
+                    f.write_settings(d)
+                    f.env["ANTHROPIC_FOUNDRY_AUTH_TOKEN"] = "marker-foundry-token-91bc"
+                    p = self.run_start(f, "--new-start", "assistant", "--source", "assistant")
+                    self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+                    [one] = [c for c in f.calls() if c[0] == "template"]
+                    commands.append(re.search(r"^command: (.+)$", one[2], re.M).group(1).replace(f.tmp, "<tmp>"))
+                    self.assertNotIn("marker-foundry-token-91bc", json.dumps(f.calls()) + json.dumps(f.journal()) + p.stdout + p.stderr)
+                off, on = commands
+                self.assertNotIn("launch receive", off)
+                if credential:
+                    asks = f" launch receive {credential}) && export {credential}; "
+                    self.assertIn(asks, on)
+                    self.assertLess(on.index(asks), on.index(f'if [ -z "${{{credential}:-}}" ]'))
+                    self.assertLess(on.index(f'if [ -z "${{{credential}:-}}" ]'), on.index("exec claude --settings "))
+                    self.assertTrue(on.endswith(f"fi; unset {credential}; exit 1"), on)
+                else:
+                    self.assertEqual(on, off)
+
     def test_a_tab_agent_starts_personal_only_with_its_own_reason(self):
         f = Fixture(self)
         self.azure(f)

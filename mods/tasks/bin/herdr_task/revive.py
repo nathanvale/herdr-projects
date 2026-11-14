@@ -32,7 +32,7 @@ from .base import Fail, HOME, hc_json, now, run, SHELLS
 from .agents import agent_running, status_word
 from .sessions import claude_dir, session_of
 from .settings import ASSISTANT_TEMPLATES, bare
-from .launch import CLEAN_ENV, NO_CREDENTIAL
+from .launch import CLEAN_ENV, NO_CREDENTIAL, NO_PUSHED, fish_guard, pushed, receive_words
 
 LABEL = "herdr.resume"
 # Claude Code: "No conversation found with session ID: …". Codex: "ERROR: No saved session found with ID …"
@@ -158,13 +158,15 @@ def without_caller():
     return {k: v for k, v in os.environ.items() if k != "HC_TERMINAL_ID"}
 
 
-def shell_line(shell, cwd, env, argv, direct=False, need=None):
+def shell_line(shell, cwd, env, argv, direct=False, need=None, push=False):
     """The line typed into the recovered shell: into the agent's folder, then the agent. POSIX shells
     and fish (3.1+) take `&&` and VAR=value before a command; others get the agent alone (plan()
     holds an agent whose binding or folder needs more). `direct`: it started without the person's
     shell, so their aliases and functions (a claude() adding flags) stay out now too (`command`).
     need: an Azure plan's credential variable: the agent starts only when it is set and not empty,
-    else the shell says which (launch.provider_words' check, typed)."""
+    else the shell says which (launch.provider_words' check, typed). push (launch.pushed): need is received from this
+    machine's credential delivery first, for this agent only (POSIX: unset again after it; fish: local to its block),
+    so a value kept from before never starts it."""
     words = " ".join(shlex.quote(str(a)) for a in argv)
     if os.path.basename(shell or "") not in LINE_SHELLS:
         return words
@@ -173,9 +175,15 @@ def shell_line(shell, cwd, env, argv, direct=False, need=None):
     pre = " ".join(f"{k}={shlex.quote(str(v))}" for k, v in sorted((env or {}).items()))
     cmd = f"{pre} {words}" if pre else words
     if need and re.fullmatch(r"[A-Z][A-Z0-9_]*", need):
-        said = shlex.quote(NO_CREDENTIAL.format(need))
-        cmd = (f'if test -n "${need}"; {cmd}; else; echo {said} >&2; end' if os.path.basename(shell) == "fish" else
-               f'if [ -z "${{{need}:-}}" ]; then printf "%s\\n" {said} >&2; else {cmd}; fi')
+        if os.path.basename(shell) == "fish":
+            cmd = fish_guard(need, cmd, push)
+        elif push:
+            # One braced group, so `cd … &&` guards all of it.
+            cmd = (f'{{ {receive_words(need)}if [ -z "${{{need}:-}}" ]; then printf "%s\\n" '
+                   f'{shlex.quote(NO_PUSHED.format(need))} >&2; else {cmd}; fi; unset {need}; }}')
+        else:
+            said = shlex.quote(NO_CREDENTIAL.format(need))
+            cmd = f'if [ -z "${{{need}:-}}" ]; then printf "%s\\n" {said} >&2; else {cmd}; fi'
     line = f"cd {shlex.quote(cwd)} && {cmd}" if cwd else cmd
     # The recovered shell has the holder's environment: clear a parent Claude Code session's markers
     # first (SHEP-86, launch.CLEAN_ENV; POSIX shells: fish has no for-in-do).
@@ -446,7 +454,8 @@ def bring_back(k, rec, step, report):
         else:
             report.setdefault("revived", []).append({"terminal": k["address"], "how": how, "session": rec.get("session")})
         return
-    line = shell_line(shell_of(k), rec.get("cwd") or k.get("cwd"), {**env_of(k), **carry["env"]}, argv, direct, carry["need"])
+    line = shell_line(shell_of(k), rec.get("cwd") or k.get("cwd"), {**env_of(k), **carry["env"]}, argv, direct, carry["need"],
+                      pushed(carry["need"]))
     p = carry["plan"]
     labels = k.get("labels") or {}
     task = task_of(k) if labels.get("herdr.task") else None
