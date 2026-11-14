@@ -1569,7 +1569,9 @@ class PushedCredential(unittest.TestCase):
             off = in_shell(["claude"], None, {}, self.NAME)
         self.assertNotIn("launch receive", words[2])
         self.assertNotIn("agent-ran", words[2])
-        self.assertIn(said, words[2])
+        # words[2] is shell source, where shlex.quote splits the message at its apostrophe: an apostrophe-free fragment.
+        self.assertIn("ANTHROPIC_FOUNDRY_AUTH_TOKEN pushed, and that is supported only in a POSIX shell "
+                      "(sh, bash, zsh, ksh or dash), not fish", words[2])
         old = ("Azure Foundry needs ANTHROPIC_FOUNDRY_AUTH_TOKEN in this machine's environment for this agent, and it isn't "
                "set here, so the agent wasn't started. Set it where this machine's terminals get their environment, then "
                "resume the task.")

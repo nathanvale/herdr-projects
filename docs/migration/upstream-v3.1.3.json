@@ -128,7 +128,7 @@
       "phase": "L2",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "8356d9289bf61bbacc34474dc18f58d4a0ee289331253115d9963cc550c32a7b"
+      "sha256": "3c8bcca025f7876c8270656b67da926abc9bcbbd4ece8e085bee77d7b92f36c3"
     },
     {
       "phase": "A2",
