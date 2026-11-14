@@ -1076,11 +1076,13 @@ class AssistantStarts(unittest.TestCase):
                 off, on = commands
                 self.assertNotIn("launch receive", off)
                 if credential:
-                    asks = f" launch receive {credential}) && export {credential}; "
+                    asks = f" launch receive {credential}); then export {credential}; else unset {credential}; fi; "
                     self.assertIn(asks, on)
                     self.assertLess(on.index(asks), on.index(f'if [ -z "${{{credential}:-}}" ]'))
                     self.assertLess(on.index(f'if [ -z "${{{credential}:-}}" ]'), on.index("exec claude --settings "))
-                    self.assertTrue(on.endswith(f"fi; unset {credential}; exit 1"), on)
+                    self.assertIn(f"_herdr_x=; case $- in *x*) _herdr_x=1; set +x;; esac; unset {credential}; ", on)
+                    self.assertTrue(on.endswith(f"fi; unset {credential}; case ${{_herdr_x:-}} in 1) unset _herdr_x; set -x;; "
+                                                "*) unset _herdr_x;; esac; exit 1"), on)
                 else:
                     self.assertEqual(on, off)
 

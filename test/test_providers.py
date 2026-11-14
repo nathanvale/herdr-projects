@@ -475,12 +475,14 @@ class AzureStartsBound(unittest.TestCase):
                 self.assertEqual(records[0], records[1])
                 self.assertNotIn("launch receive", off)
                 if need:
-                    asks = f"unset {need}; {need}=$("
+                    asks = f"unset {need}; if {need}=$("
                     self.assertIn(asks, on)
-                    self.assertIn(f" launch receive {need}) && export {need}; ", on)
+                    self.assertIn(f" launch receive {need}); then export {need}; else unset {need}; fi; ", on)
                     self.assertLess(on.index(asks), on.index(f'if [ -z "${{{need}:-}}" ]'))
                     self.assertIn("pushed to this agent by this machine's credential delivery", on)
-                    self.assertIn(f"fi; unset {need}; exec ", on)
+                    self.assertLess(on.index("_herdr_x=; case $- in *x*) _herdr_x=1; set +x;; esac; "), on.index(asks))
+                    self.assertIn(f"fi; unset {need}; case ${{_herdr_x:-}} in 1) unset _herdr_x; set -x;; "
+                                  "*) unset _herdr_x;; esac; exec ", on)
                 else:
                     self.assertEqual(on, off)
 
@@ -1414,7 +1416,7 @@ class PushedCredential(unittest.TestCase):
         from herdr_task.launch import in_shell
         agent = ["sh", "-c", 'printf "agent:%s\\n" "${' + self.NAME + ':-unset}"']
         words = in_shell(agent, None, {"CLAUDE_CODE_USE_FOUNDRY": "1"}, self.NAME, True)
-        self.assertIn(f"launch receive {self.NAME}) && export {self.NAME}; if [ -z ", words[2])
+        self.assertIn(f"launch receive {self.NAME}); then export {self.NAME}; else unset {self.NAME}; fi; if [ -z ", words[2])
         script = words[2].replace('exec "$0" -i', 'printf "kept:%s\\n" "${' + self.NAME + ':-unset}"')
         return subprocess.Popen(["/bin/sh", "-c", script, "sh", *agent], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True, env=self.env)
@@ -1453,8 +1455,9 @@ class PushedCredential(unittest.TestCase):
         with open(os.path.join(folder, "request.json")) as fh:
             text = fh.read()
         ask = json.loads(text)
-        self.assertEqual(sorted(ask), ["credential", "nonce", "parent", "pid", "pipe_device", "pipe_inode", "start_ticks",
-                                       "terminal", "uid", "version"])
+        self.assertEqual(sorted(ask), ["credential", "nonce", "parent", "parent_start_ticks", "pid", "pipe_device",
+                                       "pipe_inode", "start_ticks", "terminal", "uid", "version"])
+        self.assertEqual(ask["parent"], sh.pid)
         self.assertEqual((ask["version"], ask["credential"], ask["terminal"], ask["uid"]), (1, self.NAME, "t9", os.getuid()))
         self.assertEqual((ask["pipe_device"], ask["pipe_inode"]), (pipe.st_dev, pipe.st_ino))
         self.assertTrue(folder.endswith("shepherdr-credential-" + ask["nonce"]))
@@ -1479,6 +1482,95 @@ class PushedCredential(unittest.TestCase):
         self.assertIn(f"Azure Foundry needs {self.NAME} pushed to this agent by this machine's credential delivery", err)
         self.assertNotIn(SECRETS[self.NAME], out + err)
         self.assertEqual(os.listdir(self.tmp), [])
+
+    def test_shell_tracing_never_shows_the_pushed_value(self):
+        """Review finding (blocker): a startup file or a kept shell with `set -x` would print `NAME=value` and the
+        presence check expanded. Tracing is off from before the push until the value is unset, then back as it was.
+        Each POSIX shell here, then fish's fish_trace when fish is installed; the agent only says whether it got it."""
+        import shutil
+        from herdr_task.launch import in_shell
+        check = ('import os; print("agent-got-it" if os.environ.get("%s") == "%s" else "agent-wrong")' % (self.NAME, PUSHED))
+        agent = [sys.executable, "-c", check]
+        shells = [sh for sh in ("/bin/sh", shutil.which("bash"), shutil.which("zsh")) if sh]
+        for path in shells:
+            with self.subTest(shell=path):
+                words = in_shell(agent, None, {"CLAUDE_CODE_USE_FOUNDRY": "1"}, self.NAME, True)
+                script = "set -x; " + words[2].replace('exec "$0" -i', "case $- in *x*) echo kept-tracing;; *) echo kept-quiet;; esac")
+                p = subprocess.Popen([path, "-c", script, "sh", *agent], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                     text=True, env=self.env)
+                self.push(self.request(), PUSHED.encode())
+                out, err = p.communicate(timeout=60)
+                self.assertIn("CLAUDE_CODE_USE_FOUNDRY", err)  # tracing was on before the push
+                self.assertIn("agent-got-it\n", out)
+                self.assertIn("kept-tracing\n", out)  # and back on after it
+                self.assertNotIn(PUSHED, out + err)
+                self.assertNotIn(SECRETS[self.NAME], out + err)
+                self.assertEqual(os.listdir(self.tmp), [])
+        fish = shutil.which("fish")
+        if not fish:
+            return
+        with self.subTest(shell=fish), self.mock_shell(fish):
+            words = in_shell(agent, None, {"CLAUDE_CODE_USE_FOUNDRY": "1"}, self.NAME, True)
+            script = "set -g fish_trace 1; " + words[2].replace("; exec fish -i", "; echo kept")
+            p = subprocess.Popen([fish, "-c", script], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
+            self.push(self.request(), PUSHED.encode())
+            out, err = p.communicate(timeout=60)
+            self.assertIn("CLAUDE_CODE_USE_FOUNDRY", err)
+            self.assertIn("agent-got-it\n", out)
+            self.assertNotIn(PUSHED, out + err)
+            self.assertEqual(os.listdir(self.tmp), [])
+
+    def test_a_receiver_that_fails_after_printing_starts_nothing(self):
+        """Review finding: the receiver's exit status decides, not its text. A receiver that prints and then fails (an
+        ending after its output) leaves the variable unset, with allexport too, so the presence check refuses and the
+        agent never runs. The real receiver is replaced in the composed words by one that does exactly that."""
+        import shlex
+        import shutil
+        from herdr_task.base import ENTRY
+        from herdr_task.launch import in_shell
+        partial = "marker-partial-value-6d21"
+        fake = os.path.join(self.f.tmp, "fails-after-output")
+        with open(fake, "w") as fh:
+            fh.write(f"#!/bin/sh\nprintf %s {partial}\nexit 1\n")
+        os.chmod(fake, 0o755)
+        agent = [sys.executable, "-c", "print('agent-ran')"]
+        words = in_shell(agent, None, {}, self.NAME, True)
+        self.assertIn(shlex.quote(ENTRY) + " launch receive", words[2])
+        script = "set -a; " + words[2].replace(shlex.quote(ENTRY), fake).replace('exec "$0" -i', 'printf "kept:%s\\n" "${' + self.NAME + ':-unset}"')
+        r = subprocess.run(["/bin/sh", "-c", script, "sh", *agent], capture_output=True, text=True, env=self.env, timeout=60)
+        self.assertNotIn("agent-ran", r.stdout)
+        self.assertIn("kept:unset\n", r.stdout)
+        self.assertIn(f"Azure Foundry needs {self.NAME} pushed to this agent", r.stderr)
+        self.assertNotIn(partial, r.stdout + r.stderr)
+        fish = shutil.which("fish")
+        if not fish:
+            return
+        with self.subTest(shell=fish), self.mock_shell(fish):
+            words = in_shell(agent, None, {}, self.NAME, True)
+            script = words[2].replace(shlex.quote(ENTRY), fake).replace("; exec fish -i", "; echo kept")
+            r = subprocess.run([fish, "-c", script], capture_output=True, text=True, env=self.env, timeout=60)
+            self.assertNotIn("agent-ran", r.stdout)
+            self.assertIn(f"Azure Foundry needs {self.NAME} pushed to this agent", r.stderr)
+            self.assertNotIn(partial, r.stdout + r.stderr)
+
+    def mock_shell(self, path):
+        from unittest import mock
+        return mock.patch.dict(os.environ, {"SHELL": path})
+
+    def test_an_ending_signal_still_removes_its_request(self):
+        """Review finding: SIGTERM or SIGHUP (the terminal closing) while it waits goes through its cleanup, so no
+        request or pipe is left for anyone to push into. SIGKILL can't be caught; custody's own checks cover that."""
+        import signal
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            with self.subTest(signal=sig.name):
+                p = subprocess.Popen([sys.executable, os.path.join(BIN, "herdr-task"), "launch", "receive", self.NAME,
+                                      "--wait", "60"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
+                self.request()
+                p.send_signal(sig)
+                out, err = p.communicate(timeout=60)
+                self.assertEqual((p.returncode, out), (1, ""))
+                self.assertIn(f"Waiting for {self.NAME} was stopped. Nothing was received.", err)
+                self.assertEqual(os.listdir(self.tmp), [])
 
     def receive(self, *args, env=None, stdout=subprocess.PIPE):
         return subprocess.run([sys.executable, os.path.join(BIN, "herdr-task"), "launch", "receive", *args], stdout=stdout,

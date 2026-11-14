@@ -182,17 +182,29 @@ so it is not a transport.
   `bearer-token`, Codex `api-key`. Personal and Claude Entra ID name none, so they never ask. The
   person's `claude_auth` choice decides the variable; push never changes the sign-in method.
 - **In the agent's shell, before the presence check:** the inherited variable is unset, then
-  `herdr-task launch receive NAME` runs in a command substitution. Its value is exported for the CLI.
-  The existing check then runs unchanged. Nothing arrived means it stays unset, the check refuses
-  with "needs NAME pushed …", and nothing starts. After the CLI ends, the kept shell unsets it.
-  fish keeps it local to one `begin … end` block.
+  `herdr-task launch receive NAME` runs in a command substitution. The receiver's exit status
+  decides, not its text: `if NAME=$(…); then export NAME; else unset NAME; fi`. A receiver that
+  printed something and then failed leaves it unset, `allexport` included. The existing check then
+  runs unchanged. Nothing arrived means it stays unset, the check refuses with "needs NAME pushed …",
+  and nothing starts. After the CLI ends, the kept shell unsets it. fish keeps it local to one
+  `begin … end` block and empties it there on a failed receive (fish 3.1+, whose `set` takes the
+  substitution's status).
+- **Tracing:** `set -x` (from a startup file, or kept in the shell) would print `NAME=value` and the
+  check expanded. So the shell's own tracing is off from before the receive until the value is unset
+  again, then put back as it was. `set -v` shows only unexpanded words. fish's `fish_trace` is
+  emptied for the block. Not covered: fish's `--debug` categories and `--profile`, and a person's own
+  function or hook that prints the variable.
 - **The request (nonsecret):** in a new `0700` folder `shepherdr-credential-<nonce>` in the
   receiver's temporary directory (`TMPDIR`, else `/tmp`), `request.json` (`0600`) holds
-  `{version: 1, nonce, credential, terminal, pid, parent, start_ticks, uid, pipe_device, pipe_inode}`,
-  beside `value.pipe` (a `0600` FIFO). Its path is said on stderr.
+  `{version: 1, nonce, credential, terminal, pid, start_ticks, parent, parent_start_ticks, uid,
+  pipe_device, pipe_inode}`, beside `value.pipe` (a `0600` FIFO). Its path is said on stderr.
 - **The push:** a 4-byte big-endian length, then that many UTF-8 bytes. It must be one value of at
   most 65536 bytes, with no NUL, CR or LF. This is the same framing as the Personal push prototype.
-  Both files are removed before `receive` returns, whatever happened.
+  Both files are removed before `receive` returns: after a push, a refusal, the timeout, an
+  interrupt, SIGTERM or SIGHUP (the terminal closing). A signal that arrives during that cleanup is
+  only noted, then refuses. SIGKILL (or a crash of the interpreter) can't be caught: its folder,
+  request and FIFO stay behind with no reader, and such a dead request must never be pushed to
+  (custody checks 2 and 5 below).
 - **Bounds:** 300 seconds by default (`--wait`, 1 to 3600). An alarm also bounds a writer that
   stalls. `receive` refuses before creating anything for a name that isn't a plan credential
   variable, with no `HC_TERMINAL_ID`, or when stdout is a terminal. It never retries; a new start
@@ -201,17 +213,40 @@ so it is not a transport.
   one-off templates, typed revival lines and stdout/stderr messages hold the name only.
 
 **What Shepherdr does not do (the adapter boundary).** A request is not authorization and grants
-nothing. The deployment's credential custody, outside this repository and not part of this change,
-must do all of this:
+nothing. The receiver checks only its own inputs. In particular, its stdout not being a terminal
+does not prove that stdout is the intended shell's command substitution. The request's fields are
+claims for the custody to verify, not evidence. The deployment's credential custody, outside this
+repository and not part of this change, must do all of this, in order, before writing anything:
 
-1. find the request;
-2. verify it against the live process (`pid` and `start_ticks`, `uid`, the FIFO's device and inode,
-   and the process being inside `terminal`'s process tree);
-3. verify it against the terminal's own labels from herdr-core (`herdr.task`, `herdr.task.space` or
-   `herdr.role`, `herdr.launch`, `herdr.agent`, `herdr.provider=azure-foundry`);
-4. decide the approved task, process, account and binding;
-5. obtain a fresh token on the host that holds the sign-in;
-6. write the frame.
+1. **Request files:** the folder, `request.json` and `value.pipe` are owned by the expected uid, with
+   modes `0700`, `0600` and `0600`, not symbolic links. The folder name's nonce equals the request's
+   `nonce`. The FIFO's device and inode equal `pipe_device` and `pipe_inode`. Hold an exclusive lock
+   on `request.json` so only one pusher acts.
+2. **The receiver is alive and is the receiver:**
+   - `/proc/<pid>` exists with the same uid and `start_ticks`;
+   - its command line is the installed `herdr-task` entry running `launch receive <credential>`;
+   - it holds `value.pipe` open for reading.
+
+   A dead request (SIGKILL) fails here.
+3. **The recipient is the agent's shell:**
+   - the receiver's parent is `parent`, with `parent_start_ticks`;
+   - the receiver's fd 1 is a pipe whose read end that parent holds (its command substitution);
+   - the parent's ancestry reaches the pid of `terminal` from herdr-core's own `hc get`.
+4. **The terminal is the approved start:**
+   - herdr-core reports it live, with labels `herdr.provider=azure-foundry` and `herdr.agent`;
+   - its task (`herdr.task` and `herdr.task.space`) or Assistant (`herdr.role`) and its `herdr.launch`
+     match a launch-journal record that recorded this binding;
+   - the custody's own policy approves that task, process, account and binding for `credential`.
+5. **Push once:**
+   - get a fresh token on the host that holds the sign-in;
+   - re-run checks 1 to 3 under the lock;
+   - open the FIFO's write end non-blocking (`ENXIO`: no reader, stop);
+   - confirm its device and inode;
+   - write the frame;
+   - never retry a push whose outcome is uncertain.
+
+These checks narrow, but do not remove, the window between checking a process and writing to it.
+Owning that residual risk, and the token's account and lifetime, is the custody's decision.
 
 Shepherdr opens no vault, holds no credential and runs no broker or proxy. Until that adapter exists
 and is qualified, turning the option on makes every Azure start on that machine wait and then refuse.
@@ -317,7 +352,10 @@ Authored, not run locally (repository policy allows only `bun run typecheck`). R
 - MIG-13, authored and not yet run (CI): `test/test_providers.py`. `PushedCredential` covers the
   composed words in a real `/bin/sh`, the real `launch receive` and a stand-in custody's frame: the
   push wins over a stale inherited value and is gone from the kept shell; a cut-short push and a
-  timeout start nothing; refusals happen before anything is made. The opt-in rule and the words being
+  timeout start nothing; refusals happen before anything is made. It also covers `set -x` in
+  `/bin/sh`, bash and zsh (and `fish_trace` when fish is installed), which never shows the value and
+  is put back afterwards; SIGTERM and SIGHUP, which leave nothing behind; and a receiver that fails
+  after printing, which starts nothing, even under `set -a`. The opt-in rule and the words being
   byte-identical when off are tested in `Binding`. `herdr-task start` asking before the check is in
   `AzureStartsBound`. The Assistant's one-off template is in `test/test_launch_admission.py`, and
   kept-shell revival is in `test/test_native_restart.py`.
@@ -354,7 +392,7 @@ nothing on stdout. Its stations are:
 - received;
 - not pushed in time;
 - push malformed or cut short;
-- stopped by an interrupt;
+- stopped by an interrupt, SIGTERM or SIGHUP;
 - couldn't wait.
 
 Every station except "received" leaves no file behind and is never retried.

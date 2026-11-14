@@ -32,7 +32,7 @@ from .base import Fail, HOME, hc_json, now, run, SHELLS
 from .agents import agent_running, status_word
 from .sessions import claude_dir, session_of
 from .settings import ASSISTANT_TEMPLATES, bare
-from .launch import CLEAN_ENV, NO_CREDENTIAL, NO_PUSHED, fish_guard, pushed, receive_words
+from .launch import CLEAN_ENV, NO_CREDENTIAL, NO_PUSHED, TRACE_BACK, fish_guard, pushed, receive_words
 
 LABEL = "herdr.resume"
 # Claude Code: "No conversation found with session ID: …". Codex: "ERROR: No saved session found with ID …"
@@ -166,7 +166,7 @@ def shell_line(shell, cwd, env, argv, direct=False, need=None, push=False):
     need: an Azure plan's credential variable: the agent starts only when it is set and not empty,
     else the shell says which (launch.provider_words' check, typed). push (launch.pushed): need is received from this
     machine's credential delivery first, for this agent only (POSIX: unset again after it; fish: local to its block),
-    so a value kept from before never starts it."""
+    so a value kept from before never starts it, with shell tracing off until then (launch.TRACE_OFF)."""
     words = " ".join(shlex.quote(str(a)) for a in argv)
     if os.path.basename(shell or "") not in LINE_SHELLS:
         return words
@@ -180,7 +180,7 @@ def shell_line(shell, cwd, env, argv, direct=False, need=None, push=False):
         elif push:
             # One braced group, so `cd … &&` guards all of it.
             cmd = (f'{{ {receive_words(need)}if [ -z "${{{need}:-}}" ]; then printf "%s\\n" '
-                   f'{shlex.quote(NO_PUSHED.format(need))} >&2; else {cmd}; fi; unset {need}; }}')
+                   f'{shlex.quote(NO_PUSHED.format(need))} >&2; else {cmd}; fi; unset {need}; {TRACE_BACK}}}')
         else:
             said = shlex.quote(NO_CREDENTIAL.format(need))
             cmd = f'if [ -z "${{{need}:-}}" ]; then printf "%s\\n" {said} >&2; else {cmd}; fi'

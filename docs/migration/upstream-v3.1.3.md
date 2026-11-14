@@ -995,6 +995,10 @@ It is source and CI qualification only (Stage Q-A): no provider, Azure or agent 
   in the agent's own shell, before the unchanged presence check. Off by default: Personal and every
   existing start are byte-identical. Detail, the request contract and the adapter boundary are in
   [Azure launch plans](../azure-launch-plans.md#a-pushed-credential-mig-13-opt-in-source-only).
+- Review repairs (round 1): shell tracing is off from before the receive until the value is
+  unset; the receiver's exit status, not its text, decides; SIGTERM and SIGHUP go through cleanup.
+  The custody's recipient checks are listed in the same document; SIGKILL leaves a dead request that
+  those checks must refuse.
 - `AFTER_Q` names its paths under `MIG-13`. Its changed admitted rows re-pin their content
   `sha256` only; phases, upstream blobs, requirement statuses and Q's ledger stay as they were.
 - Not qualified or held: the custody adapter (not in this repository), any native start, a
