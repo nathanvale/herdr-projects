@@ -423,9 +423,12 @@ class RevivalOnAzure(unittest.TestCase):
 
     def test_a_kept_shell_revival_asks_for_a_pushed_credential_before_its_check(self):
         """MIG-13: on a machine whose settings say "credential_delivery": "push", the line typed into the agent's kept
-        shell receives the plan's credential before the presence check, inside one group the `cd … &&` guards, and
-        unsets it after; a value the kept shell holds from before never starts it. The line holds the name only, and
-        shell tracing is off for the value's whole life there."""
+        shell runs one child shell (its POSIX shell by path, -ic) that receives the plan's credential before the
+        presence check and resumes the same session; the revival's journal record holds that child's exact argv as
+        sha256 before it is typed, and `launch binding` gives it read-only with the revival's session. The line and
+        records hold the name only."""
+        import hashlib
+        import shlex
         f = Fixture(self)
         d = json.loads(json.dumps(la.PERSONAL))
         d["everywhere"]["provider"] = {"route": "azure-foundry", **CLAUDE, "claude_auth": "bearer-token"}
@@ -439,17 +442,40 @@ class RevivalOnAzure(unittest.TestCase):
         line = send[2]
         shell_ok(self, line)
         need = "ANTHROPIC_FOUNDRY_AUTH_TOKEN"
-        # Tracing off before the push, back as it was after the value is unset (review finding: set -x).
-        group = line[line.index("{ _herdr_x=; "):]
-        if " cd " in line:
-            self.assertIn(" && { _herdr_x=; ", line)
-        self.assertTrue(group.startswith(f"{{ _herdr_x=; case $- in *x*) _herdr_x=1; set +x;; esac; unset {need}; if {need}=$("), group)
-        self.assertIn(f" launch receive {need}); then export {need}; else unset {need}; fi; if [ -z \"${{{need}:-}}\" ]", group)
-        self.assertLess(group.index("launch receive"), group.index(f"--resume {SESSION}"))
-        self.assertTrue(group.endswith(f"fi; unset {need}; case ${{_herdr_x:-}} in 1) unset _herdr_x; set -x;; "
-                                       "*) unset _herdr_x;; esac; }"), group)
-        self.assertEqual(f.revivals()[0]["provider"], bound)
-        self.assertNotIn("marker-foundry-token-91bc", json.dumps(f.calls()) + json.dumps(f.journal()))
+        child = shlex.split(line[line.index(" && ") + 4:])
+        self.assertEqual((child[0], child[1], child[3]), ("/bin/bash", "-ic", "/bin/bash"))
+        script = child[2]
+        self.assertTrue(script.startswith("export ") or script.startswith("_herdr_x=; "), script)
+        self.assertIn(f"unset {need}; if {need}=$(", script)
+        self.assertIn(f" launch receive {need}); then export {need}; else unset {need}; fi; if [ -z \"${{{need}:-}}\" ]", script)
+        self.assertTrue(script.endswith(f'"$@"; fi; unset {need}; case ${{_herdr_x:-}} in 1) unset _herdr_x; set -x;; '
+                                        "*) unset _herdr_x;; esac; "), script)
+        self.assertEqual(child[4:6], ["claude", "--resume"] if child[4] == "claude" else child[4:6])
+        self.assertIn(SESSION, child)
+        [rev] = f.revivals()
+        digest = hashlib.sha256(b"\0".join(a.encode() for a in child)).hexdigest()
+        self.assertEqual((rev["provider"], rev["invocation"]), (bound, digest))
+        # The read-only binding of what now runs there: the revival, its session and its program.
+        out = f.ok("launch", "binding", "t5")
+        self.assertEqual({k: out[k] for k in ("version", "terminal", "launch", "kind", "how", "session", "provider",
+                                              "invocation", "address")},
+                         {"version": 1, "terminal": "t5", "launch": rev["launch"], "kind": "revival", "how": "resume",
+                          "session": SESSION, "provider": bound, "invocation": digest, "address": "t5"})
+        self.assertNotIn("marker-foundry-token-91bc", json.dumps(f.calls()) + json.dumps(f.journal()) + json.dumps(out))
+
+    def test_launch_binding_reads_and_writes_nothing(self):
+        """`launch binding` is a read: the journal file and every hc call it makes are unchanged/reads only."""
+        f = Fixture(self)
+        f.provider({"route": "azure-foundry", **CLAUDE, "claude_auth": "bearer-token"})
+        bound = f.binding()
+        f.worker(labels={"herdr.provider": "azure-foundry"}, provider=bound)
+        f.revive()
+        before = json.dumps(f.journal(), sort_keys=True)
+        calls = len(f.calls())
+        out = f.ok("launch", "binding", "t5")
+        self.assertEqual((out["kind"], out["invocation"]), ("revival", None))  # push off: nothing recorded
+        self.assertEqual(json.dumps(f.journal(), sort_keys=True), before)
+        self.assertEqual({c[0] for c in f.calls()[calls:]}, {"get"})
 
     def test_changed_routing_holds_it_with_the_reason(self):
         f = Fixture(self)

@@ -223,6 +223,34 @@ so it is not a transport.
 - **Never carries the value:** argv, `hc` words, labels, settings, the journal, task records,
   one-off templates, typed revival lines and stdout/stderr messages hold the name only.
 
+### Native binding and trigger (MIG-13 binding unit)
+
+With push on, Shepherdr gives credential custody what it needs to bind a request to one native start, without
+exposing a task, prompt, setting or value:
+
+- **Invocation record.** Before a pushed start, same-session revival or Assistant template start is dispatched,
+  its launch-journal record gets `invocation`: sha256 of the exact argv of the program its receive runs in
+  (`launch.invocation_digest`: NUL-separated, as `/proc/PID/cmdline` shows it). Push off, nothing is recorded and
+  every word is as before.
+- **`herdr-task launch binding TERMINAL --json`.** A read only: `hc get` and the journal file as last saved. The
+  entry skips its layout migration for it, and it makes no lock file or folder. It gives
+  `{version: 1, terminal, pid, launch, identity, space, state, kind ("start" or "revival"), how, session (a
+  same-session revival's conversation id, else null), terminal_pid, address, provider, invocation}`. The launch is
+  a revival's own (from `herdr.resume`), else the start's (`herdr.launch`). It refuses when that launch's binding no
+  longer equals `recorded_binding`'s.
+- **Waiting labels.** After publishing its request, the receiver labels its own terminal
+  `herdr.credential=waiting` and `herdr.credential.request=<nonce>`, so custody can find it through herdr-core
+  (`hc events --label herdr.credential=waiting`, `hc ls --label …`). If herdr-core doesn't take them, the receive
+  refuses at once: no sender could find it. Cleanup clears them only while they still name its own nonce; a later
+  receive in the same kept shell starts only after it ends. A label grants nothing.
+
+Custody's recipient check then is exact: the receiver's parent hashes to `invocation`. For a start, that parent
+is herdr-core's root pid for the terminal. For a revival, it is a direct child of that root, leading the
+foreground.
+
+Not covered: a same-uid process can write herdr-core labels and the journal too, so these records bind to native
+owners but are not attestations. How herdr-core runs a template's command isn't pinned here.
+
 **What Shepherdr does not do (the adapter boundary).** A request is not authorization and grants
 nothing. The receiver checks only its own inputs. In particular, its stdout not being a terminal
 does not prove that stdout is the intended shell's command substitution. The request's fields are
@@ -263,11 +291,11 @@ Owning that residual risk, and the token's account and lifetime, is the custody'
 Shepherdr opens no vault, holds no credential and runs no broker or proxy. Until that adapter exists
 and is qualified, turning the option on makes every Azure start on that machine wait and then refuse.
 
-| Path | Covered by this change | Not covered |
+| Path | The program the receive runs in (recorded as `invocation` before dispatch) | Not covered |
 | --- | --- | --- |
-| Task start, new conversation or new-terminal resume (`launch.py`'s `in_shell`, POSIX and other shells) | asks before the check | |
-| Assistant new start and restart through its one-off template (`launch_admission.write_one_off`) | asks before the check | |
-| Kept-shell revival (`revive.shell_line`, typed by the one revival owner) | asks before the check, unsets after | |
+| Task start, new conversation or new-terminal resume (`launch.py`'s `in_shell`) | `in_shell`'s argv, the terminal's root after the exec chain | |
+| Same-session resume into a kept shell (`revive.revival_child`, typed by the one revival owner) | one child shell (`SHELL -ic SCRIPT SHELL argv…`, `-c` when it started without the person's shell) that receives, checks and resumes the recorded session | a revival with missing history (a new conversation) isn't a same-session resume |
+| Assistant new start and restart (`launch_admission.write_one_off`) | the template's command execs `/bin/sh -c SCRIPT /bin/sh argv…` | the recipient is the terminal's root only if herdr-core runs a template's command as that process, which no pinned source shows |
 | A CLI already running | | never refreshed: a token that expires mid-session fails there. The next start, resume or revival receives a fresh one. |
 | A tab agent or fork | | Personal only, unchanged |
 | An agent whose shell is fish, with push on | | refuses before asking; push isn't supported there |

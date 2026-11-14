@@ -613,12 +613,13 @@ def read_resume(k):
     return rec if isinstance(rec, dict) else None
 
 
-def recorded_binding(k, task=None, resume=None):
+def recorded_binding(k, task=None, resume=None, launches=None):
     """The nonsecret provider binding the agent in terminal k started on (providers.recorded's shape), from the first
     owner that has it: its task's agent row (task: its task as read now), the copy revival keeps on its terminal
     (resume: its herdr.resume record), then its start's journal record (its herdr.launch label). An agent whose
     terminal says Personal (no herdr.provider label) with nothing else recorded is Personal. None when it started on
-    another route and no record of it is found, or two owners disagree on the route: never read as Personal."""
+    another route and no record of it is found, or two owners disagree on the route: never read as Personal.
+    launches: the journal's launches as already read (launch binding's lock-free read), instead of opening it."""
     from .providers import PERSONAL_RECORD
     labels = k.get("labels") or {}
     route = labels.get("herdr.provider") or PERSONAL
@@ -635,8 +636,11 @@ def recorded_binding(k, task=None, resume=None):
         return resume["provider"] if fits(resume["provider"]) else None
     lid = labels.get(LABEL)
     if route != PERSONAL and isinstance(lid, str) and LAUNCH_ID.fullmatch(lid):
-        with journal() as d:
-            rec = d["launches"].get(lid) or {}
+        if launches is None:
+            with journal() as d:
+                rec = d["launches"].get(lid) or {}
+        else:
+            rec = launches.get(lid) or {}
         b = rec.get("provider") or ((rec.get("task") or {}).get("agent") or {}).get("provider")
         return b if fits(b) else None
     return dict(PERSONAL_RECORD) if route == PERSONAL else None
@@ -685,6 +689,8 @@ def cmd_launch(args):
         return launch_run(args, say)
     if args.launch == "folder":
         return launch_folder(args, say)
+    if args.launch == "binding":
+        return launch_binding(args, say)
     if args.launch == "receive":
         from .launch import cmd_receive
         return cmd_receive(args)
@@ -806,6 +812,41 @@ def reconcile(args, say, ident, lid):
     say(args, out, f"{ident} {lid} confirmed: {out.get('address')} carries its launch id.{said}")
 
 
+def launch_binding(args, say):
+    """`launch binding TERMINAL`: the nonsecret binding of the start or revival now in a terminal, read only (hc get
+    and the journal; nothing is written), for the deployment's credential custody: herdr-core's address, its root pid,
+    the current launch (a revival's own, from herdr.resume, else the start's herdr.launch), its identity, space and
+    state, whether it is a start or a revival (and a revival's same-session id), its provider binding, which must
+    equal recorded_binding's (else refused: the binding changed), and the pushed program's invocation digest (None
+    when that launch recorded none). No argv, prompt, settings or environment value."""
+    from .base import hc_json
+    k = hc_json("get", args.identity)
+    if not isinstance(k, dict) or k.get("state") != "live" or k.get("address") != args.identity:
+        raise Fail(f"{args.identity} isn't a live terminal herdr-core knows by that address.")
+    labels = k.get("labels") or {}
+    resume = read_resume(k) or {}
+    lid = resume.get("launch") or labels.get(LABEL)
+    if not isinstance(lid, str) or not LAUNCH_ID.fullmatch(lid):
+        raise Fail(f"{args.identity} carries no launch id.")
+    # Read only: the journal file as _save last renamed it whole, with no lock file or folder made (journal() makes
+    # both); _load writes nothing.
+    launches = _load()["launches"]
+    rec = dict(launches.get(lid) or {})
+    if not rec:
+        raise Fail(f"Launch {lid} isn't in the launch journal.")
+    provider = rec.get("provider") or ((rec.get("task") or {}).get("agent") or {}).get("provider")
+    if provider is not None and provider != recorded_binding(k, None, resume, launches):
+        raise Fail(f"{args.identity}'s launch {lid} and its recorded binding disagree, so it has no binding to give.")
+    revival = rec.get("revival") if isinstance(rec.get("revival"), dict) else None
+    out = {"version": 1, "terminal": k["address"], "pid": k.get("pid"), "launch": lid, "identity": rec.get("identity"),
+           "space": rec.get("space"), "state": rec.get("state"), "kind": "revival" if revival else "start",
+           "how": (revival or {}).get("how"),
+           "session": (revival or {}).get("session") if (revival or {}).get("how") == "resume" else None,
+           "terminal_pid": rec.get("terminal_pid"), "address": rec.get("address") or rec.get("terminal"),
+           "provider": provider, "invocation": rec.get("invocation")}
+    return say(args, out, f"{out['identity']} {lid} {out['kind']} {out['state']}")
+
+
 def launch_folder(args, say):
     """`launch folder PID`: the Claude Code folder process PID uses, read from its own environment
     (C1's rule, sessions.claude_dir), for restart.sh to carry into the agent it starts next."""
@@ -869,14 +910,24 @@ def write_one_off(source, body, argv, env, need, lid, config_dir=None):
     config_dir, the Claude Code folder a restart carries, as CLAUDE_CONFIG_DIR), starts the agent only when its
     credential variable is set (launch.provider_words), then execs the planned argv. Named for its launch; removed once
     hc has run. Gives its name. On a machine whose settings take the credential pushed (launch.pushed), the command
-    receives it first; the template holds only the words that ask for it, never a value."""
+    receives it first; the template holds only the words that ask for it, never a value. Then its command execs one
+    `/bin/sh -c` program that receives, checks and execs the agent, so the receive runs in a program whose whole argv
+    is known: its invocation_digest is the third thing given (None without a push), recorded with the launch."""
     import shlex
-    from .launch import CLEAN_ENV, provider_words, pushed
-    before, after = provider_words(env, need, pushed(need))
+    from .launch import CLEAN_ENV, invocation_digest, provider_words, pushed
+    push = bool(need) and pushed(need)
+    before, after = provider_words(env, need, push)
     if config_dir:
         before = f"export CLAUDE_CONFIG_DIR={shlex.quote(config_dir)}; {before}"
-    words = " ".join(one_line_word(a) for a in argv)
-    command = f"{CLEAN_ENV} {before}exec {words}; {after}exit 1" if after else f"{CLEAN_ENV} {before}exec {words}"
+    invocation = None
+    if push:
+        child = ["/bin/sh", "-c", f'{before}exec "$@"; {after}exit 1', "/bin/sh", *argv]
+        invocation = invocation_digest(child)
+        command = f"{CLEAN_ENV} exec " + " ".join(one_line_word(a) for a in child)
+    elif after:
+        command = f"{CLEAN_ENV} {before}exec {' '.join(one_line_word(a) for a in argv)}; {after}exit 1"
+    else:
+        command = f"{CLEAN_ENV} {before}exec {' '.join(one_line_word(a) for a in argv)}"
     name = f"herdr-{source}-az-{lid[:8]}"
     text = (f"---\nname: {name}\ndescription: A one-off Azure Foundry {source} start (herdr-task launch run), removed "
             f"after use.\ncommand: {command}\n---\n{body}")
@@ -884,7 +935,7 @@ def write_one_off(source, body, argv, env, need, lid, config_dir=None):
     path = os.path.join(TEMPLATES_DIR, f"{name}.md")
     with open(path, "w") as f:
         f.write(text)
-    return name, path
+    return name, path, invocation
 
 
 def launch_run(args, say):
@@ -989,6 +1040,9 @@ def launch_run(args, say):
                 sent[sent.index(new)] = made[0]
                 extra += ["--label", f"herdr.provider={adm.plan['route']}"]
             facts = {"provider": recorded(adm.plan)} if azure else {}
+            if made and made[2]:
+                # A pushed start's program, recorded before it is sent (launch binding).
+                facts["invocation"] = made[2]
             if replaces and replaces["continues"] and not resumes(argv or []):
                 # A lost session started anew behind its chat: missing history, said so, never a resume (L2).
                 facts["missing_history"] = True

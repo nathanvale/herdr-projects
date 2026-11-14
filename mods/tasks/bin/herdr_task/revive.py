@@ -27,12 +27,14 @@ import json
 import os
 import re
 import shlex
+import shutil
+import sys
 
 from .base import Fail, HOME, hc_json, now, run, SHELLS
 from .agents import agent_running, status_word
 from .sessions import claude_dir, session_of
 from .settings import ASSISTANT_TEMPLATES, bare
-from .launch import CLEAN_ENV, NO_CREDENTIAL, NO_PUSHED, TRACE_BACK, fish_guard, pushed, receive_words
+from .launch import CLEAN_ENV, NO_CREDENTIAL, fish_guard, invocation_digest, provider_words, pushed
 
 LABEL = "herdr.resume"
 # Claude Code: "No conversation found with session ID: …". Codex: "ERROR: No saved session found with ID …"
@@ -158,6 +160,24 @@ def without_caller():
     return {k: v for k, v in os.environ.items() if k != "HC_TERMINAL_ID"}
 
 
+NO_PUSH_SHELL = ("This agent's kept shell ({}) can't be resolved to a POSIX shell, so its pushed credential isn't "
+                 "asked for and the agent wasn't started.")
+
+
+def revival_child(shell, env, argv, direct=False, need=None):
+    """A pushed revival's own program: the kept shell types it as one command, so the receive, the presence check and
+    the agent run in a child shell whose whole argv /proc shows and the launch records beforehand (its
+    invocation_digest). The same words in_shell gives a start, without its `exec "$0" -i`: the kept shell stays.
+    Interactive (-ic, -lic on a Mac) as the person's shell starts agents; `direct` (no person's shell) is -c. None
+    when the kept shell isn't a POSIX shell this machine can name by path."""
+    path = shell if os.path.isabs(shell or "") else shutil.which(shell or "")
+    if not path or os.path.basename(path) not in ("bash", "zsh", "sh", "dash", "ksh"):
+        return None
+    flag = "-c" if direct else ("-lic" if sys.platform == "darwin" else "-ic")
+    words, tail = provider_words(env, need, True)
+    return [path, flag, f'{words}"$@"; {tail}', path, *[str(a) for a in argv]]
+
+
 def shell_line(shell, cwd, env, argv, direct=False, need=None, push=False):
     """The line typed into the recovered shell: into the agent's folder, then the agent. POSIX shells
     and fish (3.1+) take `&&` and VAR=value before a command; others get the agent alone (plan()
@@ -166,8 +186,8 @@ def shell_line(shell, cwd, env, argv, direct=False, need=None, push=False):
     need: an Azure plan's credential variable: the agent starts only when it is set and not empty,
     else the shell says which (launch.provider_words' check, typed). push (launch.pushed): need is received from this
     machine's credential delivery first, for this agent only (unset again after it), so a value kept from before
-    never starts it, with shell tracing off until then (launch.TRACE_OFF). fish doesn't take a push: its line says so
-    and starts nothing (launch.fish_guard)."""
+    never starts it, with shell tracing off until then (launch.TRACE_OFF), all in revival_child's one child shell.
+    fish doesn't take a push: its line says so and starts nothing (launch.fish_guard)."""
     words = " ".join(shlex.quote(str(a)) for a in argv)
     if os.path.basename(shell or "") not in LINE_SHELLS:
         return words
@@ -179,9 +199,10 @@ def shell_line(shell, cwd, env, argv, direct=False, need=None, push=False):
         if os.path.basename(shell) == "fish":
             cmd = fish_guard(need, cmd, push)
         elif push:
-            # One braced group, so `cd … &&` guards all of it.
-            cmd = (f'{{ {receive_words(need)}if [ -z "${{{need}:-}}" ]; then printf "%s\\n" '
-                   f'{shlex.quote(NO_PUSHED.format(need))} >&2; else {cmd}; fi; unset {need}; {TRACE_BACK}}}')
+            # One child shell (revival_child), its env given as exports there: `cd … &&` guards it.
+            child = revival_child(shell, env, argv, direct, need)
+            cmd = (shlex.join(child) if child else
+                   f'printf "%s\\n" {shlex.quote(NO_PUSH_SHELL.format(shell))} >&2')
         else:
             said = shlex.quote(NO_CREDENTIAL.format(need))
             cmd = f'if [ -z "${{{need}:-}}" ]; then printf "%s\\n" {said} >&2; else {cmd}; fi'
@@ -455,8 +476,10 @@ def bring_back(k, rec, step, report):
         else:
             report.setdefault("revived", []).append({"terminal": k["address"], "how": how, "session": rec.get("session")})
         return
-    line = shell_line(shell_of(k), rec.get("cwd") or k.get("cwd"), {**env_of(k), **carry["env"]}, argv, direct, carry["need"],
-                      pushed(carry["need"]))
+    push = pushed(carry["need"])
+    env = {**env_of(k), **carry["env"]}
+    line = shell_line(shell_of(k), rec.get("cwd") or k.get("cwd"), env, argv, direct, carry["need"], push)
+    child = revival_child(shell_of(k), env, argv, direct, carry["need"]) if push and os.path.basename(shell_of(k) or "") != "fish" else None
     p = carry["plan"]
     labels = k.get("labels") or {}
     task = task_of(k) if labels.get("herdr.task") else None
@@ -486,6 +509,9 @@ def bring_back(k, rec, step, report):
     facts = {"revival": {"how": how, "missing_history": how == "fresh", "session": rec.get("session") if how == "resume" else None,
                          "previous_session": carry.get("previous")},
              "provider": recorded(p), "terminal_pid": k.get("pid")}
+    if child:
+        # The pushed revival's child shell, recorded before it is typed (launch binding).
+        facts["invocation"] = invocation_digest(child)
     try:
         adm = Admission(identity, "revive", space_of(labels) or None, None, revise, who=who_of(k))
         # claimed(): an open start of the same agent refuses here (its task as read now releases a start it records).

@@ -507,6 +507,13 @@ def main():
     c.add_argument("identity", metavar="PID", help="the agent's process id")
     c.add_argument("--json", action="store_true")
     c.set_defaults(fn=cmd_launch)
+    binding_help = ("the nonsecret binding of the start or revival now in TERMINAL, read only, for credential custody: "
+                    "its launch, identity, kind (start or revival, and a revival's same-session id), state, recorded "
+                    "provider binding and the pushed program's invocation digest; no argv, prompt or value")
+    c = la.add_parser("binding", help=binding_help, description=binding_help)
+    c.add_argument("identity", metavar="TERMINAL", help="the terminal's address on this machine (t7)")
+    c.add_argument("--json", action="store_true")
+    c.set_defaults(fn=cmd_launch)
     receive_help = ("an Azure start's credential, pushed: run by the agent's own shell before its presence check when "
                     "this machine's settings say \"credential_delivery\": \"push\" (Settings > Machines' machine layer). "
                     "Leaves a nonsecret request beside a private one-way pipe in the temporary directory, waits for the "

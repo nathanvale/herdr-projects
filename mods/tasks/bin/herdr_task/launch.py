@@ -358,6 +358,42 @@ TRACE_OFF = "_herdr_x=; case $- in *x*) _herdr_x=1; set +x;; esac; "
 TRACE_BACK = "case ${_herdr_x:-} in 1) unset _herdr_x; set -x;; *) unset _herdr_x;; esac; "
 
 
+def invocation_digest(argv):
+    """The nonsecret identity of the program a pushed start runs its receive in: sha256 of its argv as /proc shows it
+    (NUL-separated bytes). Recorded with the launch before it is sent, so the deployment's custody can match the live
+    recipient to it without the argv itself (which can hold a prompt)."""
+    return hashlib.sha256(b"\0".join(os.fsencode(a) for a in argv)).hexdigest()
+
+
+# What the receiver puts on its own terminal while it waits, so the deployment's custody can find waiting requests
+# through herdr-core (hc events / hc ls --label) instead of scanning files: nonsecret, removed when it ends. A label
+# grants nothing; the custody checks every request it finds.
+WAITING_LABEL, REQUEST_LABEL = "herdr.credential", "herdr.credential.request"
+
+
+def _mark_waiting(terminal, nonce):
+    """Puts the waiting labels on the receiver's terminal; whether herdr-core took them. Not taken, nothing could
+    find the request, so the receive refuses rather than wait unseen."""
+    try:
+        return run(["hc", "label", terminal, f"{WAITING_LABEL}=waiting", f"{REQUEST_LABEL}={nonce}"]).returncode == 0
+    except (Fail, OSError):
+        return False
+
+
+def _clear_waiting(terminal, nonce):
+    """Takes the waiting labels off only while they still name this receiver's own nonce: a later request in the same
+    kept shell (its receive runs only after this one ends) keeps its own. A failure leaves a stale label, which a
+    sender's checks refuse (no live receiver for that nonce)."""
+    from .base import hc_json
+    k = hc_json("get", terminal) or {}
+    if (k.get("labels") or {}).get(REQUEST_LABEL) != nonce:
+        return
+    try:
+        run(["hc", "label", terminal, f"{WAITING_LABEL}=", f"{REQUEST_LABEL}="])
+    except (Fail, OSError):
+        pass
+
+
 def receive_words(need):
     """POSIX words that put a pushed `need` in the shell, exported for the agent: tracing off first (TRACE_OFF; the
     words after the agent end with `unset need; ` and TRACE_BACK), an inherited value dropped, so only the push
@@ -472,6 +508,7 @@ def receive(need, wait=PUSH_WAIT):
     draft = request + ".part"
     fd = None
     why = None
+    marked = False
     got = bytearray()
     try:
         os.mkdir(folder, 0o700)
@@ -488,6 +525,9 @@ def receive(need, wait=PUSH_WAIT):
             json.dump(ask, f)
         # Published whole, in one step, and only now that its reader is open.
         os.rename(draft, request)
+        marked = _mark_waiting(terminal, nonce)
+        if not marked:
+            raise OSError(0, "herdr-core didn't take its waiting labels, so no sender could find it")
         print(f"Waiting up to {wait} seconds for {need} to be pushed to this agent ({request}).", file=sys.stderr, flush=True)
         deadline = time.monotonic() + wait
         poll = select.poll()
@@ -541,6 +581,8 @@ def receive(need, wait=PUSH_WAIT):
         except OSError:
             pass
         got[:] = b"\0" * len(got)
+        if marked:
+            _clear_waiting(terminal, nonce)
         for sig, handler in kept.items():
             signal.signal(sig, handler)
     if stopped and why is None:
@@ -977,9 +1019,15 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
     # reconcile restores when the start's own task list was never saved.
     made = {k: task[k] for k in ("mode", "worktree", "branch", "base", "start") if task.get(k) not in (None, "")}
     job = {"folder": s.loc["folder"], "id": task["id"], "space": bare(space), "role": role, "agent": dict(a), "made": made}
+    push = pushed(need)
+    shell = in_shell(cmd, admission.config_dir, penv, need, push)
+    # A pushed start records the exact program its receive runs in (in_shell's argv, which the exec chain below
+    # leaves running), before it is sent: what `launch binding` gives the deployment's custody.
+    receives = push and os.path.basename(shell[0]) != "fish"  # fish with push refuses before asking (fish_guard)
+    record = {"task": job, **({"invocation": invocation_digest(shell)} if receives else {})}
     out = admission.submit(["run", "--bg", "--json", "--keep", "--cwd", folder, "--name", name, *labels, *rel, "--",
-                            *low_priority(clean_env(["env", f"HERDR_BROWSER_TASK={key}", *in_shell(cmd, admission.config_dir, penv, need, pushed(need))]), name)],
-                           parent_live=live_parent, record={"task": job})
+                            *low_priority(clean_env(["env", f"HERDR_BROWSER_TASK={key}", *shell]), name)],
+                           parent_live=live_parent, record=record)
     a = {"address": out["address"], **a, "launch": out["launch"]}
     s.dirty = True
     if role:

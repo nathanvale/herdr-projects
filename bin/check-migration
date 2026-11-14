@@ -283,7 +283,7 @@ AFTER_Q = {
     # MIG-13: an opt-in pushed Azure credential, received in the agent's shell before its presence check at a task
     # start, an Assistant's one-off template and a kept-shell revival. Source only; no native qualification.
     'MIG-13': (
-        'mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/launch.py '
+        'mods/tasks/bin/herdr-task mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/launch.py '
         'mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/revive.py '
         'test/test_herdr_task.py test/test_launch_admission.py test/test_native_restart.py test/test_providers.py'
     ),

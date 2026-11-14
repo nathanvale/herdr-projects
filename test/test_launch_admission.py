@@ -1054,11 +1054,15 @@ class AssistantStarts(unittest.TestCase):
 
     def test_an_azure_new_start_on_a_machine_taking_its_credential_pushed_asks_for_it_first(self):
         """MIG-13: the Assistant's one-off template, on a machine whose settings say "credential_delivery": "push",
-        receives the plan's credential in its own shell before the presence check; the template and everything kept
-        hold its name only. Entra ID (no variable) writes the same command as without it."""
+        execs one `/bin/sh -c` program that receives the plan's credential before the presence check and then execs
+        the agent; the start's journal record holds that program's exact argv as sha256 before it is sent. The
+        template and everything kept hold the name only. Entra ID (no variable) writes the same command as without
+        it, and records nothing."""
+        import hashlib
+        import shlex
         for auth, credential in (("bearer-token", "ANTHROPIC_FOUNDRY_AUTH_TOKEN"), ("entra-id", None)):
             with self.subTest(auth=auth):
-                commands = []
+                commands, records, raws = [], [], []
                 for push in (False, True):
                     f = Fixture(self)
                     self.template(f)
@@ -1071,20 +1075,32 @@ class AssistantStarts(unittest.TestCase):
                     p = self.run_start(f, "--new-start", "assistant", "--source", "assistant")
                     self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
                     [one] = [c for c in f.calls() if c[0] == "template"]
-                    commands.append(re.search(r"^command: (.+)$", one[2], re.M).group(1).replace(f.tmp, "<tmp>"))
+                    raws.append(re.search(r"^command: (.+)$", one[2], re.M).group(1))
+                    commands.append(raws[-1].replace(f.tmp, "<tmp>"))
+                    [rec] = f.starts("coordinator:")
+                    records.append(rec)
                     self.assertNotIn("marker-foundry-token-91bc", json.dumps(f.calls()) + json.dumps(f.journal()) + p.stdout + p.stderr)
                 off, on = commands
                 self.assertNotIn("launch receive", off)
+                self.assertNotIn("invocation", records[0])
                 if credential:
+                    raw = raws[1]
+                    child = shlex.split(raw[raw.index(" exec /bin/sh -c ") + 6:])
+                    self.assertEqual((child[0], child[1], child[3], child[4]), ("/bin/sh", "-c", "/bin/sh", "claude"))
+                    script = child[2]
                     asks = f" launch receive {credential}); then export {credential}; else unset {credential}; fi; "
-                    self.assertIn(asks, on)
-                    self.assertLess(on.index(asks), on.index(f'if [ -z "${{{credential}:-}}" ]'))
-                    self.assertLess(on.index(f'if [ -z "${{{credential}:-}}" ]'), on.index("exec claude --settings "))
-                    self.assertIn(f"_herdr_x=; case $- in *x*) _herdr_x=1; set +x;; esac; unset {credential}; ", on)
-                    self.assertTrue(on.endswith(f"fi; unset {credential}; case ${{_herdr_x:-}} in 1) unset _herdr_x; set -x;; "
-                                                "*) unset _herdr_x;; esac; exit 1"), on)
+                    self.assertIn(asks, script)
+                    self.assertLess(script.index(asks), script.index(f'if [ -z "${{{credential}:-}}" ]'))
+                    self.assertIn(f"_herdr_x=; case $- in *x*) _herdr_x=1; set +x;; esac; unset {credential}; ", script)
+                    self.assertTrue(script.endswith(f'exec "$@"; fi; unset {credential}; case ${{_herdr_x:-}} in 1) '
+                                                    "unset _herdr_x; set -x;; *) unset _herdr_x;; esac; exit 1"), script)
+                    self.assertIn("--settings", child[5:])
+                    # The exec'd program's argv, as /proc would show it: what the start recorded before it was sent.
+                    self.assertEqual(records[1]["invocation"],
+                                     hashlib.sha256(b"\0".join(a.encode() for a in child)).hexdigest())
                 else:
                     self.assertEqual(on, off)
+                    self.assertNotIn("invocation", records[1])
 
     def test_a_tab_agent_starts_personal_only_with_its_own_reason(self):
         f = Fixture(self)

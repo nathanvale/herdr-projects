@@ -1005,6 +1005,12 @@ It is source and CI qualification only (Stage Q-A): no provider, Azure or agent 
   - it waits in a bounded poll loop with one non-raising stop flag;
   - push in fish is refused before anything is asked for (POSIX shells only), and fish without push
     is unchanged.
+- Binding unit:
+  - pushed starts, same-session revivals (a recorded child-shell program) and Assistant template starts (an
+    exec'd `/bin/sh -c` program) record their program's `invocation` digest before dispatch;
+  - `herdr-task launch binding TERMINAL` reads it, read only, with no migration;
+  - the receiver labels its waiting request for herdr-core event discovery;
+  - push off, nothing changes. Detail is in Azure launch plans, Native binding and trigger.
 - `AFTER_Q` names its paths under `MIG-13`. Its changed admitted rows re-pin their content
   `sha256` only; phases, upstream blobs, requirement statuses and Q's ledger stay as they were.
 - Not qualified or held: the custody adapter (not in this repository), any native start, a

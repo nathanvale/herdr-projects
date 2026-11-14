@@ -11,6 +11,7 @@ task lists, settings and templates are throwaway ones (herdr-task's own override
 recording stand-in first on PATH, so no agent, terminal or model request exists. They prove what
 herdr-task does with a binding; they don't prove Azure sign-in, inference or a real launch."""
 import home_guard  # noqa: F401  (first: every test on a throwaway home, never the real one)
+import hashlib
 import json
 import os
 import shutil
@@ -45,6 +46,26 @@ except OSError:
 with open(log, "a") as f:
     f.write(json.dumps(sys.argv[1:]) + "\\n")
 verb = sys.argv[1] if len(sys.argv) > 1 else ""
+labels_file = os.environ.get("FAKE_HC_LABELS")
+if labels_file and verb in ("label", "get"):
+    # Opt-in (PushedCredential): labels kept per terminal, as herdr-core keeps them; FAKE_HC_LABEL_FAIL refuses them.
+    if verb == "label" and os.environ.get("FAKE_HC_LABEL_FAIL"):
+        sys.exit(1)
+    try:
+        with open(labels_file) as f:
+            kept = json.load(f)
+    except (OSError, ValueError):
+        kept = {}
+    t = sys.argv[2]
+    if verb == "label":
+        for kv in sys.argv[3:]:
+            k, _, v = kv.partition("=")
+            kept.setdefault(t, {})[k] = v
+        with open(labels_file, "w") as f:
+            json.dump(kept, f)
+    else:
+        print(json.dumps({"address": t, "labels": kept.get(t, {}), "state": "live"}))
+    sys.exit(0)
 if verb == "run":
     print(json.dumps({"address": "t%d" % (n + 1)}))
 elif verb == "ls":
@@ -459,7 +480,7 @@ class AzureStartsBound(unittest.TestCase):
                                ({"route": "azure-foundry", **CLAUDE}, None),
                                ({"route": "personal"}, None)):
             with self.subTest(provider=provider):
-                scripts, records = [], []
+                scripts, records, invocations = [], [], []
                 for also in (None, push):
                     f = Fixture(self)
                     f.provider(provider, also=also)
@@ -469,11 +490,20 @@ class AzureStartsBound(unittest.TestCase):
                     [run] = f.launches()
                     scripts.append(f.agent_words(run)[0].replace(f.tmp, "<tmp>"))
                     records.append(f.task(tid)["agents"][0].get("provider"))
+                    # The program its receive runs in: in_shell's argv after HERDR_BROWSER_TASK, as hc got it.
+                    shell = run[next(i for i, w in enumerate(run) if w.startswith("HERDR_BROWSER_TASK=")) + 1:]
+                    with open(os.path.join(f.env["HERDR_TASK_STORE"], ".launches.json")) as fh:
+                        [rec] = [r for r in json.load(fh)["launches"].values() if r["identity"].startswith("task:")]
+                    invocations.append((rec.get("invocation"),
+                                        hashlib.sha256(b"\0".join(w.encode() for w in shell)).hexdigest()))
                     f.settle(tid=tid)
                     f.no_secret()
                 off, on = scripts
                 self.assertEqual(records[0], records[1])
                 self.assertNotIn("launch receive", off)
+                # Recorded before it was sent, only for a pushed start: the exact program, as sha256.
+                self.assertIsNone(invocations[0][0])
+                self.assertEqual(invocations[1][0], invocations[1][1] if need else None)
                 if need:
                     asks = f"unset {need}; if {need}=$("
                     self.assertIn(asks, on)
@@ -1405,7 +1435,8 @@ class PushedCredential(unittest.TestCase):
         self.tmp = os.path.join(self.f.tmp, "tmp")
         os.makedirs(self.tmp)
         # The inherited value is a stale one (the fixture's SECRETS marker): a push must win over it.
-        self.env = dict(self.f.env, HC_TERMINAL_ID="t9", TMPDIR=self.tmp, SHEPHERDR_NO_MIGRATE="1")
+        self.labels = os.path.join(self.f.tmp, "labels.json")
+        self.env = dict(self.f.env, HC_TERMINAL_ID="t9", TMPDIR=self.tmp, SHEPHERDR_NO_MIGRATE="1", FAKE_HC_LABELS=self.labels)
         p = mock.patch.dict(os.environ, {"SHELL": "/bin/sh"})
         p.start()
         self.addCleanup(p.stop)
@@ -1489,6 +1520,12 @@ class PushedCredential(unittest.TestCase):
         self.assertNotIn(PUSHED, err)
         self.assertIn(f"Waiting up to 300 seconds for {self.NAME} to be pushed to this agent", err)
         self.assertEqual(os.listdir(self.tmp), [])
+        # Its terminal carried the waiting labels with its own nonce while it waited, and they're gone now.
+        calls = [json.loads(line) for line in open(self.f.log)]
+        self.assertIn(["label", "t9", "herdr.credential=waiting", f"herdr.credential.request={ask['nonce']}"], calls)
+        self.assertEqual(calls[-1], ["label", "t9", "herdr.credential=", "herdr.credential.request="])
+        with open(self.labels) as fh:
+            self.assertEqual(json.load(fh), {"t9": {"herdr.credential": "", "herdr.credential.request": ""}})
 
     def test_a_cut_short_push_starts_nothing_even_with_a_value_inherited(self):
         """A writer that closes with nothing sent, or after a header promising more than it sends: end-of-file before
@@ -1612,6 +1649,35 @@ class PushedCredential(unittest.TestCase):
     def receive(self, *args, env=None, stdout=subprocess.PIPE):
         return subprocess.run([sys.executable, os.path.join(BIN, "herdr-task"), "launch", "receive", *args], stdout=stdout,
                               stderr=subprocess.PIPE, text=True, env=env or self.env, timeout=60)
+
+    def test_a_request_herdr_core_wont_label_is_refused_at_once(self):
+        """No waiting labels means no sender could find it: the receive refuses at once, removes its request and
+        hands nothing on, so the presence check stops the start."""
+        r = self.receive(self.NAME, "--wait", "60", env=dict(self.env, FAKE_HC_LABEL_FAIL="1"))
+        self.assertEqual((r.returncode, r.stdout), (1, ""))
+        self.assertIn("herdr-core didn't take its waiting labels, so no sender could find it", r.stderr)
+        self.assertEqual(os.listdir(self.tmp), [])
+
+    def test_a_later_request_keeps_its_labels_when_an_earlier_one_ends(self):
+        """An earlier receive's cleanup leaves the waiting labels alone once they name another (later) request."""
+        sh = self.shell()
+        self.request()
+        for _ in range(300):  # its labels follow its request
+            try:
+                with open(self.labels) as fh:
+                    kept = json.load(fh)
+                if kept["t9"]["herdr.credential"] == "waiting":
+                    break
+            except (OSError, ValueError, KeyError):
+                pass
+            time.sleep(0.1)
+        kept["t9"]["herdr.credential.request"] = "f" * 32
+        with open(self.labels, "w") as fh:
+            json.dump(kept, fh)
+        self.push(self.request(), None)
+        sh.communicate(timeout=60)
+        with open(self.labels) as fh:
+            self.assertEqual(json.load(fh)["t9"], {"herdr.credential": "waiting", "herdr.credential.request": "f" * 32})
 
     def test_no_push_within_its_wait_receives_nothing(self):
         r = self.receive(self.NAME, "--wait", "1")

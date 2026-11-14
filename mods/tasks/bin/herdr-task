@@ -27,7 +27,8 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 # Shepherdr's data in its own folders: moved there once, before anything reads a path (herdr_task/layout.py).
 from herdr_task import layout  # noqa: E402
 
-if layout.ensure() == "newer":
+# `launch binding` is a read that credential custody makes on a live machine: it moves and heals nothing.
+if sys.argv[1:3] != ["launch", "binding"] and layout.ensure() == "newer":
     sys.exit("herdr-task: this machine's Shepherdr data is on a newer layout than this herdr-task knows: update Shepherdr.")
 
 from herdr_task.cli import main  # noqa: E402
