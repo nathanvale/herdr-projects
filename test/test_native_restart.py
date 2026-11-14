@@ -463,6 +463,58 @@ class RevivalOnAzure(unittest.TestCase):
                           "session": SESSION, "provider": bound, "invocation": digest, "address": "t5"})
         self.assertNotIn("marker-foundry-token-91bc", json.dumps(f.calls()) + json.dumps(f.journal()) + json.dumps(out))
 
+    def push_settings(self, f):
+        d = json.loads(json.dumps(la.PERSONAL))
+        d["everywhere"]["provider"] = {"route": "azure-foundry", **CLAUDE, "claude_auth": "bearer-token"}
+        d["everywhere"]["machine"]["credential_delivery"] = "push"
+        f.write_settings(d)
+
+    def test_launch_binding_names_a_sent_revival_before_its_terminal_label_does(self):
+        """Review 08: hc send can run the typed line, and so its receiver, before herdr.resume names the revival's
+        launch. `launch binding` names the newest launch admission recorded as sent for the terminal (the revival,
+        recorded under the journal's lock before typing), so the label's old value doesn't matter; a newer cancelled
+        (never typed) launch for the same terminal is never named."""
+        f = Fixture(self)
+        self.push_settings(f)
+        bound = f.binding()
+        old = f.record()
+        f.worker(labels={"herdr.provider": "azure-foundry"}, rec=old, provider=bound)
+        f.revive()
+        [rev] = f.revivals()
+        # As the terminal looked before revival wrote its launch onto herdr.resume.
+        f.update("t5", labels={**f.terminal("t5")["labels"], "herdr.resume": json.dumps(old)})
+        path = os.path.join(f.store, ".launches.json")
+        with open(path) as fh:
+            d = json.load(fh)
+        late = dict(rev, launch="99999999-9999-4999-8999-999999999999", state="cancelled",
+                    sent_at=rev["sent_at"] + 1000, invocation="0" * 64)
+        d["launches"][late["launch"]] = late
+        with open(path, "w") as fh:
+            json.dump(d, fh)
+        out = f.ok("launch", "binding", "t5")
+        self.assertEqual((out["launch"], out["kind"], out["session"], out["invocation"]),
+                         (rev["launch"], "revival", SESSION, rev["invocation"]))
+
+    def test_a_direct_pushed_revival_runs_its_agent_past_shell_functions(self):
+        """Review 08: an agent that started without the person's shell comes back without its functions too: the
+        pushed revival's child is `-c` and runs `command "$@"`, so an exported bash function named like the CLI can't
+        stand in for it; that exact program is what the revival records."""
+        import hashlib
+        import shlex
+        f = Fixture(self)
+        self.push_settings(f)
+        bound = f.binding()
+        f.worker(labels={"herdr.provider": "azure-foundry"}, rec=f.record(shell=False), provider=bound)
+        f.revive()
+        [send] = f.sends()
+        line = send[2]
+        child = shlex.split(line[line.index(" && ") + 4:])
+        self.assertEqual((child[1], child[3]), ("-c", child[0]))
+        self.assertIn('command "$@"; fi; unset ANTHROPIC_FOUNDRY_AUTH_TOKEN; ', child[2])
+        self.assertNotIn('else "$@"', child[2])
+        [rev] = f.revivals()
+        self.assertEqual(rev["invocation"], hashlib.sha256(b"\0".join(a.encode() for a in child)).hexdigest())
+
     def test_launch_binding_reads_and_writes_nothing(self):
         """`launch binding` is a read: the journal file and every hc call it makes are unchanged/reads only."""
         f = Fixture(self)

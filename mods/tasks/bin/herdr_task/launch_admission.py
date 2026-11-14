@@ -815,7 +815,9 @@ def reconcile(args, say, ident, lid):
 def launch_binding(args, say):
     """`launch binding TERMINAL`: the nonsecret binding of the start or revival now in a terminal, read only (hc get
     and the journal; nothing is written), for the deployment's credential custody: herdr-core's address, its root pid,
-    the current launch (a revival's own, from herdr.resume, else the start's herdr.launch), its identity, space and
+    the current launch (the newest one admission recorded as sent for this terminal: its start, named by
+    herdr.launch, or a revival recorded against this address; recorded under the journal's lock before anything is
+    typed, so a revival is named before its receiver can run, whatever herdr.resume says yet), its identity, space and
     state, whether it is a start or a revival (and a revival's same-session id), its provider binding, which must
     equal recorded_binding's (else refused: the binding changed), and the pushed program's invocation digest (None
     when that launch recorded none). No argv, prompt, settings or environment value."""
@@ -825,15 +827,18 @@ def launch_binding(args, say):
         raise Fail(f"{args.identity} isn't a live terminal herdr-core knows by that address.")
     labels = k.get("labels") or {}
     resume = read_resume(k) or {}
-    lid = resume.get("launch") or labels.get(LABEL)
-    if not isinstance(lid, str) or not LAUNCH_ID.fullmatch(lid):
-        raise Fail(f"{args.identity} carries no launch id.")
+    start = labels.get(LABEL)
     # Read only: the journal file as _save last renamed it whole, with no lock file or folder made (journal() makes
     # both); _load writes nothing.
     launches = _load()["launches"]
-    rec = dict(launches.get(lid) or {})
-    if not rec:
-        raise Fail(f"Launch {lid} isn't in the launch journal.")
+    # Sent ones only (submission uncertain or confirmed): never one cancelled or not yet sent.
+    sent = [r for r in launches.values() if isinstance(r, dict) and r.get("state") in (UNCERTAIN, CONFIRMED)
+            and ((isinstance(start, str) and r.get("launch") == start)
+                 or (isinstance(r.get("revival"), dict) and r.get("terminal") == k["address"]))]
+    if not sent:
+        raise Fail(f"{args.identity} has no sent launch in the launch journal.")
+    rec = dict(max(sent, key=lambda r: r.get("sent_at") or 0))
+    lid = rec.get("launch")
     provider = rec.get("provider") or ((rec.get("task") or {}).get("agent") or {}).get("provider")
     if provider is not None and provider != recorded_binding(k, None, resume, launches):
         raise Fail(f"{args.identity}'s launch {lid} and its recorded binding disagree, so it has no binding to give.")

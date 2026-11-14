@@ -235,9 +235,15 @@ exposing a task, prompt, setting or value:
 - **`herdr-task launch binding TERMINAL --json`.** A read only: `hc get` and the journal file as last saved. The
   entry skips its layout migration for it, and it makes no lock file or folder. It gives
   `{version: 1, terminal, pid, launch, identity, space, state, kind ("start" or "revival"), how, session (a
-  same-session revival's conversation id, else null), terminal_pid, address, provider, invocation}`. The launch is
-  a revival's own (from `herdr.resume`), else the start's (`herdr.launch`). It refuses when that launch's binding no
-  longer equals `recorded_binding`'s.
+  same-session revival's conversation id, else null), terminal_pid, address, provider, invocation}`.
+  - **Which launch:** the newest one the journal records as sent (submission uncertain or confirmed) for the
+    terminal. That is either its start (`herdr.launch`) or a revival recorded against its address. Admission records
+    a revival under the journal's lock before `hc send` types it. So the revival is named before its receiver can
+    run, whatever `herdr.resume` says yet. A cancelled or never-sent launch is never named.
+  - **Refusal:** it refuses when that launch's binding no longer equals `recorded_binding`'s.
+- **Direct revival.** A revival of an agent that started without the person's shell runs its child with `-c`
+  and `command "$@"`, so a shell function, including an exported bash one, can't stand in for the agent. That
+  exact program is the one recorded.
 - **Waiting labels.** After publishing its request, the receiver labels its own terminal
   `herdr.credential=waiting` and `herdr.credential.request=<nonce>`, so custody can find it through herdr-core
   (`hc events --label herdr.credential=waiting`, `hc ls --label …`). If herdr-core doesn't take them, the receive

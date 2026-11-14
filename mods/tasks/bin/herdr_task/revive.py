@@ -168,14 +168,16 @@ def revival_child(shell, env, argv, direct=False, need=None):
     """A pushed revival's own program: the kept shell types it as one command, so the receive, the presence check and
     the agent run in a child shell whose whole argv /proc shows and the launch records beforehand (its
     invocation_digest). The same words in_shell gives a start, without its `exec "$0" -i`: the kept shell stays.
-    Interactive (-ic, -lic on a Mac) as the person's shell starts agents; `direct` (no person's shell) is -c. None
-    when the kept shell isn't a POSIX shell this machine can name by path."""
+    Interactive (-ic, -lic on a Mac) as the person's shell starts agents; `direct` (no person's shell) is -c and runs
+    `command "$@"`, so a shell function (an exported bash one too) can't stand in for the agent, as shell_line's
+    `command` prefix does without a push. None when the kept shell isn't a POSIX shell this machine can name by path."""
     path = shell if os.path.isabs(shell or "") else shutil.which(shell or "")
     if not path or os.path.basename(path) not in ("bash", "zsh", "sh", "dash", "ksh"):
         return None
     flag = "-c" if direct else ("-lic" if sys.platform == "darwin" else "-ic")
     words, tail = provider_words(env, need, True)
-    return [path, flag, f'{words}"$@"; {tail}', path, *[str(a) for a in argv]]
+    run_it = 'command "$@"' if direct else '"$@"'
+    return [path, flag, f'{words}{run_it}; {tail}', path, *[str(a) for a in argv]]
 
 
 def shell_line(shell, cwd, env, argv, direct=False, need=None, push=False):

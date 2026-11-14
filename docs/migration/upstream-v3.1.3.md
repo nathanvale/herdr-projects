@@ -1010,7 +1010,8 @@ It is source and CI qualification only (Stage Q-A): no provider, Azure or agent 
     exec'd `/bin/sh -c` program) record their program's `invocation` digest before dispatch;
   - `herdr-task launch binding TERMINAL` reads it, read only, with no migration;
   - the receiver labels its waiting request for herdr-core event discovery;
-  - push off, nothing changes. Detail is in Azure launch plans, Native binding and trigger.
+  - push off, nothing changes. Detail is in Azure launch plans, Native binding and trigger;
+  - L2 admits the `herdr-task` entry (121 source deltas): `launch binding` skips its layout migration.
 - `AFTER_Q` names its paths under `MIG-13`. Its changed admitted rows re-pin their content
   `sha256` only; phases, upstream blobs, requirement statuses and Q's ledger stay as they were.
 - Not qualified or held: the custody adapter (not in this repository), any native start, a

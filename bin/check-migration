@@ -103,8 +103,10 @@ web/plugins/chat/suggest.ts
 web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx web/src/kernel.ts web/src/restart.tsx'''.split()),
     # Native restart and revival: revival, a lost session at its shell and every restart go through launch admission on
     # the recorded binding (continued conversations) or today's settings (new ones, never onto another route), claimed
-    # in the journal before anything is typed or started. Earlier owners it changes are L2's from here.
+    # in the journal before anything is typed or started. Earlier owners it changes are L2's from here. Since MIG-13 it
+    # owns the herdr-task entry too: `launch binding`, its read-only journal reader, skips the entry's layout migration.
     'L2': frozenset('''core/chat-find.test.js lib/agent.js service/actions.ts mods/chat/agent.js mods/chat/main.js mods/coordinator/restart.sh
+mods/tasks/bin/herdr-task
 mods/newspace/agent.js mods/shepherdr-settings/agent.js mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py
 mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/revive.py
 service/agents.ts service/watch.ts test/test_herdr_task.py test/test_launch_admission.py test/test_native_restart.py
