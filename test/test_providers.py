@@ -1434,12 +1434,30 @@ class PushedCredential(unittest.TestCase):
             time.sleep(0.1)
         self.fail("no request appeared")
 
-    def push(self, folder, value):
+    def push(self, folder, value, partial=False):
+        """A compliant stand-in custody (docs: custody check 2, then 5): the request names a live receiver that already
+        holds the FIFO open read-only, found in its /proc descriptors, before a writer is opened, non-blocking (no
+        reader would be ENXIO). value None: open and close; partial: a header promising more than is sent."""
         import struct
-        fd = os.open(os.path.join(folder, "value.pipe"), os.O_WRONLY)
+        with open(os.path.join(folder, "request.json")) as fh:
+            ask = json.load(fh)
+        readers = []
+        for name in os.listdir(f"/proc/{ask['pid']}/fd"):
+            try:
+                st = os.stat(f"/proc/{ask['pid']}/fd/{name}")
+                with open(f"/proc/{ask['pid']}/fdinfo/{name}") as fh:
+                    flags = int(next(l for l in fh if l.startswith("flags:")).split()[1], 8)
+            except (OSError, StopIteration):
+                continue
+            if (st.st_dev, st.st_ino) == (ask["pipe_device"], ask["pipe_inode"]) and flags & os.O_ACCMODE == os.O_RDONLY:
+                readers.append(name)
+        self.assertEqual(len(readers), 1, "the receiver's read end must be open before its request is published")
+        fd = os.open(os.path.join(folder, "value.pipe"), os.O_WRONLY | os.O_NONBLOCK)
         try:
+            self.assertEqual((os.fstat(fd).st_dev, os.fstat(fd).st_ino), (ask["pipe_device"], ask["pipe_inode"]))
+            os.set_blocking(fd, True)
             if value is not None:
-                os.write(fd, struct.pack("!I", len(value)) + value)
+                os.write(fd, struct.pack("!I", len(value) + (8 if partial else 0)) + value)
         finally:
             os.close(fd)
 
@@ -1473,20 +1491,25 @@ class PushedCredential(unittest.TestCase):
         self.assertEqual(os.listdir(self.tmp), [])
 
     def test_a_cut_short_push_starts_nothing_even_with_a_value_inherited(self):
-        sh = self.shell()
-        self.push(self.request(), None)
-        out, err = sh.communicate(timeout=60)
-        self.assertNotIn("agent:", out)
-        self.assertIn("kept:unset\n", out)
-        self.assertIn(f"The push for {self.NAME} wasn't one value", err)
-        self.assertIn(f"Azure Foundry needs {self.NAME} pushed to this agent by this machine's credential delivery", err)
-        self.assertNotIn(SECRETS[self.NAME], out + err)
-        self.assertEqual(os.listdir(self.tmp), [])
+        """A writer that closes with nothing sent, or after a header promising more than it sends: end-of-file before
+        a whole frame, so nothing is handed on, the presence check refuses and the agent never runs."""
+        for value, partial in ((None, False), (PUSHED.encode(), True)):
+            with self.subTest(partial=partial, empty=value is None):
+                sh = self.shell()
+                self.push(self.request(), value, partial)
+                out, err = sh.communicate(timeout=60)
+                self.assertNotIn("agent:", out)
+                self.assertIn("kept:unset\n", out)
+                self.assertIn(f"The push for {self.NAME} wasn't one value", err)
+                self.assertIn(f"Azure Foundry needs {self.NAME} pushed to this agent by this machine's credential delivery", err)
+                self.assertNotIn(SECRETS[self.NAME], out + err)
+                self.assertNotIn(PUSHED, out + err)
+                self.assertEqual(os.listdir(self.tmp), [])
 
     def test_shell_tracing_never_shows_the_pushed_value(self):
         """Review finding (blocker): a startup file or a kept shell with `set -x` would print `NAME=value` and the
         presence check expanded. Tracing is off from before the push until the value is unset, then back as it was.
-        Each POSIX shell here, then fish's fish_trace when fish is installed; the agent only says whether it got it."""
+        Each POSIX shell here (fish doesn't take a push: below); the agent only says whether it got it."""
         import shutil
         from herdr_task.launch import in_shell
         check = ('import os; print("agent-got-it" if os.environ.get("%s") == "%s" else "agent-wrong")' % (self.NAME, PUSHED))
@@ -1506,26 +1529,12 @@ class PushedCredential(unittest.TestCase):
                 self.assertNotIn(PUSHED, out + err)
                 self.assertNotIn(SECRETS[self.NAME], out + err)
                 self.assertEqual(os.listdir(self.tmp), [])
-        fish = shutil.which("fish")
-        if not fish:
-            return
-        with self.subTest(shell=fish), self.mock_shell(fish):
-            words = in_shell(agent, None, {"CLAUDE_CODE_USE_FOUNDRY": "1"}, self.NAME, True)
-            script = "set -g fish_trace 1; " + words[2].replace("; exec fish -i", "; echo kept")
-            p = subprocess.Popen([fish, "-c", script], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
-            self.push(self.request(), PUSHED.encode())
-            out, err = p.communicate(timeout=60)
-            self.assertIn("CLAUDE_CODE_USE_FOUNDRY", err)
-            self.assertIn("agent-got-it\n", out)
-            self.assertNotIn(PUSHED, out + err)
-            self.assertEqual(os.listdir(self.tmp), [])
 
     def test_a_receiver_that_fails_after_printing_starts_nothing(self):
         """Review finding: the receiver's exit status decides, not its text. A receiver that prints and then fails (an
         ending after its output) leaves the variable unset, with allexport too, so the presence check refuses and the
         agent never runs. The real receiver is replaced in the composed words by one that does exactly that."""
         import shlex
-        import shutil
         from herdr_task.base import ENTRY
         from herdr_task.launch import in_shell
         partial = "marker-partial-value-6d21"
@@ -1542,26 +1551,52 @@ class PushedCredential(unittest.TestCase):
         self.assertIn("kept:unset\n", r.stdout)
         self.assertIn(f"Azure Foundry needs {self.NAME} pushed to this agent", r.stderr)
         self.assertNotIn(partial, r.stdout + r.stderr)
-        fish = shutil.which("fish")
-        if not fish:
-            return
-        with self.subTest(shell=fish), self.mock_shell(fish):
-            words = in_shell(agent, None, {}, self.NAME, True)
-            script = words[2].replace(shlex.quote(ENTRY), fake).replace("; exec fish -i", "; echo kept")
-            r = subprocess.run([fish, "-c", script], capture_output=True, text=True, env=self.env, timeout=60)
+
+    def test_fish_with_push_on_refuses_before_asking_and_without_it_is_unchanged(self):
+        """Review finding: push is supported in POSIX shells only. In fish (a task start's shell, or the line typed into
+        a kept fish shell) it neither asks nor starts the agent, and says why; with push off, fish's words are the
+        ones from before MIG-13."""
+        import shlex
+        import shutil
+        from herdr_task.launch import in_shell
+        from herdr_task.revive import shell_line
+        fish = shutil.which("fish") or "/usr/bin/fish"
+        agent = [sys.executable, "-c", "print('agent-ran')"]
+        said = ("This machine takes Azure Foundry's ANTHROPIC_FOUNDRY_AUTH_TOKEN pushed, and that is supported only in a "
+                "POSIX shell (sh, bash, zsh, ksh or dash), not fish")
+        with self.mock_shell(fish):
+            words = in_shell(agent, None, {"CLAUDE_CODE_USE_FOUNDRY": "1"}, self.NAME, True)
+            off = in_shell(["claude"], None, {}, self.NAME)
+        self.assertNotIn("launch receive", words[2])
+        self.assertNotIn("agent-ran", words[2])
+        self.assertIn(said, words[2])
+        old = ("Azure Foundry needs ANTHROPIC_FOUNDRY_AUTH_TOKEN in this machine's environment for this agent, and it isn't "
+               "set here, so the agent wasn't started. Set it where this machine's terminals get their environment, then "
+               "resume the task.")
+        self.assertEqual(off, [fish, "-ic", f'if test -n "$ANTHROPIC_FOUNDRY_AUTH_TOKEN"; claude; else; echo {shlex.quote(old)} '
+                                            '>&2; end; exec fish -i'])
+        line = shell_line(fish, "/work", {}, ["claude", "--resume", "s1"], need=self.NAME, push=True)
+        self.assertTrue(line.startswith("cd /work && echo "), line)
+        self.assertNotIn("launch receive", line)
+        self.assertNotIn("--resume", line)
+        if shutil.which("fish"):
+            r = subprocess.run([fish, "-c", words[2].replace("; exec fish -i", "; echo kept")], capture_output=True,
+                               text=True, env=self.env, timeout=60)
             self.assertNotIn("agent-ran", r.stdout)
-            self.assertIn(f"Azure Foundry needs {self.NAME} pushed to this agent", r.stderr)
-            self.assertNotIn(partial, r.stdout + r.stderr)
+            self.assertIn("kept", r.stdout)
+            self.assertIn(said, r.stderr)
+            self.assertEqual(os.listdir(self.tmp), [])
 
     def mock_shell(self, path):
         from unittest import mock
         return mock.patch.dict(os.environ, {"SHELL": path})
 
     def test_an_ending_signal_still_removes_its_request(self):
-        """Review finding: SIGTERM or SIGHUP (the terminal closing) while it waits goes through its cleanup, so no
-        request or pipe is left for anyone to push into. SIGKILL can't be caught; custody's own checks cover that."""
+        """Review finding: an interrupt, SIGTERM or SIGHUP (the terminal closing) while it waits goes through its
+        cleanup, so no request or pipe is left for anyone to push into; nothing is printed on stdout. SIGKILL can't be
+        caught; custody's own checks (a live receiver holding the reader) cover that."""
         import signal
-        for sig in (signal.SIGTERM, signal.SIGHUP):
+        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             with self.subTest(signal=sig.name):
                 p = subprocess.Popen([sys.executable, os.path.join(BIN, "herdr-task"), "launch", "receive", self.NAME,
                                       "--wait", "60"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)

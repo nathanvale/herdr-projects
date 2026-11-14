@@ -313,6 +313,9 @@ def clean_env(argv):
 # whether it is there and not empty is looked at, in the agent's shell, never its value; that isn't a sign-in check.
 NO_CREDENTIAL = ("Azure Foundry needs {} in this machine's environment for this agent, and it isn't set here, so the "
                  "agent wasn't started. Set it where this machine's terminals get their environment, then resume the task.")
+NO_PUSH_FISH = ("This machine takes Azure Foundry's {} pushed, and that is supported only in a POSIX shell (sh, bash, "
+                "zsh, ksh or dash), not fish, so nothing was asked for and the agent wasn't started. Give Azure agents "
+                "here a POSIX shell, or turn credential_delivery off, then resume the task.")
 NO_PUSHED = ("Azure Foundry needs {} pushed to this agent by this machine's credential delivery, and none arrived, so the "
              "agent wasn't started. Check the delivery where the credential is kept, then resume the task.")
 
@@ -348,8 +351,9 @@ def pushed(need):
 
 # Tracing would print the value: `set -x` (from a startup file, or kept in the shell) shows `NAME=value` and the
 # presence check expanded. So from before the push until the value is unset again, tracing is off, and put back as
-# it was after (TRACE_BACK); `set -v` shows the words unexpanded, never a value. fish: fish_trace, emptied for the
-# block. Not covered: fish's --debug categories and --profile, and a person's own function that prints it.
+# it was after (TRACE_BACK); `set -v` shows the words unexpanded, never a value. Not covered: a person's own function
+# or hook that prints it. fish isn't supported for a push (its --debug and --profile can't be shown to keep it out):
+# there the start refuses before asking (NO_PUSH_FISH).
 TRACE_OFF = "_herdr_x=; case $- in *x*) _herdr_x=1; set +x;; esac; "
 TRACE_BACK = "case ${_herdr_x:-} in 1) unset _herdr_x; set -x;; *) unset _herdr_x;; esac; "
 
@@ -364,12 +368,10 @@ def receive_words(need):
 
 
 def fish_guard(need, run_it, push=False):
-    """fish's presence check around run_it; push: `need` received first (receive_words), local to the block, and
-    emptied there when the receiver fails, whatever it printed (fish 3.1+: `set` takes the substitution's status)."""
+    """fish's presence check around run_it. push: not supported in fish, so it neither asks for `need` nor runs
+    run_it; it says why (NO_PUSH_FISH). Without push, the words are the ones from before MIG-13."""
     if push:
-        return (f"begin; set -l fish_trace; set -lx {need} ({shlex.quote(ENTRY)} launch receive {need}); or set -lx {need}; "
-                f"if test -n \"${need}\"; {run_it}; "
-                f"else; echo {shlex.quote(NO_PUSHED.format(need))} >&2; end; end")
+        return f"echo {shlex.quote(NO_PUSH_FISH.format(need))} >&2"
     return f'if test -n "${need}"; {run_it}; else; echo {shlex.quote(NO_CREDENTIAL.format(need))} >&2; end'
 
 
@@ -418,16 +420,6 @@ def in_shell(argv, config_dir=None, env=None, need=None, push=False):
     return [*pre, *argv] if len(pre) > 1 else argv
 
 
-def _exactly(fd, size):
-    got = bytearray()
-    while len(got) < size:
-        part = os.read(fd, size - len(got))
-        if not part:
-            raise ValueError("cut short")
-        got.extend(part)
-    return bytes(got)
-
-
 def _start_ticks(pid):
     """The process's start time in clock ticks (/proc), so custody can tell it from a later one with its pid."""
     try:
@@ -439,17 +431,23 @@ def _start_ticks(pid):
 
 def receive(need, wait=PUSH_WAIT):
     """`launch receive NAME`: one pushed value of NAME, written to stdout for the agent's shell to take (receive_words).
-    In a private folder in this process's temporary directory it makes a one-way pipe and a nonsecret request beside
-    it: {version, nonce, credential (NAME), terminal (HC_TERMINAL_ID), pid, start_ticks, parent, parent_start_ticks,
-    uid, pipe_device, pipe_inode}. The custody pushes a 4-byte big-endian length, then that many bytes of UTF-8: one
-    value, at most PUSH_LIMIT bytes, no NUL, CR or LF. Both are removed before it returns, on an interrupt, SIGTERM or
-    SIGHUP too (SIGKILL can't be caught). Refused (exit 1, nothing on stdout): a name that isn't a plan's credential
-    variable, stdout a terminal (the value would be on screen), no Herdr terminal, no complete push within `wait`
-    seconds, or stopped. Never retried here: a new start asks again. This checks nothing about who pushes or whether
-    its stdout is really its shell's: the custody owns those checks (docs/azure-launch-plans.md)."""
+    In a private folder in this process's temporary directory it makes a one-way pipe and opens its read end first
+    (non-blocking, so that needs no writer); only then does it publish, whole, a nonsecret request beside it:
+    {version, nonce, credential (NAME), terminal (HC_TERMINAL_ID), pid, start_ticks, parent, parent_start_ticks, uid,
+    pipe_device, pipe_inode}. So a request that exists names a reader that is already there, which the custody can
+    verify (/proc/PID/fd) before it opens its writer. The custody pushes a 4-byte big-endian length, then that many
+    bytes of UTF-8: one value, at most PUSH_LIMIT bytes, no NUL, CR or LF. It waits in short polls up to `wait`
+    seconds; a writer that closes before a whole frame, the deadline, or SIGINT, SIGTERM or SIGHUP (only noted by
+    their handlers, so nothing interrupts the cleanup) ends it with nothing received. The request and pipe are
+    removed before it returns (SIGKILL can't be caught). Refused (exit 1, nothing on stdout): a name that isn't a
+    plan's credential variable, stdout a terminal (the value would be on screen), no Herdr terminal, or any of the
+    above. Never retried here: a new start asks again. This checks nothing about who pushes or whether its stdout is
+    really its shell's: the custody owns those checks (docs/azure-launch-plans.md)."""
+    import select
     import signal
     import struct
     import tempfile
+    import time
     import uuid
     if need not in push_names():
         raise Fail(f"launch receive takes an Azure plan's credential variable ({', '.join(sorted(push_names()))}), "
@@ -461,67 +459,79 @@ def receive(need, wait=PUSH_WAIT):
         raise Fail("launch receive runs only in an agent's own Herdr terminal (no HC_TERMINAL_ID here). Nothing was received.")
     if not 1 <= wait <= PUSH_WAIT_MAX:
         raise Fail(f"--wait is 1 to {PUSH_WAIT_MAX} seconds. Nothing was received.")
+    # One flag, set by handlers that never raise: a catchable ending (an interrupt, SIGTERM, SIGHUP: the terminal
+    # closing) is seen at the next poll, and can't cut the cleanup short. Put back as they were at the end.
+    stopped = []
+    kept = {}
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        kept[sig] = signal.signal(sig, lambda *_: stopped.append(True))
     os.umask(0o077)
     nonce = uuid.uuid4().hex
     folder = os.path.join(tempfile.gettempdir(), PUSH_PREFIX + nonce)
     pipe, request = os.path.join(folder, "value.pipe"), os.path.join(folder, "request.json")
-
-    class Ended(Exception):
-        pass
-
-    def expired(*_):
-        raise TimeoutError
-
-    def ended(*_):
-        raise Ended
-
-    late = []
-    # A catchable ending (SIGTERM, SIGHUP: the terminal closing) goes through the cleanup below, as an interrupt does.
-    # SIGKILL can't: its request and pipe stay behind with nobody reading, and custody must refuse them (the docs).
-    kept = {}
+    draft = request + ".part"
+    fd = None
+    why = None
+    got = bytearray()
     try:
-        kept[signal.SIGALRM] = signal.signal(signal.SIGALRM, expired)
-        for sig in (signal.SIGTERM, signal.SIGHUP):
-            kept[sig] = signal.signal(sig, ended)
         os.mkdir(folder, 0o700)
         os.mkfifo(pipe, 0o600)
-        info = os.stat(pipe)
+        # The reader first: a non-blocking open of a FIFO's read end succeeds with no writer (fifo(7)).
+        fd = os.open(pipe, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
+        info = os.fstat(fd)
         ask = {"version": 1, "nonce": nonce, "credential": need, "terminal": terminal, "pid": os.getpid(),
                "start_ticks": _start_ticks(os.getpid()), "parent": os.getppid(),
                "parent_start_ticks": _start_ticks(os.getppid()), "uid": os.getuid(),
                "pipe_device": info.st_dev, "pipe_inode": info.st_ino}
-        fd = os.open(request, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
-        with os.fdopen(fd, "w") as f:
+        out = os.open(draft, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(out, "w") as f:
             json.dump(ask, f)
+        # Published whole, in one step, and only now that its reader is open.
+        os.rename(draft, request)
         print(f"Waiting up to {wait} seconds for {need} to be pushed to this agent ({request}).", file=sys.stderr, flush=True)
-        signal.alarm(wait)
-        # Opening blocks until the custody opens its end; the alarm bounds that and a push that stalls.
-        fd = os.open(pipe, os.O_RDONLY)
-        try:
-            size = struct.unpack("!I", _exactly(fd, 4))[0]
-            if not 0 < size <= PUSH_LIMIT:
-                raise ValueError("size")
-            value = _exactly(fd, size).decode("utf-8")
+        deadline = time.monotonic() + wait
+        poll = select.poll()
+        poll.register(fd, select.POLLIN)
+        need_bytes = 4
+        while True:
+            if stopped:
+                why = "stopped"
+                break
+            left = deadline - time.monotonic()
+            if left <= 0:
+                why = "late"
+                break
+            # Linux reports nothing here until a writer has opened (no end-of-file before one ever has).
+            if not poll.poll(min(left, 0.25) * 1000):
+                continue
+            try:
+                part = os.read(fd, need_bytes - len(got))
+            except BlockingIOError:
+                continue
+            if not part:
+                why = "short"  # its writer closed before a whole frame
+                break
+            got.extend(part)
+            if len(got) == 4:
+                size = struct.unpack("!I", bytes(got))[0]
+                if not 0 < size <= PUSH_LIMIT:
+                    why = "shape"
+                    break
+                need_bytes = 4 + size
+            elif len(got) == need_bytes:
+                break
+        if why is None:
+            value = bytes(got[4:]).decode("utf-8")
             if any(c in value for c in "\0\r\n"):
-                raise ValueError("shape")
-        finally:
-            os.close(fd)
-    except TimeoutError:
-        raise Fail(f"No {need} was pushed to this agent within {wait} seconds. Nothing was received.") from None
-    except (KeyboardInterrupt, Ended):
-        raise Fail(f"Waiting for {need} was stopped. Nothing was received.") from None
-    except (ValueError, UnicodeError):
-        raise Fail(f"The push for {need} wasn't one value of at most {PUSH_LIMIT} bytes on one line. Nothing was "
-                   "received; a new start asks again.") from None
+                why = "shape"
+    except UnicodeError:
+        why = "shape"
     except OSError as e:
-        raise Fail(f"Couldn't wait for {need} to be pushed ({e.strerror or 'an error'}). Nothing was received.") from None
+        why = f"os:{e.strerror or 'an error'}"
     finally:
-        signal.alarm(0)
-        # While cleaning up, an ending (or an interrupt) is only noted, so it can't leave the request behind.
-        for sig in (*kept, signal.SIGINT):
-            kept.setdefault(sig, signal.getsignal(sig))
-            signal.signal(sig, lambda *_: late.append(True))
-        for path in (request, pipe):
+        if fd is not None:
+            os.close(fd)
+        for path in (draft, request, pipe):
             try:
                 os.unlink(path)
             except OSError:
@@ -530,10 +540,20 @@ def receive(need, wait=PUSH_WAIT):
             os.rmdir(folder)
         except OSError:
             pass
+        got[:] = b"\0" * len(got)
         for sig, handler in kept.items():
             signal.signal(sig, handler)
-    if late:
+    if stopped and why is None:
+        why = "stopped"  # an ending noted while it cleaned up: nothing is handed on
+    if why == "late":
+        raise Fail(f"No {need} was pushed to this agent within {wait} seconds. Nothing was received.")
+    if why == "stopped":
         raise Fail(f"Waiting for {need} was stopped. Nothing was received.")
+    if why in ("short", "shape"):
+        raise Fail(f"The push for {need} wasn't one value of at most {PUSH_LIMIT} bytes on one line. Nothing was "
+                   "received; a new start asks again.")
+    if why:
+        raise Fail(f"Couldn't wait for {need} to be pushed ({why[3:]}). Nothing was received.")
     sys.stdout.write(value)
     sys.stdout.flush()
 

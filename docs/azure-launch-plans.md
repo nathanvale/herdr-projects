@@ -186,27 +186,38 @@ so it is not a transport.
   decides, not its text: `if NAME=$(…); then export NAME; else unset NAME; fi`. A receiver that
   printed something and then failed leaves it unset, `allexport` included. The existing check then
   runs unchanged. Nothing arrived means it stays unset, the check refuses with "needs NAME pushed …",
-  and nothing starts. After the CLI ends, the kept shell unsets it. fish keeps it local to one
-  `begin … end` block and empties it there on a failed receive (fish 3.1+, whose `set` takes the
-  substitution's status).
+  and nothing starts. After the CLI ends, the kept shell unsets it.
+- **POSIX shells only:** sh, bash, zsh, ksh and dash, plus an "other" shell, which runs the agent
+  through `sh -c`. A fish shell with push on refuses before asking ("supported only in a POSIX
+  shell"), so no request is made and the CLI doesn't start. Why: fish's `--debug` categories and
+  `--profile` can't be shown to keep the value out. With push off, fish's words are unchanged.
 - **Tracing:** `set -x` (from a startup file, or kept in the shell) would print `NAME=value` and the
   check expanded. So the shell's own tracing is off from before the receive until the value is unset
-  again, then put back as it was. `set -v` shows only unexpanded words. fish's `fish_trace` is
-  emptied for the block. Not covered: fish's `--debug` categories and `--profile`, and a person's own
+  again, then put back as it was. `set -v` shows only unexpanded words. Not covered: a person's own
   function or hook that prints the variable.
+- **Reader first, then the request:**
+  1. the receiver creates the FIFO;
+  2. it opens the read end, non-blocking, which succeeds with no writer (fifo(7));
+  3. only then does it write the request to `request.json.part` and rename it to `request.json`.
+
+  A request that exists is therefore whole, and names a reader that is already open. It doesn't name
+  one that will open later.
 - **The request (nonsecret):** in a new `0700` folder `shepherdr-credential-<nonce>` in the
   receiver's temporary directory (`TMPDIR`, else `/tmp`), `request.json` (`0600`) holds
   `{version: 1, nonce, credential, terminal, pid, start_ticks, parent, parent_start_ticks, uid,
   pipe_device, pipe_inode}`, beside `value.pipe` (a `0600` FIFO). Its path is said on stderr.
 - **The push:** a 4-byte big-endian length, then that many UTF-8 bytes. It must be one value of at
   most 65536 bytes, with no NUL, CR or LF. This is the same framing as the Personal push prototype.
-  Both files are removed before `receive` returns: after a push, a refusal, the timeout, an
-  interrupt, SIGTERM or SIGHUP (the terminal closing). A signal that arrives during that cleanup is
-  only noted, then refuses. SIGKILL (or a crash of the interpreter) can't be caught: its folder,
+  Both files are removed before `receive` returns: after a push, a refusal, the deadline, a writer
+  that closes before a whole frame, an interrupt, SIGTERM or SIGHUP (the terminal closing). Those
+  three signals only set one flag. Their handlers never raise, so nothing can interrupt the cleanup.
+  A signal noted at any point, even after a whole frame, refuses. SIGKILL (or a crash of the interpreter) can't be caught: its folder,
   request and FIFO stay behind with no reader, and such a dead request must never be pushed to
   (custody checks 2 and 5 below).
-- **Bounds:** 300 seconds by default (`--wait`, 1 to 3600). An alarm also bounds a writer that
-  stalls. `receive` refuses before creating anything for a name that isn't a plan credential
+- **Bounds:** 300 seconds by default (`--wait`, 1 to 3600). The receiver polls in steps of a
+  quarter-second until the deadline, so a writer that stalls is bounded too. On Linux the poll
+  reports nothing until a writer has opened; it doesn't report end-of-file before then. Another
+  system that reports end-of-file early fails closed as a cut-short push. `receive` refuses before creating anything for a name that isn't a plan credential
   variable, with no `HC_TERMINAL_ID`, or when stdout is a terminal. It never retries; a new start
   asks again.
 - **Never carries the value:** argv, `hc` words, labels, settings, the journal, task records,
@@ -225,7 +236,8 @@ repository and not part of this change, must do all of this, in order, before wr
 2. **The receiver is alive and is the receiver:**
    - `/proc/<pid>` exists with the same uid and `start_ticks`;
    - its command line is the installed `herdr-task` entry running `launch receive <credential>`;
-   - it holds `value.pipe` open for reading.
+   - one of its descriptors (`/proc/<pid>/fd/*`) is the FIFO with that device and inode, opened
+     read-only (`/proc/<pid>/fdinfo`). That descriptor exists before the request does.
 
    A dead request (SIGKILL) fails here.
 3. **The recipient is the agent's shell:**
@@ -253,11 +265,12 @@ and is qualified, turning the option on makes every Azure start on that machine 
 
 | Path | Covered by this change | Not covered |
 | --- | --- | --- |
-| Task start, new conversation or new-terminal resume (`launch.py`'s `in_shell`, POSIX, fish, other shells) | asks before the check | |
+| Task start, new conversation or new-terminal resume (`launch.py`'s `in_shell`, POSIX and other shells) | asks before the check | |
 | Assistant new start and restart through its one-off template (`launch_admission.write_one_off`) | asks before the check | |
 | Kept-shell revival (`revive.shell_line`, typed by the one revival owner) | asks before the check, unsets after | |
 | A CLI already running | | never refreshed: a token that expires mid-session fails there. The next start, resume or revival receives a fresh one. |
 | A tab agent or fork | | Personal only, unchanged |
+| An agent whose shell is fish, with push on | | refuses before asking; push isn't supported there |
 
 ## Discovery
 
@@ -352,11 +365,16 @@ Authored, not run locally (repository policy allows only `bun run typecheck`). R
 - MIG-13, authored and not yet run (CI): `test/test_providers.py`. `PushedCredential` covers the
   composed words in a real `/bin/sh`, the real `launch receive` and a stand-in custody's frame: the
   push wins over a stale inherited value and is gone from the kept shell; a cut-short push and a
-  timeout start nothing; refusals happen before anything is made. It also covers `set -x` in
-  `/bin/sh`, bash and zsh (and `fish_trace` when fish is installed), which never shows the value and
-  is put back afterwards; SIGTERM and SIGHUP, which leave nothing behind; and a receiver that fails
-  after printing, which starts nothing, even under `set -a`. The opt-in rule and the words being
-  byte-identical when off are tested in `Binding`. `herdr-task start` asking before the check is in
+  timeout start nothing; refusals happen before anything is made.
+  - Its stand-in custody follows custody check 2 above: it opens its writer (non-blocking) only after
+    finding the receiver's read-only descriptor on the FIFO.
+  - `set -x` in `/bin/sh`, bash and zsh never shows the value and is put back afterwards.
+  - SIGINT, SIGTERM and SIGHUP leave nothing behind.
+  - A partial frame starts nothing.
+  - A receiver that fails after printing starts nothing, even under `set -a`.
+  - fish with push on refuses without asking. Off, its words are byte-identical to before.
+
+  The opt-in rule and the words being byte-identical when off are tested in `Binding`. `herdr-task start` asking before the check is in
   `AzureStartsBound`. The Assistant's one-off template is in `test/test_launch_admission.py`, and
   kept-shell revival is in `test/test_native_restart.py`.
 
@@ -391,7 +409,7 @@ nothing on stdout. Its stations are:
 - refused before any effect: name, terminal, TTY stdout or `--wait`;
 - received;
 - not pushed in time;
-- push malformed or cut short;
+- push malformed, or its writer closed before a whole frame;
 - stopped by an interrupt, SIGTERM or SIGHUP;
 - couldn't wait.
 

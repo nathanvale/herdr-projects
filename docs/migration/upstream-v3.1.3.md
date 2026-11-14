@@ -999,6 +999,12 @@ It is source and CI qualification only (Stage Q-A): no provider, Azure or agent 
   unset; the receiver's exit status, not its text, decides; SIGTERM and SIGHUP go through cleanup.
   The custody's recipient checks are listed in the same document; SIGKILL leaves a dead request that
   those checks must refuse.
+- Review repairs (round 2):
+  - the receiver opens its FIFO's read end, non-blocking, before it publishes a whole request, so the
+    custody can verify the reader before opening a writer;
+  - it waits in a bounded poll loop with one non-raising stop flag;
+  - push in fish is refused before anything is asked for (POSIX shells only), and fish without push
+    is unchanged.
 - `AFTER_Q` names its paths under `MIG-13`. Its changed admitted rows re-pin their content
   `sha256` only; phases, upstream blobs, requirement statuses and Q's ledger stay as they were.
 - Not qualified or held: the custody adapter (not in this repository), any native start, a

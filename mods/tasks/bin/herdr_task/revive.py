@@ -165,8 +165,9 @@ def shell_line(shell, cwd, env, argv, direct=False, need=None, push=False):
     shell, so their aliases and functions (a claude() adding flags) stay out now too (`command`).
     need: an Azure plan's credential variable: the agent starts only when it is set and not empty,
     else the shell says which (launch.provider_words' check, typed). push (launch.pushed): need is received from this
-    machine's credential delivery first, for this agent only (POSIX: unset again after it; fish: local to its block),
-    so a value kept from before never starts it, with shell tracing off until then (launch.TRACE_OFF)."""
+    machine's credential delivery first, for this agent only (unset again after it), so a value kept from before
+    never starts it, with shell tracing off until then (launch.TRACE_OFF). fish doesn't take a push: its line says so
+    and starts nothing (launch.fish_guard)."""
     words = " ".join(shlex.quote(str(a)) for a in argv)
     if os.path.basename(shell or "") not in LINE_SHELLS:
         return words
