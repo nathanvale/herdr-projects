@@ -128,7 +128,7 @@
       "phase": "L2",
       "path": "test/test_providers.py",
       "upstream_blob": null,
-      "sha256": "2c31b3a26771d29e1025a6e470145c32b81962ef0d3afaa77320124ed6d41c37"
+      "sha256": "b93681a48460d81f2685155d84afac658242c671e17e9152f2c02a25e6f5a3a3"
     },
     {
       "phase": "A2",
@@ -368,7 +368,7 @@
       "phase": "L2",
       "path": "mods/tasks/bin/herdr_task/launch_admission.py",
       "upstream_blob": null,
-      "sha256": "d8da2529f7292a8c16de41e64dc1384d67302c13f3dbbfdb0163ad8adcb7a602"
+      "sha256": "c524b67005fe2dbdcfb5a9a342a6a031a40f3291520e1345c40497ad230ee726"
     },
     {
       "phase": "A2",
@@ -734,7 +734,7 @@
       "phase": "L2",
       "path": "test/test_native_restart.py",
       "upstream_blob": null,
-      "sha256": "d58257fa0ed67378f3cd04582fc8a1ed25b4766f6e70123d7962c8503611e26a"
+      "sha256": "abbd463d11619214dccdb3cc0069d169dad3e4274ac61dc8887f1e6994d8c7b3"
     }
   ],
   "requirements": [

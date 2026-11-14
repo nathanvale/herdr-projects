@@ -443,7 +443,12 @@ class RevivalOnAzure(unittest.TestCase):
         shell_ok(self, line)
         need = "ANTHROPIC_FOUNDRY_AUTH_TOKEN"
         child = shlex.split(line[line.index(" && ") + 4:])
-        self.assertEqual((child[0], child[1], child[3]), ("/bin/bash", "-ic", "/bin/bash"))
+        # The kept shell is named bash (its foreground); revival runs it by the absolute path that name has on
+        # herdr-task's PATH (the runner's /usr/bin/bash, where /bin/bash may be its link), found here independently.
+        import shutil
+        bash = shutil.which("bash", path=f.env["PATH"])
+        self.assertTrue(bash and os.path.isabs(bash), f.env["PATH"])
+        self.assertEqual((child[0], child[1], child[3]), (bash, "-ic", bash))
         script = child[2]
         self.assertTrue(script.startswith("export ") or script.startswith("_herdr_x=; "), script)
         self.assertIn(f"unset {need}; if {need}=$(", script)
@@ -528,6 +533,35 @@ class RevivalOnAzure(unittest.TestCase):
         self.assertEqual((out["kind"], out["invocation"]), ("revival", None))  # push off: nothing recorded
         self.assertEqual(json.dumps(f.journal(), sort_keys=True), before)
         self.assertEqual({c[0] for c in f.calls()[calls:]}, {"get"})
+
+    def test_launch_binding_refuses_a_revival_its_tasks_row_no_longer_binds(self):
+        """A task agent's binding is its task's row (revival copies none onto its terminal): once that row names another
+        deployment, or no Azure binding at all, the sent revival's recorded binding disagrees with it and `launch
+        binding` refuses, giving no binding, writing nothing."""
+        f = Fixture(self)
+        self.push_settings(f)
+        bound = f.binding()
+        f.worker(labels={"herdr.provider": "azure-foundry"}, provider=bound)
+        f.revive()
+        [rev] = f.revivals()
+        self.assertEqual(f.ok("launch", "binding", "t5")["launch"], rev["launch"])
+        path = f.list_path()
+        for row in (dict(bound, deployment="other-deployment"), None):
+            with self.subTest(row=row):
+                with open(path) as fh:
+                    d = json.load(fh)
+                agent = next(t for t in d["tasks"] if t["id"] == 1)["agents"][0]
+                agent.pop("provider", None)
+                if row:
+                    agent["provider"] = row
+                with open(path, "w") as fh:
+                    json.dump(d, fh, indent=2)
+                before = json.dumps(f.journal(), sort_keys=True)
+                out = f.refused("launch", "binding", "t5")
+                self.assertIn(f"t5's launch {rev['launch']} and its recorded binding disagree", out["error"])
+                self.assertNotIn("provider", out)
+                self.assertNotIn("invocation", out)
+                self.assertEqual(json.dumps(f.journal(), sort_keys=True), before)
 
     def test_changed_routing_holds_it_with_the_reason(self):
         f = Fixture(self)

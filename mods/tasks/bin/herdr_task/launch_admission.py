@@ -819,9 +819,11 @@ def launch_binding(args, say):
     herdr.launch, or a revival recorded against this address; recorded under the journal's lock before anything is
     typed, so a revival is named before its receiver can run, whatever herdr.resume says yet), its identity, space and
     state, whether it is a start or a revival (and a revival's same-session id), its provider binding, which must
-    equal recorded_binding's (else refused: the binding changed), and the pushed program's invocation digest (None
-    when that launch recorded none). No argv, prompt, settings or environment value."""
+    equal recorded_binding's from the same owners revival plans from (a task agent's task row first, read only; else
+    refused: the binding changed), and the pushed program's invocation digest (None when that launch recorded none).
+    No argv, prompt, settings or environment value."""
     from .base import hc_json
+    from .revive import task_of
     k = hc_json("get", args.identity)
     if not isinstance(k, dict) or k.get("state") != "live" or k.get("address") != args.identity:
         raise Fail(f"{args.identity} isn't a live terminal herdr-core knows by that address.")
@@ -840,7 +842,10 @@ def launch_binding(args, say):
     rec = dict(max(sent, key=lambda r: r.get("sent_at") or 0))
     lid = rec.get("launch")
     provider = rec.get("provider") or ((rec.get("task") or {}).get("agent") or {}).get("provider")
-    if provider is not None and provider != recorded_binding(k, None, resume, launches):
+    # A task agent's binding stays on its task's row (revive.keep_binding copies none onto its terminal), so the check
+    # reads it as revival planned it (revive.plan): the task list as saved, no lock, nothing written.
+    task = task_of(k) if labels.get("herdr.task") else None
+    if provider is not None and provider != recorded_binding(k, task, resume, launches):
         raise Fail(f"{args.identity}'s launch {lid} and its recorded binding disagree, so it has no binding to give.")
     revival = rec.get("revival") if isinstance(rec.get("revival"), dict) else None
     out = {"version": 1, "terminal": k["address"], "pid": k.get("pid"), "launch": lid, "identity": rec.get("identity"),

@@ -240,7 +240,9 @@ exposing a task, prompt, setting or value:
     terminal. That is either its start (`herdr.launch`) or a revival recorded against its address. Admission records
     a revival under the journal's lock before `hc send` types it. So the revival is named before its receiver can
     run, whatever `herdr.resume` says yet. A cancelled or never-sent launch is never named.
-  - **Refusal:** it refuses when that launch's binding no longer equals `recorded_binding`'s.
+  - **Refusal:** it refuses when that launch's binding no longer equals `recorded_binding`'s, read from the owners
+    revival plans from: a task agent's task row first (read only; revival copies no binding onto a task agent's
+    terminal), then `herdr.resume`, then its start's journal record.
 - **Direct revival.** A revival of an agent that started without the person's shell runs its child with `-c`
   and `command "$@"`, so a shell function, including an exported bash one, can't stand in for the agent. That
   exact program is the one recorded.

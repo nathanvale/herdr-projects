@@ -474,6 +474,7 @@ class AzureStartsBound(unittest.TestCase):
         """MIG-13, through `herdr-task start`: with this machine's "credential_delivery": "push", a start whose plan
         names a credential variable asks for it in the agent's shell before the presence check, by name only. Personal
         and Entra ID (no variable) start exactly as without it; the binding recorded is the same either way."""
+        import shlex
         push = {"machine": {"credential_delivery": "push"}}
         for provider, need in (({"route": "azure-foundry", **CLAUDE, "claude_auth": "bearer-token"}, "ANTHROPIC_FOUNDRY_AUTH_TOKEN"),
                                ({"route": "azure-foundry", **CODEX}, "AZURE_OPENAI_API_KEY"),
@@ -509,7 +510,14 @@ class AzureStartsBound(unittest.TestCase):
                     self.assertIn(asks, on)
                     self.assertIn(f" launch receive {need}); then export {need}; else unset {need}; fi; ", on)
                     self.assertLess(on.index(asks), on.index(f'if [ -z "${{{need}:-}}" ]'))
-                    self.assertIn("pushed to this agent by this machine's credential delivery", on)
+                    # The refusal is one shell word (its apostrophes quoted for the shell), printed by the presence
+                    # check itself; as the shell reads it back, it is this sentence whole. Its stderr at run time is
+                    # PushedCredential's (a cut-short push, a receiver failing after output).
+                    said = (f"Azure Foundry needs {need} pushed to this agent by this machine's credential delivery, and "
+                            "none arrived, so the agent wasn't started. Check the delivery where the credential is kept, "
+                            "then resume the task.")
+                    self.assertIn(f'if [ -z "${{{need}:-}}" ]; then printf "%s\\n" {shlex.quote(said)} >&2; else ', on)
+                    self.assertIn(said, shlex.split(on))
                     self.assertLess(on.index("_herdr_x=; case $- in *x*) _herdr_x=1; set +x;; esac; "), on.index(asks))
                     self.assertIn(f"fi; unset {need}; case ${{_herdr_x:-}} in 1) unset _herdr_x; set -x;; "
                                   "*) unset _herdr_x;; esac; exec ", on)
