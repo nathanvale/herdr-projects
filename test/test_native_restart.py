@@ -455,8 +455,24 @@ class RevivalOnAzure(unittest.TestCase):
         self.assertIn(f" launch receive {need}); then export {need}; else unset {need}; fi; if [ -z \"${{{need}:-}}\" ]", script)
         self.assertTrue(script.endswith(f'"$@"; fi; unset {need}; case ${{_herdr_x:-}} in 1) unset _herdr_x; set -x;; '
                                         "*) unset _herdr_x;; esac; "), script)
-        self.assertEqual(child[4:6], ["claude", "--resume"] if child[4] == "claude" else child[4:6])
-        self.assertIn(SESSION, child)
+        # The agent the child runs: the fixture's Claude Code, resuming exactly its recorded session once, on its
+        # recorded deployment, with the plan's inline --settings (Foundry on, this resource, no credential written in).
+        # Each option is read with its own value; compose doesn't promise their order.
+        agent = child[4:]
+        self.assertEqual(agent[0], "claude")
+        self.assertNotIn("--", agent)
+        for other in ("-r", "--continue", "-c", "--session-id", "--fork-session"):
+            self.assertNotIn(other, agent)
+        self.assertFalse([a for a in agent if a.startswith(("--resume=", "--settings=", "--model="))], agent)
+        self.assertEqual((agent.count("--resume"), agent.count("--model"), agent.count("--settings")), (1, 1, 1), agent)
+        self.assertEqual(agent[agent.index("--resume") + 1], SESSION)
+        self.assertEqual(child.count(SESSION), 1)
+        self.assertEqual(agent[agent.index("--model") + 1], "claude-deployment")
+        settings = agent[agent.index("--settings") + 1]
+        env = json.loads(settings)["env"]
+        self.assertEqual((env["CLAUDE_CODE_USE_FOUNDRY"], env["ANTHROPIC_FOUNDRY_RESOURCE"]), ("1", "example"))
+        self.assertNotIn(need, env)
+        self.assertEqual(sorted(agent[1:]), sorted(["--resume", SESSION, "--model", "claude-deployment", "--settings", settings]))
         [rev] = f.revivals()
         digest = hashlib.sha256(b"\0".join(a.encode() for a in child)).hexdigest()
         self.assertEqual((rev["provider"], rev["invocation"]), (bound, digest))
