@@ -330,6 +330,41 @@ class Publish(unittest.TestCase):
                 self.assertIn("is read-only (a sandbox?)", str(e.exception))
                 self.assertEqual(self.calls(), [])  # refused before the check
 
+    def test_check_draws_a_stored_version_that_publication_grew_past_the_limits(self):
+        """A 200-file recipe gains a poster when it is published: `check` still draws its stored 201-file version,
+        while the same folder given as something to publish is still refused."""
+        d = os.path.join(self.dir, "many")
+        os.makedirs(d)
+        with open(os.path.join(d, "recipe.json"), "w") as f:
+            json.dump({"recipe": 1, "blocks": [{"type": "video", "src": "clip.mp4"}]}, f)
+        open(os.path.join(d, "clip.mp4"), "wb").close()
+        for i in range(A.MAX_FILES - 2):
+            with open(os.path.join(d, f"n{i}.txt"), "w") as f:
+                f.write("x")
+        self.assertEqual(len(A.gather(d)[1]), A.MAX_FILES)
+
+        def poster(keep, files):  # what ready_media does with ffmpeg here: a first frame for a clip with none
+            open(os.path.join(keep, "clip.poster.jpg"), "wb").close()
+            with open(os.path.join(keep, "recipe.json")) as f:
+                recipe = json.load(f)
+            recipe["blocks"][0]["poster"] = "clip.poster.jpg"
+            with open(os.path.join(keep, "recipe.json"), "w") as f:
+                json.dump(recipe, f)
+            return sorted(files + ["clip.poster.jpg"]), []
+        with mock.patch.object(A, "ready_media", side_effect=poster):
+            aid = self.publish(d)["id"]
+        stored = os.path.join(A.FILES, aid, "v1")
+        with self.assertRaises(A.Fail) as e:
+            A.gather(stored)
+        self.assertIn(f"at most {A.MAX_FILES} files", str(e.exception))
+        drawn = len(self.calls())
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            code = A.cmd_check(types.SimpleNamespace(id=aid, version=None, json=True))
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(out.getvalue())["ok"])
+        self.assertGreater(len(self.calls()), drawn)  # drawn again, not refused before the check
+
     def test_check_without_herdr_app_fails(self):
         """`check` draws with herdr-app: without it nothing was drawn, so it says so instead of "nothing to fix"."""
         aid = self.publish(self.recipe())["id"]

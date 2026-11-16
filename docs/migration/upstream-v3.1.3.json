@@ -734,7 +734,7 @@
       "phase": "A2",
       "path": "mods/artifacts/bin/herdr-artifact",
       "upstream_blob": "ae073f5ae7724d87aaae09532b74ab7a4667013d",
-      "sha256": "ad1e522f02513d9243e72f400a6741ddb813924c75cc3c88c4a1384f9108c397"
+      "sha256": "5ce6ecaa3f6b29f4e11434166df0e2bdfa8a538eb58a485b604b9cc85efe16b0"
     },
     {
       "phase": "A2",
@@ -794,13 +794,13 @@
       "phase": "A2",
       "path": "test/test_herdr_artifact_crop.py",
       "upstream_blob": "d04e945250d3bf279c0402e70e83b32ab7c6dea0",
-      "sha256": "80db8dffcb7a84109f7605944691dee0e608a76188cd7978c9d3d58842d747df"
+      "sha256": "cc8756f08a1e15fe0d756f7bc7f6cbf0d7f066ce400264fb644fbeea0486ae47"
     },
     {
       "phase": "A2",
       "path": "test/test_herdr_artifact_publish.py",
       "upstream_blob": "672808e324772d6e7c8e0c43907de44e35e12fb2",
-      "sha256": "84044df13e253742295914f9c2c69ab2a7d6e323af82ee2d79537103d28583a0"
+      "sha256": "c9c3a8d969daa671a4c207f00007e6a43dfe3c09a84fbeec2bf58db4a11baf8d"
     },
     {
       "phase": "A2",

@@ -285,8 +285,10 @@ def too_big(rel, n, kind):
     return f"{rel} is {mb:.1f} MB: a picture or other file can be at most {MAX_FILE // MB} MB (crop or compress it)."
 
 
-def gather(src):
-    """The files of a mod folder to keep, relative paths. Fails on anything a mod can't hold."""
+def gather(src, limits=True):
+    """The files of a mod folder to keep, relative paths. Fails on anything a mod can't hold. limits=False reads a
+    stored version: publication may have added media to it (a poster, an mp4 copy), so the size and count limits for
+    what is published don't apply again."""
     src = os.path.realpath(os.path.expanduser(src))
     if os.path.isfile(src) and os.path.basename(src) == "main.js":
         src = os.path.dirname(src)
@@ -303,11 +305,11 @@ def gather(src):
                 raise Fail(f"{rel}: an artifact holds only .js, .json, .svg, pictures, videos, sounds, PDFs, fonts and text.")
             n_bytes = os.path.getsize(os.path.join(root, n))
             kind = kind_of(n)
-            if n_bytes > MEDIA_MAX.get(kind, MAX_FILE):
+            if limits and n_bytes > MEDIA_MAX.get(kind, MAX_FILE):
                 raise Fail(too_big(rel, n_bytes, kind))
             size += n_bytes
             out.append(rel)
-    if len(out) > MAX_FILES or size > MAX_BYTES:
+    if limits and (len(out) > MAX_FILES or size > MAX_BYTES):
         raise Fail(f"Too big: {len(out)} files, {size // MB} MB (at most {MAX_FILES} files, {MAX_BYTES // MB} MB in all).")
     return src, sorted(out)
 
@@ -1070,7 +1072,7 @@ def cmd_check(o):
     with Store(find_anywhere(o.id), write=False) as s:
         a = as_version(s.find(o.id), o.version)
     keep = os.path.join(FILES, a["id"], f"v{a['version']}")
-    keep, files = gather(keep)
+    keep, files = gather(keep, limits=False)  # its stored copy, with any media publication added
     err, warnings, unchecked = check(keep, files, a)
     out = {"id": a["id"], "version": a["version"], "ok": not err and not unchecked, "warnings": warnings,
            **({"error": err} if err else {}), **({"unchecked": unchecked} if unchecked else {})}
@@ -1332,15 +1334,19 @@ def png_read(path, upto=None):
         raise ValueError("only an 8-bit RGB or RGBA PNG, not interlaced, is read without ImageMagick")
     ch = 3 if ctype == 2 else 4
     stride, rows, prev = w * ch, [], bytearray(w * ch)
-    z, raw = zlib.decompressobj(), b""
+    # raw[at:] is what is decoded and not yet read: rows are read by moving `at`, not by copying what follows them
+    # (one IDAT chunk, as png_write writes, can decode the whole picture at once).
+    z, raw, at = zlib.decompressobj(), b"", 0
     chunks = iter(idat)
     for y in range(min(h, upto if upto is not None else h)):
-        while len(raw) < stride + 1:
+        while len(raw) - at < stride + 1:
             nxt = next(chunks, None)
-            raw += z.decompress(nxt) if nxt is not None else z.flush()
+            raw = raw[at:] + (z.decompress(nxt) if nxt is not None else z.flush())
+            at = 0
             if nxt is None and len(raw) < stride + 1:
                 raise ValueError("a PNG cut short")
-        ft, line, raw = raw[0], bytearray(raw[1:stride + 1]), raw[stride + 1:]
+        ft, line = raw[at], bytearray(raw[at + 1:at + stride + 1])
+        at += stride + 1
         if ft == 1:
             for x in range(ch, stride):
                 line[x] = (line[x] + line[x - ch]) & 255

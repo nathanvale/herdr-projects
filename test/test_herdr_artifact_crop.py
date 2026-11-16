@@ -12,6 +12,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 import zlib
 from unittest import mock
@@ -67,6 +68,65 @@ class Crop(unittest.TestCase):
                 w, h, c, got = A.png_read(p)
                 self.assertEqual((w, h, c), (40, 30, ch))
                 self.assertEqual([bytes(r) for r in got], rows)
+
+    def test_png_write_and_split_idat_read_back_exactly(self):
+        """png_write's one IDAT chunk, and the same data split into small chunks (rows across chunk ends), read back
+        row for row."""
+        rows = [bytes(v for x in range(40) for v in self.noise[x, y]) for y in range(30)]
+        one = os.path.join(self.dir, "one.png")
+        A.png_write(one, 40, 30, 4, rows)
+        self.assertEqual([bytes(r) for r in A.png_read(one)[3]], rows)
+        self.assertEqual([bytes(r) for r in A.png_read(one, upto=7)[3]], rows[:7])
+        with open(one, "rb") as f:
+            data = f.read()
+        n = struct.unpack(">I", data[33:37])[0]
+        body = data[41:41 + n]
+
+        def chunk(t, d):
+            return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+        split = os.path.join(self.dir, "split.png")
+        with open(split, "wb") as f:
+            f.write(data[:33] + b"".join(chunk(b"IDAT", body[i:i + 37]) for i in range(0, len(body), 37)) + chunk(b"IEND", b""))
+        self.assertEqual([bytes(r) for r in A.png_read(split)[3]], rows)
+
+    def test_reading_rows_copies_each_decoded_byte_about_once(self):
+        """One IDAT chunk can decode the whole picture at once: reading a row must not copy everything after it
+        (quadratic in the picture's height). Counts the bytes copied by slicing the decoded data."""
+        copied = [0]
+
+        class Counted(bytes):
+            def __getitem__(self, k):
+                got = bytes.__getitem__(self, k)
+                if isinstance(k, slice):
+                    copied[0] += len(got)
+                    return Counted(got)
+                return got
+
+            def __add__(self, other):
+                return Counted(bytes(self) + bytes(other))
+
+            def __radd__(self, other):
+                return Counted(bytes(other) + bytes(self))
+
+        class Decoder:
+            def __init__(self):
+                self.z = zlib.decompressobj()
+
+            def decompress(self, d):
+                return Counted(self.z.decompress(d))
+
+            def flush(self):
+                return Counted(self.z.flush())
+
+        w, h, ch = 16, 200, 4
+        rows = [bytes((x + y) & 255 for x in range(w * ch)) for y in range(h)]
+        p = os.path.join(self.dir, "tall.png")
+        A.png_write(p, w, h, ch, rows)
+        with mock.patch.object(A, "zlib", types.SimpleNamespace(decompressobj=Decoder)):
+            got = A.png_read(p)[3]
+        self.assertEqual([bytes(r) for r in got], rows)
+        decoded = h * (w * ch + 1)
+        self.assertLessEqual(copied[0], 2 * decoded)  # linear; slicing off the rest per row copies about h/2 times that
 
     def test_crop_command_with_no_imagemagick_on_the_path(self):
         src, out = os.path.join(self.dir, "shot.png"), os.path.join(self.dir, "cut.png")
