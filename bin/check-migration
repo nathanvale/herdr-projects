@@ -87,7 +87,9 @@ web/plugins/places/add.tsx'''.split()),
     # test runs it with a stand-in herdr-core. Since PR 63's review (the v3.1.35 merge) it also owns the upstream paths
     # that review fixed with no phase of their own: the artifact CLI's read-only refusal, empty crop and missing checker,
     # the sidebar's Autopilot reads, a remote job run once within its wait, Find machines once at a time, an unknown
-    # sandbox probe, #1007's unused store release, the web's Find countdown and recipe viewer, and their tests.
+    # sandbox probe, #1007's unused store release, the web's Find countdown and recipe viewer, and their tests. Since
+    # the terminal's tablet-width fix it owns web/plugins/terminal/client.tsx too: a mouse and keyboard type into the
+    # Assistant's terminal at any width, a desktop browser under 1024 px included, and its keys test.
     'A2': frozenset('''core/agents.js core/agents.test.js core/chat-find.test.js core/live-switch.js core/live-switch.test.js
 core/mentions.js core/mentions.test.js core/settings.js core/tasks.js core/tasks.test.js
 lib/COPIES lib/agent.js mods/chat-models/core/agents.js mods/chat/agent.js
@@ -108,7 +110,8 @@ web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx web/src/ke
 mods/artifacts/bin/herdr-artifact mods/spaces-chat/main.js mods/tasks/bin/herdr_task/link.py mods/tasks/bin/herdr_task/machines.py
 mods/tasks/bin/herdr_task/sandbox.py mods/tasks/bin/herdr_task/store.py service/assistant-start.test.ts
 service/spaces-sidebar.test.ts test/test_herdr_artifact_crop.py test/test_herdr_artifact_publish.py
-web/plugins/health/find.test.tsx web/plugins/health/find.tsx web/viewer/viewer.tsx'''.split()),
+web/plugins/health/find.test.tsx web/plugins/health/find.tsx web/plugins/terminal/client.tsx
+web/plugins/terminal/keys.test.tsx web/viewer/viewer.tsx'''.split()),
     # Native restart and revival: revival, a lost session at its shell and every restart go through launch admission on
     # the recorded binding (continued conversations) or today's settings (new ones, never onto another route), claimed
     # in the journal before anything is typed or started. Earlier owners it changes are L2's from here. Since PR 63's
@@ -291,6 +294,9 @@ PROSE = frozenset('AGENTS.md CHANGELOG.md CLAUDE.md CODING_STANDARDS.md GLOSSARY
 # A unit merged after Q that changes a tracked path outside Q's own and prose names it here, under the unit's name
 # ({'MIG-10': 'path other/path'}). Its evidence is its own Check; Q's ledger keeps describing its candidate only.
 AFTER_Q = {
+    # The terminal's tablet-width fix: a desktop browser under 1024 px (a "tablet" to the page) typed nothing into the
+    # Assistant's terminal. Its evidence is its own Check; Q's ledger keeps describing its original candidate.
+    'TERMINAL-TABLET-KEYS': 'web/plugins/terminal/client.tsx web/plugins/terminal/keys.test.tsx',
     # PR 63's review of the v3.1.35 merge, at Nathan's choice to fix upstream's faults here: every tracked source path
     # it changes. Its evidence is its own Check; Q's ledger keeps describing its original candidate.
     'PR63-REVIEW': (

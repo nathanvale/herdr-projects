@@ -819,6 +819,18 @@
       "path": "web/viewer/viewer.tsx",
       "upstream_blob": "99d119ea86aeb7d2218e2283b3950e7d10bbd09b",
       "sha256": "6cbe43e8050c45c222b6c89f8127c6fc0cddbd013d4f623032e3eb2e1c62915f"
+    },
+    {
+      "phase": "A2",
+      "path": "web/plugins/terminal/client.tsx",
+      "upstream_blob": "8428db6c426101069dadbd4dc16a09a98ec056a7",
+      "sha256": "302dfd02dcf9ce8a7074a92cbf8491a088d53c36ba6cf6d71628dfc5a098a110"
+    },
+    {
+      "phase": "A2",
+      "path": "web/plugins/terminal/keys.test.tsx",
+      "upstream_blob": null,
+      "sha256": "e331108dde0d7cb964c9fccf50b4dc0596e990a7f11dede79c87b3552f03ceef"
     }
   ],
   "requirements": [

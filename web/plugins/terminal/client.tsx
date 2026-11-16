@@ -388,7 +388,9 @@ export default definePlugin({
       order: 0,
       handle: ({ e, ui, snap }) => {
         if (typedInBox(e)) return true
-        if (ui.device !== 'desktop') return false
+        // a phone or a touch screen types through its own box (termInput); a mouse and keyboard type here at any
+        // width, a desktop browser narrower than 1024 px (a "tablet" to the page) too
+        if (ui.device === 'phone' || touchScreen()) return false
         const task = agentChat(ui, snap)?.chat
         const focused = (e.target as HTMLElement | null)?.closest?.<HTMLElement>(SCREEN)?.dataset.termScreen
         if (e.ctrlKey && e.key === '`') {
