@@ -6,10 +6,10 @@ import { execTemplate } from "./spaces.ts";
 
 // #1051: a space's Assistant started from the web ran the stock template's `claude`, whatever Settings › Agents chose.
 // A hub whose machine.exec runs here, with HOME a throwaway (its templates folder) and PATH only the CLIs given.
-function machine(clis: string[]) {
+function machine(clis: string[], front = "name: assistant\ndescription: The Assistant\ncommand: claude") {
   const home = mkdtempSync(join(tmpdir(), "shep-assistant-start-")), bin = join(home, "bin"), dir = join(home, ".config", "herdr-core", "templates");
   mkdirSync(bin); mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "assistant.md"), "---\nname: assistant\ndescription: The Assistant\ncommand: claude\n---\nYou are the Assistant.\n");
+  writeFileSync(join(dir, "assistant.md"), `---\n${front}\n---\nYou are the Assistant.\n`);
   for (const c of clis) { writeFileSync(join(bin, c), "#!/bin/sh\n"); chmodSync(join(bin, c), 0o755); }
   const hub: any = {
     call: async (_: string, a: { argv: string[] }) => {
@@ -48,4 +48,19 @@ test("the chosen agent missing there: the template's own; neither there: a plain
   const b = machine([]);
   await expect(execTemplate(b.hub, "assistant", null, { agent: "codex", perm: "full" })).rejects.toThrow("Codex isn't installed on this computer");
   expect(b.made()).toEqual([]);
+});
+
+test("a template with front matter and no command of its own still takes a saved or a Settings pick", async () => {
+  const front = "name: assistant\ndescription: The Assistant";
+  const a = machine([], front);
+  await execTemplate(a.hub, "assistant", null, "codex -m gpt-5.5");
+  expect(commandOf(a.made()[0])).toMatch(/exec codex -m gpt-5\.5\s*$/);
+  const b = machine(["codex"], front);
+  const t = await execTemplate(b.hub, "assistant", null, { agent: "codex", model: "gpt-5.5", effort: null, fast: false, perm: "auto" });
+  expect(commandOf(b.made()[0])).toContain("exec codex --no-daemon -m gpt-5.5");
+  expect(t.argv?.slice(0, 4)).toEqual(["codex", "--no-daemon", "-m", "gpt-5.5"]);
+  // nothing to run in its place: the template itself, as before
+  const c = machine([], front);
+  expect((await execTemplate(c.hub, "assistant", null, null)).name).toBe("assistant");
+  expect(c.made()).toEqual([]);
 });

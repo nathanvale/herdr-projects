@@ -6,7 +6,6 @@ import hashlib
 import json
 import os
 import re
-from contextlib import contextmanager
 
 from .base import Fail, git, hc_json, HOME, LEGACY, MAX_RUNNING, now, run, STORE
 from .settings import settings_for
@@ -226,43 +225,6 @@ class Store:
                 f.write("\n")
             os.replace(tmp, self.path)
             self.dirty = False
-
-    @contextmanager
-    def released(self):
-        """The lock let go while slow work outside the list runs (#1007: a git push through the repo's
-        pre-push hook can take many minutes, and every other command here waited on it): what changed
-        is saved first, and the list read again after, since others may have changed it meanwhile.
-        Each task's dict stays the same object, updated in place, so a caller's `t` sees the new state.
-        Never inside a loop over the tasks (the list itself is a new one after)."""
-        if not (self.lock and self.write):
-            yield
-            return
-        self.save()
-        fcntl.flock(self.lock, fcntl.LOCK_UN)
-        try:
-            yield
-        finally:
-            fcntl.flock(self.lock, fcntl.LOCK_EX)
-            try:
-                with open(self.path) as f:
-                    fresh = json.load(f)
-            except (OSError, ValueError):
-                fresh = None
-            if isinstance(fresh, dict) and isinstance(fresh.get("tasks"), list):
-                mine = {t.get("id"): t for t in self.data.get("tasks") or []}
-                tasks = []
-                for t in fresh["tasks"]:
-                    old = mine.get(t.get("id")) if isinstance(t, dict) else None
-                    if old is not None:
-                        old.clear()
-                        old.update(t)
-                        t = old
-                    tasks.append(t)
-                fresh["tasks"] = tasks
-                self.data.clear()
-                self.data.update(fresh)
-            # Saved again on the way out: the caller goes on changing its task without saying so.
-            self.dirty = True
 
     def __exit__(self, kind, *_):
         try:

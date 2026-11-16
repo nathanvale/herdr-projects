@@ -264,6 +264,10 @@ def back_pass(s, t, report):
         back_to_work(s, t, "its agent asked something" if not moved else "its agent changed its work", auto=True)
         report.setdefault("working_again", []).append(s.ref(t))
         return
+    # A background job of its own still running (as settle_back() checks): the turn waits, so the
+    # job's change to the worktree, with no newer turn, still takes it back to work.
+    if own_work(t, live, ready=True):
+        return
     t["ready_turns"] = {**seen, **{k["address"]: k.get("turn") or 0 for k in turned}}
     s.dirty = True
 

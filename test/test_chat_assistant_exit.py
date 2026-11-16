@@ -65,7 +65,8 @@ class AssistantExitKeepsItsTab(unittest.TestCase):
 
     def test_restart_resumes_the_same_session(self):
         body = SRC[SRC.index("  restartAssistant(cx) {"):SRC.index("  closeSelf() {")]
-        self.assertIn("agent.resumeArgv(this.kind", body)
+        self.assertIn("agent.resumeArgv(kind", body)
+        self.assertIn("const session = agent.sessionOf(kind, path);", body)
         self.assertIn("resume: true", body)
 
 

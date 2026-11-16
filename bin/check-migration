@@ -84,7 +84,10 @@ web/plugins/places/add.tsx'''.split()),
     # suggested next message (per space, read by screen readers), the #-mention reach list's known spaces, and the
     # kernel's store hooks' server snapshot and markdown.tsx's DOM-only link hook, which let a test draw the real
     # Composer as HTML. Since PR 60's reach proof it owns service/reach.ts too: the service's # list, out of main.ts so a
-    # test runs it with a stand-in herdr-core.
+    # test runs it with a stand-in herdr-core. Since PR 63's review (the v3.1.35 merge) it also owns the upstream paths
+    # that review fixed with no phase of their own: the artifact CLI's read-only refusal, empty crop and missing checker,
+    # the sidebar's Autopilot reads, a remote job run once within its wait, Find machines once at a time, an unknown
+    # sandbox probe, #1007's unused store release, the web's Find countdown and recipe viewer, and their tests.
     'A2': frozenset('''core/agents.js core/agents.test.js core/chat-find.test.js core/live-switch.js core/live-switch.test.js
 core/mentions.js core/mentions.test.js core/settings.js core/tasks.js core/tasks.test.js
 lib/COPIES lib/agent.js mods/chat-models/core/agents.js mods/chat/agent.js
@@ -101,11 +104,18 @@ service/spaces.ts service/voice-data.ts service/watch.ts test/test_herdr_task.py
 service/artifacts-remote.test.ts service/artifacts.ts web/src/back.test.tsx web/src/ui.tsx
 web/plugins/chat/client.tsx web/plugins/chat/composer.test.tsx web/plugins/chat/markdown.tsx web/plugins/chat/suggest.test.ts
 web/plugins/chat/suggest.ts
-web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx web/src/kernel.ts web/src/restart.tsx'''.split()),
+web/plugins/tasks/select.tsx web/shared/types.ts web/src/Settings.tsx web/src/kernel.ts web/src/restart.tsx
+mods/artifacts/bin/herdr-artifact mods/spaces-chat/main.js mods/tasks/bin/herdr_task/link.py mods/tasks/bin/herdr_task/machines.py
+mods/tasks/bin/herdr_task/sandbox.py mods/tasks/bin/herdr_task/store.py service/assistant-start.test.ts
+service/spaces-sidebar.test.ts test/test_herdr_artifact_crop.py test/test_herdr_artifact_publish.py
+web/plugins/health/find.test.tsx web/plugins/health/find.tsx web/viewer/viewer.tsx'''.split()),
     # Native restart and revival: revival, a lost session at its shell and every restart go through launch admission on
     # the recorded binding (continued conversations) or today's settings (new ones, never onto another route), claimed
-    # in the journal before anything is typed or started. Earlier owners it changes are L2's from here.
+    # in the journal before anything is typed or started. Earlier owners it changes are L2's from here. Since PR 63's
+    # review it owns the window's Restart Assistant tests too: it asks about its folder first, and stops when the chat
+    # starts a new conversation while it waits.
     'L2': frozenset('''core/chat-find.test.js lib/agent.js service/actions.ts mods/chat/agent.js mods/chat/main.js mods/coordinator/restart.sh
+service/chat-restart-assistant.test.ts test/test_chat_assistant_exit.py
 mods/newspace/agent.js mods/shepherdr-settings/agent.js mods/tasks/bin/herdr_task/cli.py mods/tasks/bin/herdr_task/commands.py
 mods/tasks/bin/herdr_task/launch_admission.py mods/tasks/bin/herdr_task/providers.py mods/tasks/bin/herdr_task/revive.py
 service/agents.ts service/watch.ts test/test_herdr_task.py test/test_launch_admission.py test/test_native_restart.py
@@ -281,6 +291,19 @@ PROSE = frozenset('AGENTS.md CHANGELOG.md CLAUDE.md CODING_STANDARDS.md GLOSSARY
 # A unit merged after Q that changes a tracked path outside Q's own and prose names it here, under the unit's name
 # ({'MIG-10': 'path other/path'}). Its evidence is its own Check; Q's ledger keeps describing its candidate only.
 AFTER_Q = {
+    # PR 63's review of the v3.1.35 merge, at Nathan's choice to fix upstream's faults here: every tracked source path
+    # it changes. Its evidence is its own Check; Q's ledger keeps describing its original candidate.
+    'PR63-REVIEW': (
+        'core/chat-find.test.js mods/artifacts/bin/herdr-artifact mods/chat/main.js mods/spaces-chat/main.js '
+        'mods/tasks/bin/herdr_task/agents.py mods/tasks/bin/herdr_task/commands.py mods/tasks/bin/herdr_task/forge.py '
+        'mods/tasks/bin/herdr_task/github.py mods/tasks/bin/herdr_task/launch.py mods/tasks/bin/herdr_task/link.py '
+        'mods/tasks/bin/herdr_task/machines.py mods/tasks/bin/herdr_task/sandbox.py mods/tasks/bin/herdr_task/store.py '
+        'mods/tasks/bin/herdr_task/tick.py service/actions.ts service/assistant-start.test.ts '
+        'service/chat-restart-assistant.test.ts service/launch-sites.test.ts service/spaces-sidebar.test.ts '
+        'service/spaces.ts test/test_chat_assistant_exit.py test/test_herdr_artifact_crop.py '
+        'test/test_herdr_artifact_publish.py test/test_herdr_task.py web/plugins/health/find.test.tsx '
+        'web/plugins/health/find.tsx web/viewer/viewer.tsx'
+    ),
     # Upstream v3.1.35 merged into main (upstream abd5a0f1, annotated tag v3.1.35, which holds v3.1.34 a3f327a5; fork
     # base d57a0261): every tracked source path the merge changes, imported without new runtime qualification. Its
     # evidence is its own Check; Q's ledger keeps describing its original candidate.

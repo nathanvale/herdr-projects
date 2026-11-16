@@ -147,3 +147,58 @@ test("a space's first message carries the web's saved pick for its Assistant, bo
   expect(s.d["assistant.picks"]).toEqual({ sp2: { agent: "codex", model: null, revision: "r2" } });
   expect(read(HC_CALLS)).toEqual([]);
 });
+
+// The agent Settings › Agents chooses for the Assistant, with no saved pick: its own argv reaches launch admission (on
+// Azure Foundry it plans from --argv, else from the stock template's `claude`). A hub whose PATH holds only the CLIs
+// given (the system-wide agent folders core/clean-env.js adds left out), so what is installed is the test's.
+function only(clis: string[]): any {
+  const bin = mkdtempSync(join(APP, "clis-"));
+  for (const c of clis) writeFileSync(join(bin, c), "#!/bin/sh\n", { mode: 0o755 });
+  return {
+    terminals: new Map(),
+    async call(method: string, p: any) {
+      if (method !== "machine.exec") throw new Error(method);
+      const argv = p.argv.map((x: string) => x.replace(":/opt/homebrew/bin:/usr/local/bin", ""));
+      const proc = Bun.spawn(argv, { env: { HOME: HOME_DIR, PATH: `${bin}:/usr/bin:/bin` }, stdout: "pipe", stderr: "pipe" });
+      const [o, e] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+      return { code: await proc.exited, stdout: Buffer.from(o).toString("base64"), stderr: Buffer.from(e).toString("base64") };
+    },
+  };
+}
+const CODEX = { agent: "codex", model: "gpt-5.5", effort: "high", fast: false, perm: "full" };
+const CODEX_ARGV = JSON.stringify(["codex", "--no-daemon", "-m", "gpt-5.5", "-c", 'model_reasoning_effort="high"', "-c", 'service_tier="default"',
+  "--dangerously-bypass-approvals-and-sandbox"]);
+
+test("a web-only new space's Settings pick reaches launch admission as its argv", async () => {
+  const s = store();
+  await SP.newSpace(only(["codex"]), { machine: null, path: FOLDER, store: s, pick: () => CODEX });
+  const [call] = read(TASK_CALLS);
+  expect(call).toContain(` --source assistant --argv ${CODEX_ARGV} --json -- `);
+  expect(readFileSync(TEMPLATES_SEEN, "utf8")).toMatch(/^command: .* exec codex --no-daemon -m gpt-5\.5 /m);
+});
+
+test("a space's first message with no saved pick carries the Settings pick's argv, without a revision", async () => {
+  const c = { ...compat(FOLDER), assistantPick: () => CODEX };
+  const r: any = await A.act(only(["codex"]), { type: "send", chat: "p:sp1", text: "Plan the week" }, c);
+  expect(r).toMatchObject({ ok: true, started: true });
+  const [call] = read(TASK_CALLS);
+  expect(call).toContain(` --source assistant --argv ${CODEX_ARGV} --json -- `);
+  expect(call).not.toContain("--revision");
+});
+
+test("a Settings pick whose agent isn't installed runs the template's own, and launch admission plans from it as before", async () => {
+  await SP.newSpace(only(["claude"]), { machine: null, path: FOLDER, store: store(), pick: () => CODEX });
+  const [call] = read(TASK_CALLS);
+  expect(call).not.toContain("--argv");
+  expect(readFileSync(TEMPLATES_SEEN, "utf8")).toMatch(/^command: .* exec claude$/m);
+});
+
+test("a web-only new space whose Assistant can't be prepared is still made, once, and says why", async () => {
+  const s = store(), said: string[] = [];
+  const place = await SP.newSpace(only([]), { machine: null, path: FOLDER, store: s, pick: () => CODEX, refused: (w) => said.push(w) });
+  expect(s.d.spaces).toHaveLength(1);
+  expect(place).toBe(s.d.spaces[0].id);
+  expect(said).toEqual(["Codex isn't installed on this computer. Install it, or pick another agent for the Assistant in Settings › Agents."]);
+  expect(read(TASK_CALLS)).toEqual([]);
+  expect(read(HC_CALLS)).toEqual([]);
+});

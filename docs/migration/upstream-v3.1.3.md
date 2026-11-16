@@ -409,10 +409,51 @@ upstream merged locally; `DoubleStart`'s stand-in `begin()` takes the fork's adm
 `checks_of` stand-in takes the tip; `#980`'s restart test runs the fork's launch owner on the stand-in `hc` (as
 `ChatLabel` does). `.fallowrc.json`'s three copy lists (MIG-12) take upstream's new `core/pending.js` copies.
 On macOS, upstream's own tree also fails `test_herdr_task.ProcessTable.test_a_real_tree_from_one_read`, two
-`test_herdr_browser_args` path tests (`/private/var`), `test_install`'s `test_unit_path_has_hc` (`/System/Volumes/Data`),
-and, run after `service/emoji-pick.test.ts` in one Bun process, three `service/spaces-sidebar.test.ts` cases; every file
-involved in the last is byte-identical to U. Check runs on Linux.
+`test_herdr_browser_args` path tests (`/private/var`) and `test_install`'s `test_unit_path_has_hc`
+(`/System/Volumes/Data`). Check runs on Linux.
+Three `service/spaces-sidebar.test.ts` cases fail on any platform when `service/emoji-pick.test.ts` runs before them in
+one Bun process: upstream's `live.js` keeps the herdr stand-in of the first file that loads it. This order dependence
+is upstream's (`live.js` and `emoji-pick.test.ts` stay byte-identical to U). The fork's extra test files put emoji-pick
+first on Linux, so Check failed there; Check now runs `service/spaces-sidebar.test.ts` in its own Bun process. PR 63's
+review (below) adds two Autopilot cases to that file and leaves its three order-dependent cases as upstream has them.
 Qualification is unchanged: nothing here is native, Azure or R evidence.
+
+PR 63's review of this merge found faults in upstream's code and in the joins; at Nathan's choice the fork fixes
+upstream's here rather than waiting for upstream. Fifteen upstream paths that no phase owned change, so the gate
+admits them with `source_deltas` rows pinned to v3.1.35's blob (two new tests have none): A2 owns the artifact CLI,
+the sidebar's Autopilot reads, `T/link.py`, `T/machines.py`, `T/sandbox.py`, `T/store.py`, the web's Find machines
+and recipe viewer and their tests; L2 owns the window's Restart Assistant tests. The twelve admitted rows the review
+changes re-pin `sha256` (their `upstream_blob` is unchanged), and `docs/install.md` (N1) re-pins for its Bitbucket
+Cloud and Azure contact list. `AFTER_Q` names every source path the review changes (`PR63-REVIEW`), so Q's ledger
+keeps describing `d53e014b`. The gate now admits 135 rows; F, P, B, 121 file dispositions, 40 requirements and the
+gate's checks are unchanged. What changed:
+
+- The window's Restart Assistant (`mods/chat/main.js`, L2) asks `lostRefusal()` about its folder before it restarts,
+  as a lost session's start does, and stops when "Start a new one" empties the chat while it waits
+  (`service/chat-restart-assistant.test.ts`, `core/chat-find.test.js`, `test/test_chat_assistant_exit.py`).
+- A web Assistant start with no saved pick passes the Settings pick's argv to launch admission (`service/actions.ts`,
+  `service/spaces.ts`), so Azure Foundry plans from the agent that runs, and a template with no command line still
+  takes a pick. A new space whose Assistant can't be prepared is kept and says why (`service/launch-sites.test.ts`,
+  `service/assistant-start.test.ts`).
+- A resumed Claude Code session reads its permission mode from the profile admission starts it under
+  (`T/launch.py`, `T/commands.py`); a task's worktree folder registered to another task or branch is refused; only
+  the installer's exact Codex hook command is trusted.
+- A Bitbucket pull request merged by hand keeps its remote branch (`T/commands.py`); Accept adopts an open pull
+  request when the worktree folder is gone but the branch stays (`T/forge.py`, `T/github.py`); `integrate()` drops
+  its unused `queue` argument.
+- `T/agents.py` expands each Codex batch poll loop by its braces, so both sessions in one batch end; `T/tick.py`
+  waits on a turn whose own background job still runs.
+- `T/link.py` runs a remote job once (a claim folder) and keeps every poll within the action's wait;
+  `T/machines.py` rereads Find's last run under its lock; `T/sandbox.py` keeps no answer from a probe that couldn't
+  tell. `T/store.py` drops `released()`, `#1007`'s lock release, which the fork does not take (above).
+- The artifact CLI says a read-only store plainly on publish too, refuses a crop that starts outside the picture or a
+  corrupt PNG, and `check` refuses without `herdr-app`. The web's Find machines counts its wait down and can read a
+  failed list again (`web/plugins/health/find.test.tsx`); the recipe viewer shows a version only once it reads.
+  The sidebar's Autopilot read keeps a far machine's last answer when its file can't be read, and a slow read never
+  puts back older status.
+
+Each fix's regression is in the named test, the artifact CLI's test files or `test/test_herdr_task.py`, except the
+recipe viewer's, which has none yet. Qualification is unchanged.
 
 ### A1 provider checkpoint
 

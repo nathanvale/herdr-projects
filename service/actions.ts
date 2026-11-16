@@ -606,10 +606,13 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     const picks: Record<string, any> = compat.shared?.value("assistant.picks") ?? {}, pick = picks[sp.id];
     const picked: string[] | null = pick ? argvFor(pick, { agent: null, argv: [] }).argv : null;
     const word = (a: string) => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${String(a).replace(/'/g, "'\\''")}'`);
-    // No saved pick: the agent Settings › Agents chooses for the space's Assistant (compat.assistantPick), as the window's.
+    // No saved pick: the agent Settings › Agents chooses for the space's Assistant (compat.assistantPick), as the window's;
+    // its argv (when its agent is installed there, so it replaced the template's command) goes to launch admission too,
+    // or on Azure Foundry it would plan from the stock template's command instead.
     const tpl = await execTemplate(hub, "assistant", sp.machine ?? null, picked ? picked.map(word).join(" ") : (compat.assistantPick?.(sp.id) ?? null));
-    const chose = pick ? ["--argv", JSON.stringify(picked),
-      ...(pick.deployment ? ["--deployment", pick.deployment] : []), ...(pick.revision ? ["--revision", pick.revision] : [])] : [];
+    const argv = picked ?? tpl.argv;
+    const chose = [...(argv ? ["--argv", JSON.stringify(argv)] : []),
+      ...(pick?.deployment ? ["--deployment", pick.deployment] : []), ...(pick?.revision ? ["--revision", pick.revision] : [])];
     // through launch admission (herdr-task launch run): a new start planned for its provider (--new-start: the template
     // word it runs; on Azure Foundry the owner's own one-off takes its place), claimed, rechecked and recorded as sent,
     // then hc run

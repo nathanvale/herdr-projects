@@ -395,12 +395,16 @@ def pr_body(s, task, summary=None):
     return "\n".join(lines)
 
 
-def pr_adopt(task, repo):
+def pr_adopt(task, repo, tip=None):
     """The open pull request for the task's branch, opened by hand or by its agent, recorded on the
     task; None when there is none (SHEP-13: ready failed with "already exists"). Only one from this
-    repo (open_prs()), into the task's base, at the branch's tip here."""
+    repo (open_prs()), into the task's base, at the branch's tip here: read in its worktree, else `tip`
+    (the caller's, for a worktree folder that is gone while its branch stays)."""
     base, prs = task.get("base") or "main", open_prs(task, repo)
-    tip_ok, tip, _ = git(task["worktree"], "rev-parse", "--verify", "--quiet", f"refs/heads/{task['branch']}")
+    if tip is None:
+        tip_ok, tip, _ = git(task["worktree"], "rev-parse", "--verify", "--quiet", f"refs/heads/{task['branch']}")
+    else:
+        tip_ok = bool(tip)
     found = next((p for p in prs if p["baseRefName"] == base and answered_in(p, repo) and tip_ok and tip
                   and p.get("headRefOid") == tip), None)
     if found:
@@ -817,12 +821,11 @@ def answered_in(p, repo):
     return bool(i) and i["host"] == host() and i["repo"] == repo and i["number"] == p.get("number")
 
 
-def pr_merge(pr, v, queue=False):
+def pr_merge(pr, v):
     """Squash-merges it on GitHub, only at the head commit the view `v` read: (ok, gh's words). Never
     --delete-branch (#1045): on a base with a merge queue (#742, #801, #802) that queues it, and gh
     would delete the branch of a pull request GitHub only queued, which closes it. Its branch goes once
-    GitHub says it merged (drop_branch()). queue: kept for forge.integrate()'s callers; the request is
-    the same either way."""
+    GitHub says it merged (drop_branch())."""
     ok, _, err = gh("pr", "merge", str(pr["number"]), "--repo", pr["repo"], "--squash",
                     "--match-head-commit", v.get("headRefOid") or "")
     return ok, err

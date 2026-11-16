@@ -70,14 +70,15 @@ def _key(codex):
 
 
 def probe(codex):
-    """(ok, the error's first bwrap line or '') from a real `codex sandbox -- true`."""
+    """(ok, said) from a real `codex sandbox -- true`: ok True when it starts, False when bwrap refused
+    (said: its first line), None when the probe couldn't tell (said: why)."""
     try:
         r = subprocess.run([codex, "sandbox", "--", "true"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                            stderr=subprocess.PIPE, text=True, timeout=PROBE_TIMEOUT, cwd=os.path.expanduser("~"))
     except subprocess.TimeoutExpired:
-        return True, ""   # slow, not refused: no word
-    except OSError:
-        return True, ""
+        return None, f"the probe timed out after {PROBE_TIMEOUT} s"   # slow, not refused, nor started
+    except OSError as e:
+        return None, f"the probe couldn't run: {e}"[:300]
     if r.returncode == 0:
         return True, ""
     lines = [x.strip() for x in (r.stderr or "").splitlines() if x.strip()]
@@ -89,12 +90,18 @@ def probe(codex):
 def check(fresh=False):
     """None when Codex's sandbox starts here (or isn't used here: not Linux, no codex), else
     {"error": what bwrap said, "bwrap": its path, "userns": whether AppArmor's switch is on, "at"}.
-    Asked once and kept (CACHE) until what it depends on changes."""
+    Asked once and kept (CACHE) until what it depends on changes. A probe that couldn't tell is None
+    too (no notice on a guess), but never kept: the next check asks again (answer())."""
+    return answer(fresh)[0]
+
+
+def answer(fresh=False):
+    """(check()'s answer, why the probe couldn't tell or '')."""
     if os.uname().sysname != "Linux":
-        return None
+        return None, ""
     codex = shutil.which("codex")
     if not codex:
-        return None
+        return None, ""
     key = _key(codex)
     try:
         with open(CACHE) as f:
@@ -102,8 +109,10 @@ def check(fresh=False):
     except (OSError, ValueError):
         kept = None
     if not fresh and isinstance(kept, dict) and kept.get("key") == key and time.time() - kept.get("at", 0) < KEEP:
-        return kept.get("broken")
+        return kept.get("broken"), ""
     ok, said = probe(codex)
+    if ok is None:
+        return None, said
     broken = None if ok else {"error": said, "bwrap": key["bwrap"], "userns": key["userns"] == "1", "at": int(time.time())}
     try:
         os.makedirs(os.path.dirname(CACHE), exist_ok=True)
@@ -113,7 +122,7 @@ def check(fresh=False):
         os.replace(tmp, CACHE)
     except OSError:
         pass
-    return broken
+    return broken, ""
 
 
 def fix_lines(b):
@@ -153,7 +162,11 @@ def notice(b, short=False):
 
 def cmd_sandbox(args):
     from .output import say
-    b = check(fresh=bool(args.check))
+    b, unknown = answer(fresh=bool(args.check))
+    if unknown:
+        say(args, {"ok": None, "unknown": unknown}, f"Couldn't tell whether Codex's sandbox starts on this machine: {unknown}. "
+            "Nothing was kept; run `herdr-task sandbox --check` again.")
+        return 1
     if not b:
         say(args, {"ok": True}, "Codex's sandbox starts on this machine." if shutil.which("codex") and os.uname().sysname == "Linux"
             else "Nothing to check: no Codex sandbox on this machine.")

@@ -76,8 +76,12 @@ function Viewer() {
         if (v !== shown) {
           const r = await get(`${api}/recipe?v=${v}`)
           if (!live) return
+          // shown only once it reads as a recipe: one that can't (no body) says so while nothing shows yet, and the
+          // next look tries the same version again
+          let next
+          try { next = { ...withIds(r), v } } catch { throw new Error(UNREADABLE) }
           shown = v
-          setRecipe({ ...withIds(r), v })
+          setRecipe(next)
         }
         setError(null)
       } catch (e) {

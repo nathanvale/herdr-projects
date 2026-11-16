@@ -1368,6 +1368,36 @@ class BackToWork(unittest.TestCase):
         self.assertNotIn("--delete-branch", calls[0])
         self.assertEqual((t["state"], t.get("merged"), dropped), ("done", True, [7]))
 
+    def merged_by_hand(self, pr):
+        """merge_now() on a pull request its forge already says MERGED: the git pushes it made (drop_branch()'s own)."""
+        t = self.ready(mode="worktree", worktree="/w", branch="task/7", pr=pr)
+        pushed = []
+
+        def git(cwd, *a):
+            if a[:1] == ("push",):
+                pushed.append(a)
+            return (True, "origin", "") if a == ("remote",) else (True, "", "")
+        merged = {"state": "MERGED", "headRefOid": "abc", "baseRefName": "main", "mergeCommit": {"oid": "f00"}}
+        for mod, name, value in ((self.commands, "merge_reach", lambda s, t: None), (self.commands, "pr_read", lambda t: (merged, None)),
+                                 (self.commands, "note_checks", lambda *a: None), (self.commands, "watch_main", lambda *a: None),
+                                 (self.commands, "update_main", lambda *a: None), (self.github, "git", git),
+                                 (self.commands, "finish", lambda s, t, even_if_busy=False: t.update(state="done"))):
+            p = self.mock.patch.object(mod, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+        self.assertIsNone(self.commands.merge_now(self.store, t))
+        self.assertEqual((t["state"], t.get("merged"), t.get("merged_head")), ("done", True, "abc"))
+        return pushed
+
+    def test_a_bitbucket_pull_request_merged_by_hand_keeps_its_remote_branch(self):
+        """Accept on a Bitbucket pull request merged there by hand finishes the task and deletes nothing on the remote,
+        as the tick does; a GitHub one merged keeps #1045's deletion of its branch there."""
+        bitbucket = {"provider": "bitbucket", "host": "bitbucket.org", "repo": "o/r", "number": 7,
+                     "url": "https://bitbucket.org/o/r/pull-requests/7"}
+        self.assertEqual(self.merged_by_hand(bitbucket), [])
+        github = {"number": 593, "repo": "o/r", "url": "https://github.com/o/r/pull/593"}
+        self.assertEqual(self.merged_by_hand(github), [("push", "--quiet", "--no-verify", "origin", "--delete", "task/7")])
+
     def queue_tick(self, v, entry=None, clock=10_000_000):
         """One tick pass over the task with GitHub saying v (and entry for its queue)."""
         got = {"done": [], "dropped": [], "asked": 0}
@@ -2070,6 +2100,172 @@ class CodexCodeMode(unittest.TestCase):
         self.replay(4)
         live = self.codex()
         self.assertFalse(self.agents.own_work(self.task, live, ready=True))
+
+
+class CodexBatchPollLoop(unittest.TestCase):
+    """PR 63 review: Codex polls its sessions in a numeric for-of loop whose body ends in `})); }`, not
+    `}}`. Each poll in it is the session its place in the list names, so a batch where every command
+    exited (no session ids in the results) ends both."""
+
+    setUp = OwnBackgroundWork.setUp
+    stamp = OwnBackgroundWork.stamp
+    LOOP = 'const results = [];\nfor (const sid of [12,34]) { results.push(await tools.write_stdin({session_id:sid,chars:""})); }\ntext(JSON.stringify(results));'
+
+    def test_the_loop_names_each_poll(self):
+        self.assertEqual(self.agents._codex_polled(self.LOOP), ["12", "34"])
+        # the try/catch form (fixtures/codex-code-mode) still does, and a brace in a string is no block's end
+        self.assertEqual(self.agents._codex_polled(
+            'for(const id of [5,6]) {try {text(await tools.write_stdin({session_id:id,chars:"}"}));}catch(e){text(String(e));}}'),
+            ["5", "6"])
+
+    def test_both_sessions_end_in_one_batch(self):
+        self.stamp(-300_000, {"type": "response_item", "payload": {"type": "custom_tool_call", "call_id": "s1", "name": "exec", "input":
+                              "text(await tools.exec_command({cmd:'a',yield_time_ms:1000}));\ntext(await tools.exec_command({cmd:'b',yield_time_ms:1000}));"}})
+        self.stamp(-299_000, {"type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": "s1", "output": [
+            {"type": "input_text", "text": json.dumps({"session_id": 12, "output": ""})},
+            {"type": "input_text", "text": json.dumps({"session_id": 34, "output": ""})}]}})
+        self.assertEqual(sorted(self.agents.background_jobs(self.log)[0]), ["codex:12", "codex:34"])
+        self.stamp(-200_000, {"type": "response_item", "payload": {"type": "custom_tool_call", "call_id": "p1", "name": "exec", "input": self.LOOP}})
+        self.stamp(-199_000, {"type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": "p1", "output": [
+            {"type": "input_text", "text": json.dumps([{"exit_code": 0, "output": ""}, {"exit_code": 0, "output": ""}])}]}})
+        running, ended = self.agents.background_jobs(self.log)
+        self.assertEqual(running, {})
+        self.assertGreater(ended, 0)
+
+
+class BackPassBackgroundJob(unittest.TestCase):
+    """PR 63 review: a Ready task's agent ends a turn with a background job of its own still running. That turn
+    is not recorded yet, so when the job changes the worktree with no newer turn, the task goes back to Working
+    and its Assistant hears it (working_again)."""
+
+    setUp = BackToWork.setUp
+    agent, ready = BackToWork.agent, BackToWork.ready
+
+    def test_a_turn_with_its_job_still_running_is_not_recorded(self):
+        import datetime
+        logs = tempfile.mkdtemp()
+        log = os.path.join(logs, "s.jsonl")
+        at = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+        with open(log, "w") as f:  # Claude Code: a Bash command left running in the background
+            for d in ({"type": "assistant", "message": {"role": "assistant", "content": [
+                          {"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": "make", "run_in_background": True}}]}},
+                      {"type": "user", "toolUseResult": {"stdout": "", "backgroundTaskId": "b1"}, "message": {"role": "user", "content": [
+                          {"tool_use_id": "toolu_1", "type": "tool_result",
+                           "content": "Command running in background with ID: b1. Output is being written to: /tmp/x"}]}}):
+                f.write(json.dumps(dict(d, timestamp=at)) + "\n")
+        self.agents._bg_cache.clear()
+        self.addCleanup(self.agents._bg_cache.clear)
+        wt = tempfile.mkdtemp()
+        t = self.ready(space="sp1", mode="worktree", worktree=wt, head="abc", agents=[{"address": "t1", "log": log}])
+        tree = {"changes": ""}
+        for name, value in (("git", lambda folder, *a: (True, "abc" if a[0] == "rev-parse" else tree["changes"], "")),
+                            ("last_question", lambda task, address=None: None)):
+            p = self.mock.patch.object(self.tick, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+        report = {}
+        self.live = [self.agent({"address": "t1", "status": "idle", "turn": 6, "role": "worker"})]
+        self.tick.back_pass(self.store, t, report)
+        self.assertEqual((t["state"], t["ready_turns"]), ("ready", {"t1": 5}))  # its job still runs: not recorded
+        self.assertNotIn("working_again", report)
+        tree["changes"] = " M a.txt"  # the job changes the worktree; no newer turn
+        self.tick.back_pass(self.store, t, report)
+        self.assertEqual((t["state"], report["working_again"]), ("running", ["SHEP-7"]))
+
+
+class FindMachinesOnceAtATime(unittest.TestCase):
+    """PR 63 review: two Finds read the last run's time before either starts. The second, once it holds
+    .find.lock, reads that time again and waits instead of contacting every host a second time."""
+
+    def setUp(self):
+        from unittest import mock
+        sys.path.insert(0, BIN)
+        from herdr_task import machines
+        self.machines, self.mock = machines, mock
+        store = tempfile.mkdtemp()
+        self.tried = []
+        for name, value in (("STORE", store), ("FOUND", os.path.join(store, ".found.json")), ("addon_off", lambda n: False),
+                            ("_linked", lambda: (set(), set())), ("find_hosts", lambda linked=None: [{"to": "h1", "over": "ssh config"}]),
+                            ("_try_host", lambda h, ids: self.tried.append(h["to"]) or dict(h, ok=False, state="no answer"))):
+            p = mock.patch.object(machines, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_the_second_caller_reads_the_time_again(self):
+        m = self.machines
+        m._save_found({"at": m.now(), "hosts": [], "running": True})  # the other caller's run, begun after this one read
+        reads, real = [], m._found
+
+        def found():  # the first read is from before the other caller began
+            reads.append(1)
+            return None if len(reads) == 1 else real()
+        with self.mock.patch.object(m, "_found", found):
+            with self.assertRaisesRegex(m.Fail, "again in"):
+                m.find(go=True)
+        self.assertEqual(self.tried, [], "a second Find contacted the hosts again")
+        self.assertEqual(len(reads), 2)
+        # the lock was let go: once the wait is over, Find runs
+        m._save_found({"at": m.now() - m.FIND_EVERY_MS - 1, "hosts": []})
+        self.assertEqual([h["to"] for h in m.find(go=True)["hosts"]], ["h1"])
+        self.assertEqual(self.tried, ["h1"])
+
+
+class CodexSandboxUnknown(unittest.TestCase):
+    """PR 63 review: a probe that timed out or couldn't run says nothing either way. It is never kept as a
+    sandbox that starts, and `herdr-task sandbox` says it couldn't tell. Linux is faked so this runs anywhere."""
+
+    # CodexSandbox's, looked up when called: it is defined further down
+    def setUp(self):
+        CodexSandbox.setUp(self)
+
+    def tearDown(self):
+        CodexSandbox.tearDown(self)
+
+    def fake(self, body):
+        CodexSandbox.fake(self, body)
+
+    def probes(self):
+        return CodexSandbox.probes(self)
+
+    def linux(self):
+        from unittest import mock
+        stack = contextlib.ExitStack()
+        stack.enter_context(mock.patch.object(self.sandbox.os, "uname", lambda: types.SimpleNamespace(sysname="Linux")))
+        stack.enter_context(mock.patch.object(self.sandbox, "PROBE_TIMEOUT", 0.5))
+        return stack
+
+    def said(self):
+        import argparse
+        import io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = self.sandbox.cmd_sandbox(argparse.Namespace(check=False, json=True))
+        return code, json.loads(out.getvalue())
+
+    def unknown(self, why):
+        self.assertIsNone(self.sandbox.check())  # no notice on a guess
+        self.assertFalse(os.path.exists(self.sandbox.CACHE), "an unknown answer was kept")
+        code, d = self.said()
+        self.assertEqual((code, d["ok"]), (1, None))
+        self.assertIn(why, d["unknown"])
+        # asked again each time until it answers; a real answer is kept
+        self.fake("exit 0")
+        n = len(self.probes())
+        self.assertIsNone(self.sandbox.check())
+        self.assertTrue(os.path.exists(self.sandbox.CACHE))
+        self.sandbox.check()
+        self.assertEqual(len(self.probes()), n + 1)
+
+    def test_a_probe_that_times_out(self):
+        self.fake("exec sleep 5")
+        with self.linux():
+            self.unknown("timed out")
+
+    def test_a_codex_that_will_not_run(self):
+        with open(self.codex, "w") as f:
+            f.write("#!/nonexistent/interpreter\n")
+        with self.linux():
+            self.unknown("couldn't run")
 
 
 class NoFalseNeedsYou(unittest.TestCase):
@@ -5480,9 +5676,9 @@ class TaskFlow(unittest.TestCase):
         self.commands.cmd_switch(self.args(space=None, agent="claude", argv=None, parent=None, keep=False))
         self.assertEqual(got, ["sp-a"])  # none given: the old agent's own space
 
-    def switch_events(self, me=None, refuse=False):
+    def switch_events(self, me=None, refuse=False, config_dir=None):
         """cmd_switch with the old agent t1 mid-turn on session S1: what it ran, in order. refuse: launch admission
-        refuses the new start."""
+        refuses the new start. config_dir: the Claude Code folder admission starts the new agent under."""
         self.live = [{"address": "t1", "status": {"state": "working"}, "labels": {"herdr.task.space": "sp-a"}}]
         self.task["agents"] = [{"address": "t1", "agent": "claude", "argv": ["claude"], "at": 1, "session": "S1"}]
         events = self.events_seen = []
@@ -5497,7 +5693,7 @@ class TaskFlow(unittest.TestCase):
             plan, binding, config_dir, before_send = {"route": "personal"}, {"route": "personal"}, None, None
 
             def __init__(self, parent):
-                self.parent = parent
+                self.parent, self.config_dir = parent, config_dir
 
             def claimed(self):
                 return contextlib.nullcontext()
@@ -5562,6 +5758,22 @@ class TaskFlow(unittest.TestCase):
                 self.assertEqual(launch.resume_argv(argv, "S1", folder), argv + ["--resume", "S1"])
         # Codex's sandbox is in its argv already
         self.assertEqual(launch.resume_argv(["codex", "-s", "read-only"], "S1"), ["codex", "resume", "-s", "read-only", "S1"])
+
+    def test_a_resumed_claude_takes_the_mode_of_the_profile_it_starts_under(self):
+        """#1056 in the fork: the agent starts under the Claude Code folder admission recorded (config_dir), which can
+        differ from this process's CLAUDE_CONFIG_DIR. Its resume says that profile's mode, never the other one's."""
+        d = tempfile.mkdtemp()
+        mine, admitted = os.path.join(d, "mine"), os.path.join(d, "admitted")
+        for home, mode in ((mine, "auto"), (admitted, "plan")):
+            os.makedirs(home)
+            with open(os.path.join(home, "settings.json"), "w") as f:
+                json.dump({"permissions": {"defaultMode": mode}}, f)
+        with self.mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": mine}):
+            _, resume, _ = self.switch_events(config_dir=admitted)[2]
+            self.assertEqual(resume, ["claude", "--model", "opus", "--permission-mode", "plan", "--resume", "S1"])
+            # none recorded: the folder this process names, as before
+            _, resume, _ = self.switch_events()[2]
+            self.assertEqual(resume[3:5], ["--permission-mode", "auto"])
 
     def test_an_agent_switching_itself_ends_after_the_new_one_starts(self):
         """SHEP-211: ending the caller first would end the switch command with it."""
@@ -6775,6 +6987,22 @@ class ReadyMergeGit(unittest.TestCase):
         self.assertEqual(merged, [12])
         self.assertEqual(self.git(self.main, "rev-parse", "main"), base)
 
+    def test_accept_adopts_the_open_pull_request_when_the_worktree_folder_is_gone(self):
+        """#988 with the task's worktree folder removed and its branch kept: the branch's tip is read in the main
+        folder (branch_tip()), so the pull request at that tip is adopted and merged, not refused as behind."""
+        import herdr_task.github as github
+        tip = self.own_commit()
+        self.git(self.main, "worktree", "remove", "--force", self.task["worktree"])
+        self.assertFalse(os.path.isdir(self.task["worktree"]))
+        self.patch(self.commands, "repository", lambda s: {"provider": "github", "repo": "o/r", "host": "github.com"})
+        self.patch(github, "gh", lambda *a, **k: (True, json.dumps([{"number": 12, "url": "https://github.com/o/r/pull/12",
+                                                                        "isCrossRepository": False, "baseRefName": "main",
+                                                                        "headRefOid": tip}]), "") if a[:2] == ("pr", "list") else (True, "", ""))
+        merged = []
+        self.patch(self.commands, "merge_now", lambda s, t: merged.append(t["pr"]["number"]))
+        self.commands.cmd_accept(self.args())
+        self.assertEqual(merged, [12])
+
     def test_accept_never_merges_here_when_github_cant_be_asked(self):
         """#988: a repo on GitHub that gh couldn't reach just now: nothing merged here; a pull request behind the tip: refused too.
         In the fork gh not answering refuses itself (github() raises GhFailed, as N1 has it)."""
@@ -6927,8 +7155,9 @@ class ProcessTable(unittest.TestCase):
         import time
         time.sleep(0.3)
         ran, reads = [], []
-        real = self.sessions._read_table
-        with self.mock.patch.object(self.sessions, "run", lambda args, **kw: ran.append(args)), \
+        real, real_run = self.sessions._read_table, self.sessions.run
+        # recorded, and still run: macOS reads its table from this `ps`
+        with self.mock.patch.object(self.sessions, "run", lambda args, **kw: ran.append(args) or real_run(args, **kw)), \
                 self.mock.patch.object(self.sessions, "_read_table", lambda: reads.append(1) or real()):
             under = self.sessions.kids(tree.pid)
             for _ in range(20):   # a pass's other agents and session lookups share the same read
@@ -7154,3 +7383,142 @@ class LinkActions(unittest.TestCase):
         r = self.link.again("vmb", ["list"], lambda: subprocess.CompletedProcess([], *answers.pop(0)))
         self.assertEqual((r.returncode, r.stdout), (0, "[]"))
         self.assertFalse(self.link.lost(subprocess.CompletedProcess([], 1, "", "herdr-task: no such task")))
+
+
+class LinkFollowBounds(unittest.TestCase):
+    """PR #63 review: no poll outlasts the action's wait (the window stops a command at 30 s), a call past its bound is
+    a lost link, and a job seen running after its start was cut off is pending with its job, not "may have run"."""
+    setUp, tearDown, hc = LinkActions.setUp, LinkActions.tearDown, LinkActions.hc
+    LOST = LinkActions.LOST
+
+    def test_a_job_seen_running_after_a_cut_off_start_is_pending(self):
+        os.environ["HERDR_TASK_ACTION_WAIT"] = "0.05"
+        self.hc([(5, "", self.LOST)], [(0, "running\n", "")])
+        r = self.link.action("vmb", ["accept", "1", "--json"])
+        self.assertEqual((r.returncode, json.loads(r.stdout)["machine"]), (self.link.PENDING, "vmb"))
+        self.assertEqual(self.calls.count("run"), 1)
+
+    def test_no_poll_outlasts_the_wait(self):
+        """A slow machine: each poll takes as long as it is allowed. The answer still comes within the wait."""
+        from unittest import mock
+        os.environ["HERDR_TASK_ACTION_WAIT"] = "25"
+        clock = [0.0]
+
+        def run(argv, timeout=None, **k):
+            self.calls.append(argv[1])
+            if argv[1] == "run":
+                return subprocess.CompletedProcess(argv, 0, "{}", "")
+            allowed = float(argv[argv.index("--timeout") + 1])
+            clock[0] += min(allowed, allowed if timeout is None else timeout)
+            return subprocess.CompletedProcess(argv, 0, "running\n", "")
+        self.link.run = run
+        with mock.patch.object(self.link.time, "monotonic", lambda: clock[0]), \
+                mock.patch.object(self.link.time, "sleep", lambda s: clock.__setitem__(0, clock[0] + s)):
+            r = self.link.action("vmb", ["accept", "1", "--json"])
+        self.assertEqual(r.returncode, self.link.PENDING)
+        self.assertLessEqual(clock[0], 25.0)
+
+    def test_a_call_past_its_bound_is_a_lost_link(self):
+        r = self.link.run(["sleep", "5"], timeout=0.2)
+        self.assertTrue(self.link.lost(r))
+
+
+class LinkJobRunsOnce(unittest.TestCase):
+    """PR #63 review: a start sent again after its reply was lost finds the job claimed and leaves it alone, so the
+    action runs once and its output stays whole; POLL says a claimed job is running. The real RUN and POLL scripts, run
+    here with sh and python in a throwaway TMPDIR (no hc)."""
+
+    def setUp(self):
+        import shutil
+        sys.path.insert(0, BIN)
+        self.addCleanup(sys.path.remove, BIN)
+        import herdr_task.link as link
+        self.link = link
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.count, self.hold = os.path.join(self.tmp, "count"), os.path.join(self.tmp, "hold")
+        self.bin = os.path.join(self.tmp, "herdr-task")
+        with open(self.bin, "w") as f:
+            f.write('#!/bin/sh\necho ran >> "$COUNT"\nn=0\n'
+                    'while [ -e "$HOLD" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n+1)); done\necho "did $*"\n')
+        os.chmod(self.bin, 0o755)
+        self.env = dict(os.environ, TMPDIR=self.tmp, COUNT=self.count, HOLD=self.hold)
+
+    def runs(self):
+        try:
+            with open(self.count) as f:
+                return len(f.read().split())
+        except OSError:
+            return 0
+
+    def poll(self, job):
+        return subprocess.run([sys.executable, "-c", self.link.POLL, job], capture_output=True, text=True,
+                              env=self.env).stdout
+
+    def test_a_job_started_twice_runs_once(self):
+        import time
+        job = "abc123"
+        argv = ["sh", "-c", self.link.RUN, "sh", job, self.bin, "accept", "1"]
+        open(self.hold, "w").close()
+        first = subprocess.Popen(argv, env=self.env)
+        self.addCleanup(first.wait, 30)
+        for _ in range(200):
+            if self.runs():
+                break
+            time.sleep(0.05)
+        self.assertEqual(self.runs(), 1)
+        self.assertEqual(self.poll(job).split()[0], "running")
+        subprocess.run(argv, env=self.env, timeout=30)   # the same start again: its first reply was lost
+        os.remove(self.hold)
+        first.wait(timeout=30)
+        self.assertEqual(self.runs(), 1)
+        state, _, got = self.poll(job).partition("\n")
+        self.assertEqual((state, json.loads(got)), ("done", {"rc": 0, "out": "did accept 1\n", "err": ""}))
+
+
+class WorktreeOwnership(unittest.TestCase):
+    """PR #63 review: a registered worktree at a task's path is reused only with evidence it is that task's (#1023).
+    Branches feature/a and feature-a share the path feature-a: the second task never takes the first one's checkout."""
+    setUp, patch, git, commit = TaskFlow.setUp, TaskFlow.patch, TaskFlow.git, TaskFlow.commit
+
+    def test_another_tasks_worktree_at_the_same_path_is_refused(self):
+        from herdr_task import launch
+        wts = os.path.join(self.root, "worktrees")
+        self.patch(launch, "settings_for", lambda s, space=None: {"tasks": {"worktree_root": wts}})
+        path = os.path.join(wts, "repo", "feature-a")
+        self.git(self.main, "worktree", "add", "-q", "-b", "feature/a", path, "main")
+        self.commit(path, "work", "a.txt")
+        first = {"id": 1, "title": "One", "state": "running", "mode": "worktree", "worktree": path,
+                 "branch": "feature/a", "agents": []}
+        second = {"id": 2, "title": "Two", "state": "todo", "mode": "worktree", "branch": "feature-a", "agents": []}
+        self.store.data["tasks"] = [first, second]
+        with self.assertRaises(launch.Fail) as said:
+            launch.folder_for(self.store, second)
+        self.assertIn("SHEP-1", str(said.exception))
+        self.assertEqual((second.get("branch"), second.get("worktree")), ("feature-a", None))
+        # the first task gone from the list, its worktree left: still nothing ties it to the second task
+        self.store.data["tasks"] = [second]
+        with self.assertRaises(launch.Fail):
+            launch.folder_for(self.store, second)
+        self.assertEqual((second.get("branch"), second.get("worktree")), ("feature-a", None))
+
+
+class CodexOwnHooksExact(unittest.TestCase):
+    """PR #63 review: only the installer's exact `sh '<app>/mods/chat/<name>.sh'` hooks are trusted without Codex's
+    review; a command that merely ends in that path keeps the review prompt."""
+
+    def test_only_the_installers_exact_form_is_trusted(self):
+        from unittest import mock
+        sys.path.insert(0, BIN)
+        self.addCleanup(sys.path.remove, BIN)
+        from herdr_task import launch
+        home = tempfile.mkdtemp()
+        cmds = ["other-command; /some/mods/chat/ask-hook.sh", "other; sh '/x/mods/chat/ask-hook.sh'",
+                "/x/mods/chat/ask-hook.sh", "sh '/x/mods/chat/ask-hook.sh' && rm -rf /tmp/x; sh '/x/mods/chat/ask-hook.sh'",
+                "sh '/x/mods/chat/ask-hook.sh'"]
+        with open(os.path.join(home, "hooks.json"), "w") as f:
+            json.dump({"hooks": {"PermissionRequest": [{"hooks": [{"type": "command", "command": c, "timeout": 5}]}
+                                                       for c in cmds]}}, f)
+        with mock.patch.dict(os.environ, {"CODEX_HOME": home}):
+            own = launch.own_codex_hooks()
+        self.assertEqual(list(own), [home + "/hooks.json:permission_request:4:0"])

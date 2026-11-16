@@ -799,19 +799,42 @@ def _bg_scan(lines, seen):
     seen["ended"] = ended
 
 
+CODEX_FOR_OF = re.compile(r"for\s*\(\s*const\s+(\w+)\s+of\s+\[([\d,\s]+)\]\s*\)\s*\{")
+
+
+def _block_end(text, i):
+    """Where the { just before i closes (a brace in a quoted string is none), or None."""
+    depth, quote = 1, None
+    while i < len(text):
+        c = text[i]
+        if quote:
+            i += c == "\\"
+            quote = None if c == quote else quote
+        elif c in "\"'`":
+            quote = c
+        elif c in "{}":
+            depth += 1 if c == "{" else -1
+            if not depth:
+                return i
+        i += 1
+    return None
+
+
 def _codex_polled(call):
     """Recognise literal polls and the numeric for-of batch emitted by Codex.
 
     Keep command slots too: an exec_command result must never end a neighbouring poll.
     Unknown JavaScript stays unresolved; never execute an agent's script to read its log.
     """
-    loop = re.compile(r"for\s*\(const\s+(\w+)\s+of\s+\[([\d,\s]+)\]\s*\)\s*\{(.*?)\}\s*\}", re.S)
-    def expand(m):
-        body = m.group(3) + "}"
-        return "\n".join(re.sub(r"session_id\s*:\s*" + re.escape(m.group(1)) + r"\b",
-                                    "session_id:" + sid.strip(), body)
+    at = 0
+    while True:  # each loop, its body once per id in its list ({...} or {try {...}catch(e){...}})
+        m = CODEX_FOR_OF.search(call, at)
+        end = _block_end(call, m.end()) if m else None
+        if end is None:
+            break
+        each = "\n".join(re.sub(r"session_id\s*:\s*" + re.escape(m.group(1)) + r"\b", "session_id:" + sid.strip(), call[m.end():end])
                          for sid in m.group(2).split(",") if sid.strip())
-    call = loop.sub(expand, call)
+        call, at = call[:m.start()] + each + call[end + 1:], m.start()
     slots = []
     for m in re.finditer(r"tools\.(exec_command|write_stdin)\s*\(\s*\{([^{}]*)\}", call):
         sid = CODEX_SESSION_ARG.search(m.group(2) + "}") if m.group(1) == "write_stdin" else None

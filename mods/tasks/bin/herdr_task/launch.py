@@ -176,7 +176,8 @@ def own_codex_hooks():
                 continue
             h = entries[0]
             cmd = h.get("command") if isinstance(h, dict) else None
-            if (not isinstance(cmd, str) or not re.search(r"/mods/chat/(session-note|ask-hook)\.sh'?$", cmd)
+            # exactly the installer's `sh '<app>/mods/chat/<name>.sh'`: a command that only ends in that path is not ours
+            if (not isinstance(cmd, str) or not re.fullmatch(r"sh '/[^']*/mods/chat/(session-note|ask-hook)\.sh'", cmd)
                     or set(h) - {"type", "command", "timeout", "async"} or not isinstance(h.get("timeout"), int)):
                 continue
             ident = {"event_name": name, "hooks": [{"async": bool(h.get("async", False)), "command": cmd,
@@ -327,10 +328,11 @@ def cmd_allow(args):
 # ---- starting agents ------------------------------------------------------------------------
 
 
-def claude_mode(argv, folder=None):
+def claude_mode(argv, folder=None, config_dir=None):
     """The permission mode a new Claude Code session would start in (#1056): argv's own flag, else the defaultMode of
     its --settings, the folder's .claude/settings.local.json and .claude/settings.json, then the person's
-    (CLAUDE_CONFIG_DIR or ~/.claude), as Claude Code ranks them; "default" when none says."""
+    (config_dir, the Claude Code folder the agent starts under, else CLAUDE_CONFIG_DIR or ~/.claude), as Claude Code
+    ranks them; "default" when none says."""
     for i, a in enumerate(argv):
         if a == "--dangerously-skip-permissions":
             return None
@@ -342,7 +344,7 @@ def claude_mode(argv, folder=None):
     for i, a in enumerate(argv[:-1]):
         if a == "--settings":
             found.append(argv[i + 1])
-    home = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    home = config_dir or os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
     files = ([os.path.join(folder, ".claude", "settings.local.json"), os.path.join(folder, ".claude", "settings.json")] if folder else []) \
         + [os.path.join(home, "settings.json")]
     for src in found + files:
@@ -360,13 +362,14 @@ def claude_mode(argv, folder=None):
     return "default"
 
 
-def resume_argv(argv, session, folder=None):
+def resume_argv(argv, session, folder=None, config_dir=None):
     """argv resuming `session`. Claude Code brings a resumed session back in the permission mode it ended in (#1056: a
     switch replacing a stuck agent came up in plan or ask mode, not the person's auto): the mode a new one would get
-    is said, unless argv already says one."""
+    is said, unless argv already says one. config_dir: the Claude Code folder admission starts it under (its mode
+    comes from that profile's settings, not this process's)."""
     k = agent_key(argv)
     if k == "claude":
-        mode = claude_mode(argv, folder)
+        mode = claude_mode(argv, folder, config_dir)
         has = mode is None or any(a == "--permission-mode" or a.startswith("--permission-mode=") for a in argv)
         return argv + ([] if has else ["--permission-mode", mode]) + ["--resume", session]
     if k == "codex":
@@ -783,7 +786,12 @@ def folder_for(s, task):
     if have:
         # #1023: its worktree is still there, registered with this repo, though the task no longer
         # names it (its agent may have switched it to another branch): it goes on there, on the branch
-        # checked out now, never a failed "already exists".
+        # checked out now, never a failed "already exists". Only when it is this task's: two branches can
+        # share one folder name (feature/a and feature-a), and another task's checkout is never taken.
+        why = not_its_worktree(s, task, main, have, branch)
+        if why:
+            raise Fail(f"{s.ref(task)}'s worktree folder {path} is already a worktree of this repo ({why}). "
+                       "Give the task its own branch name (--branch), or remove that worktree.")
         br = have.get("branch") or branch
         base = task.get("base") or base
         start = task.get("start") or git(main, "merge-base", base, have.get("head") or br)[1] or have.get("head")
@@ -804,6 +812,23 @@ def folder_for(s, task):
     start = git(path, "rev-parse", "HEAD")[1] if not exists else task.get("start")
     task.update(worktree=path, branch=branch, base=task.get("base") or base, start=start)
     return path
+
+
+def not_its_worktree(s, task, main, have, branch):
+    """Why the registered worktree `have` (registered_worktree's) at the task's folder isn't the task's to go on in,
+    else None. Another task naming that folder or the branch checked out there owns it; otherwise it is the task's
+    only when its own branch is checked out there, or is in that checkout's history (its agent switched branch)."""
+    want = os.path.realpath(have["path"])
+    for o in s.data.get("tasks") or []:
+        if o is task:
+            continue
+        if (o.get("worktree") and os.path.realpath(o["worktree"]) == want) or (have.get("branch") and o.get("branch") == have["branch"]):
+            return f"it is {s.ref(o)}'s"
+    if have.get("branch") == branch:
+        return None
+    if have.get("head") and git(main, "merge-base", "--is-ancestor", f"refs/heads/{branch}", have["head"])[0]:
+        return None
+    return f"it is on {have.get('branch') or 'a detached commit'}, and nothing ties it to {branch}"
 
 
 def registered_worktree(main, path):

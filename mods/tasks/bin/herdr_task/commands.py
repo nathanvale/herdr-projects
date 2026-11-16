@@ -1194,9 +1194,10 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
     unarchive(s, t)
     parent = adm.parent
     # #1056: a resumed Claude Code session says the permission mode a new one would get, read from its folder's
-    # settings too. The folder only when it is already there: nothing is made before the start is claimed.
+    # settings too. The folder only when it is already there: nothing is made before the start is claimed. The
+    # person's settings are the profile admission starts it under (adm.config_dir), not this process's.
     here = folder_for(s, t) if t.get("mode") != "worktree" or os.path.isdir(t.get("worktree") or "") else None
-    res = resume_argv(argv, prev["session"], here) if resuming else None
+    res = resume_argv(argv, prev["session"], here, adm.config_dir) if resuming else None
     with adm.claimed():
         adm.before_send = before_send
         if res:
@@ -1498,8 +1499,10 @@ def merge_now(s, t, auto=False):
         return held
     watch_main(s, t, ((v.get("mergeCommit") or {}).get("oid")) if v.get("state") == "MERGED" else None)
     update_main(s, t)
-    # Its branch on GitHub goes now that it merged (the repo may have deleted it already: fine).
-    drop_branch(s, t)
+    # Its branch on GitHub goes now that it merged (the repo may have deleted it already: fine). Only GitHub's:
+    # a Bitbucket pull request merged there by hand keeps its branch on the remote, as the tick leaves it.
+    if provider_of(t["pr"]) == GITHUB:
+        drop_branch(s, t)
     t["merged"] = True
     # What merged, for finish(): as gh says it merged when its answer says MERGED (merged by hand, or a
     # merge that erred and went through), else the head GitHub merged on --match-head-commit. Never the
@@ -1511,6 +1514,12 @@ def merge_now(s, t, auto=False):
     return None
 
 
+def adopt_tip(s, t):
+    """The tip pr_adopt() holds an open pull request to: None (read in the task's worktree) while that folder is
+    there, else branch_tip(), so a worktree folder that is gone while its branch stays doesn't refuse Accept."""
+    return None if os.path.isdir(t.get("worktree") or "") else branch_tip(s, t)
+
+
 def own_open_pr(s, t):
     """#988: a task with no pull request on record, in a GitHub repo: the open one for its branch (its
     agent opened it, ready never knew) is adopted through the forge (pr_adopt(): this repository on gh's
@@ -1520,7 +1529,7 @@ def own_open_pr(s, t):
     where = repository(s)
     if not where:
         return None
-    if pr_adopt(t, where):
+    if pr_adopt(t, where, adopt_tip(s, t)):
         s.dirty = True
         return t["pr"]
     found = pr_for_branch(t, where["repo"])

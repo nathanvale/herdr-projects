@@ -18,6 +18,19 @@ const call = (go: boolean): Promise<Got> =>
 
 const mins = (ms: number) => Math.max(1, Math.ceil(ms / 60000))
 
+/** how long until the wait's shown minutes change (its label), or it is over: `rest` ms of it left */
+export const nextTick = (rest: number) => rest % 60000 || 60000
+
+/** The one button, with `left` ms of the wait after a run still to go. A list that couldn't be read (no hosts) reads it
+ *  again (retry); else it tries the hosts once the wait is over. */
+export function findButton(got: Got | null, busy: boolean, left: number) {
+  const hosts = got?.hosts ?? []
+  if (got?.error && !hosts.length) return { label: busy ? 'Checking…' : 'Try again', disabled: busy, retry: true }
+  if (busy) return { label: 'Trying…', disabled: true, retry: false }
+  if (left > 0) return { label: `Again in ${mins(left)} min`, disabled: true, retry: false }
+  return { label: `Try ${hosts.length} ${hosts.length === 1 ? 'host' : 'hosts'}`, disabled: !got || !hosts.length, retry: false }
+}
+
 function result(h: Host) {
   if (h.core) return h.linked ? `Herdr ${h.core}, linked already` : `Herdr ${h.core}, not linked: add it with Add machine`
   if (h.ok) return 'Logged in; no Herdr there'
@@ -27,18 +40,51 @@ function result(h: Host) {
 export function FindMachines({ phone }: { phone: boolean }) {
   const [got, setGot] = useState<Got | null>(null)
   const [busy, setBusy] = useState(false)
-  useEffect(() => void call(false).then(setGot), [])
+  // the wait after a run ends at `until` (this browser's clock, from the server's wait_ms when it answered); `now` moves
+  // on as it counts down
+  const [until, setUntil] = useState(0)
+  const [now, setNow] = useState(() => Date.now())
+  // an answer: a failed one keeps what shows (and the wait) and says why
+  const take = (r: Got) => {
+    const at = Date.now()
+    setNow(at)
+    if (r.error) return setGot((g) => ({ ...(g ?? { hosts: [], last: null, wait_ms: 0 }), error: r.error }))
+    setGot(r)
+    setUntil(at + r.wait_ms)
+  }
+  useEffect(() => {
+    let live = true
+    void call(false).then((r) => live && take(r))
+    return () => { live = false }
+  }, [])
+  // the countdown: its label each minute; at its end the list is read again (only read: a run is the person's press)
+  useEffect(() => {
+    if (until <= Date.now()) return
+    let live = true, timer: ReturnType<typeof setTimeout> | undefined
+    const tick = () => {
+      const at = Date.now()
+      setNow(at)
+      if (until > at) timer = setTimeout(tick, nextTick(until - at))
+      else void call(false).then((r) => live && take(r))
+    }
+    timer = setTimeout(tick, nextTick(until - Date.now()))
+    return () => { live = false; clearTimeout(timer) }
+  }, [until])
 
   const go = async () => {
     setBusy(true)
-    const r = await call(true)
-    setGot(r.error ? { ...(got ?? { hosts: [], last: null, wait_ms: 0 }), error: r.error } : r)
+    take(await call(true))
+    setBusy(false)
+  }
+  const retry = async () => {
+    setBusy(true)
+    take(await call(false))
     setBusy(false)
   }
 
   const hosts = got?.hosts ?? []
   const done = (got?.last?.hosts ?? []).filter((h): h is Host => !!h)
-  const wait = got?.wait_ms ?? 0
+  const button = findButton(got, busy, Math.max(0, until - now))
   return (
     <section className="w-full" aria-labelledby="find-machines">
       <h3 id="find-machines" className={heading(phone)}>Find machines</h3>
@@ -63,9 +109,7 @@ export function FindMachines({ phone }: { phone: boolean }) {
             <Small>Nothing to try: no other hosts in ssh config or Tailscale.</Small>
           )}
           <span className="flex items-center justify-end">
-            <Ghost disabled={busy || !got || !!wait || !hosts.length} onClick={go}>
-              {busy ? 'Trying…' : wait ? `Again in ${mins(wait)} min` : `Try ${hosts.length} ${hosts.length === 1 ? 'host' : 'hosts'}`}
-            </Ghost>
+            <Ghost disabled={button.disabled} onClick={button.retry ? retry : go}>{button.label}</Ghost>
           </span>
         </div>
       </div>

@@ -97,8 +97,9 @@ function nameText(text, fresh, color, t) {
       .when(fresh, (el) => el.font_semibold()).child(text));
 }
 
-// A machine's Autopilot file (herdr-task's .autopilot.json there), read over herdr-core.
-const READ_PILOTS = SH + 'cat "$SHEP_TASKS/.autopilot.json" 2>/dev/null || true';
+// A machine's Autopilot file (herdr-task's .autopilot.json there), read over herdr-core. No file there reads as empty
+// (nothing on Autopilot); one that is there but can't be read exits non-zero, so it isn't taken for an empty one.
+const READ_PILOTS = SH + 'f="$SHEP_TASKS/.autopilot.json"; [ -e "$f" ] || exit 0; cat "$f"';
 
 // The spaces on Autopilot in a machine's file -> [[key, "on" | "waking"]] ("waking" while a wake runs or waits for its
 // Assistant): this computer's by space id, a linked machine's as "<machine>/<its id there>".
@@ -178,26 +179,33 @@ export default class Spaces extends View {
 
   // This computer's file every read; each linked machine's that has spaces here every third (about every 15 s, as the
   // machines refresh), read there over herdr-core as the Assistant's header does (GitHub #1010). A machine that
-  // doesn't answer keeps what it last said.
+  // doesn't answer, or whose file can't be read, keeps what it last said. Reads overlap (one there can outlast the next
+  // 5 s read): each side keeps its newest read's answer, so a slow read never puts back older status.
   readPilots(cx) {
-    this.pilotTick = (this.pilotTick ?? 0) + 1;
-    const far = this.pilotTick % 3 === 1;
+    const n = this.pilotTick = (this.pilotTick ?? 0) + 1;
+    const far = n % 3 === 1;
     cx.spawn(async (cx) => {
       let d = null;
       try { d = JSON.parse((await readTextFile(`${(await dirsReady()).tasks}/.autopilot.json`)) ?? "{}"); } catch {}
-      const next = new Map(d ? pilotEntries(d) : [...this.pilots].filter(([k]) => !k.includes("/")));
+      if (d && n > (this.nearAt ?? 0)) { this.nearAt = n; this.nearPilots = new Map(pilotEntries(d)); }
       if (far) {
         const there = new Set(allSpaces().map((sp) => sp.machine).filter(Boolean));
         const ready = machines().filter((m) => m.name && there.has(m.name) && m.layout === "ready").map((m) => m.name);
         const read = await Promise.all(ready.map(async (m) => {
-          try { return [m, JSON.parse((await exec("sh", ["-c", READ_PILOTS], { on: m })).stdout || "{}")]; } catch { return [m, null]; }
+          try {
+            const r = await exec("sh", ["-c", READ_PILOTS], { on: m });
+            return [m, r.code === 0 ? JSON.parse(r.stdout || "{}") : null];
+          } catch { return [m, null]; }
         }));
-        const was = this.farPilots ?? new Map();
-        const answered = new Set(read.filter(([, f]) => f).map(([m]) => m));
-        this.farPilots = new Map([...[...was].filter(([k]) => !answered.has(k.slice(0, k.indexOf("/")))),
-          ...read.flatMap(([m, f]) => (f ? pilotEntries(f, m) : []))]);
+        if (n > (this.farAt ?? 0)) {
+          this.farAt = n;
+          const was = this.farPilots ?? new Map();
+          const answered = new Set(read.filter(([, f]) => f).map(([m]) => m));
+          this.farPilots = new Map([...[...was].filter(([k]) => !answered.has(k.slice(0, k.indexOf("/")))),
+            ...read.flatMap(([m, f]) => (f ? pilotEntries(f, m) : []))]);
+        }
       }
-      for (const [k, v] of this.farPilots ?? []) next.set(k, v);
+      const next = new Map([...(this.nearPilots ?? []), ...(this.farPilots ?? [])]);
       if (JSON.stringify([...next]) === JSON.stringify([...this.pilots])) return;
       this.pilots = next;
       cx.notify();

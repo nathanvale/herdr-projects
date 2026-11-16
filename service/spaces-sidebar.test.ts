@@ -32,9 +32,13 @@ const shared = new Map<string, unknown>();
 let machinesNow: { name: string | null; layout?: string }[] = [];
 let localPilot: string | null = null;
 const farFiles: Record<string, string> = {};
-const execImpl = async (_cmd: string, args: string[], opts?: { on?: string }) =>
-  opts?.on && String(args?.[1] ?? "").includes(".autopilot.json") && farFiles[opts.on] != null
+// a read there waits on this while a test holds it (a slow machine)
+let farHold: Promise<void> | null = null;
+const execImpl = async (_cmd: string, args: string[], opts?: { on?: string }) => {
+  if (opts?.on && farHold) await farHold;
+  return opts?.on && String(args?.[1] ?? "").includes(".autopilot.json") && farFiles[opts.on] != null
     ? { code: 0, stdout: farFiles[opts.on], stderr: "" } : { code: 1, stdout: "", stderr: "" };
+};
 let sidebarPx = 260;
 const space = (id: string, active = false) => ({ id, name: id, active, machine: null as string | null, tabs: [] as unknown[], folder: "/tmp/x" });
 let liveSpaces = [space("s1", true), space("s2")];
@@ -134,5 +138,33 @@ describe("Autopilot rocket for a linked machine's spaces (GitHub #1010)", () => 
     await read(s); await read(s); await read(s);
     expect(s.pilots.has("vmb/sp1")).toBe(false);
     expect(s.pilotMark(liveSpaces[1], theme)).toBeNull();
+  });
+
+  test("a file there that can't be read keeps what it said last; one read empty clears it", async () => {
+    const s: any = new Spaces(); s.pilots = new Map();
+    await read(s);
+    delete farFiles.vmb; // the read there fails (its cat exits non-zero)
+    await read(s); await read(s); await read(s);
+    expect(s.pilots.get("vmb/sp1")).toBe("on");
+    farFiles.vmb = ""; // read fine, nothing in it: nothing on Autopilot there
+    await read(s); await read(s); await read(s);
+    expect(s.pilots.has("vmb/sp1")).toBe(false);
+  });
+
+  test("a slow read there doesn't put back this computer's older status", async () => {
+    const s: any = new Spaces(); s.pilots = new Map();
+    localPilot = JSON.stringify({ spaces: { s1: { on: true, inflight: true } } });
+    let open = () => {};
+    farHold = new Promise((r) => { open = r; });
+    try {
+      s.readPilots(run); const slow = last; // reads this computer's file ("waking"), then waits there
+      await new Promise((r) => setTimeout(r, 20));
+      localPilot = JSON.stringify({ spaces: { s1: { on: true } } }); // the wake finished
+      await read(s);
+      expect(s.pilots.get("s1")).toBe("on");
+      open(); await slow;
+      expect(s.pilots.get("s1")).toBe("on");
+      expect(s.pilots.get("vmb/sp1")).toBe("on");
+    } finally { farHold = null; open(); }
   });
 });

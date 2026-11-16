@@ -2242,24 +2242,35 @@ export default class Chat extends View {
 
   // The Coordinator tab's chat empty again, ready to start the next Assistant.
   startFresh() {
+    this.restartFor = null; // a Restart Assistant still waiting stops (restartAssistant)
     this.endedAssistant = false;
     this.addr = null; this.path = null; this.reset(); this.phase = "fresh";
   }
 
   // Restart Assistant, after its agent ended (GitHub #1039): the same conversation resumed, with its flags, parked
-  // behind this chat, which follows it (as the model picker's restart does).
+  // behind this chat, which follows it (as the model picker's restart does). "Start a new one" stays pressable while
+  // it waits and empties the chat (startFresh): what it restarts is taken when pressed, and it stops once that happens.
   restartAssistant(cx) {
     const mine = this.myPane() ?? this.lastPane;
     if (this.restarting || !mine || !this.addr) return;
+    const { addr, kind, path, argv: own } = this;
+    const session = agent.sessionOf(kind, path);
+    const ask = this.restartFor = { addr };
+    const gone = () => this.restartFor !== ask;
     this.restarting = true;
     cx.notify();
     cx.spawn(async (cx) => {
       try {
-        const r = await hc(["get", this.addr, "--json"]);
+        const r = await hc(["get", addr, "--json"]);
+        if (gone()) return;
         let t = null;
         try { t = JSON.parse(r.stdout || "null"); } catch {}
         if (!t || t.error) throw new Error("Its old terminal is gone. Start a new Assistant instead.");
-        const argv = agent.resumeArgv(this.kind, this.argv ?? t.argv ?? [this.kind], agent.sessionOf(this.kind, this.path));
+        // Its agent has ended, so no process of its own is left to ask: the same refusal as a lost session's new start.
+        const why = await agent.lostRefusal(kind, t, this.folderReader(addr), path);
+        if (gone()) return;
+        if (why) throw new Error(why);
+        const argv = agent.resumeArgv(kind, own ?? t.argv ?? [kind], session);
         this.swapping = true;
         const next = await agent.restart(t, { argv, resume: true, base: argv }, mine);
         this.endedAssistant = false;
@@ -2268,11 +2279,13 @@ export default class Chat extends View {
         cx.timer.after(6000, (cx) => { this.note = null; cx.notify(); });
         cx.spawn(async (cx) => this.follow(cx));
       } catch (e) {
-        toast({ title: "The Assistant didn't restart", body: plainError(e), level: "error" });
+        if (!gone()) toast({ title: "The Assistant didn't restart", body: plainError(e), level: "error" });
+      } finally {
+        if (!gone()) this.restartFor = null;
+        this.swapping = false;
+        this.restarting = false;
+        cx.notify();
       }
-      this.swapping = false;
-      this.restarting = false;
-      cx.notify();
     });
   }
 

@@ -87,6 +87,52 @@ class Crop(unittest.TestCase):
         A.png_cut(src, out, 0, 0, 40, 30, longest=20)
         self.assertEqual(A.png_size(out), (20, 15))
 
+    def crop(self, src, out, box):
+        env = {"HOME": os.environ["HOME"], "PATH": "/nonexistent"}
+        return subprocess.run([sys.executable, "-I", TOOL, "crop", src, out, "--rect", box, "--json"],
+                              env=env, capture_output=True, text=True)
+
+    def test_a_broken_png_or_rect_is_an_error_not_a_traceback(self):
+        """A truncated or corrupt PNG, or a rect too large to be a number of pixels, is refused with crop's error."""
+        good = os.path.join(self.dir, "good.png")
+        write_png(good, 40, 30, 3, lambda x, y: (x, y, 0))
+        with open(good, "rb") as f:
+            data = f.read()
+        bad_idat = data[:33] + struct.pack(">I", 4) + b"IDAT" + b"junk" + struct.pack(">I", 0)
+        cases = {"header cut short": (data[:18], "0,0,10,10"),       # under the 24 bytes png_size reads
+                 "IHDR cut short": (data[:24], "0,0,10,10"),         # png_size reads it, its body is short
+                 "corrupt IDAT": (bad_idat, "0,0,10,10"),
+                 "infinite width": (data, "0,0,1e999,10")}
+        for name, (body, box) in cases.items():
+            with self.subTest(name):
+                src, out = os.path.join(self.dir, "in.png"), os.path.join(self.dir, "out.png")
+                with open(src, "wb") as f:
+                    f.write(body)
+                r = self.crop(src, out, box)
+                self.assertEqual(r.returncode, 1, r.stderr)
+                self.assertNotIn("Traceback", r.stderr)
+                self.assertTrue(json.loads(r.stdout)["error"].startswith(f"Couldn't crop {src}"), r.stdout)
+
+    def test_a_rect_that_starts_outside_the_picture_is_refused(self):
+        """A rect from past the right or bottom edge holds no pixels: no 1-pixel-wide PNG with no data is written."""
+        src = os.path.join(self.dir, "s.png")
+        write_png(src, 40, 30, 3, lambda x, y: (x, y, 0))
+        for box in ("40,0,10,10", "0,30,10,10", "500,500,10,10"):
+            with self.subTest(box):
+                out = os.path.join(self.dir, "o.png")
+                r = self.crop(src, out, box)
+                self.assertEqual(r.returncode, 1, r.stderr)
+                self.assertIn("outside the picture", json.loads(r.stdout)["error"])
+                self.assertFalse(os.path.exists(out))
+        shot, app = os.path.join(self.dir, "win.png"), os.path.join(self.dir, "app")
+        write_png(shot, 40, 30, 3, lambda x, y: (255, 255, 255))
+        os.makedirs(app)
+        with open(os.path.join(app, "window.json"), "w") as f:
+            json.dump({"bounds": [0, 0, 40, 30]}, f)
+        with mock.patch.object(A, "APP", app), mock.patch.object(A.shutil, "which", return_value=None):
+            self.assertFalse(A.crop_shot(shot, [45, 0, 10, 10], None, os.path.join(self.dir, "panel.png")))
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "panel.png")))
+
     def test_the_window_mark_up_cuts_and_outlines_without_imagemagick(self):
         shot, out = os.path.join(self.dir, "win.png"), os.path.join(self.dir, "spot.png")
         write_png(shot, 40, 30, 3, lambda x, y: (255, 255, 255))

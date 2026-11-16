@@ -19,7 +19,7 @@ import secrets
 import subprocess
 import time
 
-from .base import run
+from .base import guard, run as base_run
 
 # What the person does from the window, the web app or a menu: run there whole, result read back.
 ACTIONS = {"add", "start", "done", "accept", "reopen", "unarchive", "edit", "rm", "review", "review-more", "star",
@@ -30,22 +30,26 @@ PENDING = 75     # exit code: still running there, follow it with _job
 STEP_MAX = 1.0
 
 # There: run herdr-task with its output and exit code in files, as hc exec would run it (no terminal's ids:
-# herdr-task would take the terminal for an agent's). Old results go after an hour.
+# herdr-task would take the terminal for an agent's). Old results go after an hour. One run per job: its
+# .claim folder (mkdir, atomic) is made before anything else, and a start sent again after a lost reply finds
+# it and leaves the job alone.
 RUN = r'''d="${TMPDIR:-/tmp}/herdr-task-jobs-$(id -u)"; mkdir -p "$d" && chmod 700 "$d" || exit 1
 j=$1; b=${2:-$HOME/.local/bin/herdr-task}; shift 2
+mkdir "$d/$j.claim" 2>/dev/null || exit 0
 : > "$d/$j.out"
 find "$d" -type f -mmin +60 -exec rm -f {} + 2>/dev/null
+find "$d" -type d -name '*.claim' -mmin +60 -exec rmdir {} + 2>/dev/null
 unset HC_TERMINAL_ID HC_TERMINAL_SOCKET TERM_PROGRAM
 "$b" "$@" > "$d/$j.out" 2> "$d/$j.err" < /dev/null
 echo $? > "$d/$j.rc.new" && mv "$d/$j.rc.new" "$d/$j.rc"'''
 
-# There: "none" (never started), "running", or "done" and its {rc, out, err} on the next line. Kept: a reply lost
-# on the way back is read again.
+# There: "none" (never started), "running" (claimed), or "done" and its {rc, out, err} on the next line. Kept: a
+# reply lost on the way back is read again.
 POLL = r'''import json, os, sys
 d = os.path.join(os.environ.get("TMPDIR") or "/tmp", "herdr-task-jobs-%d" % os.getuid())
 p = lambda e: os.path.join(d, sys.argv[1] + e)
 if not os.path.exists(p(".rc")):
-    print("running" if os.path.exists(p(".out")) else "none")
+    print("running" if os.path.exists(p(".claim")) or os.path.exists(p(".out")) else "none")
     sys.exit(0)
 def read(e):
     try:
@@ -62,6 +66,20 @@ def wait_s():
         return float(os.environ.get("HERDR_TASK_ACTION_WAIT") or WAIT)
     except ValueError:
         return WAIT
+
+
+def run(args, timeout=None):
+    """base.run, within `timeout` seconds when given: a call that outlasts it is a lost link (hc's "unavailable",
+    exit 5), so a slow machine can't hold a poll past the action's wait."""
+    if timeout is None:
+        return base_run(args)
+    guard(args)
+    try:
+        return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
+                              timeout=timeout)
+    except subprocess.TimeoutExpired:
+        err = {"error": {"kind": "unavailable", "message": f"no answer within {timeout:.1f} s"}}
+        return subprocess.CompletedProcess(args, 5, "", json.dumps(err))
 
 
 def lost(r):
@@ -100,9 +118,12 @@ def start(machine, job, argv):
                 os.environ.get("HERDR_TASK_REMOTE_BIN", ""), *argv])
 
 
-def poll(machine, job):
-    """("done", {rc, out, err}) | ("running"|"none", None) | ("lost", hc's run) | ("error", hc's run)."""
-    r = run(["hc", "exec", "--on", machine, "--timeout", "15", "--", "python3", "-c", POLL, job])
+def poll(machine, job, budget=15.0):
+    """("done", {rc, out, err}) | ("running"|"none", None) | ("lost", hc's run) | ("error", hc's run).
+    budget: the seconds it may take (at most 15), what is left of the action's wait."""
+    budget = min(15.0, budget)
+    r = run(["hc", "exec", "--on", machine, "--timeout", str(max(1, int(budget))), "--", "python3", "-c", POLL, job],
+            timeout=budget)
     if r.returncode != 0:
         return ("lost" if lost(r) else "error"), r
     head, _, rest = r.stdout.partition("\n")
@@ -133,10 +154,10 @@ def follow(machine, job, argv, deadline, restart=None, maybe=False):
     """Reads the job's result until `deadline` (time.monotonic()), waiting out a dropped link.
     restart: the job's argv when its start was cut off (not known to have started): started
     again once the link is back and the machine says it never began. maybe: that start was cut off
-    mid-call (it may have begun there), not refused before it reached the machine."""
+    mid-call (it may have begun there), not refused before it reached the machine. No poll outlasts `deadline`."""
     step, nones, last = 0.2, 0, None
     while True:
-        state, got = poll(machine, job)
+        state, got = poll(machine, job, max(0.5, deadline - time.monotonic()))
         if state == "done":
             return _done(argv, got.get("rc", 1), got.get("out", ""), got.get("err", ""))
         if state == "error":
@@ -150,7 +171,8 @@ def follow(machine, job, argv, deadline, restart=None, maybe=False):
                 msg = f"No action {job} on {machine}."
                 return _say(argv, 1, {"error": msg})
             if restart is not None and nones >= 2:
-                # twice "never began", the link up: it never started, so it starts now (once)
+                # twice "never began", the link up: it starts now. Should the first start still arrive, the job's
+                # claim (RUN) lets only one of them run it.
                 r = start(machine, job, restart)
                 if r.returncode == 0:
                     restart, nones = None, 0
@@ -160,6 +182,8 @@ def follow(machine, job, argv, deadline, restart=None, maybe=False):
                     maybe = maybe or cut(r)
         else:
             last = None
+            if state == "running":
+                restart = None   # it started there: never started again, and pending (not "may have run") at the end
         if time.monotonic() + step >= deadline:
             break
         time.sleep(step)

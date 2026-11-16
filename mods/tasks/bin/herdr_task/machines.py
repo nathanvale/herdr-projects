@@ -800,6 +800,16 @@ def _try_host(h, ids):
     return h
 
 
+def _find_wait(last):
+    """How long until Find may run again after the last run (FOUND's), in ms."""
+    return max(0, FIND_EVERY_MS - (now() - (last or {}).get("at", 0)))
+
+
+def _refuse_soon(wait):
+    if wait:
+        raise Fail(f"Find machines ran {(FIND_EVERY_MS - wait) // 60000} min ago; try again in {-(-wait // 60000)} min")
+
+
 def find(go=False):
     """Find machines: without go, what it would contact (and the last run's answer); with go, try
     each once now. Refused while the Other machines add-on is off, or within FIND_EVERY_MS of the last."""
@@ -808,11 +818,10 @@ def find(go=False):
     linked = _linked()
     hosts = find_hosts(linked)
     last = _found()
-    wait = max(0, FIND_EVERY_MS - (now() - (last or {}).get("at", 0)))
+    wait = _find_wait(last)
     if not go:
         return {"hosts": hosts, "last": last, "wait_ms": wait}
-    if wait:
-        raise Fail(f"Find machines ran {(FIND_EVERY_MS - wait) // 60000} min ago; try again in {-(-wait // 60000)} min")
+    _refuse_soon(wait)
     os.makedirs(STORE, exist_ok=True)
     lock = open(os.path.join(STORE, ".find.lock"), "a")
     try:
@@ -821,6 +830,8 @@ def find(go=False):
         lock.close()
         raise Fail("Find machines is already running")
     try:
+        # Another Find may have run between the read above and this lock: its time counts too.
+        _refuse_soon(_find_wait(_found()))
         _save_found({"at": now(), "hosts": [], "running": True})  # counts for the wait even if this run dies
         out, todo = [None] * len(hosts), list(enumerate(hosts))
         mu = threading.Lock()

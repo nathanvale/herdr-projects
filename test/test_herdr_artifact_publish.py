@@ -235,8 +235,9 @@ class Publish(unittest.TestCase):
         self.assertIn("Waiting for another herdr-artifact", err.getvalue())
 
     def lock_path(self):
-        with A.Store(A.locate(self.folder)) as s:
-            return os.path.join(A.STORE, "." + os.path.basename(s.path) + ".lock")
+        """The folder's lock file, found without taking it (a writable Store would wait on it)."""
+        path = A.Store(A.locate(self.folder), write=False).path
+        return os.path.join(A.STORE, "." + os.path.basename(path) + ".lock")
 
     def test_a_read_never_waits_on_the_lock(self):
         """#971, #972: a reader (a preview's every request, list, show) takes no lock: it neither waits behind a
@@ -254,10 +255,14 @@ class Publish(unittest.TestCase):
         """#972: a publish's check (minutes under load) holds no lock: another publish in the folder saves meanwhile."""
         os.environ["FAKE_CHECK"] = "slow"
         first = {}
+        lock = self.lock_path()  # resolved before the publish starts, so finding it can't wait on its lock
         th = threading.Thread(target=lambda: first.update(self.publish(self.recipe("slow"), title="Slow")))
         th.start()  # the only thread that patches stdout
-        time.sleep(0.5)  # the first is in its check now
-        held = open(self.lock_path(), "a")
+        deadline = time.time() + 10
+        while not self.calls():  # the fake checker logs as it starts: the first is in its check now
+            self.assertLess(time.time(), deadline, "the checker never started")
+            time.sleep(0.01)
+        held = open(lock, "a")
         self.addCleanup(held.close)
         t = time.time()
         fcntl.flock(held, fcntl.LOCK_EX)  # what a second publish's save takes
@@ -283,6 +288,32 @@ class Publish(unittest.TestCase):
         self.assertEqual(sorted(json.loads(l)["version"] for l in out.getvalue().splitlines()), [2, 3])
         with A.Store(A.locate(self.folder), write=False) as s:
             self.assertEqual([x["v"] for x in s.find(aid)["versions"]], [1, 2, 3])
+
+    def test_a_new_publish_in_a_read_only_store_says_so(self):
+        """#841: a sandbox's store is read-only: a new publish says so (making its files' folder), never a traceback."""
+        d = self.recipe()
+        for case in ("store", "files"):
+            with self.subTest(case):
+                shutil.rmtree(A.STORE, ignore_errors=True)
+                os.makedirs(A.FILES if case == "files" else A.STORE)
+                os.chmod(A.FILES if case == "files" else A.STORE, 0o555)
+                try:
+                    with self.assertRaises(A.Fail) as e:
+                        self.publish(d)
+                finally:
+                    os.chmod(A.FILES if case == "files" else A.STORE, 0o755)
+                self.assertIn("is read-only (a sandbox?)", str(e.exception))
+                self.assertEqual(self.calls(), [])  # refused before the check
+
+    def test_check_without_herdr_app_fails(self):
+        """`check` draws with herdr-app: without it nothing was drawn, so it says so instead of "nothing to fix"."""
+        aid = self.publish(self.recipe())["id"]
+        empty = os.path.join(self.dir, "empty-bin")
+        os.makedirs(empty)
+        os.environ["PATH"] = empty
+        with self.assertRaises(A.Fail) as e:
+            A.cmd_check(types.SimpleNamespace(id=aid, version=None, json=True))
+        self.assertIn("herdr-app", str(e.exception))
 
     def test_a_refused_new_artifact_leaves_nothing(self):
         os.environ["FAKE_CHECK"] = "broken"

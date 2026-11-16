@@ -182,9 +182,22 @@ Shepherdr only talks to what you set up yourself. In the background it contacts:
   health and artifacts for the sidebar and the web app, the task tick, the tools sync above, and the map of which
   Assistants each machine reaches (`herdr-task machines reach`). It opens no new connection for any of it.
 - **GitHub**, through `gh` and git, for your tasks' own repos: their branches, pull requests, checks and merges.
+- **Bitbucket Cloud** (`api.bitbucket.org`), for a task whose repo is on Bitbucket Cloud, with the token git's own
+  credential helper gives for that repo: its pull request and the statuses of its head commit, and, when you publish
+  the task, opening a draft pull request and marking it ready for review. Nothing else in that repository, and it
+  never merges there.
 - **ElevenLabs**, with your key only (Voice add-on): dictation and calls when you use them, its credits now and then.
 - **Your devices' push services** (the browser's), when an alert goes to a device you turned alerts on for.
 - **This machine's own Tailscale**, to share the web app privately on your tailnet. Never your other peers.
+
+Azure is contacted only when you set it up and ask:
+
+- **Azure CLI** (`az`, with this machine's existing sign-in), only when you press Refresh on a deployment picker in
+  Settings: `az account show`, `az cognitiveservices account list` and `az cognitiveservices account deployment list`
+  for the resource you configured. Read only: it never signs in, changes a deployment or sends a model request.
+- **Your Azure Foundry resource**, from the agents you start with the Azure Foundry provider: Claude Code and Codex
+  send their model requests to the resource or endpoint you set. Shepherdr itself sends none. With Personal (the
+  default) your agents keep their own provider.
 
 It never tries ssh to the hosts in your `~/.ssh/config`, nor your Tailscale peers, on its own (the reach map used to,
 every 5 minutes: GitHub #967). Only two things do, and only when you ask: **Add machine** reads your ssh config
