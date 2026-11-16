@@ -104,8 +104,8 @@
       "mutation": {
         "runner": "bun",
         "file": "service/artifacts.ts",
-        "before": "        if (!r || r.code !== 0 || r.truncated) return new Response(\"no such file\", { status: 404 });",
-        "after": "        if (!r || r.code !== 0) return new Response(\"no such file\", { status: 404 });",
+        "before": "        if (!r || r.code !== 0 || r.truncated) return new Response(\"no such file\", { status: 404, headers: { \"cache-control\": \"no-store\" } });",
+        "after": "        if (!r || r.code !== 0) return new Response(\"no such file\", { status: 404, headers: { \"cache-control\": \"no-store\" } });",
         "test_file": "service/artifacts-remote.test.ts",
         "test": "a read herdr-core cut short is refused and not kept"
       }

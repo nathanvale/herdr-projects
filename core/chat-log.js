@@ -10,7 +10,10 @@
 import { codexQuestions } from "./asks.js";
 
 // How FIND and FOLDER read a process: its children, and the folder Claude Code uses in it.
-const PROCESS = `kids() { for k in $(pgrep -P "$1" 2>/dev/null); do echo "$k"; kids "$k"; done; }
+// The processes under pid come from one read of /proc, else one ps (macOS) (GitHub #1013: a pgrep per process read
+// every process each time).
+const PROCESS = `procs() { if [ -r /proc/self/stat ]; then cat /proc/[0-9]*/stat 2>/dev/null | awk '{ p = $1; sub(/.*\\) /, ""); print p, $2 }'; else ps -axo pid=,ppid= 2>/dev/null; fi; }
+kids() { procs | sort -n | awk -v r="$1" 'function walk(p,  c, m, j) { m = split(k[p], c, " "); for (j = 1; j <= m; j++) if (!(c[j] in s)) { s[c[j]] = 1; print c[j]; walk(c[j]) } } { k[$2] = k[$2] " " $1 } END { s[r] = 1; walk(r) }'; }
 # The folder Claude Code uses in process $1, from that process's own environment, never this
 # shell's: its CLAUDE_CONFIG_DIR, or ~/.claude when it has none. Fails, so no other folder is
 # tried, when that can't be read exactly: no way to read it here, an empty environment (macOS

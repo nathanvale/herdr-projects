@@ -10,9 +10,10 @@ import { sendBody, steerNow, messageBody, refusal, reactionLine, mentionedIn, ta
 import { kindOf } from "../core/chat-reader.js";
 import { WORDS } from "../core/chat-view.js";
 import { withoutUsedPick } from "./selections.ts";
+import { settle } from "../core/pending.js";
 import * as AGa from "../core/agents.js";
 import { answerCodex } from "./codex-ask.ts";
-const { sessionOf, forkArgv, inOtherFolder, OTHER_FOLDER, argvFor } = AGa as any;
+const { sessionOf, forkArgv, inOtherFolder, OTHER_FOLDER, argvFor, liveTaskAgent, FORK_LIVE } = AGa as any;
 import * as SP from "../core/spaces.js";
 const { READ, withMove, withSection, withoutSection, withSectionName, withIcon, withMachineLook, withOrder, withMachineOrder, DELETED, deletedSection, withRestoredSection } = SP as any;
 import type { Compat } from "./compat.ts";
@@ -156,6 +157,14 @@ async function run(cmd: string[]) {
 
 export const hc = (args: string[]) => run([process.env.SHEPHERDR_HC || "hc", ...args]);
 
+/** Settings › Machines › Find machines (#967): what it would try (go false: contacts nothing), or one run now, as
+ *  herdr-task machines find gives it on this machine; its refusals (add-on off, ran recently) come back as error */
+export async function findMachines(go: boolean) {
+  const r = await run(["herdr-task", "machines", "find", "--json", ...(go ? ["--go"] : [])]);
+  try { return JSON.parse(r.stdout.trim().split("\n").pop() || ""); }
+  catch { return { hosts: [], last: null, wait_ms: 0, error: r.stderr.trim().split("\n").pop() || "Find machines failed." }; }
+}
+
 // hc for core/send.js, its sends as the person's (Hub.send: no <hc from=…> tag on another machine)
 const asPerson = (hub: Hub) => (args: string[]) => args[0] === "send" ? hub.send(args[1], args[2]) : hc(args);
 
@@ -164,8 +173,9 @@ async function addedMachines() {
   const r = await hc(["machine", "ls", "--json"]).catch(() => null);
   try { return r?.code === 0 ? (JSON.parse(r.stdout).machines ?? []).filter((m: any) => !m.temporary) : []; } catch { return []; }
 }
-const task = (args: string[], folder: string, machine: string | null) =>
-  run(["herdr-task", ...(machine ? ["--on", machine] : []), ...args, "--folder", folder, "--json"]);
+// still running there after a slow or dropped link: its real result, followed (core/pending.js, SHEP-227)
+const task = async (args: string[], folder: string, machine: string | null) =>
+  settle((a: string[]) => run(["herdr-task", ...a]), await run(["herdr-task", ...(machine ? ["--on", machine] : []), ...args, "--folder", folder, "--json"]));
 
 function str(v: unknown, max = 100_000) {
   if (typeof v !== "string" || v.length > max) throw new Error("bad input");
@@ -541,6 +551,8 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     const a = chat(b.chat), t: any = hub.terminals.get(a), r = compat.reader?.(a);
     const kind = kindOf(t) ?? "claude", session = sessionOf(kind, r?.path ?? null);
     if (!session) throw new Error(inOtherFolder(kind, r?.path ?? null) ? OTHER_FOLDER : "This conversation has no saved session to fork.");
+    // #1050: the task's agent still runs in that folder: the person says first whether a second agent should
+    if (!b.force && liveTaskAgent(t, hub.terminals.values())) return { ok: false, ask: FORK_LIVE };
     const space = ["herdr.space", "herdr.task.space", "herdr.coordinator.space"].map((k) => t?.labels?.[k]).find(Boolean);
     const argv = forkArgv(kind, t?.foreground?.argv ?? t?.argv ?? [], session);
     // herdr-task's launch owner admits it first (L2): a fork is a tab agent continuing this conversation, so it plans from
@@ -594,7 +606,8 @@ export async function act(hub: Hub, b: any, compat: Compat): Promise<unknown> {
     const picks: Record<string, any> = compat.shared?.value("assistant.picks") ?? {}, pick = picks[sp.id];
     const picked: string[] | null = pick ? argvFor(pick, { agent: null, argv: [] }).argv : null;
     const word = (a: string) => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${String(a).replace(/'/g, "'\\''")}'`);
-    const tpl = await execTemplate(hub, "assistant", sp.machine ?? null, picked ? picked.map(word).join(" ") : undefined);
+    // No saved pick: the agent Settings › Agents chooses for the space's Assistant (compat.assistantPick), as the window's.
+    const tpl = await execTemplate(hub, "assistant", sp.machine ?? null, picked ? picked.map(word).join(" ") : (compat.assistantPick?.(sp.id) ?? null));
     const chose = pick ? ["--argv", JSON.stringify(picked),
       ...(pick.deployment ? ["--deployment", pick.deployment] : []), ...(pick.revision ? ["--revision", pick.revision] : [])] : [];
     // through launch admission (herdr-task launch run): a new start planned for its provider (--new-start: the template
