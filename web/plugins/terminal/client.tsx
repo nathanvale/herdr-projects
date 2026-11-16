@@ -9,7 +9,7 @@ import '@xterm/xterm/css/xterm.css'
 import { act, agentChat, definePlugin, getState, openItem, placeOf, setUI, shownItem, useStore, useUI } from '@client/kernel.ts'
 import { CTRL, ic, MenuItem, MenuSeparator, MenuSetting, ModelIcon, shortcut, Small, Tab, Tabs, TermIcon } from '@client/ui.tsx'
 import type { Place, TermScreen } from '@shared/types.ts'
-import { connectTerminal, streamInput } from './stream.ts'
+import { bracketedPaste, connectTerminal, pasteMode, streamInput } from './stream.ts'
 import { keysTerm, termInPlace, termInput, touchScreen, typedInBox } from './shown.ts'
 import { colsOf, fitFont, foldShown, frame, LINE, MAX, MIN, PAD, ZOOM } from './screen.ts'
 
@@ -45,6 +45,29 @@ function terminalInput(chat: string, message: Parameters<typeof streamInput>[1])
 
 /** the task terminal's screen in the side panel: focused, every key goes into it */
 const SCREEN = '[data-term-screen]'
+
+/** a paste's characters per message: well inside the service's 32 KB message limit, escaped */
+const PASTE_PIECE = 8192
+
+/** A paste (Cmd+V, or the browser's Paste) while a terminal takes the keys, on a mouse and keyboard: its text goes in
+ *  as a terminal pastes it, newlines as carriage returns and inside bracketed-paste marks when the program asked for
+ *  them, so a multi-line paste is one paste, not lines sent one by one. A phone or touch screen pastes through its own
+ *  box; a paste into a text field the terminal doesn't own is the field's. True when the terminal took it. */
+export function pasteToTerminal(e: { target: unknown; clipboardData?: { getData(type: string): string } | null; preventDefault(): void }) {
+  const { ui, snap } = getState()
+  if (!snap || ui.device === 'phone' || touchScreen()) return false
+  const el = e.target as HTMLElement | null
+  const focused = el?.closest?.<HTMLElement>(SCREEN)?.dataset.termScreen
+  const term = focused && shownItem(ui, snap) === 'terminal' ? focused : keysTerm(ui)
+  if (!term) return false
+  if (!focused && el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName ?? ''))) return false
+  e.preventDefault()
+  const body = (e.clipboardData?.getData('text/plain') ?? '').replace(/\r?\n/g, '\r')
+  if (!body) return true
+  const chars = [...(bracketedPaste(term) ? `\x1b[200~${body}\x1b[201~` : body)]
+  for (let i = 0; i < chars.length; i += PASTE_PIECE) terminalInput(term, { type: 'text', text: chars.slice(i, i + PASTE_PIECE).join('') })
+  return true
+}
 
 /** one cell's width per px of font size, for the monospace font */
 let cellRatio = 0
@@ -204,7 +227,9 @@ function Screen({ screen, stream, className, ...p }: { screen: TermScreen | unde
       // in turn with what was written before it: a first paint at this size comes next
       term.write('', () => { term.reset(); term.resize(cols, rows); setStreamCols(cols) })
     }, setStreamStatus)
-    return () => { drawn.dispose(); connection.close() }
+    // a paste follows the program's own bracketed-paste mode, which xterm reads from the output it draws
+    const forget = pasteMode(stream, () => !!term.modes?.bracketedPasteMode)
+    return () => { drawn.dispose(); connection.close(); forget() }
   }, [term, stream])
 
   return (
@@ -378,6 +403,8 @@ function toChat(chat: string) {
 export default definePlugin({
   name: 'terminal',
   setup(reg) {
+    // the page's paste, as its keys: the terminal taking the keys gets it (pasteToTerminal); anything else keeps it
+    if (typeof addEventListener === 'function') addEventListener('paste', (e) => { pasteToTerminal(e as ClipboardEvent) })
     reg.placeMenu.push({ order: 60, View: PlaceTerm })
     reg.placeHeader.push({ order: 15, View: ChatOrTerminal })
     reg.taskPanel.push({ id: 'terminal', order: 10, label: 'Terminal', Icon: TermIcon, View: ({ chatKey }) => <TerminalView chatKey={chatKey} panel /> })
@@ -388,7 +415,9 @@ export default definePlugin({
       order: 0,
       handle: ({ e, ui, snap }) => {
         if (typedInBox(e)) return true
-        if (ui.device !== 'desktop') return false
+        // a phone or a touch screen types through its own box (termInput); a mouse and keyboard type here at any
+        // width, a desktop browser narrower than 1024 px (a "tablet" to the page) too
+        if (ui.device === 'phone' || touchScreen()) return false
         const task = agentChat(ui, snap)?.chat
         const focused = (e.target as HTMLElement | null)?.closest?.<HTMLElement>(SCREEN)?.dataset.termScreen
         if (e.ctrlKey && e.key === '`') {
