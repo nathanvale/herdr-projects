@@ -27,6 +27,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(ROOT, "mods", "tasks", "bin")
 CI = os.environ.get("CI") == "true"
 ON_CI = unittest.skipUnless(CI, "runs only on CI: herdr-task's commands never run from a test on a person's machine")
+# A pull request whose checks ran and passed. Upstream #1044 (v3.1.35): one that shows no checks yet waits for them
+# (NO_CHECKS_MS after ready), so an Accept right after ready arms "merge after checks" instead of merging.
+CHECKS_PASSED = [{"name": "test", "status": "COMPLETED", "conclusion": "SUCCESS"}]
 # SHEP-147 (test/home_guard.py): every test runs on a throwaway HOME, where herdr-task refuses hc
 # (base.not_real) and launch admission sends nothing (launch_admission.py's guard). A fixture whose hc is
 # its own stand-in lifts that refusal for the processes it starts and for nothing else, as upstream's own
@@ -810,7 +813,7 @@ class ReadyAfterAdoption(unittest.TestCase):
         f.ready()
         f.github(prs=[f.pr(baseRefName="other")])
         self.refused_accept("now targets other, not target")
-        f.github(prs=[f.pr()])
+        f.github(prs=[f.pr(statusCheckRollup=CHECKS_PASSED)])
         self.assertEqual(f.ok("accept", "1", "--folder", f.repo)["accepted"], "github")
 
     def test_accept_refuses_a_head_pushed_since(self):
@@ -877,6 +880,7 @@ class ReadyAfterAdoption(unittest.TestCase):
     def test_the_persons_accept_merges_through_the_pull_request(self):
         f = self.f
         f.ready()
+        f.github(prs=[f.pr(statusCheckRollup=CHECKS_PASSED)])
         self.assertEqual(f.ok("accept", "1", "--folder", f.repo)["accepted"], "github")
         merges = f.calls("pr", "merge")
         self.assertEqual(len(merges), 1)
@@ -1432,7 +1436,7 @@ class AMergeOffTheTasksBase(unittest.TestCase):
         f.ready()
         for n, verb in enumerate(("accept", "merge"), 1):
             with self.subTest(verb=verb):
-                f.github(prs=[f.pr()], merge="HTTP 502: Bad Gateway", merge_moves={"state": "MERGED", "baseRefName": "other"})
+                f.github(prs=[f.pr(statusCheckRollup=CHECKS_PASSED)], merge="HTTP 502: Bad Gateway", merge_moves={"state": "MERGED", "baseRefName": "other"})
                 self.assertIn(self.WORDS, f.refused(verb, "1", "--folder", f.repo))
                 self.assertEqual(len(f.calls("pr", "merge")), n)
                 self.held()
@@ -1440,17 +1444,19 @@ class AMergeOffTheTasksBase(unittest.TestCase):
     def test_a_merge_that_errs_with_no_word_on_its_base_holds(self):
         f = self.f
         f.ready()
-        f.github(prs=[f.pr()], merge="HTTP 502: Bad Gateway", merge_moves={"state": "MERGED", "baseRefName": None})
+        f.github(prs=[f.pr(statusCheckRollup=CHECKS_PASSED)], merge="HTTP 502: Bad Gateway", merge_moves={"state": "MERGED", "baseRefName": None})
         self.assertIn(self.UNSAID, f.refused("accept", "1", "--folder", f.repo))
         self.held(self.UNSAID)
 
     def test_a_merge_that_errs_and_went_through_on_the_base_finishes_as_before(self):
         f = self.f
         f.ready()
-        f.github(prs=[f.pr()], merge="HTTP 502: Bad Gateway", merge_moves={"state": "MERGED"})
+        self.assertEqual(f.remote_tip("task/1"), f.tip)  # ready published it
+        f.github(prs=[f.pr(statusCheckRollup=CHECKS_PASSED)], merge="HTTP 502: Bad Gateway", merge_moves={"state": "MERGED"})
         self.assertEqual(f.ok("accept", "1", "--folder", f.repo)["accepted"], "github")
         self.finished()
         self.assertEqual(f.rev("refs/heads/target"), self.moved)  # update_main() ran
+        self.assertIsNone(f.remote_tip("task/1"))  # still at the head that merged: its branch there went
 
     def test_the_tick_holds_a_ready_task_and_reports_it_once(self):
         f = self.f
@@ -1745,7 +1751,7 @@ class ATagNamedLikeABranch(unittest.TestCase):
 
     def test_a_remote_tag_named_like_the_base_never_lands_on_it(self):
         f = Fixture(self)
-        f.github(prs=[f.pr()])
+        f.github(prs=[f.pr(statusCheckRollup=CHECKS_PASSED)])
         f.adopt()
         f.ready()
         f.git(f.repo, "push", "-q", "origin", f"{f.sibling('only a tag')}:refs/tags/target")
@@ -1755,7 +1761,7 @@ class ATagNamedLikeABranch(unittest.TestCase):
     def on_main(self):
         f = Fixture(self)
         f.seed(base="main")
-        f.github(prs=[f.pr(baseRefName="main")])
+        f.github(prs=[f.pr(baseRefName="main", statusCheckRollup=CHECKS_PASSED)])
         f.ready()
         return f
 

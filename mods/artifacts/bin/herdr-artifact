@@ -959,9 +959,15 @@ def cmd_publish(o):
     # taken only to save, from the list as it is then.
     with Store(loc, write=False) as s:
         art = s.find(o.id) if o.id else None
-    if art:
-        title = o.title or art["title"]
-    else:
+
+    def named(current):
+        """Its title and task: what this publish gives, else the record's as `current` holds it, so an update that
+        leaves them out keeps what another update saved meanwhile. A task's agent names its task first:
+        "HAT-2: Coverage by package"."""
+        t = o.title or current.get("title")
+        k = o.task or current.get("task") or who["task"]
+        return (f"{k}: {t}" if k and not t.upper().startswith(k.upper()) else t), k
+    if not art:
         if not o.title:
             raise Fail("Give it a title: --title \"Coverage by package\".")
         title = o.title
@@ -980,18 +986,18 @@ def cmd_publish(o):
             raise
         art = {"id": aid, "created": now(), "versions": []}
     fresh = not o.id
-    # A task's agent names its task first: "HAT-2: Coverage by package".
-    task = o.task or art.get("task") or who["task"]
-    if task and not title.upper().startswith(task.upper()):
-        title = f"{task}: {title}"
+    title, task = named(art)
 
     def drop():
         if fresh:
             shutil.rmtree(os.path.join(FILES, art["id"]), ignore_errors=True)
-    if custom and PROOF.search(title):
-        drop()
-        raise Fail("A task's proof is always a recipe (recipe.json), so the person can open it on their phone too. "
-                   "`herdr-artifact guide` shows how (A task's proof).")
+
+    def proof_recipe(title):
+        if custom and PROOF.search(title):
+            drop()
+            raise Fail("A task's proof is always a recipe (recipe.json), so the person can open it on their phone too. "
+                       "`herdr-artifact guide` shows how (A task's proof).")
+    proof_recipe(title)
     v = (art["versions"][-1]["v"] if art["versions"] else 0) + 1
     draft = dict(art, title=title, version=v, folder=loc["folder"])
     err, warnings, unchecked = check(src, files, draft)
@@ -1002,8 +1008,10 @@ def cmd_publish(o):
         if fresh:
             s.data["artifacts"].insert(0, art)
         else:
-            art = s.find(o.id)  # as it is now: another publish may have saved a version meanwhile
+            art = s.find(o.id)  # as it is now: another publish may have saved a version, a title or a task meanwhile
             v = (art["versions"][-1]["v"] if art["versions"] else 0) + 1
+            title, task = named(art)
+            proof_recipe(title)
         keep = os.path.join(FILES, art["id"], f"v{v}")
         copy_files(src, files, keep)
         # the stored copy is made ready for every browser (a poster, an mp4 for a clip no browser plays): SHEP-209

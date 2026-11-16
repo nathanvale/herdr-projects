@@ -19,10 +19,13 @@ place, never overwrites what you made yourself, and keeps a backup of anything i
 ## Pull requests and credentials
 
 In a repo with a GitHub remote, `herdr-task ready` publishes a worktree task and Accept merges it through its pull
-request. A repo with no remotes merges locally, and so does one whose remotes are all on Bitbucket Cloud, GitLab.com or
-Azure DevOps, without asking `gh`. So does one `gh` says has no remote on a host it knows, unless `gh` has confirmed that
-repo on GitHub before with the same remotes, and one with no `gh` installed, no remote recognisably GitHub's and no
-saved repo name.
+request. In a repo whose remote is on Bitbucket Cloud, `ready` publishes the task to a Bitbucket pull request, but
+herdr-task never merges it: Accept refuses to merge the pull request, and a local or agent merge in that folder is
+refused too, because Bitbucket's merge can't be tied to exactly the commit that was accepted. Merge the pull request on
+Bitbucket yourself; the task then finishes on its own. A repo with no remotes merges locally, and so does one whose
+remotes are all on GitLab.com or Azure DevOps, without asking `gh`. So does one `gh` says has no remote on a host it
+knows, unless `gh` has confirmed that repo on GitHub before with the same remotes, and one with no `gh` installed, no
+remote recognisably GitHub's and no saved repo name.
 
 - `gh` and `git push` sign in separately. `gh` reads and opens pull requests. `git push` uses whatever the remote's own
   configuration gives git. A refusal says which of the two failed, and with `--json` its `cause` is `gh` or `git`. Their
@@ -182,10 +185,11 @@ Shepherdr only talks to what you set up yourself. In the background it contacts:
   health and artifacts for the sidebar and the web app, the task tick, the tools sync above, and the map of which
   Assistants each machine reaches (`herdr-task machines reach`). It opens no new connection for any of it.
 - **GitHub**, through `gh` and git, for your tasks' own repos: their branches, pull requests, checks and merges.
-- **Bitbucket Cloud** (`api.bitbucket.org`), for a task whose repo is on Bitbucket Cloud, with the token git's own
-  credential helper gives for that repo: its pull request and the statuses of its head commit, and, when you publish
-  the task, opening a draft pull request and marking it ready for review. Nothing else in that repository, and it
-  never merges there.
+- **Bitbucket Cloud**, for a task whose repo is on Bitbucket Cloud. Through `api.bitbucket.org`, with the token git's
+  own credential helper gives for that repo: its pull request and the statuses of its head commit, and, when you
+  publish the task, opening a draft pull request and marking it ready for review. Through git, with the remote's own
+  git configuration: when you publish the task, pushing its task branch to the repository before the pull request is
+  opened. Nothing else in that repository, and it never merges there.
 - **ElevenLabs**, with your key only (Voice add-on): dictation and calls when you use them, its credits now and then.
 - **Your devices' push services** (the browser's), when an alert goes to a device you turned alerts on for.
 - **This machine's own Tailscale**, to share the web app privately on your tailnet. Never your other peers.

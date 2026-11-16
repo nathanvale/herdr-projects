@@ -59,8 +59,9 @@ def unasked(f):
 
 def core(pr):
     """A saved pull request as written: its legacy fields, and nothing qualifying it. wait: what a Ready one
-    still waits on (SHEP-175), the tick's bookkeeping as checked and watch are."""
-    return {k: v for k, v in pr.items() if k not in ("checked", "watch", "wait")}
+    still waits on (SHEP-175), the tick's bookkeeping as checked and watch are; head_sha, head_at and expects: when
+    its head was first seen and whether its workflows run checks there (upstream #1018, #1044, v3.1.35), the same."""
+    return {k: v for k, v in pr.items() if k not in ("checked", "watch", "wait", "head_sha", "head_at", "expects")}
 
 
 @publication.ON_CI
@@ -72,7 +73,8 @@ class MergeThroughTheForge(unittest.TestCase):
         return f
 
     def merge_call(self, f):
-        return ["pr", "merge", "7", "--repo", "o/r", "--squash", "--delete-branch", "--match-head-commit", f.tip]
+        # Never --delete-branch since upstream #1045 (v3.1.35): its branch goes after the merge (drop_branch()).
+        return ["pr", "merge", "7", "--repo", "o/r", "--squash", "--match-head-commit", f.tip]
 
     def test_a_legacy_pull_request_merges_on_github(self):
         f = self.ready_with(LEGACY)

@@ -67,8 +67,9 @@ export async function newSpaceInfo(hub: Hub, machine: string | null, at: string 
  *  and where sh is dash (Debian, Ubuntu) the shell would stay the terminal's program, so no chat would know its CLI.
  *  pick: the agent Shepherdr settings choose for it ({ agent, model, effort, fast, perm }, as the window's chat starts
  *  it): its command in place of the template's own (#1051: the web started the stock `claude`), unless that agent
- *  isn't installed there (then the template's own, as the window). Neither installed: refused in plain words, never a
- *  start that ends at once ("exec: claude: not found") and leaves the chat on Starting.
+ *  isn't installed there (then the template's own, as the window). Neither installed, or the chosen one missing and the
+ *  template with no command of its own: refused in plain words, never a start that ends at once ("exec: claude: not
+ *  found") or a stand-in agent nobody chose, and never leaves the chat on Starting.
  *  words: the template's own words (its first message), when read. Unreadable: the template itself.
  *  argv: the Settings pick's own argv when its agent's command replaced the template's, for launch admission to plan
  *  from (on Azure Foundry it otherwise plans from the template's command); null when the template's own runs. */
@@ -89,7 +90,7 @@ export async function execTemplate(hub: Hub, name: string, machine: string | nul
     if (await has(pick.agent)) {
       argv = argvFor(pick, { agent: null, argv: [] }).argv as string[];
       cmd = argv.map(shellWord).join(" ");
-    } else if (own && !(await has(own.split(/\s+/)[0]))) {
+    } else if (!own || !(await has(own.split(/\s+/)[0]))) {
       throw new Error(`${(NAMES as Record<string, string>)[pick.agent] ?? pick.agent} isn't installed on ${machine ?? "this computer"}. Install it, or pick another agent for the Assistant in Settings › Agents.`);
     }
   }

@@ -1499,15 +1499,17 @@ def merge_now(s, t, auto=False):
         return held
     watch_main(s, t, ((v.get("mergeCommit") or {}).get("oid")) if v.get("state") == "MERGED" else None)
     update_main(s, t)
-    # Its branch on GitHub goes now that it merged (the repo may have deleted it already: fine). Only GitHub's:
-    # a Bitbucket pull request merged there by hand keeps its branch on the remote, as the tick leaves it.
-    if provider_of(t["pr"]) == GITHUB:
-        drop_branch(s, t)
-    t["merged"] = True
     # What merged, for finish(): as gh says it merged when its answer says MERGED (merged by hand, or a
     # merge that erred and went through), else the head GitHub merged on --match-head-commit. Never the
     # squash commit.
     head = v.get("headRefOid") if v.get("state") == "MERGED" else matched
+    # Its branch on GitHub goes now that it merged, while it is still at that head (else the one gh was asked to
+    # merge at): a commit pushed after the merge keeps it (drop_branch()), and a wrong guess only keeps it too.
+    # The repo may have deleted it already: fine. Only GitHub's: a Bitbucket pull request merged there by hand
+    # keeps its branch on the remote, as the tick leaves it.
+    if provider_of(t["pr"]) == GITHUB:
+        drop_branch(s, t, head or matched)
+    t["merged"] = True
     if isinstance(head, str) and head:
         t["merged_head"] = head
     finish(s, t, even_if_busy=True)

@@ -133,9 +133,9 @@ def facts(s, t, report):
             watch_main(s, t, (v.get("mergeCommit") or {}).get("oid"))
             if t.get("merge_queued"):
                 # Herdr queued it: its base here catches up and its branch on GitHub goes, as a merge
-                # Herdr made itself would (merge_now()).
+                # Herdr made itself would (merge_now()), only while it is still at the head that merged.
                 update_main(s, t)
-                drop_branch(s, t)
+                drop_branch(s, t, v.get("headRefOid"))
             if provider_of(pr) != "github" and isinstance(v.get("headRefOid"), str):
                 # What merged, as this very read says (finish() never asks gh about another forge's).
                 t["merged_head"] = v["headRefOid"]

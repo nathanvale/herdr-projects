@@ -190,12 +190,24 @@ class Fixture:
         return subprocess.run(["git", "-C", self.repo, "branch", "--format=%(refname:short)"], check=True, capture_output=True, text=True).stdout.split()
 
     def settle(self, agents=1, tid=1):
-        """Waits for the background watcher of each started agent to finish its one write."""
+        """Waits for the background watcher of each started agent to finish its one write (its agent ended), then
+        dates the agents' starts back past upstream #1053's window (v3.1.35, commands.STARTING_MS): an agent that
+        ended a while ago. Within it, resume and a message refuse a task whose agent started moments ago."""
         for _ in range(200):
             if sum(1 for a in self.task(tid)["agents"] if a.get("ended")) >= agents:
-                return
+                break
             time.sleep(0.1)
-        self.test.fail("the agent watcher didn't finish")
+        else:
+            self.test.fail("the agent watcher didn't finish")
+        sys.path.insert(0, BIN)
+        from herdr_task.commands import STARTING_MS
+        path = self.ok("where", "--folder", self.repo)["store"]
+        with open(path) as fh:
+            d = json.load(fh)
+        for a in next(x for x in d["tasks"] if x["id"] == tid)["agents"]:
+            a["at"] = (a.get("at") or 0) - STARTING_MS - 1000
+        with open(path, "w") as fh:
+            json.dump(d, fh, indent=2)
 
     def snapshot(self):
         """The task list's words and how many hc calls there were, before a command that must refuse."""
@@ -248,8 +260,10 @@ class PersonalPassThrough(unittest.TestCase):
         agent = cmd[6:]
         self.assertEqual(agent[:2], ["claude", "--settings"])
         settings = json.loads(agent[2])
-        # Upstream's own worker additions only (SHEP-139: the chat card's PermissionRequest hook, herdr-task _allow).
-        self.assertEqual((settings["fastMode"], sorted(settings)), (False, ["fastMode", "hooks", "permissions"]))
+        # Upstream's own worker additions only (SHEP-139: the chat card's PermissionRequest hook, herdr-task _allow;
+        # SHEP-230, v3.1.35: idle compaction off).
+        self.assertEqual((settings["fastMode"], settings["idleCompaction"], sorted(settings)),
+                         (False, False, ["fastMode", "hooks", "idleCompaction", "permissions"]))
         self.assertEqual(list(settings["hooks"]), ["PermissionRequest"])
         [entry] = settings["hooks"]["PermissionRequest"]
         self.assertEqual([" _allow --command " in h["command"] for h in entry["hooks"]], [True])

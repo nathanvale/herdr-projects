@@ -59,6 +59,10 @@ test("a template with front matter and no command of its own still takes a saved
   const t = await execTemplate(b.hub, "assistant", null, { agent: "codex", model: "gpt-5.5", effort: null, fast: false, perm: "auto" });
   expect(commandOf(b.made()[0])).toContain("exec codex --no-daemon -m gpt-5.5");
   expect(t.argv?.slice(0, 4)).toEqual(["codex", "--no-daemon", "-m", "gpt-5.5"]);
+  // the chosen agent missing there and no command of its own: refused, never a stand-in start
+  const d = machine(["claude"], front);
+  await expect(execTemplate(d.hub, "assistant", null, { agent: "codex", perm: "auto" })).rejects.toThrow("Codex isn't installed on this computer");
+  expect(d.made()).toEqual([]);
   // nothing to run in its place: the template itself, as before
   const c = machine([], front);
   expect((await execTemplate(c.hub, "assistant", null, null)).name).toBe("assistant");

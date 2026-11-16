@@ -1280,7 +1280,7 @@ class BackToWork(unittest.TestCase):
                    (self.commands, "pr_read", lambda t: (views.pop(0), None)), (self.commands, "pr_view", lambda t: views.pop(0)),
                    (self.github, "gh", lambda *a, **k: merges.pop(0) if a[:2] == ("pr", "merge") else others(*a, **k)),
                    (self.commands, "watch_main", lambda *a: None), (self.commands, "update_main", lambda *a: None),
-                   (self.commands, "drop_branch", lambda s, t: None),
+                   (self.commands, "drop_branch", lambda s, t, head: None),
                    (self.commands, "finish", lambda s, t, even_if_busy=False: (t.update(state="done"), done.append(t["id"])))]
         for mod, name, value in patches:
             p = self.mock.patch.object(mod, name, value)
@@ -1335,7 +1335,7 @@ class BackToWork(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
         dropped = []
-        p = self.mock.patch.object(self.commands, "drop_branch", lambda s, t: dropped.append(t["id"]))
+        p = self.mock.patch.object(self.commands, "drop_branch", lambda s, t, head: dropped.append((t["id"], head)))
         p.start()
         self.addCleanup(p.stop)
         return calls, done, dropped
@@ -1366,7 +1366,8 @@ class BackToWork(unittest.TestCase):
         self.commands.cmd_accept(self.args())
         self.assertEqual(len(calls), 1)
         self.assertNotIn("--delete-branch", calls[0])
-        self.assertEqual((t["state"], t.get("merged"), dropped), ("done", True, [7]))
+        # the head gh merged at (--match-head-commit), for drop_branch()'s lease
+        self.assertEqual((t["state"], t.get("merged"), dropped), ("done", True, [(7, "abc")]))
 
     def merged_by_hand(self, pr):
         """merge_now() on a pull request its forge already says MERGED: the git pushes it made (drop_branch()'s own)."""
@@ -1396,10 +1397,12 @@ class BackToWork(unittest.TestCase):
                      "url": "https://bitbucket.org/o/r/pull-requests/7"}
         self.assertEqual(self.merged_by_hand(bitbucket), [])
         github = {"number": 593, "repo": "o/r", "url": "https://github.com/o/r/pull/593"}
-        self.assertEqual(self.merged_by_hand(github), [("push", "--quiet", "--no-verify", "origin", "--delete", "task/7")])
+        self.assertEqual(self.merged_by_hand(github), [("push", "--quiet", "--no-verify", "--force-with-lease=refs/heads/task/7:abc",
+                                                         "origin", "--delete", "refs/heads/task/7")])
 
-    def queue_tick(self, v, entry=None, clock=10_000_000):
-        """One tick pass over the task with GitHub saying v (and entry for its queue)."""
+    def tick_doubles(self, v, entry=None, clock=10_000_000):
+        """The tick's GitHub, clock and tidy-up doubles, with GitHub saying v (and entry for its queue): what they saw.
+        The task's pull request is read at the next look."""
         got = {"done": [], "dropped": [], "asked": 0}
 
         def ask(t):
@@ -1408,15 +1411,19 @@ class BackToWork(unittest.TestCase):
         # merge_reach: the fork's facts() places the folder on GitHub's host first (forge.reach), here github.com.
         for name, value in (("pr_view", lambda t: v), ("pr_news", lambda *a: None), ("now", lambda: clock),
                             ("merge_reach", lambda s, t: None), ("queue_entry", ask), ("watch_main", lambda *a: None), ("update_main", lambda *a: None),
-                            ("drop_branch", lambda s, t: got["dropped"].append(t["id"])),
+                            ("drop_branch", lambda s, t, head: got["dropped"].append((t["id"], head))),
                             ("finish", lambda s, t, even_if_busy=False: (t.update(state="done"), got["done"].append(t["id"])))):
             p = self.mock.patch.object(self.tick, name, value)
             p.start()
             self.addCleanup(p.stop)
-        t = self.store.data["tasks"][0]
-        t["pr"]["checked"] = 0
+        self.store.data["tasks"][0]["pr"]["checked"] = 0
+        return got
+
+    def queue_tick(self, v, entry=None, clock=10_000_000):
+        """One tick pass over the task (facts()) with GitHub saying v (and entry for its queue)."""
+        got = self.tick_doubles(v, entry, clock)
         report = {"attention": [], "done": []}
-        self.tick.facts(self.store, t, report)
+        self.tick.facts(self.store, self.store.data["tasks"][0], report)
         return got, report
 
     def test_a_queued_pull_request_is_done_once_github_merged_it(self):
@@ -1426,8 +1433,8 @@ class BackToWork(unittest.TestCase):
         self.assertEqual((t["state"], got["asked"]), ("ready", 0))  # just queued: not asked yet
         got, _ = self.queue_tick(self.FINE, {"in": True, "auto": False, "reason": None}, clock=20_000_000)
         self.assertEqual((t["state"], t.get("merge_queued"), got["asked"]), ("ready", 10_000_000 - 1000, 1))
-        got, report = self.queue_tick({"state": "MERGED", "mergeCommit": {"oid": "f00"}})
-        self.assertEqual((t["state"], t.get("merged"), got["dropped"], report["done"]), ("done", True, [7], [7]))
+        got, report = self.queue_tick({"state": "MERGED", "headRefOid": "abc", "mergeCommit": {"oid": "f00"}})
+        self.assertEqual((t["state"], t.get("merged"), got["dropped"], report["done"]), ("done", True, [(7, "abc")], [7]))
 
     def test_the_queue_removing_it_needs_you(self):
         t = self.pr_task()
@@ -1460,20 +1467,25 @@ class BackToWork(unittest.TestCase):
 
     # #1044, #1018: "merge after checks" never merges a pull request whose checks haven't started yet.
     def early_tick(self, v, clock, expect):
-        """One tick pass at clock (ms) with its repo's workflows saying expect (expected_checks())."""
+        """One tick_store() pass at clock (ms) with its repo's workflows saying expect (expected_checks()): (whether
+        facts() found the pull request fresh, the tasks tick_store's own gate asked merge_now() to merge by itself)."""
         import herdr_task.github as github
-        merged = []
+        merged, fresh = [], []
+        facts = self.tick.facts
+
+        def read(s, t, report):
+            facts(s, t, report)
+            fresh.append(t.get("_pr_fresh"))
+        self.tick_doubles(v, clock=clock)
         for mod, name, value in ((github, "now", lambda: clock), (self.tick, "expected_checks", lambda s, t, sha: expect),
-                                 (self.tick, "merge_now", lambda s, t: merged.append(t["id"]) or None)):
+                                 (self.tick, "facts", read),
+                                 (self.tick, "merge_now", lambda s, t, auto=False: merged.append(t["id"] if auto else ("asked", t["id"])))):
             p = self.mock.patch.object(mod, name, value, create=True)
             p.start()
             self.addCleanup(p.stop)
-        self.queue_tick(v, clock=clock)
-        t = self.store.data["tasks"][0]
-        fresh = t.get("_pr_fresh")
-        if t["state"] == "ready" and t.get("auto_merge") and t.get("pr") and not t.get("attention") and fresh:
-            merged.append(t["id"])
-        return fresh, merged
+        self.tick.tick_store(self.store, {"attention": [], "done": [], "started": []})
+        self.assertEqual(len(fresh), 1)  # the task's pull request was read once
+        return fresh[0], merged
 
     NONE_YET = {"state": "OPEN", "mergeable": "MERGEABLE", "statusCheckRollup": [], "headRefOid": "abc", "mergeStateStatus": "CLEAN"}
 
@@ -5676,9 +5688,10 @@ class TaskFlow(unittest.TestCase):
         self.commands.cmd_switch(self.args(space=None, agent="claude", argv=None, parent=None, keep=False))
         self.assertEqual(got, ["sp-a"])  # none given: the old agent's own space
 
-    def switch_events(self, me=None, refuse=False, config_dir=None):
+    def switch_events(self, me=None, refuse=False, config_dir=None, callers=None):
         """cmd_switch with the old agent t1 mid-turn on session S1: what it ran, in order. refuse: launch admission
-        refuses the new start. config_dir: the Claude Code folder admission starts the new agent under."""
+        refuses the new start. config_dir: the Claude Code folder admission starts the new agent under. callers: this
+        process's CLAUDE_CONFIG_DIR, else an empty folder of the test's own (never the developer's settings)."""
         self.live = [{"address": "t1", "status": {"state": "working"}, "labels": {"herdr.task.space": "sp-a"}}]
         self.task["agents"] = [{"address": "t1", "agent": "claude", "argv": ["claude"], "at": 1, "session": "S1"}]
         events = self.events_seen = []
@@ -5713,6 +5726,7 @@ class TaskFlow(unittest.TestCase):
             return {"address": "t2", "agent": "claude", "argv": argv}
         self.patch(self.commands, "launch", launch)
         env = {k: v for k, v in os.environ.items() if k != "HC_TERMINAL_ID"}
+        env["CLAUDE_CONFIG_DIR"] = callers or os.path.join(self.root, "claude-config")
         if me:
             env["HC_TERMINAL_ID"] = me
         with self.mock.patch.dict(os.environ, env, clear=True):
@@ -5768,12 +5782,11 @@ class TaskFlow(unittest.TestCase):
             os.makedirs(home)
             with open(os.path.join(home, "settings.json"), "w") as f:
                 json.dump({"permissions": {"defaultMode": mode}}, f)
-        with self.mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": mine}):
-            _, resume, _ = self.switch_events(config_dir=admitted)[2]
-            self.assertEqual(resume, ["claude", "--model", "opus", "--permission-mode", "plan", "--resume", "S1"])
-            # none recorded: the folder this process names, as before
-            _, resume, _ = self.switch_events()[2]
-            self.assertEqual(resume[3:5], ["--permission-mode", "auto"])
+        _, resume, _ = self.switch_events(config_dir=admitted, callers=mine)[2]
+        self.assertEqual(resume, ["claude", "--model", "opus", "--permission-mode", "plan", "--resume", "S1"])
+        # none recorded: the folder this process names, as before
+        _, resume, _ = self.switch_events(callers=mine)[2]
+        self.assertEqual(resume[3:5], ["--permission-mode", "auto"])
 
     def test_an_agent_switching_itself_ends_after_the_new_one_starts(self):
         """SHEP-211: ending the caller first would end the switch command with it."""
@@ -5965,6 +5978,30 @@ class TaskFlow(unittest.TestCase):
             github.pr_open(self.store, self.task, "o/r")
         self.assertIn("git couldn't push task/1", str(e.exception))  # the fork's words say git failed, not gh
 
+    def test_a_commit_pushed_after_the_merge_keeps_the_branch_on_github(self):
+        """PR 63 review: GitHub merged the pull request at `merged`, then someone pushed `later` to task/1. Accept
+        (merge_now()) finishes the task and leaves task/1 at `later` on the remote; a branch still at `merged` goes."""
+        wt, remote = self.task["worktree"], os.path.join(self.root, "remote.git")
+        self.git(self.root, "init", "-q", "--bare", remote)
+        self.git(self.main, "remote", "add", "origin", remote)
+        merged = self.commit(wt, "work", "a.txt")
+        self.git(wt, "push", "-q", "--no-verify", "origin", "task/1")
+        later = self.commit(wt, "pushed after the merge", "a.txt")
+        self.git(wt, "push", "-q", "--no-verify", "origin", "task/1")
+        view = {"state": "MERGED", "headRefOid": merged, "baseRefName": "main", "mergeCommit": {"oid": "f00"}}
+        for name, value in (("merge_reach", lambda s, t: None), ("pr_read", lambda t: (view, None)), ("note_checks", lambda *a: None),
+                            ("watch_main", lambda *a: None), ("update_main", lambda *a: None),
+                            ("finish", lambda s, t, even_if_busy=False: t.update(state="done"))):
+            self.patch(self.commands, name, value)
+        self.task.update(state="ready", pr={"number": 7, "repo": "o/r", "url": "https://github.com/o/r/pull/7"})
+        self.assertIsNone(self.commands.merge_now(self.store, self.task))
+        self.assertEqual((self.task["state"], TaskFlow.there(remote, "task/1")), ("done", (True, later, "")))
+        # still at the head that merged: it goes
+        self.git(wt, "push", "-q", "--no-verify", "--force", "origin", f"{merged}:refs/heads/task/1")
+        self.task.update(state="ready", merged=False)
+        self.assertIsNone(self.commands.merge_now(self.store, self.task))
+        self.assertEqual((self.task["state"], TaskFlow.there(remote, "task/1")[0]), ("done", False))
+
     def test_the_pull_request_title_and_body_are_short(self):
         """SHEP-198 (GitHub #924): the title follows the repo's commit titles ("SHEP-198: ..."), and the
         body is the summary, details and proof's title, never the brief."""
@@ -6145,7 +6182,7 @@ class AdoptedHead(unittest.TestCase):
 
     def setUp(self):
         self.f = f = publication.Fixture(self)
-        f.github(prs=[f.pr()])
+        f.github(prs=[f.pr(statusCheckRollup=publication.CHECKS_PASSED)])  # an Accept merges at once (upstream #1044)
         f.adopt()
 
     def test_adoption_records_the_head_it_verified(self):
@@ -6173,7 +6210,7 @@ class AdoptedHead(unittest.TestCase):
     def test_adopting_again_records_the_new_head_and_accept_merges_it(self):
         f = self.f
         h2 = rebased(f)
-        f.github(prs=[f.pr(headRefOid=h2)])
+        f.github(prs=[f.pr(headRefOid=h2, statusCheckRollup=publication.CHECKS_PASSED)])
         self.assertTrue(f.adopt()["adopted"])
         self.assertEqual(f.task()["pr"]["adopted_head"], h2)
         f.ready()

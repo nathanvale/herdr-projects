@@ -289,6 +289,31 @@ class Publish(unittest.TestCase):
         with A.Store(A.locate(self.folder), write=False) as s:
             self.assertEqual([x["v"] for x in s.find(aid)["versions"]], [1, 2, 3])
 
+    def test_an_update_that_omits_title_and_task_keeps_what_another_saved_meanwhile(self):
+        """Two updates read the same record; one saves a title and task while the other is checking. The other, given
+        neither, saves the record's newer ones, never the ones it read before its check; an option it was given wins."""
+        aid = self.publish(self.recipe())["id"]
+        check = A.check
+
+        def meanwhile(**given):
+            calls = []
+
+            def checking(*a, **k):
+                if not calls:
+                    calls.append(1)
+                    self.publish(self.recipe("other"), id=aid, **given)
+                return check(*a, **k)
+            return mock.patch.object(A, "check", side_effect=checking)
+        with meanwhile(title="New", task="HAT-9"):
+            out = self.publish(self.recipe("mine"), id=aid, title=None)
+        self.assertEqual((out["title"], out["task"]), ("HAT-9: New", "HAT-9"))
+        with meanwhile(title="Newer", task="HAT-10"):
+            out = self.publish(self.recipe("mine2"), id=aid, title="Mine")
+        self.assertEqual((out["title"], out["task"]), ("HAT-10: Mine", "HAT-10"))
+        with A.Store(A.locate(self.folder), write=False) as s:
+            art = s.find(aid)
+        self.assertEqual((art["title"], art["task"], art["version"]), ("HAT-10: Mine", "HAT-10", 5))
+
     def test_a_new_publish_in_a_read_only_store_says_so(self):
         """#841: a sandbox's store is read-only: a new publish says so (making its files' folder), never a traceback."""
         d = self.recipe()

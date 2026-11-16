@@ -894,14 +894,20 @@ def queue_entry(task):
             "reason": removed.get("reason"), "state": p.get("state")}
 
 
-def drop_branch(s, task):
-    """After GitHub's merge queue merged it: its branch on GitHub goes, as --delete-branch would have
-    (gh refuses that flag on a queue, #801). Already gone (the repo deletes merged branches): fine."""
-    if task.get("branch"):
-        main = s.loc["folder"]
-        # --no-verify: a pre-push hook (a typecheck) checks what is pushed; a deletion has nothing to
-        # check, and the hook would hold the task list's lock for minutes (#1007).
-        git(main, "push", "--quiet", "--no-verify", remote_of(main), "--delete", task["branch"])
+def drop_branch(s, task, head):
+    """After GitHub merged its pull request at `head` (the commit that merged): its branch on GitHub goes, as
+    --delete-branch would have (gh refuses that flag on a queue, #801), only while it is still at `head`.
+    A commit pushed there after the merge keeps the branch: the remote refuses the delete unless the branch
+    is at `head` when it deletes it (--force-with-lease). No head known: it stays. Already gone (the repo
+    deletes merged branches): fine. True when this deleted it."""
+    br = task.get("branch")
+    if not (br and isinstance(head, str) and head):
+        return False
+    main = s.loc["folder"]
+    # --no-verify: a pre-push hook (a typecheck) checks what is pushed; a deletion has nothing to
+    # check, and the hook would hold the task list's lock for minutes (#1007).
+    return git(main, "push", "--quiet", "--no-verify", f"--force-with-lease=refs/heads/{br}:{head}",
+               remote_of(main), "--delete", f"refs/heads/{br}")[0]
 
 
 def queue_merge(task, head):
