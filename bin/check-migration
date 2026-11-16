@@ -87,9 +87,12 @@ web/plugins/places/add.tsx'''.split()),
     # test runs it with a stand-in herdr-core. Since PR 63's review (the v3.1.35 merge) it also owns the upstream paths
     # that review fixed with no phase of their own: the artifact CLI's read-only refusal, empty crop and missing checker,
     # the sidebar's Autopilot reads, a remote job run once within its wait, Find machines once at a time, an unknown
-    # sandbox probe, #1007's unused store release, the web's Find countdown and recipe viewer, and their tests.
+    # sandbox probe, #1007's unused store release, the web's Find countdown and recipe viewer, and their tests. Since
+    # the chat's "/" list learned plugins it owns core/slash.js and its mods/chat copy too: an enabled plugin's skills and
+    # commands are offered as plugin:name, read from CLAUDE_CONFIG_DIR, and its test.
     'A2': frozenset('''core/agents.js core/agents.test.js core/chat-find.test.js core/live-switch.js core/live-switch.test.js
-core/mentions.js core/mentions.test.js core/settings.js core/tasks.js core/tasks.test.js
+core/mentions.js core/mentions.test.js core/settings.js core/slash.js core/slash.test.js core/tasks.js core/tasks.test.js
+mods/chat/core/slash.js
 lib/COPIES lib/agent.js mods/chat-models/core/agents.js mods/chat/agent.js
 mods/chat/core/agents.js mods/chat/core/mentions.js mods/chat/core/settings.js mods/chat/core/tasks.js mods/chat/main.js mods/coordinator/core/agents.js
 mods/coordinator/core/settings.js mods/coordinator/restart.sh mods/jump/core/tasks.js mods/newspace/agent.js mods/newspace/core/agents.js
@@ -291,6 +294,9 @@ PROSE = frozenset('AGENTS.md CHANGELOG.md CLAUDE.md CODING_STANDARDS.md GLOSSARY
 # A unit merged after Q that changes a tracked path outside Q's own and prose names it here, under the unit's name
 # ({'MIG-10': 'path other/path'}). Its evidence is its own Check; Q's ledger keeps describing its candidate only.
 AFTER_Q = {
+    # The chat's "/" list offers an enabled plugin's skills and commands (it read only ~/.claude/skills and commands).
+    # Its evidence is its own Check; Q's ledger keeps describing its original candidate.
+    'SLASH-PLUGIN-SKILLS': 'core/slash.js core/slash.test.js mods/chat/core/slash.js',
     # PR 63's review of the v3.1.35 merge, at Nathan's choice to fix upstream's faults here: every tracked source path
     # it changes. Its evidence is its own Check; Q's ledger keeps describing its original candidate.
     'PR63-REVIEW': (
