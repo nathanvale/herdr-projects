@@ -61,6 +61,43 @@ initialization, scheduler or `scripts/parity.py` against a real home. Mod init c
 push settings and remote task execution can spread this branch's code. Another
 folder/home/port is not isolation proof. Runtime rehearsal is separately admitted.
 
+## Upstream developer notes (v3.1.35)
+
+Upstream added these to its `AGENTS.md` in v3.1.35. The rules above still decide what runs here: a note that runs
+tests, a build, a throwaway core or a real agent describes how CI or a separately admitted rehearsal does it.
+
+Safety, for anything that might reach another machine:
+
+- Two throwaway cores on one machine: `herdr-task --on <it>` installs its bundle into the real
+  `~/.local/bin/herdr-task` unless `$HERDR_TASK_STORE/.remote/<machine>` already says `source`. Write that file first.
+- Reach map tests: `test/test_reach.py` puts logging fake ssh, tailscale and hc on PATH and runs the real probe. Reuse
+  its fakes for any test of code that might contact other hosts.
+
+Tests:
+
+- herdr-task tests that need a real task list on disk plus a faked `begin()`: reuse Scheduled's `setUp`, `run_cmd`
+  and `tick_at` as class attributes (see `DoubleStart` in `test/test_herdr_task.py`) instead of subclassing, which
+  reruns Scheduled's tests.
+- Before-checks against main: extract main with `git archive origin/main | tar -x -C <scratch>`, copy the branch's new
+  tests in and run them there (the installer's tests need `SHEPHERDR_HANDED_OVER=1`). A git worktree of main fails
+  while main is checked out in another worktree. Patch new names with `mock.patch.object(..., create=True)` so the
+  same test runs on both.
+- `bun test` from `service/` alone skips `bunfig.toml`'s preload (two false failures): run Bun's tests from the repo
+  root, as [Check](../.github/workflows/check.yml) does. Check runs `service/spaces-sidebar.test.ts` in its own Bun
+  process because it fails after `service/emoji-pick.test.ts` in the same process (upstream's order dependence).
+- Window-mod methods that need `cx.spawn`'s result in a Bun test: give the stub `cx` a `spawn` that keeps the promise
+  (see the #1010 tests in `service/spaces-sidebar.test.ts`). ShepherdrSettings menus go through
+  `mods/shepherdr-settings/over.js`.
+
+Previews and real agents (separately admitted rehearsal only):
+
+- `herdr-artifact preview` with a branch's viewer: copy `mods/artifacts` into a scratch folder with
+  `web/dist/artifact-viewer.html` beside it as `viewer.html`, and run that copy with `HOME=<scratch>` so it uses a
+  throwaway store.
+- Real Codex in a throwaway hc session: `env -i HOME PATH TERM HC_SESSION=x CODEX_HOME=<scratch with auth.json
+  symlinked> hc run --bg ...`. herdr-task's own code refuses hc under a changed `HC_SESSION`, so feed it saved
+  `hc ls` and `hc get` JSON instead.
+
 ## The herdr.dev listing (at release, with the person's yes)
 
 - The repo root is the listed layout folder: `layouts/shepherdr.json`, `mods/`, `RECIPE.md`, `preview.png`,

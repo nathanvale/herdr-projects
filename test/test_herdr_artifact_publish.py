@@ -40,6 +40,9 @@ case "$FAKE_CHECK" in
   ok) echo 'div'; exit 0 ;;
   noconnect) echo 'herdr-app: isolated checker failed: checker job did not connect within 10 seconds' >&2; exit 1 ;;
   hang) sleep 30 & wait ;;
+  slow) sleep 1.5; echo 'div'; exit 0 ;;
+  noconnect-once) if [ -f "$FAKE_LOG.once" ]; then echo 'div'; exit 0; fi; : > "$FAKE_LOG.once"
+    echo 'herdr-app: isolated checker failed: checker job did not connect within 10 seconds' >&2; exit 1 ;;
   broken) echo 'TypeError: blocks is not iterable' >&2; exit 1 ;;
 esac
 """
@@ -127,11 +130,38 @@ class Publish(unittest.TestCase):
         """#847: herdr-app's isolated checker doesn't connect (after Herdr restarted): it tries again, then a recipe
         (already checked against its schema) publishes, saying it wasn't drawn."""
         os.environ["FAKE_CHECK"] = "noconnect"
-        with mock.patch.object(A, "RETRY_WAIT", 0):
+        with mock.patch.object(A, "RETRY_WAITS", (0, 0)):
             out = self.publish(self.recipe())
         self.assertEqual(out["version"], 1)
         self.assertIn("did not connect", out["unchecked"])
-        self.assertEqual(len(self.calls()), 2)  # tried twice, then not again for light
+        self.assertEqual(len(self.calls()), 3)  # tried three times (#987), then not again for light
+
+    def test_a_checker_that_connects_on_a_later_try_draws_it(self):
+        """#987: under load the checker misses its connect deadline once; the next try (after a wait) draws it."""
+        os.environ["FAKE_CHECK"] = "noconnect-once"
+        with mock.patch.object(A, "RETRY_WAITS", (0, 0)):
+            out = self.publish(self.recipe())
+        self.assertNotIn("unchecked", out)
+        self.assertEqual(len(self.calls()), 3)  # dark: failed, then drawn; light: drawn
+
+    def test_an_undrawn_publish_says_how_to_draw_it_later(self):
+        """#987: when it still couldn't draw it, publish names the command that does, and that command draws it."""
+        os.environ["FAKE_CHECK"] = "noconnect"
+        out = io.StringIO()
+        with mock.patch.object(A, "RETRY_WAITS", (0, 0)), mock.patch("sys.stdout", out):
+            A.cmd_publish(types.SimpleNamespace(id=None, title="Report", folder=self.folder, task=None, note=None,
+                                                json=False, custom=False, dir=self.recipe()))
+        aid = re.search(r"Published (\S+) v1", out.getvalue()).group(1)
+        self.assertIn(f"herdr-artifact check {aid}", out.getvalue())
+        os.environ["FAKE_CHECK"] = "ok"
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            code = A.cmd_check(types.SimpleNamespace(id=aid, version=None, json=True))
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out.getvalue())["ok"], True)
+        os.environ["FAKE_CHECK"] = "broken"
+        with mock.patch("sys.stdout", io.StringIO()):
+            self.assertEqual(A.cmd_check(types.SimpleNamespace(id=aid, version=None, json=True)), 1)
 
     def test_a_custom_panel_still_needs_the_check(self):
         """#847: a custom panel isn't published undrawn: it says Herdr couldn't check it, and to try again."""
@@ -140,7 +170,7 @@ class Publish(unittest.TestCase):
         os.makedirs(d)
         with open(os.path.join(d, "main.js"), "w") as f:
             f.write('export default class X {}\n')
-        with mock.patch.object(A, "RETRY_WAIT", 0), self.assertRaises(A.Fail) as e:
+        with mock.patch.object(A, "RETRY_WAITS", (0, 0)), self.assertRaises(A.Fail) as e:
             self.publish(d, custom=True)
         self.assertIn("couldn't draw it", str(e.exception))
         with A.Store(A.locate(self.folder), write=False) as st:
@@ -158,7 +188,7 @@ class Publish(unittest.TestCase):
         """#843: a check that never ends (its checker waits forever) gives up, and the recipe publishes."""
         os.environ["FAKE_CHECK"] = "hang"
         t = time.time()
-        with mock.patch.object(A, "CHECK_TIMEOUT", 0.5), mock.patch.object(A, "RETRY_WAIT", 0):
+        with mock.patch.object(A, "CHECK_TIMEOUT", 0.5), mock.patch.object(A, "RETRY_WAITS", (0, 0)):
             out = self.publish(self.recipe())
         self.assertLess(time.time() - t, 10)
         self.assertIn("didn't finish", out["unchecked"])
@@ -203,6 +233,155 @@ class Publish(unittest.TestCase):
             out = self.publish(d)
         self.assertEqual(out["version"], 1)
         self.assertIn("Waiting for another herdr-artifact", err.getvalue())
+
+    def lock_path(self):
+        """The folder's lock file, found without taking it (a writable Store would wait on it)."""
+        path = A.Store(A.locate(self.folder), write=False).path
+        return os.path.join(A.STORE, "." + os.path.basename(path) + ".lock")
+
+    def test_a_read_never_waits_on_the_lock(self):
+        """#971, #972: a reader (a preview's every request, list, show) takes no lock: it neither waits behind a
+        publish nor keeps one waiting."""
+        self.publish(self.recipe())
+        held = open(self.lock_path(), "a")
+        self.addCleanup(held.close)
+        fcntl.flock(held, fcntl.LOCK_EX)
+        t = time.time()
+        with A.Store(A.locate(self.folder), write=False) as s:
+            self.assertEqual(len(s.data["artifacts"]), 1)
+        self.assertLess(time.time() - t, 0.5)
+
+    def test_the_check_runs_without_the_lock(self):
+        """#972: a publish's check (minutes under load) holds no lock: another publish in the folder saves meanwhile."""
+        os.environ["FAKE_CHECK"] = "slow"
+        first = {}
+        lock = self.lock_path()  # resolved before the publish starts, so finding it can't wait on its lock
+        th = threading.Thread(target=lambda: first.update(self.publish(self.recipe("slow"), title="Slow")))
+        th.start()  # the only thread that patches stdout
+        deadline = time.time() + 10
+        while not self.calls():  # the fake checker logs as it starts: the first is in its check now
+            self.assertLess(time.time(), deadline, "the checker never started")
+            time.sleep(0.01)
+        held = open(lock, "a")
+        self.addCleanup(held.close)
+        t = time.time()
+        fcntl.flock(held, fcntl.LOCK_EX)  # what a second publish's save takes
+        waited = time.time() - t
+        fcntl.flock(held, fcntl.LOCK_UN)
+        th.join()
+        self.assertLess(waited, 0.5)
+        self.assertEqual(first["version"], 1)
+
+    def test_two_updates_at_once_both_keep_their_version(self):
+        """Checked at the same time, two updates of one artifact are saved one after the other: v2 and v3."""
+        aid = self.publish(self.recipe())["id"]
+        os.environ["FAKE_CHECK"] = "slow"
+        dirs = [self.recipe(f"u{n}") for n in (1, 2)]
+        base = dict(id=aid, title=None, folder=self.folder, task=None, note=None, json=True, custom=False)
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):  # one capture for both (a patch per thread would race)
+            ths = [threading.Thread(target=A.cmd_publish, args=(types.SimpleNamespace(**base, dir=d),)) for d in dirs]
+            for th in ths:
+                th.start()
+            for th in ths:
+                th.join()
+        self.assertEqual(sorted(json.loads(l)["version"] for l in out.getvalue().splitlines()), [2, 3])
+        with A.Store(A.locate(self.folder), write=False) as s:
+            self.assertEqual([x["v"] for x in s.find(aid)["versions"]], [1, 2, 3])
+
+    def test_an_update_that_omits_title_and_task_keeps_what_another_saved_meanwhile(self):
+        """Two updates read the same record; one saves a title and task while the other is checking. The other, given
+        neither, saves the record's newer ones, never the ones it read before its check; an option it was given wins."""
+        aid = self.publish(self.recipe())["id"]
+        check = A.check
+
+        def meanwhile(**given):
+            calls = []
+
+            def checking(*a, **k):
+                if not calls:
+                    calls.append(1)
+                    self.publish(self.recipe("other"), id=aid, **given)
+                return check(*a, **k)
+            return mock.patch.object(A, "check", side_effect=checking)
+        with meanwhile(title="New", task="HAT-9"):
+            out = self.publish(self.recipe("mine"), id=aid, title=None)
+        self.assertEqual((out["title"], out["task"]), ("HAT-9: New", "HAT-9"))
+        with meanwhile(title="Newer", task="HAT-10"):
+            out = self.publish(self.recipe("mine2"), id=aid, title="Mine")
+        self.assertEqual((out["title"], out["task"]), ("HAT-10: Mine", "HAT-10"))
+        with A.Store(A.locate(self.folder), write=False) as s:
+            art = s.find(aid)
+        self.assertEqual((art["title"], art["task"], art["version"]), ("HAT-10: Mine", "HAT-10", 5))
+
+    def test_a_new_publish_in_a_read_only_store_says_so(self):
+        """#841: a sandbox's store is read-only: a new publish says so (making its files' folder), never a traceback."""
+        d = self.recipe()
+        for case in ("store", "files"):
+            with self.subTest(case):
+                shutil.rmtree(A.STORE, ignore_errors=True)
+                os.makedirs(A.FILES if case == "files" else A.STORE)
+                os.chmod(A.FILES if case == "files" else A.STORE, 0o555)
+                try:
+                    with self.assertRaises(A.Fail) as e:
+                        self.publish(d)
+                finally:
+                    os.chmod(A.FILES if case == "files" else A.STORE, 0o755)
+                self.assertIn("is read-only (a sandbox?)", str(e.exception))
+                self.assertEqual(self.calls(), [])  # refused before the check
+
+    def test_check_draws_a_stored_version_that_publication_grew_past_the_limits(self):
+        """A 200-file recipe gains a poster when it is published: `check` still draws its stored 201-file version,
+        while the same folder given as something to publish is still refused."""
+        d = os.path.join(self.dir, "many")
+        os.makedirs(d)
+        with open(os.path.join(d, "recipe.json"), "w") as f:
+            json.dump({"recipe": 1, "blocks": [{"type": "video", "src": "clip.mp4"}]}, f)
+        open(os.path.join(d, "clip.mp4"), "wb").close()
+        for i in range(A.MAX_FILES - 2):
+            with open(os.path.join(d, f"n{i}.txt"), "w") as f:
+                f.write("x")
+        self.assertEqual(len(A.gather(d)[1]), A.MAX_FILES)
+
+        def poster(keep, files):  # what ready_media does with ffmpeg here: a first frame for a clip with none
+            open(os.path.join(keep, "clip.poster.jpg"), "wb").close()
+            with open(os.path.join(keep, "recipe.json")) as f:
+                recipe = json.load(f)
+            recipe["blocks"][0]["poster"] = "clip.poster.jpg"
+            with open(os.path.join(keep, "recipe.json"), "w") as f:
+                json.dump(recipe, f)
+            return sorted(files + ["clip.poster.jpg"]), []
+        with mock.patch.object(A, "ready_media", side_effect=poster):
+            aid = self.publish(d)["id"]
+        stored = os.path.join(A.FILES, aid, "v1")
+        with self.assertRaises(A.Fail) as e:
+            A.gather(stored)
+        self.assertIn(f"at most {A.MAX_FILES} files", str(e.exception))
+        drawn = len(self.calls())
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            code = A.cmd_check(types.SimpleNamespace(id=aid, version=None, json=True))
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(out.getvalue())["ok"])
+        self.assertGreater(len(self.calls()), drawn)  # drawn again, not refused before the check
+
+    def test_check_without_herdr_app_fails(self):
+        """`check` draws with herdr-app: without it nothing was drawn, so it says so instead of "nothing to fix"."""
+        aid = self.publish(self.recipe())["id"]
+        empty = os.path.join(self.dir, "empty-bin")
+        os.makedirs(empty)
+        os.environ["PATH"] = empty
+        with self.assertRaises(A.Fail) as e:
+            A.cmd_check(types.SimpleNamespace(id=aid, version=None, json=True))
+        self.assertIn("herdr-app", str(e.exception))
+
+    def test_a_refused_new_artifact_leaves_nothing(self):
+        os.environ["FAKE_CHECK"] = "broken"
+        with self.assertRaises(A.Fail):
+            self.publish(self.recipe())
+        self.assertEqual(os.listdir(A.FILES), [])
+        with A.Store(A.locate(self.folder), write=False) as s:
+            self.assertEqual(s.data["artifacts"], [])
 
 
 if __name__ == "__main__":

@@ -591,6 +591,13 @@ test("the window's recovery asks before it types into a shell or restarts", () =
   expect(lost.indexOf("agent.lostRefusal(")).toBeLessThan(lost.indexOf("agent.restart(t,"));
 });
 
+test("the window's Restart Assistant asks about its folder before it restarts", () => {
+  const restart = method(windowSource(), "  restartAssistant(cx) {");
+  // kind, addr and path as Restart Assistant was pressed for (taken before hc get waits)
+  expect(restart.indexOf("agent.lostRefusal(kind, t, this.folderReader(addr), path)")).toBeGreaterThan(-1);
+  expect(restart.indexOf("agent.lostRefusal(")).toBeLessThan(restart.indexOf("agent.restart(t,"));
+});
+
 test("the window's fork says another folder is why, where it is", () => {
   const fork = method(windowSource(), "  fork(cx) {");
   expect(fork.indexOf("agent.OTHER_FOLDER")).toBeGreaterThan(-1);

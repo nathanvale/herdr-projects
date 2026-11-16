@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { argvFor, azureMenu, pickFits, current, line, menuFor, modelSections, parseDefaults, parsePicks, pickKey, providerRefusal, ROUTE_HELD, ROUTE_UNKNOWN, routeArgs, routeRefusal, withPin, withRecent } from "./agents.js";
+import { argvFor, azureMenu, pickFits, current, forkArgv, FORK_LIVE, line, liveTaskAgent, menuFor, modelSections, parseDefaults, parsePicks, pickKey, providerRefusal, resumeArgv, ROUTE_HELD, ROUTE_UNKNOWN, routeArgs, routeRefusal, rowFor, withPin, withRecent } from "./agents.js";
 
 const codex = { models: Array.from({ length: 250 }, (_, i) => ({ id: `gpt-${i}`, label: `GPT ${i}`, efforts: ["low", "high"] })) };
 const menus = { claude: menuFor("claude", {}), codex: menuFor("codex", codex) };
@@ -132,4 +132,63 @@ test("the window's Provider write keeps its level and rechecks a listed pick ins
   const apply = main.slice(main.indexOf("  async apply(edit) {"), main.indexOf("  // The object a scope writes to"));
   expect(apply.indexOf("if (edit(next) === false) return true;")).toBeGreaterThan(-1);
   expect(apply.indexOf("if (edit(next) === false) return true;")).toBeLessThan(apply.indexOf("writeTextFile("));
+});
+
+// A terminal's own argv as herdr-task runs a worker: nice, sh -c, env and the person's `bash -ic` before the agent.
+const wrapped = (...agent) => ["sh", "-c", "exec nice -n 10 \"$@\"", "herdr-low", "sh", "-c", "for v in ...; exec \"$@\"", "herdr-clean",
+  "env", "HERDR_BROWSER_TASK=demo#1", "/bin/bash", "-ic", "\"$@\"; exec \"$0\" -i", "/bin/bash", ...agent];
+
+test("#1001: a restart keeps only the agent's own flags, never its launcher's (bash -ic was Codex's -i c, an image)", () => {
+  const old = { agent: "codex", argv: wrapped("codex", "-c", "hooks.state={}", "--no-daemon", "-m", "gpt-6-sol", "Do the task"), session: "S1" };
+  const { argv, base } = argvFor({ agent: "codex", model: "gpt-6-sol", perm: "auto" }, old);
+  expect(argv.some((a) => /^-i/.test(a))).toBe(false);
+  expect(argv).not.toContain("herdr-clean");
+  expect(argv.filter((a, i) => argv[i - 1] === "-c")).toEqual(["hooks.state={}", 'service_tier="default"']);
+  expect(base[0]).toBe("codex");
+  expect(argv.slice(0, 2)).toEqual(["codex", "resume"]);
+  const c = argvFor({ agent: "claude", model: "opus" }, { agent: "claude", argv: wrapped("claude", "--add-dir", "/x", "hi"), session: "S2" }).argv;
+  expect(c).toEqual(["claude", "--add-dir", "/x", "--model", "opus", "--settings", '{"fastMode":false}', "--resume", "S2"]);
+  expect(forkArgv("codex", wrapped("codex", "-m", "gpt-6-sol"), "S3")).toEqual(["codex", "fork", "-m", "gpt-6-sol", "--no-daemon", "S3"]);
+});
+
+test("#973: Fable 5.2 is in Claude's model menu, the fable alias its row", () => {
+  const ids = menuFor("claude", {}).models.map((m) => m.id);
+  expect(ids).toContain("claude-fable-5-2");
+  expect(menuFor("claude", {}).models.find((m) => m.id === "claude-fable-5-2").name).toBe("Fable 5.2");
+  expect(rowFor("claude", { alias: "fable", model: "claude-fable-5-2" })).toBe("claude-fable-5-2");
+});
+
+test("#1050: forking a task's chat while its agent runs asks first; a plain chat or an ended task doesn't", () => {
+  const agent = (address, labels, extra = {}) => ({ address, state: "live", labels, status: { app: "claude-code" }, ...extra });
+  const worker = agent("t1", { "herdr.task": "repo#7" });
+  const all = [worker, agent("t2", { "herdr.task": "repo#7", "herdr.role": "reviewer" }), agent("t3", { "herdr.task": "repo#8" })];
+  expect(liveTaskAgent(worker, all)?.address).toBe("t1");
+  // an older session of the task, its agent now t1
+  expect(liveTaskAgent({ address: "t0", state: "finished", labels: { "herdr.task": "repo#7" } }, all)?.address).toBe("t1");
+  expect(liveTaskAgent(agent("t4", {}), all)).toBe(null);
+  // the agent quit, its shell stays
+  expect(liveTaskAgent(worker, [{ ...worker, status: { app: null }, foreground: { name: "bash" } }])).toBe(null);
+  // only the reviewer left
+  expect(liveTaskAgent(worker, [all[1]])).toBe(null);
+  expect(FORK_LIVE.verb).toBe("Fork anyway");
+});
+
+// Restart Assistant after an /exit (GitHub #1039): the same conversation, with the flags it ran with.
+test("an ended Claude Assistant resumes its own session with its own flags", () => {
+  const argv = ["claude", "--model", "opus", "--effort", "high", "--dangerously-skip-permissions"];
+  expect(resumeArgv("claude", argv, "11111111-2222-3333-4444-555555555555"))
+    .toEqual(["claude", "--model", "opus", "--effort", "high", "--dangerously-skip-permissions", "--resume", "11111111-2222-3333-4444-555555555555"]);
+});
+
+test("an ended Codex Assistant resumes with codex resume <session>", () => {
+  const out = resumeArgv("codex", ["codex", "--no-daemon", "-m", "gpt-5"], "abc");
+  expect(out[0]).toBe("codex");
+  expect(out[1]).toBe("resume");
+  expect(out.at(-1)).toBe("abc");
+  expect(out).toContain("--no-daemon");
+  expect(out).not.toContain("fork");
+});
+
+test("an Assistant that was itself resumed resumes the session it ran last, once", () => {
+  expect(resumeArgv("claude", ["claude", "--resume", "old-id", "--model", "opus"], "new-id")).toEqual(["claude", "--model", "opus", "--resume", "new-id"]);
 });

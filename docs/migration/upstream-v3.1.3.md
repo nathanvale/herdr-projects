@@ -36,13 +36,17 @@ both their upstream blobs and merged content hashes. F, P, B, all 120 admitted p
 dispositions, 40 requirements and Q's original proof candidate stay fixed. `AFTER_Q` names
 this import's paths; it supplies no new native proof. Source CI remains required before merge.
 
+Upstream v3.1.35 (which holds v3.1.34) is merged into `main` the same way: see
+[Upstream v3.1.35 merge](#upstream-v3135-merge). It is source provenance, not a fork release.
+
 ## Inputs and source ownership
 
 | Input | Exact commit |
 | --- | --- |
 | F, reserved fork parent | `4f0236f03a88c5e9fa344475d90d3a20ef418481` |
-| U, upstream v3.1.33 parent (since its merge) | `ef3be074dd3e28942149b7a5183ab2e2d4207954` |
-| Upstream v3.1.32, U before this merge (history) | `be647c825c72f559b8cbec6cd1f6479a2cf9fdc6` |
+| U, upstream v3.1.35 parent (since its merge) | `abd5a0f1aa6faf2d0ee8d6559dc7f064fdae488e` |
+| Upstream v3.1.33, U before the v3.1.35 merge (history) | `ef3be074dd3e28942149b7a5183ab2e2d4207954` |
+| Upstream v3.1.32, U before the v3.1.33 merge (history) | `be647c825c72f559b8cbec6cd1f6479a2cf9fdc6` |
 | Upstream v3.1.29, U before the v3.1.31 merge (history) | `e41ea9d2c0a273a5c7b6aebf51cf2e4d112a1d1e` |
 | Upstream v3.1.16, U before the v3.1.29 merge (history) | `57302497117183a1772464b31751da12a1c03e4a` |
 | Upstream v3.1.3, S0's U (history) | `dc018f2a42f3a1d8562f7b23a3bcd3988f347bdc` |
@@ -335,6 +339,121 @@ Where the two sides met:
   admission, the private listener, the sandboxed content-security policy and `nosniff` are unchanged.
   `service/artifacts-remote.test.ts` drives the real `Artifacts.file()` with a stand-in hub, and three ledger rows
   remove the cache, the truncation refusal and the key's machine.
+
+### Upstream v3.1.35 merge
+
+`codex/upstream-v3.1.35` merges released upstream v3.1.35 (`abd5a0f1`, annotated tag `v3.1.35`, object `5bea5e83`)
+into `main` at `d57a0261` with a merge commit: both are parents, nothing is squashed or rebased. v3.1.35 holds v3.1.34
+(`a3f327a5`). Git's merge base is v3.1.33 (`ef3be074`); upstream adds 27 commits and 136 files. U now names v3.1.35:
+every U path outside the phase table and the overrides is byte-identical to it, and the 52 admitted rows whose upstream
+file or merged content changed re-pin `upstream_blob` and `sha256`. `AFTER_Q` names every source path the merge changes
+(`MERGE-v3.1.35`), so Q's ledger keeps describing `d53e014b`. F, P, B, the 120 admitted paths, 121 file dispositions
+and 40 requirements are unchanged; the gate's checks are unchanged. The version text is upstream's provenance, not a
+fork release.
+
+Where the two sides met (20 conflicted files, and one auto-merge that broke):
+
+- `AGENTS.md` (in `OVERRIDES`): the fork's file is kept; upstream's developer notes stay in its history.
+- `core/agents.js`: both sides added an `agentAt()`; upstream's (`#1001`, which also skips a launcher's `bash -ic`) is
+  the one kept, and the fork's other-folder check reads it. Its five mod copies follow (`bin/sync-shared --check`).
+- `core/chat-log.js` and its chat copy: upstream's one read of the process table (`#1013`) replaces `pgrep` in the
+  fork's shared `PROCESS` block, so `FIND` and `FOLDER` (C1's `claude_dir`) both use it.
+- `mods/chat/main.js` and `service/actions.ts`, a fork of a running task's chat (`#1050`): in the window, launch
+  admission checks the fork first (L2) and only an admitted fork asks "Fork anyway", whose button makes the same tab; on
+  the web the ask comes before admission and the confirmed request (`force`) is admitted as before. The window's switch
+  keeps `--restart` and follows a pending remote result (`settle()`, SHEP-227).
+- `T/agents.py` `codex_working()`: upstream's start times (`#946`: what started with Codex is a tool server, never a
+  job) inside the fork's guards: no `ps`, a failed one or an empty listing is unknown, so the log decides (PR 60 #10).
+- `T/cli.py`: upstream's `_refused()`, `#1057`'s plain line for a program that couldn't start and its exit codes, with
+  the fork's `cause`, `publication` and `launch` fields in the JSON refusal.
+- `T/github.py`: the fork's `github()`, `publish()` and `pr_open()` stay. Ready's summary is one comment edited in
+  place (`#1058`) and a pull request Herdr wrote gets each ready's description (`#1004`), also on the fork's `OPEN`
+  path; a failed push says its hook's own words (`#963`) through `push_problem()`; a workflow run still going is
+  pending (`#1044`, `pr_read()`); `pr_merge()` never passes `--delete-branch` (`#1045`), so `docs/install.md` (N1)
+  now says the merged branch goes from the remote by `git push --delete`, on git's own access.
+- `T/commands.py`: the fork's `finalize()` (Ready means published; a refusal changes nothing) and admitted
+  `start_again()` stay. A resumed Claude Code session gets the permission mode a new one would (`#1056`), read from its
+  folder only when it already exists, so nothing is made before the start is claimed. Resume retires the old agent's
+  leftover shells (`#1022`) after the fork's admitted start. `merge_now()` keeps `no_merge()` and waits for checks
+  still to come (`#1044`), except checks that can't be read, which keep SHEP-179's policy (an automatic merge refuses
+  them, the person's Accept merges). It merges through `forge.integrate()` without `--delete-branch`, so the
+  merge-queue memory (`uses_queue()`) goes. An Accept or merge with no pull request on record adopts the one open for
+  its branch (`#988`) through `forge.pr_adopt()` (this repository on gh's host, into its base, at the branch's tip);
+  one at another commit refuses.
+- `T/launch.py`: `launch(admission=)` and `#1023`'s registered worktree. `T/proof.py`: the fork's `checks_of(t, tip)`
+  and the Accept card's `merges` (`#1046`). `T/sessions.py`: the fork's session names and upstream's process table.
+- `T/tick.py`: imports through the forge. `#1044`'s missing checks and `pr_wait()` apply to a GitHub view only, never
+  a Bitbucket one or a read the forge refused; `CHECKS_NEVER` clears beside the fork's moved-head rule. The merge queue
+  is queued again once after a timeout (`#1041`) through `queue_merge()`, at the read head.
+- `service/spaces.ts` and `service/main.ts`: `execTemplate()` takes the web's saved pick (the fork's words, A2) or
+  Settings › Agents' pick for the role (upstream's object, with its installed check). A web start without a saved pick,
+  and a new web space, now use the role's pick; both still go through launch admission, which on Azure Foundry puts its
+  own one-off in the template's place. `/api/machines/find` (`#967`) sits beside the fork's `/api/reach`.
+- `service/artifacts.ts`: the fork's kept remote bytes and truncation refusal, with upstream's `no-store` on a 404.
+  `docs/migration/up32-sensitivity.json`'s truncation row is re-anchored on that line; its mutation is unchanged.
+- `service/settings.ts` and its test: the fork's Provider fields; upstream's removed star prompt (`#981`) goes.
+- `test/test_herdr_task.py`: both sides' tests. The Codex `ps` fixture writes start times; the switch order test
+  expects `--permission-mode default` (`#1056`).
+
+Upstream behavior the fork's contract keeps out, each a decision for Nathan to reopen:
+
+- `#1007` (Ready lets the task list go while its push runs a pre-push hook) is not taken: the fork's publication
+  keeps the lock from its checks through recording the pull request. Upstream's test asserts the lock is held here.
+- `#988`'s `github()` that answers "no GitHub" (None) when gh can't be reached, and gh never signed in meaning "merge
+  locally", are not taken: the fork's `github()` refuses (GhFailed) and saves nothing, as N1 has it. Upstream's
+  `github_unreachable()` and `pr_push()` are not imported.
+
+Upstream tests adapted to the fork's contracts: the pull request comment, description, hook-output and lock tests
+answer the fork's GitHub branch read; the `#988` tests patch the forge's `repository()` and expect a refusal where
+upstream merged locally; `DoubleStart`'s stand-in `begin()` takes the fork's admission keywords; the Accept card's
+`checks_of` stand-in takes the tip; `#980`'s restart test runs the fork's launch owner on the stand-in `hc` (as
+`ChatLabel` does). `.fallowrc.json`'s three copy lists (MIG-12) take upstream's new `core/pending.js` copies.
+On macOS, upstream's own tree also fails `test_herdr_task.ProcessTable.test_a_real_tree_from_one_read`, two
+`test_herdr_browser_args` path tests (`/private/var`) and `test_install`'s `test_unit_path_has_hc`
+(`/System/Volumes/Data`). Check runs on Linux.
+Three `service/spaces-sidebar.test.ts` cases fail on any platform when `service/emoji-pick.test.ts` runs before them in
+one Bun process: upstream's `live.js` keeps the herdr stand-in of the first file that loads it. This order dependence
+is upstream's (`live.js` and `emoji-pick.test.ts` stay byte-identical to U). The fork's extra test files put emoji-pick
+first on Linux, so Check failed there; Check now runs `service/spaces-sidebar.test.ts` in its own Bun process. PR 63's
+review (below) adds two Autopilot cases to that file and leaves its three order-dependent cases as upstream has them.
+Qualification is unchanged: nothing here is native, Azure or R evidence.
+
+PR 63's review of this merge found faults in upstream's code and in the joins; at Nathan's choice the fork fixes
+upstream's here rather than waiting for upstream. Fifteen upstream paths that no phase owned change, so the gate
+admits them with `source_deltas` rows pinned to v3.1.35's blob (two new tests have none): A2 owns the artifact CLI,
+the sidebar's Autopilot reads, `T/link.py`, `T/machines.py`, `T/sandbox.py`, `T/store.py`, the web's Find machines
+and recipe viewer and their tests; L2 owns the window's Restart Assistant tests. The twelve admitted rows the review
+changes re-pin `sha256` (their `upstream_blob` is unchanged), and `docs/install.md` (N1) re-pins for its Bitbucket
+Cloud and Azure contact list. `AFTER_Q` names every source path the review changes (`PR63-REVIEW`), so Q's ledger
+keeps describing `d53e014b`. The gate now admits 135 rows; F, P, B, 121 file dispositions, 40 requirements and the
+gate's checks are unchanged. What changed:
+
+- The window's Restart Assistant (`mods/chat/main.js`, L2) asks `lostRefusal()` about its folder before it restarts,
+  as a lost session's start does, and stops when "Start a new one" empties the chat while it waits
+  (`service/chat-restart-assistant.test.ts`, `core/chat-find.test.js`, `test/test_chat_assistant_exit.py`).
+- A web Assistant start with no saved pick passes the Settings pick's argv to launch admission (`service/actions.ts`,
+  `service/spaces.ts`), so Azure Foundry plans from the agent that runs, and a template with no command line still
+  takes a pick. A new space whose Assistant can't be prepared is kept and says why (`service/launch-sites.test.ts`,
+  `service/assistant-start.test.ts`).
+- A resumed Claude Code session reads its permission mode from the profile admission starts it under
+  (`T/launch.py`, `T/commands.py`); a task's worktree folder registered to another task or branch is refused; only
+  the installer's exact Codex hook command is trusted.
+- A Bitbucket pull request merged by hand keeps its remote branch (`T/commands.py`); Accept adopts an open pull
+  request when the worktree folder is gone but the branch stays (`T/forge.py`, `T/github.py`); `integrate()` drops
+  its unused `queue` argument.
+- `T/agents.py` expands each Codex batch poll loop by its braces, so both sessions in one batch end; `T/tick.py`
+  waits on a turn whose own background job still runs.
+- `T/link.py` runs a remote job once (a claim folder) and keeps every poll within the action's wait;
+  `T/machines.py` rereads Find's last run under its lock; `T/sandbox.py` keeps no answer from a probe that couldn't
+  tell. `T/store.py` drops `released()`, `#1007`'s lock release, which the fork does not take (above).
+- The artifact CLI says a read-only store plainly on publish too, refuses a crop that starts outside the picture or a
+  corrupt PNG, and `check` refuses without `herdr-app`. The web's Find machines counts its wait down and can read a
+  failed list again (`web/plugins/health/find.test.tsx`); the recipe viewer shows a version only once it reads.
+  The sidebar's Autopilot read keeps a far machine's last answer when its file can't be read, and a slow read never
+  puts back older status.
+
+Each fix's regression is in the named test, the artifact CLI's test files or `test/test_herdr_task.py`, except the
+recipe viewer's, which has none yet. Qualification is unchanged.
 
 ### A1 provider checkpoint
 

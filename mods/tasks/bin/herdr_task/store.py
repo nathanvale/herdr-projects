@@ -31,6 +31,19 @@ def locate(path):
     return {"folder": path, "kind": "folder", "name": name, "common": None}
 
 
+def bare_by_mistake(path):
+    """#1052: a repo whose .git/config says core.bare = true though its files are checked out (a .git
+    folder with work beside it): git then sees no work tree, so to herdr-task it looked like a plain
+    folder and tasks quietly worked in it, Worktrees on or not. Returns what to say, else None."""
+    ok, out, _ = git(path, "rev-parse", "--is-bare-repository", "--path-format=absolute", "--git-dir")
+    lines = out.split("\n") if ok else []
+    if len(lines) != 2 or lines[0] != "true" or os.path.basename(lines[1]) != ".git":
+        return None
+    folder = os.path.dirname(lines[1])
+    return (f"{folder} is a git repo, but its .git/config says core.bare = true, so git sees no work tree here and "
+            f"tasks would quietly skip their worktrees. If its files belong there, run: git -C {folder} config core.bare false")
+
+
 def slug_of(folder):
     # Folders in home drop the home part: ~/dev/app -> dev-app, ~ -> home.
     rel = os.path.relpath(folder, HOME) if folder == HOME or folder.startswith(HOME + "/") else folder
@@ -204,14 +217,19 @@ class Store:
                 self.dirty = self.new_prefix = bool(d["tasks"]) or os.path.exists(self.path)
         return self
 
+    def save(self):
+        if self.write and self.dirty:
+            tmp = f"{self.path}.{os.getpid()}.tmp"
+            with open(tmp, "w") as f:
+                json.dump(self.data, f, indent=2)
+                f.write("\n")
+            os.replace(tmp, self.path)
+            self.dirty = False
+
     def __exit__(self, kind, *_):
         try:
-            if kind is None and self.write and self.dirty:
-                tmp = f"{self.path}.{os.getpid()}.tmp"
-                with open(tmp, "w") as f:
-                    json.dump(self.data, f, indent=2)
-                    f.write("\n")
-                os.replace(tmp, self.path)
+            if kind is None:
+                self.save()
         finally:
             if self.lock:
                 fcntl.flock(self.lock, fcntl.LOCK_UN)

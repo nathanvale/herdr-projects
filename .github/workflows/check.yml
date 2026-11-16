@@ -63,11 +63,16 @@ jobs:
       - name: JSON parses
         run: for f in keys.json layouts/*.json lib/addons.json lib/features.json $(find mods -name '*.json'); do python3 -m json.tool "$f" > /dev/null || exit 1; done
       - name: service, shared core and web app (types, tests, build)
+        # service/spaces-sidebar.test.ts runs in its own Bun process. Upstream's live.js (lib/live.js, copied into
+        # mods/spaces-chat) keeps the herdr stand-in of the first test file that loads it, so after
+        # service/emoji-pick.test.ts three of its cases fail. The fork's extra test files put emoji-pick first on Linux.
+        # The order dependence is upstream's to fix; isolating the file keeps every other step unchanged.
         run: |
           bun install --frozen-lockfile
           bun web/build-plugins.ts   # web/generated/ (not in git): the plugin list the app imports
           bunx tsc --noEmit -p .
-          bun test service core web
+          bun test service core web --path-ignore-patterns='service/spaces-sidebar.test.ts'
+          bun test ./service/spaces-sidebar.test.ts
           bun run build
       - name: shell scripts parse
         # every script under plain bash (macOS's bash 3.2 is what people run; #908), and one whose first line says sh

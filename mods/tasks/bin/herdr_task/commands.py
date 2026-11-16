@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 
+from . import sandbox
 from .base import Fail, git, guard, now, run, STORE, stop_note, VERSION
 from .settings import (
     agent_argv, agent_key, bare, merge_policy, review_limits, set_opts, settings_block, settings_for, space_base,
@@ -24,8 +25,9 @@ from .agents import (
 from .sessions import refresh_sessions
 from .launch_admission import admit_task
 from .github import (
-    base_commit, drop_branch, finish, GH_ACCESS, GhFailed, local_base, merge_into_branch, merged_here, needs_approval, NO_ASK,
-    note_checks, own_work, plain, remote_of, STAYS, update_main, watch_main,
+    base_commit, checks_missing, checks_since, drop_branch, expected_checks, finish, GH_ACCESS, GhFailed, local_base,
+    merge_into_branch, merged_here, needs_approval, NO_ASK, note_checks, own_work, plain, pr_for_branch, remote_of, STAYS,
+    update_main, watch_main,
 )
 from .github import CHECKS_RUNNING as PR_CHECKS_RUNNING
 from .forge import (
@@ -37,7 +39,7 @@ from .launch import (
     base_ref, brief, caller_labels, caller_space, current_base, default_space, folder_for, handoff, launch, name_tabs,
     own_path, resume_argv, retag_tabs, set_branch, tab_title, task_tabs,
 )
-from .store import is_task_list, locate, open_store, prefixes_in_use, read_list, Store, store_files
+from .store import bare_by_mistake, is_task_list, locate, open_store, prefixes_in_use, read_list, Store, store_files
 from .queues import after_refs, parse_after, queue_reason, set_after
 from .archive import unarchive
 from .output import line, minutes, say, view
@@ -122,6 +124,9 @@ def cmd_add(args):
     at = scheduled_at(args)  # refused before anything is added
     with open_store(args) as s:
         repo = s.loc["kind"] == "repo"
+        wrong = None if repo else bare_by_mistake(s.loc["folder"])
+        if wrong:
+            raise Fail(wrong)
         if args.worktree and not repo:
             raise Fail("Worktrees need a git repo; this folder isn't one.")
         # The person's setting wins: worktrees off for this repo means in the folder, --worktree or not.
@@ -340,10 +345,21 @@ def begin(s, t, argv, space, parent=None, admission=None, select=None, folder=No
         raise
 
 
+# #1053: an agent just launched still shows its shell for a moment (agent_running() says no): a task
+# whose agent started this recently is starting, never started a second time.
+STARTING_MS = 120000
+
+
+def just_started(t):
+    """The agent its queue or a start launched moments ago, while it is Working: its record, or None."""
+    fresh = [a for a in t.get("agents") or [] if now() - (a.get("at") or 0) < STARTING_MS]
+    return fresh[-1] if t.get("state") == "running" and fresh else None
+
+
 def cmd_start(args):
     with open_store(args) as s:
         t = s.find(args.id)
-        live = [k for k in map(detail, live_agents(s.key(t))) if agent_running(k)]
+        live = [k for k in map(detail, live_agents(s.key(t))) if agent_running(k)] or [a for a in [just_started(t)] if a]
         if live:
             raise Fail(f"{s.ref(t)} is already running ({live[0]['address']}). Use switch or resume.")
         if t["state"] == "done":
@@ -392,7 +408,13 @@ def cmd_start(args):
         say(args, {**v, "queued": True, "reason": reason}, f"{s.ref(t)} is queued ({reason}). It starts by itself when it can.")
         return
     out = {**v, "terminal": a["address"], "space": space, "parent": a.get("parent")}
-    say(args, out, f"{s.ref(t)} started: {a['address']} in {folder_desc(t, s)}")
+    text = f"{s.ref(t)} started: {a['address']} in {folder_desc(t, s)}"
+    # Codex's sandbox can't start here (SHEP-227, #998): whoever started it hears why and the fix, once per start.
+    broken = sandbox.check() if sandbox.sandboxed(argv) else None
+    if broken:
+        out["sandbox"] = sandbox.notice(broken)
+        text += "\n\n" + out["sandbox"]
+    say(args, out, text)
 
 
 def folder_desc(t, s):
@@ -540,8 +562,9 @@ def review_refusal(s, t, wt):
         what += f" (rounds are recorded on {', '.join(seen)})"
     if rounds_used(t) >= rounds:
         t["review_out"] = now()
-        return (f"All {rounds} review rounds are used and {what} isn't reviewed. Say why in your chat, set your status line to "
-                f"it, and end your turn: only your Assistant can add a round (herdr-task review-more {ref}).")
+        return (f"All {rounds} review rounds are used and {what} isn't reviewed. A fix made after the last round needs a round "
+                f"of its own: say why in your chat (what the fix changed), set your status line to it, and end your turn: only "
+                f"your Assistant can add a round (herdr-task review-more {ref}).")
     return (f"Review is on and {what} isn't reviewed. Have it reviewed as your brief says, fix what must be fixed, record the "
             f"round with `{ht} reviewed {ref} --folder {folder} --report \"<findings, a line>\"` (on the commit you'd say "
             f"ready at), then run ready again. {rounds - rounds_used(t)} of {rounds} rounds left.")
@@ -1170,7 +1193,11 @@ def start_again(s, t, space, key=None, argv_json=None, message=None, parent=None
         raise Fail(RESTART_MODEL.format(who=s.ref(t), deployment=adm.plan["deployment"]))
     unarchive(s, t)
     parent = adm.parent
-    res = resume_argv(argv, prev["session"]) if resuming else None
+    # #1056: a resumed Claude Code session says the permission mode a new one would get, read from its folder's
+    # settings too. The folder only when it is already there: nothing is made before the start is claimed. The
+    # person's settings are the profile admission starts it under (adm.config_dir), not this process's.
+    here = folder_for(s, t) if t.get("mode") != "worktree" or os.path.isdir(t.get("worktree") or "") else None
+    res = resume_argv(argv, prev["session"], here, adm.config_dir) if resuming else None
     with adm.claimed():
         adm.before_send = before_send
         if res:
@@ -1194,7 +1221,7 @@ RESUME_NUDGE = ("Shepherdr resumed your session because your agent had stopped. 
 def cmd_resume(args):
     with open_store(args) as s:
         t = s.find(args.id)
-        live = [k for k in map(detail, live_agents(s.key(t))) if agent_running(k)]
+        live = [k for k in map(detail, live_agents(s.key(t))) if agent_running(k)] or [a for a in [just_started(t)] if a]
         if live:
             raise Fail(f"{s.ref(t)} still has an agent ({live[0]['address']}). Use switch to replace it.")
         if t["state"] in ("todo", "scheduled", "queued"):
@@ -1202,12 +1229,19 @@ def cmd_resume(args):
         space = bare(args.space) if args.space else (t.get("space") or default_space())
         if t["state"] == "done":
             t["state"] = "running"
+        gone = [k["address"] for k in live_agents(s.key(t))]  # its agents' terminals, none running an agent
         back_to_work(s, t, "resumed")
         fresh = getattr(args, "fresh", False)
         # The nudge says the session resumed: only after the recorded session itself, never with a handoff (--fresh, no
         # session recorded, its recorded log gone, or another kind of agent: a new conversation, PR 60).
         a, resumed = start_again(s, t, space, args.agent, args.argv, parent=args.parent, fresh=fresh,
                                  resumed_message=RESUME_NUDGE)
+        # #1022: the old agent's terminal, its plain shell left (with the status it last reported when
+        # it died mid-turn), kept counting as the task's agent: it goes, as switch ends the one it replaces.
+        for address in gone:
+            if address != a["address"]:
+                stop_note("resume-retire", task=s.ref(t), terminal=address, by="resume")
+                run(["hc", "kill", address])
         v = view(s, t)
     out = {**v, "terminal": a["address"], "space": space, "parent": a.get("parent"), "resumed": resumed}
     gone = {k: a[k] for k in ("missing_history", "previous_session") if k in a}
@@ -1296,6 +1330,10 @@ def tell(s, t, msg, args):
     Returns (terminal, started)."""
     unarchive(s, t)
     live = workers(s, t)
+    fresh = None if live else just_started(t)
+    if fresh:
+        # #1053: its agent is still starting (its brief on the way): never a second one beside it.
+        raise Fail(f"{s.ref(t)} started its agent moments ago ({fresh['address']}); send this again once it is up.")
     if live:
         # While the person writes to it, the message waits for them (news.py's held_pass).
         from .news import send_or_hold
@@ -1326,12 +1364,6 @@ IN_QUEUE = "It is in GitHub's merge queue."  # #802: merging, done once GitHub m
 # Accept or merge still merges, and GitHub still refuses what its required checks block.
 CHECKS_UNKNOWN = ("Its GitHub checks can't all be read here, so it doesn't merge by itself until they can and pass; "
                   "or the person checks them on GitHub and accepts it.")
-QUEUE_DAY = 24 * 3600000  # how long a base branch's merge queue is remembered
-
-
-def uses_queue(s, base):
-    q = (s.data.get("merge_queue") or {}).get(base)
-    return bool(q) and now() - q < QUEUE_DAY
 
 
 UNREACHED = "Couldn't reach pull request"  # merge_now()'s words when gh can't read it
@@ -1413,7 +1445,6 @@ def merge_now(s, t, auto=False):
                 f"{repair_of(t['pr'], why)}")
     if provider_of(t["pr"]) == GITHUB and not v.get("refused"):
         note_checks(s, t, v)  # SHEP-179: GitHub's checks read or not, for doctor and the Accept card
-    queue = False
     if v.get("state") != "MERGED":
         problem = pr_problem(v) or adopted_moved(s, t, v)
         if problem:
@@ -1428,7 +1459,11 @@ def merge_now(s, t, auto=False):
         if refusal:
             t["attention"], t["attention_at"] = refusal, now()
             return refusal
-        if pr_pending(v):
+        # #1044: no checks yet while some will come is never "none set up": it merges once they ran. Only GitHub's
+        # pull requests get here (no_merge() above). Checks that can't be read (SHEP-179) aren't waited for here: an
+        # automatic merge refuses them below (CHECKS_UNKNOWN), and the person's own Accept or merge still merges.
+        missing = None if v.get("checks_unknown") else checks_missing(v, checks_since(s, t, v), expected_checks(s, t, v.get("headRefOid")))
+        if pr_pending(v) or missing == "waiting":
             return CHECKS_RUNNING
         if needs_approval(v):
             t["pr"]["needs_approval"] = True
@@ -1436,21 +1471,19 @@ def merge_now(s, t, auto=False):
         t["pr"].pop("needs_approval", None)
         if auto and v.get("checks_unknown"):
             return CHECKS_UNKNOWN
-        base = t.get("base") or "main"
+        # #1045: never --delete-branch (the GitHub adapter's pr_merge()). gh deletes the branch right after its merge
+        # call whenever it doesn't know the base has a merge queue (a ruleset's queue, an older gh): GitHub only queued
+        # it, and a pull request whose branch goes is closed and leaves the queue. Its branch on GitHub goes below,
+        # once GitHub says it merged (drop_branch()).
         matched = v.get("headRefOid") or ""
-        queue = uses_queue(s, base)
-        ok, err = integrate(t, v, queue)
-        if not ok and not queue and "merge queue" in (err or ""):
-            # gh refuses --delete-branch on a merge queue: asked again without it, which queues it.
-            s.data.setdefault("merge_queue", {})[base] = now()
-            queue = True
-            ok, err = integrate(t, v, queue)
+        ok, err = integrate(t, v)
         # Merged, or only queued (or set to merge by itself)? Asked again; a one-off GitHub error can
         # also come after the merge went through.
         again = pr_view(t)
         if (again or {}).get("state") == "MERGED":
             v = again
         elif ok:
+            # Open after gh said yes: GitHub's merge queue has it (merges once the queue's checks pass).
             t["merge_queued"] = now()
             t.pop("attention", None)
             t["pr"]["checked"] = 0
@@ -1466,16 +1499,45 @@ def merge_now(s, t, auto=False):
         return held
     watch_main(s, t, ((v.get("mergeCommit") or {}).get("oid")) if v.get("state") == "MERGED" else None)
     update_main(s, t)
-    if queue or t.get("merge_queued"):
-        drop_branch(s, t)
-    t["merged"] = True
     # What merged, for finish(): as gh says it merged when its answer says MERGED (merged by hand, or a
     # merge that erred and went through), else the head GitHub merged on --match-head-commit. Never the
-    # squash commit. (gh, given --repo, deletes only GitHub's branch: gh 2.101 source, read, not run.)
+    # squash commit.
     head = v.get("headRefOid") if v.get("state") == "MERGED" else matched
+    # Its branch on GitHub goes now that it merged, while it is still at that head (else the one gh was asked to
+    # merge at): a commit pushed after the merge keeps it (drop_branch()), and a wrong guess only keeps it too.
+    # The repo may have deleted it already: fine. Only GitHub's: a Bitbucket pull request merged there by hand
+    # keeps its branch on the remote, as the tick leaves it.
+    if provider_of(t["pr"]) == GITHUB:
+        drop_branch(s, t, head or matched)
+    t["merged"] = True
     if isinstance(head, str) and head:
         t["merged_head"] = head
     finish(s, t, even_if_busy=True)
+    return None
+
+
+def adopt_tip(s, t):
+    """The tip pr_adopt() holds an open pull request to: None (read in the task's worktree) while that folder is
+    there, else branch_tip(), so a worktree folder that is gone while its branch stays doesn't refuse Accept."""
+    return None if os.path.isdir(t.get("worktree") or "") else branch_tip(s, t)
+
+
+def own_open_pr(s, t):
+    """#988: a task with no pull request on record, in a GitHub repo: the open one for its branch (its
+    agent opened it, ready never knew) is adopted through the forge (pr_adopt(): this repository on gh's
+    host, into its base, at the branch's tip here), so it merges there, never here behind it. Refused
+    (nothing merged) when gh can't answer (GhFailed), or when the one open there isn't at the branch's
+    newest commit here (merging it would leave work out). None when there is none, or no GitHub."""
+    where = repository(s)
+    if not where:
+        return None
+    if pr_adopt(t, where, adopt_tip(s, t)):
+        s.dirty = True
+        return t["pr"]
+    found = pr_for_branch(t, where["repo"])
+    if found:
+        raise Fail(f"{s.ref(t)} has pull request #{found['number']} open on GitHub, but not at its branch's newest commit "
+                   f"here; nothing merged. Its agent pushes it (herdr-task ready), then try again.")
     return None
 
 
@@ -1495,7 +1557,7 @@ def cmd_merge(args):
         if t.get("mode") != "worktree" or not t.get("worktree"):
             raise Fail(f"{s.ref(t)} works in the folder itself; there is nothing to merge.")
         sent, started, how = None, False, "agent"
-        if t.get("pr"):
+        if t.get("pr") or own_open_pr(s, t):
             # On GitHub: Herdr merges the pull request itself (squash), then tidies up here.
             how = "github"
             error = merge_now(s, t)
@@ -1593,7 +1655,7 @@ def cmd_accept(args):
         if not wt:
             # Worked in the folder itself: nothing to merge.
             finish(s, t)
-        elif t.get("pr"):
+        elif t.get("pr") or own_open_pr(s, t):
             how = "github"
             error = merge_now(s, t)
             if error == IN_QUEUE:

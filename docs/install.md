@@ -1,6 +1,6 @@
 # Install
 
-Shepherdr 3.1.33 is a layout for the Herdr app plus its mods, helpers and role instructions, and a web app for your tailnet ([Web](web.md)). One script puts them in
+Shepherdr 3.1.35 is a layout for the Herdr app plus its mods, helpers and role instructions, and a web app for your tailnet ([Web](web.md)). One script puts them in
 place, never overwrites what you made yourself, and keeps a backup of anything it replaces.
 
 ## Requirements
@@ -19,10 +19,13 @@ place, never overwrites what you made yourself, and keeps a backup of anything i
 ## Pull requests and credentials
 
 In a repo with a GitHub remote, `herdr-task ready` publishes a worktree task and Accept merges it through its pull
-request. A repo with no remotes merges locally, and so does one whose remotes are all on Bitbucket Cloud, GitLab.com or
-Azure DevOps, without asking `gh`. So does one `gh` says has no remote on a host it knows, unless `gh` has confirmed that
-repo on GitHub before with the same remotes, and one with no `gh` installed, no remote recognisably GitHub's and no
-saved repo name.
+request. In a repo whose remote is on Bitbucket Cloud, `ready` publishes the task to a Bitbucket pull request, but
+herdr-task never merges it: Accept refuses to merge the pull request, and a local or agent merge in that folder is
+refused too, because Bitbucket's merge can't be tied to exactly the commit that was accepted. Merge the pull request on
+Bitbucket yourself; the task then finishes on its own. A repo with no remotes merges locally, and so does one whose
+remotes are all on GitLab.com or Azure DevOps, without asking `gh`. So does one `gh` says has no remote on a host it
+knows, unless `gh` has confirmed that repo on GitHub before with the same remotes, and one with no `gh` installed, no
+remote recognisably GitHub's and no saved repo name.
 
 - `gh` and `git push` sign in separately. `gh` reads and opens pull requests. `git push` uses whatever the remote's own
   configuration gives git. A refusal says which of the two failed, and with `--json` its `cause` is `gh` or `git`. Their
@@ -58,8 +61,9 @@ saved repo name.
   nothing uncommitted (ignored files aside). For a pull request that's the head GitHub merged, never its squash commit;
   with none, a tip already in the base branch. Otherwise both stay, and the done task says why in `kept`, which Accept,
   merge and `show` print. That note is written when the task is finished; while an agent still runs in it, finishing
-  leaves both and writes no note. `gh pr merge`, run with `--repo`, deletes only GitHub's copy of the branch (gh 2.101
-  source, read, not run). A merge here into a base that is only a commit, not a branch, refuses.
+  leaves both and writes no note. `gh pr merge` is never asked to delete the branch (GitHub #1045): once GitHub says
+  the pull request merged, its branch on the remote goes with `git push --delete`, on git's own access, and stays when
+  that fails. A merge here into a base that is only a commit, not a branch, refuses.
 
 ## Install
 
@@ -172,6 +176,43 @@ finds the install whole: the scheduler's sync, `herdr-task machines sync` (it sa
 herdr-artifact's own copy when they run a command there (the copy already there runs instead), and
 `herdr-secret install --on`. So a half-done copy never reaches every machine. Turning the Other machines add-on off stops the
 sync too.
+
+## What Shepherdr contacts
+
+Shepherdr only talks to what you set up yourself. In the background it contacts:
+
+- **Machines you linked** in Herdr (herdr-core's links, `hc machine ls`), over that same link: their spaces, tasks,
+  health and artifacts for the sidebar and the web app, the task tick, the tools sync above, and the map of which
+  Assistants each machine reaches (`herdr-task machines reach`). It opens no new connection for any of it.
+- **GitHub**, through `gh` and git, for your tasks' own repos: their branches, pull requests, checks and merges.
+- **Bitbucket Cloud**, for a task whose repo is on Bitbucket Cloud. Through `api.bitbucket.org`, with the token git's
+  own credential helper gives for that repo: its pull request and the statuses of its head commit, and, when you
+  publish the task, opening a draft pull request and marking it ready for review. Through git, with the remote's own
+  git configuration: when you publish the task, pushing its task branch to the repository before the pull request is
+  opened. Nothing else in that repository, and it never merges there.
+- **ElevenLabs**, with your key only (Voice add-on): dictation and calls when you use them, its credits now and then.
+- **Your devices' push services** (the browser's), when an alert goes to a device you turned alerts on for.
+- **This machine's own Tailscale**, to share the web app privately on your tailnet. Never your other peers.
+
+Azure is contacted only when you set it up and ask:
+
+- **Azure CLI** (`az`, with this machine's existing sign-in), only when you press Refresh on a deployment picker in
+  Settings: `az account show`, `az cognitiveservices account list` and `az cognitiveservices account deployment list`
+  for the resource you configured. Read only: it never signs in, changes a deployment or sends a model request.
+- **Your Azure Foundry resource**, from the agents you start with the Azure Foundry provider: Claude Code and Codex
+  send their model requests to the resource or endpoint you set. Shepherdr itself sends none. With Personal (the
+  default) your agents keep their own provider.
+
+It never tries ssh to the hosts in your `~/.ssh/config`, nor your Tailscale peers, on its own (the reach map used to,
+every 5 minutes: GitHub #967). Only two things do, and only when you ask: **Add machine** reads your ssh config
+to list its hosts and connects to the one you pick, and **Find machines** (Settings › Machines, or `herdr-task machines
+find`) lists the hosts it would try, then tries each once (an ssh login in batch mode, no new host keys) when you press
+the button, at most once every 10 minutes. It says which have Herdr and aren't linked; it contacts none of them again
+unless you link it.
+
+Turning the Other machines add-on off stops the sync, keeps the reach map to this machine (no link followed) and turns
+Find machines off. The sidebar, the web app and the task tick still use the machines you linked: to stop those too,
+remove the machine in Herdr.
 
 ## Where your data lives
 

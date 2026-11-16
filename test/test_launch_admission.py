@@ -275,6 +275,22 @@ class Fixture:
     def add(self, *extra):
         return self.ok("add", "Fix login", "--folder", self.repo, "--space", "sp1", "--here", *extra)["id"]
 
+    def started_long_ago(self, tid=1):
+        """The task's agents started longer ago than upstream #1053's window (v3.1.35, commands.STARTING_MS): within
+        it, resume and a message refuse a task whose agent started moments ago as still starting."""
+        sys.path.insert(0, BIN)
+        from herdr_task.commands import STARTING_MS
+        lists = [os.path.join(self.store, n) for n in os.listdir(self.store) if n.endswith(".json") and not n.startswith(".")]
+        for p in lists:
+            with open(p) as f:
+                d = json.load(f)
+            for t in d.get("tasks", []):
+                if t["id"] == tid:
+                    for a in t.get("agents") or []:
+                        a["at"] = (a.get("at") or 0) - STARTING_MS - 1000
+            with open(p, "w") as f:
+                json.dump(d, f)
+
     def start(self, tid=1):
         return self.run("start", str(tid), "--folder", self.repo, "--space", "sp1", "--now", "--json")
 
@@ -491,6 +507,7 @@ class TaskStarts(unittest.TestCase):
         f = Fixture(self)
         f.add()
         self.assertEqual(f.start().returncode, 0)
+        f.started_long_ago()
         f.set_mode("hidden")
         refused = f.refused("resume", "1", "--folder", f.repo, "--space", "sp1")
         first, second = f.starts()
@@ -890,6 +907,7 @@ class ClaudeFolder(unittest.TestCase):
         f.add()
         self.assertEqual(f.start().returncode, 0)
         f.finish(f.starts()[0]["address"])
+        f.started_long_ago()
         f.env["CLAUDE_CONFIG_DIR"] = os.path.join(f.tmp, "callers-profile")
         self.assertEqual(f.run("resume", "1", "--folder", f.repo, "--space", "sp1", "--json").returncode, 0)
         self.assertIsNone(f.starts()[1]["config_dir"])

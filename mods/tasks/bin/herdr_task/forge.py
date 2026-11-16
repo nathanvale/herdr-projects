@@ -184,11 +184,12 @@ def pr_open(s, task, where, summary=None):
     return adapter_of(where).pr_open(s, task, where["repo"], summary, state)
 
 
-def pr_adopt(task, where):
+def pr_adopt(task, where, tip=None):
     """The open pull request for the task's branch in `where`, recorded when its own link is there;
-    refused (reach()) before anything is asked when `where` is on another host."""
+    refused (reach()) before anything is asked when `where` is on another host. tip: the branch's tip
+    when its worktree folder is gone (the adapter reads it in the worktree otherwise)."""
     reach(where, "nothing was adopted", "accept again")
-    return adapter_of(where).pr_adopt(task, where["repo"])
+    return adapter_of(where).pr_adopt(task, where["repo"], tip)
 
 
 def adopt_existing(s, task, given):
@@ -274,9 +275,9 @@ def pr_checks(v):
     return {"refused": v["refused"]} if v.get("refused") else view_adapter(v).pr_checks(v)
 
 
-def integrate(task, v, queue=False):
-    """Merges the task's pull request on its forge at the head `v` read: (ok, why not). queue: its
-    base merges through GitHub's merge queue (#742, #801, #802), so the request only queues it."""
+def integrate(task, v):
+    """Merges the task's pull request on its forge at the head `v` read: (ok, why not). On a base with
+    GitHub's merge queue (#742, #801, #802) the same request only queues it."""
     if v.get("refused"):
         return False, v["refused"]
-    return adapter_of(task["pr"]).pr_merge(task["pr"], v, **({"queue": True} if queue else {}))
+    return adapter_of(task["pr"]).pr_merge(task["pr"], v)
