@@ -824,13 +824,19 @@
       "phase": "A2",
       "path": "web/plugins/terminal/client.tsx",
       "upstream_blob": "8428db6c426101069dadbd4dc16a09a98ec056a7",
-      "sha256": "302dfd02dcf9ce8a7074a92cbf8491a088d53c36ba6cf6d71628dfc5a098a110"
+      "sha256": "c6a187f48aa4049aac44722f1c84c53b5908c144bbfec01d75303173180aeea7"
     },
     {
       "phase": "A2",
       "path": "web/plugins/terminal/keys.test.tsx",
       "upstream_blob": null,
-      "sha256": "e331108dde0d7cb964c9fccf50b4dc0596e990a7f11dede79c87b3552f03ceef"
+      "sha256": "8b2ff16160f69f3bcdf19c85053e8758af0e3a3211ba1a7ab824f9336c83adfc"
+    },
+    {
+      "phase": "A2",
+      "path": "web/plugins/terminal/stream.ts",
+      "upstream_blob": "62af86d796e35efc661735382775bc20ce113941",
+      "sha256": "5c91e2835e705fefe7d4246bc824e3875352db4235b44b58f9a83515c10ef7fd"
     }
   ],
   "requirements": [

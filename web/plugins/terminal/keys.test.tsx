@@ -52,8 +52,9 @@ swap('WebSocket', class {
   close() {}
 })
 const { connect, installPlugins, registry, setUI, getState } = await import('@client/kernel.ts')
-const terminal = (await import('./client.tsx')).default
-const { connectTerminal } = await import('./stream.ts')
+const terminalModule = await import('./client.tsx')
+const terminal = terminalModule.default
+const { connectTerminal, pasteMode } = await import('./stream.ts')
 installPlugins([terminal], [terminal.name])
 connect()
 const app = socks.at(-1)!
@@ -104,4 +105,52 @@ test('a phone and a touch screen keep their typing box: the page-wide handler le
   coarse = true
   expect(press('tablet', 'z').sent).toEqual([])
   coarse = false
+})
+
+// Pasting (Cmd+V, or the browser's Paste) while the terminal takes the keys put nothing in: no handler took the
+// page's paste. A paste goes in as one paste: newlines as Enter's carriage return, inside bracketed-paste marks when
+// the program asked for them (Claude Code does), so a multi-line paste is not sent line by line, and in pieces the
+// socket takes.
+function paste(device: 'phone' | 'tablet' | 'desktop', text: string, target: unknown = null) {
+  setUI({ device, place: 'sp1', term: 'p:sp1' })
+  const sent = term.sent.length
+  let prevented = false
+  const e = { target, clipboardData: { getData: (t: string) => (t === 'text/plain' ? text : '') }, preventDefault: () => { prevented = true } }
+  terminalModule.pasteToTerminal(e)
+  const got = term.sent.slice(sent).map((d) => JSON.parse(d))
+  return { prevented, got, typed: got.map((m: { text?: string }) => m.text ?? '').join('') }
+}
+
+test('a paste on a desktop goes into the terminal, newlines as carriage returns', () => {
+  coarse = false
+  const got = paste('desktop', 'echo one\necho two')
+  expect(got.prevented).toBe(true)
+  expect(got.typed).toBe('echo one\recho two')
+})
+
+test('a paste is bracketed when the program asked for bracketed paste', () => {
+  coarse = false
+  const off = pasteMode('p:sp1', () => true)
+  const got = paste('tablet', 'line 1\r\nline 2')
+  off()
+  expect(got.typed).toBe('\x1b[200~line 1\rline 2\x1b[201~')
+})
+
+test('a long paste reaches the terminal whole, in pieces the socket takes', () => {
+  coarse = false
+  const long = 'x'.repeat(20_000)
+  const got = paste('desktop', long)
+  expect(got.got.length).toBeGreaterThan(1)
+  expect(got.got.every((m: { text: string }) => JSON.stringify(m).length < 32_768)).toBe(true)
+  expect(got.typed).toBe(long)
+})
+
+test("a paste into the chat's own box, with no terminal taking the keys, is left to the box", () => {
+  coarse = false
+  setUI({ device: 'desktop', place: 'sp1', term: null })
+  const sent = term.sent.length
+  let prevented = false
+  terminalModule.pasteToTerminal({ target: { tagName: 'TEXTAREA' }, clipboardData: { getData: () => 'hello' }, preventDefault: () => { prevented = true } })
+  expect(prevented).toBe(false)
+  expect(term.sent.length).toBe(sent)
 })

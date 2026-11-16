@@ -3,6 +3,14 @@ const inputs = new Map<string, (message: { type: 'keys'; keys: string[] } | { ty
 export function streamInput(chat: string, message: { type: 'keys'; keys: string[] } | { type: 'text'; text: string }) {
   inputs.get(chat)?.(message)
 }
+// whether a terminal's program asked for bracketed paste (xterm tracks it from the output it draws), by chat
+const pasteModes = new Map<string, () => boolean>()
+/** the terminal drawing chat says how its program wants a paste; the returned function forgets it */
+export function pasteMode(chat: string, bracketed: () => boolean) {
+  pasteModes.set(chat, bracketed)
+  return () => { if (pasteModes.get(chat) === bracketed) pasteModes.delete(chat) }
+}
+export const bracketedPaste = (chat: string) => !!pasteModes.get(chat)?.()
 export function connectTerminal(chat: string, output: (bytes: Uint8Array, done: () => void) => void,
   reset: () => void, size: (cols: number, rows: number) => void, status: (text: string) => void) {
   let disposed = false, socket: WebSocket | undefined, retry: ReturnType<typeof setTimeout> | undefined
