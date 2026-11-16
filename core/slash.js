@@ -27,17 +27,72 @@ export const MENU = {
   codex: new Set(["model", "approvals", "review", "mention", "resume", "fork", "status", "diff"]),
 };
 
-// The person's own commands and skills, on the agent's machine: "name<TAB>description" lines.
+// The person's own commands and skills, on the agent's machine: "name<TAB>description" lines. Claude Code's folder
+// is CLAUDE_CONFIG_DIR, else ~/.claude. An installed plugin that settings switch on (enabledPlugins, the person's and
+// the project's) adds its skills and commands as plugin:name, as Claude Code offers them (python3: Shepherdr needs it).
 export const SCAN = `
 cwd="$1"
+cfg="\${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 desc() { awk '/^description:/ { sub(/^description:[[:space:]]*/, ""); if ($0 ~ /^[>|]-?$/ || $0 == "") { getline; sub(/^[[:space:]]+/, "") } gsub(/"/, ""); print substr($0, 1, 90); exit }' "$1" 2>/dev/null; }
-for d in "$HOME/.claude/commands" "$cwd/.claude/commands"; do
+for d in "$cfg/commands" "$cwd/.claude/commands"; do
   [ -d "$d" ] || continue
   find "$d" -name '*.md' 2>/dev/null | while read -r f; do n=\${f#"$d"/}; n=\${n%.md}; printf '%s\\t%s\\n' "$(echo "$n" | tr / :)" "$(desc "$f")"; done
 done
-for d in "$HOME/.claude/skills" "$cwd/.claude/skills"; do
+for d in "$cfg/skills" "$cwd/.claude/skills"; do
   for f in "$d"/*/SKILL.md; do [ -f "$f" ] || continue; n=\${f%/SKILL.md}; printf '%s\\t%s\\n' "\${n##*/}" "$(desc "$f")"; done
 done
+command -v python3 >/dev/null 2>&1 && python3 - "$cfg" "$cwd" <<'PLUGINS' 2>/dev/null
+import glob, json, os, sys
+cfg, cwd = sys.argv[1], sys.argv[2]
+def load(p):
+    try:
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+on = {}
+for p in (os.path.join(cfg, "settings.json"), os.path.join(cwd, ".claude", "settings.json"), os.path.join(cwd, ".claude", "settings.local.json")):
+    on.update(load(p).get("enabledPlugins") or {})
+def about(f):
+    try:
+        lines = open(f, encoding="utf-8", errors="replace").read(8000).splitlines()
+    except Exception:
+        return ""
+    for i, line in enumerate(lines):
+        if line.startswith("description:"):
+            v = line[len("description:"):].strip()
+            if v in ("", ">", "|", ">-", "|-") and i + 1 < len(lines):
+                v = lines[i + 1].strip()
+            return v.replace('"', "")[:90]
+    return ""
+seen = set()
+for key, rows in (load(os.path.join(cfg, "plugins", "installed_plugins.json")).get("plugins") or {}).items():
+    if on.get(key) is not True:
+        continue
+    plugin = key.split("@")[0]
+    for row in rows if isinstance(rows, list) else []:
+        base = row.get("installPath") if isinstance(row, dict) else None
+        if not base or not os.path.isdir(base):
+            continue
+        # the default folders, and the paths the plugin's manifest names (a skill's folder, or a folder of them)
+        manifest = load(os.path.join(base, ".claude-plugin", "plugin.json"))
+        paths = lambda k: [manifest[k]] if isinstance(manifest.get(k), str) else [p for p in manifest.get(k) or [] if isinstance(p, str)]
+        found = []
+        for d in [os.path.join(base, "skills")] + [os.path.join(base, p) for p in paths("skills")]:
+            for f in [os.path.join(d, "SKILL.md")] + sorted(glob.glob(os.path.join(d, "*", "SKILL.md"))):
+                if os.path.isfile(f):
+                    found.append((os.path.basename(os.path.dirname(f)), f))
+        for d in [os.path.join(base, "commands")] + [os.path.join(base, p) for p in paths("commands")]:
+            if os.path.isfile(d) and d.endswith(".md"):
+                found.append((os.path.basename(d)[:-3], d))
+            for f in sorted(glob.glob(os.path.join(d, "**", "*.md"), recursive=True)):
+                found.append((os.path.relpath(f, d)[:-3].replace(os.sep, ":"), f))
+        for name, f in found:
+            n = plugin + ":" + name
+            if n not in seen:
+                seen.add(n)
+                print(n + chr(9) + about(f))
+PLUGINS
 true`;
 
 // SCAN's output as commands: [{ name, about }].
